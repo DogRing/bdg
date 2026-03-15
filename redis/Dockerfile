@@ -1,25 +1,20 @@
-# ── 빌드 스테이지 ──
 FROM rust:latest AS builder
 
 WORKDIR /app
 
-# 의존성 캐시 레이어 (소스 변경 시 재빌드 방지)
+RUN rustup target add x86_64-unknown-linux-musl
+RUN apt-get update && apt-get install -y musl-tools
+
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
+RUN cargo build --release --target x86_64-unknown-linux-musl
 RUN rm src/main.rs
 
-# 실제 소스 빌드
 COPY src ./src
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs && cargo build --release --target x86_64-unknown-linux-musl
 
-# ── 실행 스테이지 ──
-FROM debian:bookworm-slim
-
-RUN apk add --no-cache ca-certificates tzdata
-
-WORKDIR /app
-COPY --from=builder /app/target/release/chess-sse .
+FROM scratch
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/chess-sse /chess-sse
 
 EXPOSE 3001
-CMD ["./chess-sse"]
+CMD ["/chess-sse"]
