@@ -13,6 +13,7 @@ on:
 env:
   REGISTRY: registry.dogring.kr
   IMAGE_NAME: sse-server
+  IMAGE_TAG: 0.1.0
 
 jobs:
   build-and-push:
@@ -40,6 +41,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ env.IMAGE_TAG }}
             type=sha,prefix=,format=short
             type=ref,event=pr
             type=semver,pattern={{version}}
