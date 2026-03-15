@@ -134,7 +134,7 @@ async fn redis_watcher(state: AppState) {
         None => return,
     };
 
-    println!("Redis keyspace 구독 시작");
+    println!("Subscribe Redis keyspace");
     let mut msg_stream = pubsub.into_on_message();
 
     while let Some(msg) = msg_stream.next().await {
@@ -147,12 +147,12 @@ async fn redis_watcher(state: AppState) {
 
 async fn connect_pubsub(redis: &redis::Client) -> Option<redis::aio::PubSub> {
     let conn = redis.get_async_connection().await
-        .map_err(|e| eprintln!("Redis 연결 실패: {e}"))
+        .map_err(|e| eprintln!("Redis connect failed: {e}"))
         .ok()?;
 
     let mut pubsub = conn.into_pubsub();
     pubsub.psubscribe(REDIS_KEYSPACE_PATTERN).await
-        .map_err(|e| eprintln!("psubscribe 실패: {e}"))
+        .map_err(|e| eprintln!("psubscribe failed: {e}"))
         .ok()?;
 
     Some(pubsub)
@@ -169,7 +169,7 @@ async fn handle_board_change(state: &AppState, room_id: &str) {
     if let Some(tx) = senders.get(room_id) {
         let receiver_count = tx.receiver_count();
         if tx.send(payload).is_ok() {
-            println!("board:{room_id} 변경 → {receiver_count} 클라이언트 전송");
+            println!("board:{room_id} changes → {receiver_count} clients");
         }
     }
 }
@@ -182,7 +182,7 @@ async fn main() {
         .unwrap_or_else(|_| "redis://redis.dogring.kr/".to_string());
 
     let redis_client = redis::Client::open(redis_url)
-        .expect("Redis 클라이언트 생성 실패");
+        .expect("Create Redis client failed");
 
     let state = AppState::new(redis_client);
 
