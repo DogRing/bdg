@@ -3,8 +3,12 @@ name: Build and Push
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - "redis/**"
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "redis/**"
 
 env:
   REGISTRY: registry.dogring.kr
@@ -35,15 +39,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # main 브랜치 push → latest + short SHA
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=,format=short
-            # PR → pr-번호
             type=ref,event=pr
-            # 태그 push (v1.0.0) → 1.0.0
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-
 
       - name: Build and Push
         uses: docker/build-push-action@v5

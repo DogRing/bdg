@@ -1,0 +1,22 @@
+# ── Node (React/Vite) ──────────────────────
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# ── Go ─────────────────────────────────────
+chess/server/chess
+chess/server/*.exe
+
+# ── Rust ───────────────────────────────────
+redis/target/
+
+# ── OS ─────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editor ─────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
