@@ -20,7 +20,7 @@ const REDIS_KEYSPACE_PATTERN: &str = "__keyspace@0__:board:*";
 const BOARD_KEY_PREFIX: &str = "board:";
 const KEYSPACE_PREFIX: &str = "__keyspace@0__:";
 
-// ─── 타입 별칭 ──────────────────────────────────────────────────────────────
+// ─── 타입 별칭 ────────────────────────────────────────────────────────────────
 
 type RoomSenders = Arc<Mutex<HashMap<String, broadcast::Sender<String>>>>;
 

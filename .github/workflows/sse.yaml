@@ -24,11 +24,11 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
+
       - name: Debug auth
         run: |
-          curl -sf -u "${{ secrets.ZOT_USERNAME }}:${{ secrets.ZOT_PASSWORD }}" \
-            https://${{ env.REGISTRY }}/v2/_catalog
+          curl -v -u "${{ secrets.ZOT_USERNAME }}:${{ secrets.ZOT_PASSWORD }}" \
+            https://${{ env.REGISTRY }}/v2/_catalog 2>&1
 
       - name: Login to Zot Registry
         if: github.event_name != 'pull_request'
