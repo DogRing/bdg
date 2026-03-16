@@ -64,9 +64,9 @@ func main() {
 	}))
 
 	api := app.Group("/chess")
-	
+
 	// POST /api/games
-	app.Post("/api/games", func(c *fiber.Ctx) error {
+	api.Post("/api/games", func(c *fiber.Ctx) error {
 		roomId   := uuid.NewString()
 		boardKey := fmt.Sprintf("board:%s", roomId)
 		roomKey  := fmt.Sprintf("room:%s", roomId)
@@ -88,7 +88,7 @@ func main() {
 	})
 
 	// POST /api/games/:roomId/move
-	app.Post("/api/games/:roomId/move", func(c *fiber.Ctx) error {
+	api.Post("/api/games/:roomId/move", func(c *fiber.Ctx) error {
 		roomId   := c.Params("roomId")
 		boardKey := fmt.Sprintf("board:%s", roomId)
 		roomKey  := fmt.Sprintf("room:%s", roomId)
