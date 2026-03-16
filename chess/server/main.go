@@ -53,9 +53,9 @@ func main() {
 		DB:       0,
 	})
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Fatalf("Redis 연결 실패: %v", err)
+		log.Fatalf("Redis connect failed: %v", err)
 	}
-	log.Println("Redis 연결 성공")
+	log.Println("Redis connect success")
 
 	app := fiber.New()
 	app.Use(cors.New(cors.Config{
@@ -78,10 +78,10 @@ func main() {
 		})
 		pipe.Expire(ctx, roomKey, gameTTL)
 		if _, err := pipe.Exec(ctx); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": "방 생성 실패"})
+			return c.Status(500).JSON(fiber.Map{"error": "fail to create room"})
 		}
 
-		log.Printf("게임 생성: %s", roomId)
+		log.Printf("create game room: %s", roomId)
 		return c.Status(201).JSON(fiber.Map{"roomId": roomId})
 	})
 
