@@ -59,10 +59,12 @@ func main() {
 
 	app := fiber.New()
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:5173",
+		AllowOrigins: "*",
 		AllowHeaders: "Content-Type",
 	}))
 
+	api := app.Group("/chess")
+	
 	// POST /api/games
 	app.Post("/api/games", func(c *fiber.Ctx) error {
 		roomId   := uuid.NewString()
