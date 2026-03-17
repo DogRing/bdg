@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const API = 'https://game.dogring.kr/chess'
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
 export default function Lobby({ onEnter }) {
   const [loading, setLoading] = useState(false)
@@ -11,9 +11,10 @@ export default function Lobby({ onEnter }) {
     setError('')
     try {
       const res  = await fetch(`${API}/api/games`, { method: 'POST' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      onEnter(data.roomId)  // App 의 roomId 를 세팅 → 게임 화면으로
+      const text = await res.text()
+      const data = text ? JSON.parse(text) : {}
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      onEnter(data.roomId)
     } catch (e) {
       setError(e.message)
       setLoading(false)

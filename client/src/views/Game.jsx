@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import Board from '../components/Board'
 
-const API = 'https://game.dogring.kr/chess'
-const SSE = 'https://sse.dogring.kr'
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+const SSE = import.meta.env.VITE_SSE_URL ?? 'http://localhost:3001'
 
 export default function Game({ roomId, onLeave }) {
   const [board,    setBoard]    = useState([])      // 2D 배열
@@ -44,7 +44,8 @@ export default function Game({ roomId, onLeave }) {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ from, to }),
       })
-      const data = await res.json()
+      const text = await res.text()
+      const data = text ? JSON.parse(text) : {}
       if (data.error) { addLog(`❌ ${data.error}`); return }
       setTurn(data.turn)
       addLog(`✅ ${from} → ${to}`)
