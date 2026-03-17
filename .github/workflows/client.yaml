@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
     paths:
       - "client/**"
+      - ".github/workflows/client.yaml"
   pull_request:
     branches: [ "main" ]
     paths:
@@ -44,3 +45,11 @@ jobs:
           account-id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           project-name: dogring-play
           directory: client/dist
+
+      - name: Deploy to Cloudflare Pages
+        if: github.event_name != 'pull_request'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy client/dist --project-name=dogring-play
