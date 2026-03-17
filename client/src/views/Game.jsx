@@ -3,6 +3,16 @@ import Board from '../components/Board'
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 const SSE = import.meta.env.VITE_SSE_URL ?? 'http://localhost:3001'
+const PIECE_MAP = [
+  '.','BP','BN','BB','BR','BQ','BK',
+  'WP','WN','WB','WR','WQ','WK',
+]
+
+function parseBoardString(str) {
+  // 64자 문자열 → 8×8 배열
+  const flat = Array.from(str).map(c => PIECE_MAP[c.charCodeAt(0)] ?? '.')
+  return Array.from({ length: 8 }, (_, i) => flat.slice(i * 8, i * 8 + 8))
+}
 
 export default function Game({ roomId, onLeave }) {
   const [board,    setBoard]    = useState([])      // 2D 배열
@@ -22,13 +32,13 @@ export default function Game({ roomId, onLeave }) {
 
     es.addEventListener('snapshot', e => {
       const data = JSON.parse(e.data)
-      setBoard(data.board)
+      setBoard(parseBoardString(data.board))
       addLog('📸 snapshot 수신')
     })
 
     es.addEventListener('board_update', e => {
       const data = JSON.parse(e.data)
-      setBoard(data.board)
+      setBoard(parseBoardString(data.board))
       addLog('♟ 보드 업데이트')
     })
 
