@@ -4,11 +4,11 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - "chess/server/**"
+      - "server/chess/**"
   pull_request:
     branches: [ "main" ]
     paths:
-      - "chess/server/**"
+      - "server/chess/**"
 
 env:
   REGISTRY: registry.dogring.kr
@@ -50,7 +50,7 @@ jobs:
       - name: Build and Push
         uses: docker/build-push-action@v5
         with:
-          context: ./chess/server
+          context: ./server/chess
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

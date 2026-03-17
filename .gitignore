@@ -1,13 +1,6 @@
-# ── Node (React/Vite) ──────────────────────
-node_modules/
-dist/
-.env
-.env.local
-.env.*.local
-
 # ── Go ─────────────────────────────────────
-chess/server/chess
-chess/server/*.exe
+server/chess/chess
+server/chess/*.exe
 
 # ── Rust ───────────────────────────────────
 redis/target/
