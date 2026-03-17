@@ -14,7 +14,7 @@ export default function Game({ roomId, onLeave }) {
 
   // ── SSE 연결 ────────────────────────────────
   useEffect(() => {
-    const es = new EventSource(`${SSE}/sse/rooms/${roomId}`)
+    const es = new EventSource(`${SSE}/sse/room/${roomId}`)
     esRef.current = es
 
     es.onopen  = () => setConnected(true)
