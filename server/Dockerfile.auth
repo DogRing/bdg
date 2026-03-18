@@ -16,5 +16,5 @@ FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/auth/auth-server /auth-server
 
-EXPOSE 8081
+EXPOSE 8080
 CMD ["/auth-server"]
