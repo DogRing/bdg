@@ -45,10 +45,14 @@ func main() {
 	}
 	log.Println("PostgreSQL connected")
 
+	smtpPort := os.Getenv("SMTP_PORT")
+	if smtpPort == "" {
+		smtpPort = "587"
+	}
 	// ── Mailer ───────────────────────────────────
 	mailer := NewMailer(
 		os.Getenv("SMTP_HOST"),
-		os.Getenv("SMTP_PORT"),
+		smtpPort,
 		os.Getenv("SMTP_USER"),
 		os.Getenv("SMTP_PASS"),
 		os.Getenv("SMTP_FROM"),
