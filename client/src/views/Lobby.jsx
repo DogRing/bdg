@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 export default function Lobby({ onEnter }) {
+  const { authFetch } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
@@ -10,10 +12,9 @@ export default function Lobby({ onEnter }) {
     setLoading(true)
     setError('')
     try {
-      const res  = await fetch(`${API}/chess/api/games`, { method: 'POST' })
-      const text = await res.text()
-      const data = text ? JSON.parse(text) : {}
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      const res  = await authFetch(`${API}/chess/api/games`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
       onEnter(data.roomId)
     } catch (e) {
       setError(e.message)

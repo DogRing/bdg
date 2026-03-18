@@ -1,30 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '../context/AuthContext'
 import Board from '../components/Board'
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
-const SSE = import.meta.env.VITE_SSE_URL ?? 'http://localhost:3001'
-const PIECE_MAP = [
-  '.','BP','BN','BB','BR','BQ','BK',
-  'WP','WN','WB','WR','WQ','WK',
-]
-
-function parseBoardString(str) {
-  // 64자 문자열 → 8×8 배열
-  const flat = Array.from(str).map(c => PIECE_MAP[c.charCodeAt(0)] ?? '.')
-  return Array.from({ length: 8 }, (_, i) => flat.slice(i * 8, i * 8 + 8))
-}
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+const SSE = import.meta.env.VITE_SSE_URL || 'http://localhost:3001'
 
 export default function Game({ roomId, onLeave }) {
-  const [board,    setBoard]    = useState([])      // 2D 배열
-  const [turn,     setTurn]     = useState('w')     // 'w' | 'b'
-  const [selected, setSelected] = useState(null)    // { ri, fi }
+  const { authFetch } = useAuth()
+  const [board,    setBoard]    = useState([])
+  const [turn,     setTurn]     = useState('w')
+  const [selected, setSelected] = useState(null)
   const [connected,setConnected]= useState(false)
   const [logs,     setLogs]     = useState([])
   const esRef = useRef(null)
 
   // ── SSE 연결 ────────────────────────────────
   useEffect(() => {
-    const es = new EventSource(`${SSE}/sse/room/${roomId}`)
+    const es = new EventSource(`${SSE}/sse/rooms/${roomId}`)
     esRef.current = es
 
     es.onopen  = () => setConnected(true)
@@ -32,30 +24,27 @@ export default function Game({ roomId, onLeave }) {
 
     es.addEventListener('snapshot', e => {
       const data = JSON.parse(e.data)
-      setBoard(parseBoardString(data.board))
+      setBoard(data.board)
       addLog('📸 snapshot 수신')
     })
 
     es.addEventListener('board_update', e => {
       const data = JSON.parse(e.data)
-      setBoard(parseBoardString(data.board))
+      setBoard(data.board)
       addLog('♟ 보드 업데이트')
     })
 
-    // 컴포넌트가 사라질 때 SSE 연결 해제
     return () => es.close()
   }, [roomId])
 
   // ── 말 이동 ─────────────────────────────────
   async function move(from, to) {
     try {
-      const res  = await fetch(`${API}/chess/api/games/${roomId}/move`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ from, to }),
+      const res  = await authFetch(`${API}/chess/api/games/${roomId}/move`, {
+        method: 'POST',
+        body:   JSON.stringify({ from, to }),
       })
-      const text = await res.text()
-      const data = text ? JSON.parse(text) : {}
+      const data = await res.json()
       if (data.error) { addLog(`❌ ${data.error}`); return }
       setTurn(data.turn)
       addLog(`✅ ${from} → ${to}`)
@@ -69,20 +58,17 @@ export default function Game({ roomId, onLeave }) {
     const piece = board[ri]?.[fi]
     if (!piece) return
 
-    // 아무것도 선택 안 된 상태 → 말 선택
     if (!selected) {
       if (piece === '.') return
       setSelected({ ri, fi })
       return
     }
 
-    // 같은 칸 클릭 → 선택 해제
     if (selected.ri === ri && selected.fi === fi) {
       setSelected(null)
       return
     }
 
-    // 다른 칸 클릭 → 이동 요청
     const FILES = ['a','b','c','d','e','f','g','h']
     const from  = FILES[selected.fi] + (8 - selected.ri)
     const to    = FILES[fi]          + (8 - ri)
