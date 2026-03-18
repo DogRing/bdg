@@ -6,11 +6,14 @@ on:
     paths:
       - "server/chess/**"
       - "server/shared/**"
+      - "server/Dockerfile.chess"
+      - ".github/workflows/server-chess.yaml"
   pull_request:
     branches: [ "main" ]
     paths:
       - "server/chess/**"
       - "server/shared/**"
+      - "server/Dockerfile.chess"
 
 env:
   REGISTRY: registry.dogring.kr

@@ -6,11 +6,14 @@ on:
     paths:
       - "server/auth/**"
       - "server/shared/**"
+      - "server/Dockerfile.auth"
+      - ".github/workflows/server-auth.yaml"
   pull_request:
     branches: [ "main" ]
     paths:
       - "server/auth/**"
       - "server/shared/**"
+      - "server/Dockerfile.auth"
 
 env:
   REGISTRY: registry.dogring.kr
