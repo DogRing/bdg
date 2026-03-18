@@ -1,0 +1,20 @@
+# ── 빌드 스테이지 ──
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /app
+COPY shared/ ./shared/
+COPY auth/ ./auth/
+
+WORKDIR /app/auth
+
+RUN go mod download
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o auth-server .
+
+# ── 실행 스테이지 ──
+FROM scratch
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/  # ← 추가
+COPY --from=builder /app/auth/auth-server /auth-server
+
+EXPOSE 8081
+CMD ["/auth-server"]

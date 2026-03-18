@@ -5,15 +5,17 @@ on:
     branches: [ "main" ]
     paths:
       - "server/chess/**"
+      - "server/shared/**"
   pull_request:
     branches: [ "main" ]
     paths:
       - "server/chess/**"
+      - "server/shared/**"
 
 env:
   REGISTRY: registry.dogring.kr
-  IMAGE_NAME: chess-server
-  IMAGE_TAG: 0.1.2
+  IMAGE_NAME: server-chess
+  IMAGE_TAG: 0.1.0
 
 jobs:
   build-and-push:
@@ -42,7 +44,6 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ env.IMAGE_TAG }}
-            type=sha,prefix=,format=short
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -50,7 +51,8 @@ jobs:
       - name: Build and Push
         uses: docker/build-push-action@v5
         with:
-          context: ./server/chess
+          context: ./server
+          file: ./server/Dockerfile.chess
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
