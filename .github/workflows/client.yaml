@@ -34,7 +34,7 @@ jobs:
         working-directory: client
         run: npm run build
         env:
-          VITE_API_URL: https://gapi.dogring.kr/chess
+          VITE_API_URL: https://gapi.dogring.kr
           VITE_SSE_URL: https://sse.dogring.kr
 
       - name: Deploy to Cloudflare Pages

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 
-const AUTH_API = import.meta.env.VITE_AUTH_URL || 'http://localhost:8080'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 const AuthContext = createContext(null)
 
@@ -17,7 +17,7 @@ function AuthProvider({ children }) {
   }, [token])
 
   const requestOTP = useCallback(async (email) => {
-    const res = await fetch(`${AUTH_API}/auth/otp`, {
+    const res = await fetch(`${API}/auth/otp`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ email }),
@@ -28,7 +28,7 @@ function AuthProvider({ children }) {
   }, [])
 
   const login = useCallback(async (email, otp) => {
-    const res = await fetch(`${AUTH_API}/auth/login`, {
+    const res = await fetch(`${API}/auth/login`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ email, otp }),

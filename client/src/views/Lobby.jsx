@@ -10,7 +10,7 @@ export default function Lobby({ onEnter }) {
     setLoading(true)
     setError('')
     try {
-      const res  = await fetch(`${API}/api/games`, { method: 'POST' })
+      const res  = await fetch(`${API}/chess/api/games`, { method: 'POST' })
       const text = await res.text()
       const data = text ? JSON.parse(text) : {}
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)

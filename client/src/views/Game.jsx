@@ -49,7 +49,7 @@ export default function Game({ roomId, onLeave }) {
   // ── 말 이동 ─────────────────────────────────
   async function move(from, to) {
     try {
-      const res  = await fetch(`${API}/api/games/${roomId}/move`, {
+      const res  = await fetch(`${API}/chess/api/games/${roomId}/move`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ from, to }),
