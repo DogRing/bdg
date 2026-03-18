@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	otpTTL     = 5 * time.Minute
+	otpTTL     = 10 * time.Minute
 	sessionTTL = 24 * time.Hour
 )
 
@@ -37,7 +37,7 @@ func NewMailer(host, port, user, pass, from string) *Mailer {
 
 func (m *Mailer) SendOTP(to, otp string) error {
 	msg := fmt.Sprintf(
-		"From: %s\r\nTo: %s\r\nSubject: Chess 로그인 코드\r\n\r\n인증코드: %s\r\n(5분간 유효)",
+		"From: %s\r\nTo: %s\r\nSubject: 로그인 코드\r\n\r\n인증코드: %s\r\n(10분간 유효)",
 		m.from, to, otp,
 	)
 	return smtp.SendMail(m.host+":"+m.port, m.auth, m.from, []string{to}, []byte(msg))
@@ -89,9 +89,16 @@ func registerAuthRoutes(app *fiber.App, rdb *redis.Client, db *pgxpool.Pool, mai
 
 		var userID string
 		if err := db.QueryRow(ctx,
-			`INSERT INTO users (email) VALUES ($1)
-             ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email
-             RETURNING id`,
+			`WITH ins AS (
+				INSERT INTO users (email)
+				VALUES ($1)
+				ON CONFLICT (email) DO NOTHING
+				RETURNING id
+			)
+			SELECT id FROM ins
+			UNION ALL
+			SELECT id FROM users WHERE email = $1
+			LIMIT 1`,
 			req.Email,
 		).Scan(&userID); err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "DB 오류"})
