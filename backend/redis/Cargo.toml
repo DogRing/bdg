@@ -1,0 +1,14 @@
+[package]
+name = "chess-sse"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+redis = { version = "0.25", features = ["tokio-comp", "aio"] }
+serde_json = "1"
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+tower-http = { version = "0.5", features = ["cors"] }
+async-stream = "0.3"

@@ -1,0 +1,7 @@
+backend/redis/target/
+backend/redis/Cargo.lock
+**/go.sum
+node_modules/
+dist/
+.env*
+**/secrets/
