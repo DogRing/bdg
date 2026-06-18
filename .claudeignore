@@ -1,7 +1,26 @@
-backend/redis/target/
-backend/redis/Cargo.lock
-**/go.sum
-node_modules/
+# Context economy + sensitive exclusion.
+# Keep SPECs, contracts, glossary, architecture, and testdata/golden VISIBLE.
+
+vendor/
+bin/
 dist/
-.env*
-**/secrets/
+node_modules/
+
+*.log
+*.tmp
+*.out
+coverage.*
+
+.env
+.env.*
+secrets/
+*.key
+*.pem
+
+# Local infra data
+data/
+*.rdb
+
+# Large generated artifacts (goldens stay visible — the reviewer reads them)
+testdata/large/
+*.snapshot.bin

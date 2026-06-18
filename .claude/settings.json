@@ -1,28 +1,41 @@
 {
   "permissions": {
     "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
       "Bash(go build:*)",
       "Bash(go test:*)",
       "Bash(go vet:*)",
-      "Bash(golangci-lint run:*)",
+      "Bash(go run:*)",
       "Bash(gofmt:*)",
-      "Bash(npm run test:*)",
-      "Bash(npm run lint:*)",
-      "Bash(npm run build:*)",
-      "Bash(npm run typecheck:*)",
-      "Bash(npx tsc:*)",
-      "Bash(git status)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(cargo build:*)",
-      "Bash(cargo test:*)",
-      "Bash(cargo clippy:*)",
-      "Bash(cargo fmt:*)"
+      "Bash(goimports:*)",
+      "Bash(make:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)"
+    ],
+    "ask": [
+      "Bash(go mod:*)",
+      "Bash(go get:*)",
+      "Bash(git:*)",
+      "Bash(docker:*)",
+      "Bash(docker compose:*)"
     ],
     "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(./**/secrets/**)"
+      "Bash(rm -rf:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Read(./secrets/**)",
+      "Read(./.env*)"
     ]
+  },
+  "env": {
+    "GOROOT": "/home/coder/go",
+    "GOPATH": "/home/coder/go-workspace",
+    "PATH": "/home/coder/go/bin:/home/coder/go-workspace/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   }
 }

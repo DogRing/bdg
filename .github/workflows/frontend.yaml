@@ -27,7 +27,7 @@ jobs:
           AUTH_URL: https://gapi.dogring.kr
           SSE_URL:  https://sse.dogring.kr
         run: |
-          find client -name "*.html" -exec sed -i \
+          find frontend -name "*.html" -exec sed -i \
             "s|</head>|<script>window.__ENV={AUTH_URL:'${AUTH_URL}',SSE_URL:'${SSE_URL}'}</script></head>|g" \
             {} \;
  

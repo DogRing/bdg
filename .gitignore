@@ -1,14 +1,41 @@
-# ── Go ─────────────────────────────────────
+# Binaries
+/bin/
+*.exe
+*.test
 
+# Coverage / profiling
+*.out
+coverage.*
+*.prof
 
-# ── Rust ───────────────────────────────────
-backend/redis/target/
+# Build / dist
+/dist/
 
-# ── OS ─────────────────────────────────────
+# Env & secrets
+.env
+.env.*
+*.key
+*.pem
+/secrets/
+
+# Local infra data
+/data/
+*.rdb
+
+# OS / editors
 .DS_Store
-Thumbs.db
-
-# ── Editor ─────────────────────────────────
-.vscode/settings.json
 .idea/
-*.swp
+.vscode/
+
+# Go workspace (per-developer)
+go.work
+go.work.sum
+
+# Claude personal overrides (shared .claude/settings.json stays tracked)
+.claude/settings.local.json
+
+# Large generated artifacts (testdata/golden stays tracked — CI/reviewer need it)
+/testdata/large/
+*.snapshot.bin
+
+# vendor/   # uncomment only if NOT vendoring

@@ -1,0 +1,79 @@
+# Data Contracts — Serialization · Redis · Postgres · Events
+
+> Contracts that cross module boundaries. **Freeze before implementing consumers.** Bump `schema_version` and start here for any change.
+> The below defines *shapes*. Exact field types are finalized by the architect against the `core` types.
+
+## 0. Common
+- Every payload carries `schema_version` (int). Bump +1 on any backward-incompatible change.
+- Serialization: JSON during early debugging; may switch to a deterministic dense encoding (gob/protobuf) after it stabilizes — but **byte-determinism** must hold (sorted map-key order).
+- IDs: `RunID`, `AgentID`, `ObjectID` are strings. Tick is an integer (game-minutes).
+
+## 1. Simulation snapshot (engine → persist)
+The complete deterministic state for one tick. Same snapshot + same seed → same next tick.
+```
+Snapshot {
+  schema_version, run_id, tick
+  rng_state                       // for deterministic resume
+  world {
+    objects[]  { id, kind, pos, contents }   // pre-placed resources
+    animals[]  { id, species, pos, state }    // spawned
+  }
+  agents[] {
+    id, pos
+    real_stats  { StatID: float }             // god view (backup only; live exposure policy in §4)
+    body        { inventory, stamina, mood, adrenaline }
+    goal, plan_summary
+    tom_digest    // see §3 — full ToM is large
+    known_digest  // value-map summary
+  }
+}
+```
+**ToM / Known are O(N²) and large** → the snapshot stores a *digest* (top-K relationships, strong values only); the full set is a Postgres-only option.
+
+## 2. Redis — live state
+Keyspace (`{run}` = RunID):
+```
+sim:{run}:meta          HASH    { tick, schema_version, started_at, status }
+sim:{run}:tick          STRING  current tick (fast read)
+sim:{run}:snapshot      STRING  latest Snapshot (serialized)  // or chunked
+sim:{run}:agent:{id}    HASH     live agent summary (render): pos, goal, action, mood
+sim:{run}:events        STREAM   events (§4). XADD append; SSE tails
+```
+- Live keys hold **only what render/observation needs.** Full state lives in the snapshot key.
+- TTL: keep only active runs; on completion, back up to Postgres then expire.
+
+## 3. Postgres — periodic backup (replay / analytics)
+```
+runs       ( run_id PK, seed, schema_version, started_at, ended_at, status, config_hash )
+snapshots  ( run_id FK, tick, blob BYTEA, created_at )            // every N ticks
+events     ( run_id FK, tick, seq, agent_id, type, payload JSONB ) // why-trace persisted
+```
+- Backup interval from config (`backup_every_ticks`). Reproduce from `seed + config_hash + last snapshot`.
+- `events` is the source for why-trace, emergence-metric analysis, and replay.
+
+## 4. Event / SSE schema (observability + frontend)
+The engine emits via the `events` interface. why-trace and SSE are **two views of the same stream.**
+```
+Event {
+  schema_version, tick, seq, agent_id?, type, payload
+}
+```
+Representative `type`s (payload gist):
+| type | payload |
+|------|---------|
+| `Perceived` | sense, object_id, salience_delta |
+| `GoalSelected` | dimension, target, priority, eff_value |
+| `PlanBuilt` | steps[], total_cost, provisioned[] |
+| `ActionStarted` / `ActionDone` | action, progress / result |
+| `Interacted` | with, signal_kind, claimed_value, accepted |
+| `BeliefUpdated` | about, stat, old, new, cause(`observe|gossip`) |
+| `ReputationGossip` | about, from, trust, delta |
+| `CopingEntered` | mode(`rebind|longing|latent|apathy`) |
+| `RoleEmerged` | function, holder, reliance_share |
+
+- **why-trace** = NFR-3. Put the *selection rationale* (competing candidates, gates, costs) into `GoalSelected` / `PlanBuilt` so "why did it do this" is reconstructable.
+- **SSE view** = the frontend-graphics subset (positions, actions, major events). Sensitive god-view fields (`real_stats`) are not sent over SSE (controlled by an observation-mode flag).
+
+## 5. Determinism & versioning
+- Resuming from a snapshot must be **byte-identical** to running from the start (test: `docs/testing.md`).
+- On `schema_version` mismatch, persist refuses to load and demands a migration path.
