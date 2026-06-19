@@ -1,26 +1,33 @@
 # Context economy + sensitive exclusion.
-# Keep SPECs, contracts, glossary, architecture, and testdata/golden VISIBLE.
+# Keep SPECs, docs, glossary, architecture, content visible — agents need them.
 
-vendor/
-bin/
-dist/
+# build artifacts / runtime
+/bin/
+/out/
+/.data/
+/vendor/
+go.sum
+go.work
+go.work.sum
+
+# frontend (added later)
+/frontend/node_modules/
+/frontend/dist/
 node_modules/
 
+# noise
 *.log
 *.tmp
-*.out
-coverage.*
+.DS_Store
 
+# secrets (never load into context)
 .env
 .env.*
-secrets/
+!.env.example
 *.key
 *.pem
+secrets/
 
-# Local infra data
-data/
-*.rdb
-
-# Large generated artifacts (goldens stay visible — the reviewer reads them)
-testdata/large/
+# large generated blobs (reviewer reads small goldens; large ones excluded)
+/testdata/large/
 *.snapshot.bin

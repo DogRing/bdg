@@ -3,6 +3,7 @@ name: implementer
 description: Implements a single module to its SPEC. Code + tests.
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
+permissionMode: acceptEdits
 ---
 
 # implementer

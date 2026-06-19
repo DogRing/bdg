@@ -1,41 +1,34 @@
-# Binaries
+# --- Go ---
 /bin/
+/out/
 *.exe
 *.test
-
-# Coverage / profiling
 *.out
 coverage.*
-*.prof
-
-# Build / dist
-/dist/
-
-# Env & secrets
-.env
-.env.*
-*.key
-*.pem
-/secrets/
-
-# Local infra data
-/data/
-*.rdb
-
-# OS / editors
-.DS_Store
-.idea/
-.vscode/
-
-# Go workspace (per-developer)
+*.cover
+/vendor/
 go.work
 go.work.sum
 
-# Claude personal overrides (shared .claude/settings.json stays tracked)
-.claude/settings.local.json
+# --- Env / secrets (never commit) ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
 
-# Large generated artifacts (testdata/golden stays tracked — CI/reviewer need it)
+# --- Local data / runtime ---
+/.data/
 /testdata/large/
 *.snapshot.bin
 
-# vendor/   # uncomment only if NOT vendoring
+# --- Frontend (added later) ---
+/frontend/node_modules/
+/frontend/dist/
+
+# --- OS / IDE ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
