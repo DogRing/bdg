@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/objects.schema.json",
+  "title": "content/objects.yaml — object & item kinds carrying supply Effect (D9/D10)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "anyOf": [
+    { "required": ["object_kinds"] },
+    { "required": ["item_kinds"] }
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "object_kinds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/objectKind" }
+    },
+    "item_kinds": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/itemKind" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+    "predList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "supply": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "number" },
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
+    },
+    "objectKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "mobile"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "mobile": { "type": "boolean" },
+        "harvest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "provides"],
+          "properties": {
+            "action": { "$ref": "#/$defs/identifier" },
+            "yields": { "$ref": "#/$defs/identifier" },
+            "provides": { "$ref": "#/$defs/predList" },
+            "depletes": { "type": "boolean" }
+          }
+        },
+        "occupy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provides"],
+          "properties": {
+            "provides": { "$ref": "#/$defs/predList" },
+            "supply": { "$ref": "#/$defs/supply" }
+          }
+        }
+      }
+    },
+    "itemKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "supply"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "stackable": { "type": "boolean" },
+        "perishable": { "type": "boolean" },
+        "supply": { "$ref": "#/$defs/supply" }
+      }
+    }
+  }
+}

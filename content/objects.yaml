@@ -1,0 +1,66 @@
+# content/objects.yaml — object & item kind catalog (data-driven, D9 / D10)
+#
+# This file is the concrete anchor of D9: "objects carry ONLY their satisfaction
+# Effect (supply)." Each kind declares how much of which NEED it supplies and nothing
+# about the future. Demand / provisioning is derived by the planner, never authored here.
+#
+# Two registries (loaded by platform/config; engine/world places instances per run):
+#   object_kinds — in-world sources/structures (a bush, a spring, a shelter). They yield
+#                  items and/or supply a need in-place. Positions & counts are NOT here —
+#                  placement is per-run world-gen / scenario fixtures (docs/testing.md).
+#   item_kinds   — carryable things held in Body.Inventory. The `supply` on the consumed
+#                  item is the Effect that Eat/Drink delivers (so those actions stay generic).
+#
+# `supply` keys are need ids from content/needs.yaml; values are the amount delivered
+# (clamped into the need range). `provides` keys are predicates (core.Pred) used by the
+# GOAP reverse index. Schema: content/schema/objects.schema.json
+
+schema_version: 1
+
+object_kinds:
+  - id: berry_bush
+    mobile: false
+    harvest:
+      action: Forage          # the atomic action that operates on this kind (actions.yaml)
+      yields: berries         # item placed into inventory
+      provides: [ has_food ]   # predicate made true for the GOAP planner
+      depletes: true          # finite; regrows on a timer (balance.regen.berry_bush)
+
+  - id: prey
+    mobile: true              # wanders; perception + pursuit handled by engine
+    harvest:
+      action: Hunt
+      yields: raw_meat
+      provides: [ has_food ]
+      depletes: true          # the animal instance is consumed
+
+  - id: water_source
+    mobile: false
+    harvest:
+      action: Drink
+      yields: water           # may be drunk in place or carried
+      provides: [ has_water, at_water ]
+      depletes: false         # effectively unlimited
+
+  - id: shelter
+    mobile: false
+    # A structure that supplies needs in-place while occupied (no item yielded).
+    occupy:
+      provides: [ at_shelter ]
+      supply: { Safety: 0.50, Rest: 0.10 }   # Effect applied per the occupying action
+
+item_kinds:
+  - id: berries
+    stackable: true
+    perishable: true
+    supply: { Satiety: 0.25 }   # the Effect Eat delivers when this item is consumed (D9)
+
+  - id: raw_meat
+    stackable: true
+    perishable: true
+    supply: { Satiety: 0.55 }   # richer than berries -> the planner prefers it when available
+
+  - id: water
+    stackable: true
+    perishable: false
+    supply: { Hydration: 0.45 }

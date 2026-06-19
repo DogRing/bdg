@@ -27,6 +27,7 @@ node_modules/
 *.key
 *.pem
 secrets/
+*.sh
 
 # large generated blobs (reviewer reads small goldens; large ones excluded)
 /testdata/large/

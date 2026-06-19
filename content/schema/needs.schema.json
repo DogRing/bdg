@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/needs.schema.json",
+  "title": "content/needs.yaml — need/value dimensions (D9/D10)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "needs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "needs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/need" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+    "need": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "rate", "default", "salience"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["consumable", "conditional"] },
+        "rate": { "type": "number", "minimum": 0 },
+        "default": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["posture", "setpoint", "referent"],
+          "properties": {
+            "posture": { "enum": ["Maximize", "MaintainAbove", "PreventBelow"] },
+            "setpoint": { "type": "number", "minimum": 0, "maximum": 1 },
+            "referent": { "enum": ["Self", "Other", "Place", "Collective"] }
+          }
+        },
+        "salience": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["curve", "gain"],
+          "properties": {
+            "curve": { "enum": ["deficit", "gap_to_max"] },
+            "gain": { "type": "number", "minimum": 0 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "comment": "consumable needs must drift (rate>0); conditional needs are event-driven (rate==0)",
+          "if": { "properties": { "kind": { "const": "conditional" } } },
+          "then": { "properties": { "rate": { "const": 0 } } }
+        }
+      ]
+    }
+  }
+}

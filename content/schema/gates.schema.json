@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/gates.schema.json",
+  "title": "content/gates.yaml — tag-matched gate registry (D4/D10)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "gates"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/gate" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+    "tag": { "type": "string", "pattern": "^[a-z][a-z]*(:[A-Za-z_]+)?$" },
+    "tagPrefix": { "type": "string", "pattern": "^[a-z]+:?$" },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "stat": { "type": "string", "pattern": "^(@uses|[A-Za-z][A-Za-z0-9_]*)$" },
+        "from": { "enum": ["self", "real"] },
+        "body": { "enum": ["Stamina", "Adrenaline", "Mood"] },
+        "signal": { "enum": ["Urgency"] },
+        "tag_level": { "type": "string", "pattern": "^[a-z]+$" },
+        "const": { "type": "number" },
+        "complement": { "type": "boolean" }
+      }
+    },
+    "term": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["w", "factors"],
+      "properties": {
+        "w": { "type": "number" },
+        "factors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ref" }
+        }
+      }
+    },
+    "when": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "tags_any": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/tag" } },
+        "tag_prefix": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/tagPrefix" } }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "formula", "terms"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["visibility", "preference"] },
+        "formula": { "enum": ["threshold_gte", "affine_cost"] },
+        "when": { "$ref": "#/$defs/when" },
+        "per_matched_tag": { "$ref": "#/$defs/tagPrefix" },
+        "requires_known": { "type": "boolean" },
+        "terms": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/term" } },
+        "threshold": { "type": "number" },
+        "deadband": { "type": "number", "minimum": 0 },
+        "base": { "type": "number" },
+        "min": { "type": "number" },
+        "max": { "type": "number" }
+      },
+      "allOf": [
+        {
+          "comment": "visibility gates use threshold_gte + threshold; preference gates use affine_cost + base",
+          "if": { "properties": { "kind": { "const": "visibility" } } },
+          "then": {
+            "required": ["threshold"],
+            "properties": { "formula": { "const": "threshold_gte" } }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "preference" } } },
+          "then": {
+            "required": ["base"],
+            "properties": { "formula": { "const": "affine_cost" } }
+          }
+        }
+      ]
+    }
+  }
+}

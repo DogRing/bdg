@@ -1,0 +1,97 @@
+# content/balance.yaml — global tuning constants (data-driven, D10)
+#
+# Cross-cutting scalars read by many modules: tag magnitudes (D4), the additive cost-term
+# library, and the dynamics rates (β self-calibration, α gossip, λ mood, …) named in
+# docs/glossary.md §Dynamics.
+#
+# ⚠ These are INITIAL, UNTUNED placeholders. design.md §4 / testing.md §5 make balance an
+#   auto-tuning target (grid / CMA-ES against emergence metrics) — do not treat as final.
+#   Units: time is GAME-MINUTES (1 tick = 1 game-minute; 24 game-h = 2 real-h, 12×).
+#
+# Schema: content/schema/balance.schema.json
+
+schema_version: 1
+
+# ── World & time ───────────────────────────────────────────────────────────────
+world:
+  tick_minutes: 1                 # 1 tick = 1 game-minute (engine/worldtime)
+  real_scale: 12                  # 24 game-hours = 2 real-hours
+  day_minutes: 1440               # 24 * 60
+  spatial_hash_cell: 8.0          # spatial-hash cell edge (world units); ~ avg perception radius
+perception:
+  sight_radius: 18.0              # line-of-sight range (world units)
+  smell_radius: 10.0              # scent-gradient falloff range
+  hearing_radius: 14.0            # scaled by an action's noise:* tag
+
+# ── Agent generation (sampled with the injected seeded RNG, D12) ────────────────
+generation:
+  village_size: 40                # default agent count (PRD scale: 30–200)
+  stamina_start: 1.0
+  mood_start: 0.0                 # mood is signed, baseline 0
+  initial_belief_noise: 0.15      # sd of ToM[self]/ToM[X] error vs Real Stats at spawn (drives
+                                  # the over/under-estimation asymmetry, D8)
+
+# ── Tag magnitudes (D4): named levels referenced by gates.yaml tag_level + cost_terms ──
+tag_levels:
+  effort:      { none: 0.0, low: 0.20, med: 0.50, high: 0.90 }
+  risk:        { low: 0.20, med: 0.50, high: 0.90 }
+  violent:     { low: 0.30, med: 0.60, high: 1.00 }
+  noise:       { low: 0.20, med: 0.50, high: 0.90 }
+  abstraction: { low: 0.25, med: 0.55, high: 0.90 }
+
+# ── Cost-term library (additive base cost from TAGS; gates multiply on top) ─────
+# raw_cost(action) = Σ termWeight · magnitude. Decisions then read costMod from gates.yaml.
+cost_terms:
+  time:   { per_minute: 0.010 }   # duration cost (durative actions); distance folds into MoveTo
+  effort: { weight: 1.0 }         # × tag_levels.effort
+  risk:   { weight: 0.8 }         # × tag_levels.risk
+  moral:  { weight: 1.5 }         # × tag_levels.violent (and norm:transgressive flag = 1.0)
+  social: { weight: 0.4 }         # × social/cooperative presence
+
+# ── Dynamics (glossary §Dynamics) ───────────────────────────────────────────────
+mood:
+  lambda: 0.25                    # Mood += λ·(actual − expected progress)  (per update)
+  decay: 0.02                     # per game-minute pull back toward baseline
+  baseline: 0.0
+adrenaline:
+  trigger_urgency: 0.65           # Urgency above this surges adrenaline
+  surge: 0.6                      # added on trigger
+  decay: 0.03                     # per game-minute toward 0 (the crash)
+  max: 1.0
+stamina:
+  max: 1.0
+  drain_per_effort: 0.015         # per game-minute, × tag_levels.effort, while acting
+  regen_rest: 0.010               # per game-minute during Rest
+  regen_sleep: 0.030              # per game-minute during Sleep
+urgency:
+  from_deficit: 1.4               # Urgency ← Σ need salience · this (clamped 0..1)
+  budget_penalty: 0.6             # high urgency shrinks deliberation budget by up to this fraction
+self_calibration:
+  beta: 0.08                      # β — per-stat ToM[self] update toward observed outcome.
+                                  # Applied ONLY on attempt (D8): underestimation is self-sealing
+                                  # because the action stays invisible and is never attempted.
+gossip:
+  alpha: 0.12                     # α — ToM_A[C] += α·trust_A[B]·(claim_B[C] − ToM_A[C])
+  min_trust: 0.05                 # below this, B's claims are ignored
+resentment:
+  affinity_drop: 0.15             # on harm, Affinity decreases by this × Vindictiveness
+  aggression_drift: 0.02          # slow Aggression drift while resentment persists
+
+# ── Planning / arbitration ──────────────────────────────────────────────────────
+planning:
+  budget_base: 24                 # base GOAP/HTN search nodes
+  budget_per_intelligence: 60     # + Intelligence · this (high-IQ search deeper, design §1.4)
+  stickiness: 0.15                # bonus to the current goal's EffValue (anti-thrash)
+  goal_deadband: 0.08             # don't switch goals until a rival beats current by this margin
+forward_sim:
+  horizon_minutes: 720            # max look-ahead (12 game-hours); gated by Intelligence
+  horizon_per_intelligence: 1440  # + Intelligence · this added to horizon (low-IQ ≈ no provisioning)
+  step_minutes: 15                # need-trajectory roll granularity
+salience:
+  proximity_gain: 0.5             # perceptual proximity boost to EffValue
+  proximity_falloff: 12.0         # world-units e-folding distance for proximity salience
+
+# ── Resource regrowth (game-minutes) ────────────────────────────────────────────
+regen:
+  berry_bush: 480                 # a depleted bush regrows in ~8 game-hours
+  prey_respawn: 720               # a hunted prey instance respawns elsewhere after ~12h

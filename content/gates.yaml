@@ -1,0 +1,160 @@
+# content/gates.yaml — gate registry (data-driven, D4 / D10)
+#
+# A Gate is {Reads []StatID/state; Eval -> (visible bool, costMod float)} (docs/glossary.md).
+# Gates decide which methods an agent can SEE and how attractive they are, by reading the
+# agent's stats/state. They are matched to actions BY TAG (D4) — never per action.
+#
+# Division of labour (do not duplicate):
+#   • cost-term library (content/balance.yaml: cost_terms) turns an action's TAGS into a base
+#     additive cost (effort, time, risk, moral, social).
+#   • gates here turn the agent's STATS/STATE into (visibility, costMod multiplier) on top.
+#     Tags say "how hard/risky/transgressive"; stats say "can this agent, does it care".
+#
+# This file is the CONTRACT for engine/gates (still unimplemented). The module implements two
+# generic evaluator primitives — no per-gate code:
+#
+#   threshold_gte (kind: visibility)  value = Σ terms ;  visible = value ≥ threshold
+#                                     hysteresis: stays visible until value < threshold-deadband,
+#                                     stays hidden until value ≥ threshold+deadband (anti-flicker).
+#   affine_cost   (kind: preference)  costMod = clamp(base + Σ terms, min, max)
+#                                     final action multiplier = Π of all matching preference gates.
+#
+# term  = { w: float, factors: [ref, ...] }  →  contributes  w · Π factor_value
+# ref   = exactly one of:
+#           { stat: <StatID|@uses> [, from: self|real] }   (default from: self — decisions read
+#                                                            ToM[self], D8; @uses = the stat named
+#                                                            by the action's uses:<Stat> tag)
+#           { body: Stamina | Adrenaline | Mood }
+#           { signal: Urgency }
+#           { tag_level: <family> }   (numeric magnitude of the action's tag in <family>, from
+#                                      balance.tag_levels; 0 if the action has no tag in <family>)
+#           { const: <number> }
+#         optional on any ref:  complement: true  →  uses (1 - value)
+# per_matched_tag: "<prefix>"  (optional, on a gate) — evaluate/sum the gate once per action tag
+#                  matching the prefix; @uses binds to that tag's stat. Lets one gate cover
+#                  multi-capability actions (e.g. Hunt = uses:Strength + uses:Agility).
+#
+# when — tag match selecting governed actions (D4): tags_any | tag_prefix. Omit = applies to all.
+# Numeric coefficients live inline here; cross-cutting magnitudes live in content/balance.yaml.
+# Schema: content/schema/gates.schema.json
+
+schema_version: 1
+
+gates:
+  # ── Visibility (hard AND across all visibility gates) ─────────────────────────
+
+  - id: capability_floor
+    kind: visibility
+    when: { tag_prefix: [ "uses:" ] }
+    formula: threshold_gte
+    per_matched_tag: "uses:"            # every required capability must clear the floor
+    terms:
+      - { w: 1.0, factors: [ { stat: "@uses" } ] }      # ToM[self] of the used capability
+      - { w: -1.0, factors: [ { tag_level: effort } ] } # harder actions demand more capability
+    threshold: -0.35                    # generous: only the badly-mismatched action is hidden
+    deadband: 0.05
+
+  - id: stamina
+    kind: visibility
+    when: { tag_prefix: [ "effort:" ] }
+    formula: threshold_gte
+    terms:
+      - { w: 1.0, factors: [ { body: Stamina } ] }
+      - { w: -1.0, factors: [ { tag_level: effort } ] }
+    threshold: 0.0                       # exhausted agents cannot see high-effort actions
+    deadband: 0.06
+
+  - id: knowledge
+    kind: visibility
+    when: { tag_prefix: [ "abstraction:" ] }
+    formula: threshold_gte
+    requires_known: true                 # planner also checks the target object is in Known
+    terms:
+      - { w: 1.0, factors: [ { stat: Intelligence } ] }
+      - { w: -1.0, factors: [ { tag_level: abstraction } ] }
+    threshold: -0.10                      # low-Intelligence agents can't reach abstract methods
+    deadband: 0.05
+
+  - id: conscience
+    kind: visibility
+    when: { tags_any: [ "norm:transgressive" ] }   # transgression marker only — NOT violent:* in
+                                                    # general, so hunting (violent:low) is not gated.
+    formula: threshold_gte
+    # visible only when drive overcomes the moral barrier (design §3: urgency / adrenaline /
+    # other-value lower the conscience threshold → crime becomes visible).
+    terms:
+      - { w: 0.85, factors: [ { body: Adrenaline } ] }         # ── drive ──
+      - { w: 0.70, factors: [ { signal: Urgency } ] }
+      - { w: 0.50, factors: [ { stat: Aggression } ] }          # for violent:* actions
+      - { w: -1.00, factors: [ { stat: Honesty } ] }            # ── barrier ──
+      - { w: -0.45, factors: [ { stat: RiskAversion } ] }
+    threshold: -0.10
+    deadband: 0.05
+
+  # ── Preference (soft multipliers; product applied to candidate cost) ──────────
+
+  - id: capability_cost
+    kind: preference
+    when: { tag_prefix: [ "uses:" ] }
+    formula: affine_cost
+    per_matched_tag: "uses:"
+    base: 1.0
+    terms:
+      - { w: 0.8, factors: [ { stat: "@uses", complement: true } ] }  # low capability → costlier
+    min: 1.0
+    max: 4.0
+
+  - id: caution
+    kind: preference
+    when: { tag_prefix: [ "risk:" ] }
+    formula: affine_cost
+    base: 1.0
+    terms:
+      - { w: 1.2, factors: [ { tag_level: risk }, { stat: RiskAversion } ] }
+    min: 1.0
+    max: 5.0
+
+  - id: apathy
+    kind: preference
+    when: { tag_prefix: [ "effort:" ] }
+    formula: affine_cost
+    base: 1.0
+    # low Mood (apathy coping) makes effortful actions feel costlier
+    terms:
+      - { w: 1.0, factors: [ { tag_level: effort }, { body: Mood, complement: true } ] }
+    min: 1.0
+    max: 4.0
+
+  - id: conscience_cost
+    kind: preference
+    when: { tags_any: [ "norm:transgressive" ] }   # moral cost barrier applies to transgressions;
+                                                    # base violence cost is the cost_terms.moral term.
+    formula: affine_cost
+    base: 1.0
+    terms:
+      - { w: 2.0, factors: [ { tag_level: violent }, { stat: Honesty } ] }   # moral weight
+      - { w: 1.2, factors: [ { stat: Honesty } ] }   # transgression itself is costly to honest agents
+      - { w: -0.8, factors: [ { body: Adrenaline } ] }                       # heat-of-moment relief
+    min: 0.5
+    max: 8.0
+
+  - id: adrenaline
+    kind: preference
+    when: { tags_any: [ "violent:high" ], tag_prefix: [ "effort:" ] }
+    formula: affine_cost
+    base: 1.0
+    # surge loosens effortful/violent action cost (second wind), then crashes (balance.adrenaline)
+    terms:
+      - { w: -0.6, factors: [ { body: Adrenaline }, { tag_level: effort } ] }
+    min: 0.5
+    max: 1.0
+
+  - id: sociability
+    kind: preference
+    when: { tags_any: [ "social", "cooperative" ] }
+    formula: affine_cost
+    base: 1.0
+    terms:
+      - { w: 0.7, factors: [ { stat: Sociability, complement: true } ] }   # shy agents pay more
+    min: 1.0
+    max: 3.0

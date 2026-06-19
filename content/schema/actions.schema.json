@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/actions.schema.json",
+  "title": "content/actions.yaml — atomic action catalog (D3/D4/D10)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "actions"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/action" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+    "tag": { "type": "string", "pattern": "^[a-z][a-z]*(:[A-Za-z_]+)?$" },
+    "predList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "needDelta": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "number" },
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tags", "duration"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "tags": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/tag" }
+        },
+        "target_kind": { "$ref": "#/$defs/identifier" },
+        "requires": { "$ref": "#/$defs/predList" },
+        "requires_any": { "$ref": "#/$defs/predList" },
+        "produces": { "$ref": "#/$defs/predList" },
+        "produces_item": { "$ref": "#/$defs/identifier" },
+        "consumes_item": { "$ref": "#/$defs/identifier" },
+        "duration": { "type": "integer", "minimum": 1 },
+        "effect": { "$ref": "#/$defs/needDelta" },
+        "effect_per_minute": { "$ref": "#/$defs/needDelta" },
+        "interruptible": { "type": "boolean" }
+      }
+    }
+  }
+}

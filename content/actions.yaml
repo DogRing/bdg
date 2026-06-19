@@ -1,0 +1,147 @@
+# content/actions.yaml — atomic action catalog (data-driven, D3 / D4 / D10)
+#
+# D3 — define ONLY atomic, durative actions here. No task trees, no methods, no plans.
+#      The planner assembles paths (HTN methods + GOAP backward chaining over `produces`).
+# D4 — cost and gates are DERIVED FROM TAGS, never written per-action. An action lists
+#      `tags`; gates.yaml matches tags to decide visibility/cost; balance.yaml gives the
+#      magnitude of each tag level and the cost-term weights. No bespoke cost here.
+# D9 — consumption actions deliver the CONSUMED item's supply (objects.yaml). Self-sourced
+#      effects (sleep) use `effect_per_minute`. Never author quantities tied to the future.
+#
+# Fields:
+#   tags             — drives cost & gates (D4). Tag grammar: content/README.md §Tags.
+#   requires         — predicates (core.Pred) that must hold to start (planner preconditions).
+#   produces         — predicates this action makes true (engine/actions reverse index, GOAP).
+#   target_kind      — object_kind (objects.yaml) this action operates on, if any.
+#   produces_item    — item placed into Body.Inventory on completion.
+#   consumes_item    — item removed from inventory; its `supply` becomes the Effect (D9).
+#   duration         — BASE durative length in game-minutes; engine scales by stats/distance.
+#   effect           — direct need deltas applied on completion (omit for consumption actions).
+#   effect_per_minute— need deltas accrued each game-minute the action runs (durative supply).
+#   interruptible    — durative actions are interruptible unless false (FR: durative + 중단 가능).
+#
+# Predicate binding (at_target / has_food …) is parametric; the planner binds the concrete
+# object instance. Schema: content/schema/actions.schema.json
+
+schema_version: 1
+
+actions:
+  # ── Locomotion ───────────────────────────────────────────────────────────────
+  - id: MoveTo
+    tags: [ "uses:Agility", "effort:low", "noise:low", "time:by_distance" ]
+    produces: [ at_target ]            # parametric: the planner binds which target
+    duration: 1                        # per-step base; total scales with distance / Agility
+    interruptible: true
+
+  # ── Subsistence (the P1 hunger loop) ─────────────────────────────────────────
+  - id: Forage
+    tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low" ]
+    target_kind: berry_bush
+    requires: [ at_target ]
+    produces: [ has_food ]
+    produces_item: berries
+    duration: 12
+    interruptible: true
+
+  - id: Hunt
+    tags: [ "uses:Strength", "uses:Agility", "effort:high", "noise:high",
+            "risk:med", "violent:low", "abstraction:med" ]
+    target_kind: prey
+    requires: [ at_target ]
+    produces: [ has_food ]
+    produces_item: raw_meat
+    duration: 35
+    interruptible: true
+
+  - id: Eat
+    tags: [ "effort:low" ]
+    requires: [ has_food ]
+    consumes_item: any_food            # the consumed item's supply is the Effect (D9)
+    duration: 6
+    interruptible: true
+
+  - id: Drink
+    tags: [ "effort:none" ]
+    target_kind: water_source          # may drink in place …
+    requires_any: [ at_water, has_water ]   # … or consume a carried water item
+    consumes_item: water
+    duration: 3
+    interruptible: true
+
+  # ── Recovery ─────────────────────────────────────────────────────────────────
+  - id: Sleep
+    tags: [ "effort:none", "risk:low" ]   # vulnerable while sleeping -> Safety gate matters
+    duration: 360
+    effect_per_minute: { Rest: 0.0030 }
+    interruptible: true
+
+  - id: Rest
+    tags: [ "effort:none" ]
+    duration: 30
+    effect_per_minute: { Rest: 0.0010 }   # weaker than Sleep; tops up Stamina between tasks
+    interruptible: true
+
+  - id: TakeShelter
+    tags: [ "effort:none", "abstraction:low" ]
+    target_kind: shelter
+    requires: [ at_shelter ]
+    produces: [ sheltered ]
+    # Effect comes from the shelter's `occupy.supply` (objects.yaml), applied while occupied.
+    duration: 1
+    interruptible: true
+
+  # ── Handling / inventory ─────────────────────────────────────────────────────
+  - id: PickUp
+    tags: [ "effort:low", "noise:low" ]
+    requires: [ at_target ]
+    produces: [ holding ]
+    duration: 2
+    interruptible: true
+
+  # ── Social (intent / will exchange — "대화", not natural language) ─────────────
+  - id: Signal
+    tags: [ "social", "effort:none", "abstraction:med" ]
+    requires: [ near_other ]
+    produces: [ signalled ]            # emits Signal{Kind,Intent,Valence,ClaimedValue,Truth}
+    duration: 3
+    interruptible: true
+
+  - id: GiveItem
+    tags: [ "social", "cooperative", "effort:low" ]
+    requires: [ near_other, holding ]
+    produces: [ transferred ]
+    consumes_item: any                 # moves item to the Other's inventory
+    duration: 2
+    interruptible: true
+
+  - id: Trade
+    tags: [ "social", "cooperative", "effort:low", "abstraction:high" ]
+    requires: [ near_other, holding ]
+    produces: [ transferred ]
+    duration: 6
+    interruptible: true
+
+  # ── Construction (cooperative; P6 emergent building) ─────────────────────────
+  - id: Build
+    tags: [ "uses:Strength", "effort:high", "noise:med", "cooperative", "abstraction:high" ]
+    requires: [ at_target, has_materials ]
+    produces: [ structure_built ]      # may instantiate a shelter object_kind
+    duration: 240
+    interruptible: true
+
+  # ── Transgressive (NOT hardcoded crime, D2 — just atomic acts the conscience gate
+  #    suppresses; they become visible only when drive overcomes the barrier, design §3) ──
+  - id: Take
+    tags: [ "effort:low", "noise:low", "norm:transgressive", "risk:med", "social:covert" ]
+    requires: [ at_target, owned_by_other ]
+    produces: [ holding ]              # taking an owned item without consent
+    duration: 4
+    interruptible: true
+
+  - id: Attack
+    tags: [ "uses:Strength", "effort:high", "noise:high", "violent:high",
+            "norm:transgressive", "risk:high" ]
+    requires: [ near_other ]
+    produces: [ struck ]
+    duration: 5
+    interruptible: false               # committed once swung

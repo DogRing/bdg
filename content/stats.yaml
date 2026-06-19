@@ -1,0 +1,106 @@
+# content/stats.yaml — stat definitions (data-driven, D10)
+#
+# platform/config loads this at startup to populate the engine/stats Registry.
+# To add a stat, add an entry here (no code change). The config loader validates
+# this file against content/schema/stats.schema.json and cross-checks every
+# StatID referenced by actions.yaml / gates.yaml against the ids defined here.
+#
+# Canonical StatIDs and their meaning: docs/glossary.md (single source of vocabulary).
+# Global tuning constants (beta, alpha, lambda, ...) live in content/balance.yaml.
+
+schema_version: 1
+
+# Per-entry fields:
+#   id     — canonical StatID (docs/glossary.md). The identifier pattern is the only
+#            structural check; referential integrity is the loader's job (D10).
+#   label  — human-readable name for UI / why-trace (optional; defaults to id).
+#   kind:
+#     capability  — read by capability gates / outcomes / prediction (Strength, Agility, Intelligence)
+#     disposition — value weights that raise goals (the dispositional axes)
+#   range   — [min, max] clamp for both Real Stats and ToM beliefs.
+#   default — initial / fallback value (optional; defaults to the range midpoint).
+#             Must satisfy min <= default <= max (loader-enforced cross-field check).
+#   gen     — agent-generation distribution (sampled with the injected seeded RNG, D12).
+#   inherit — parent inheritance weight in [0,1]; (1 - inherit) is fresh perturbation.
+stats:
+  # ── Capability ──────────────────────────────────────────────────────────────
+  - id: Strength
+    label: Strength
+    kind: capability
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.15 }
+    inherit: 0.5
+
+  - id: Agility
+    label: Agility
+    kind: capability
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.15 }
+    inherit: 0.5
+
+  - id: Intelligence
+    label: Intelligence
+    kind: capability        # gates abstraction-ladder height, ToM depth, and lookahead (forward-sim)
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.18 }
+    inherit: 0.5
+
+  # ── Disposition (value weighting) ───────────────────────────────────────────
+  - id: Aggression
+    label: Aggression
+    kind: disposition
+    range: [0.0, 1.0]
+    default: 0.4
+    gen: { dist: normal, mean: 0.4, sd: 0.2 }
+    inherit: 0.4
+
+  - id: Impulsivity
+    label: Impulsivity
+    kind: disposition       # shrinks deliberation budget; a separate axis from Intelligence
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.2 }
+    inherit: 0.4
+
+  - id: Honesty
+    label: Honesty
+    kind: disposition       # raises the conscience barrier (gates.yaml: conscience)
+    range: [0.0, 1.0]
+    default: 0.6
+    gen: { dist: normal, mean: 0.6, sd: 0.2 }
+    inherit: 0.4
+
+  - id: Greed
+    label: Greed
+    kind: disposition
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.2 }
+    inherit: 0.4
+
+  - id: Sociability
+    label: Sociability
+    kind: disposition
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.2 }
+    inherit: 0.4
+
+  - id: Vindictiveness
+    label: Vindictiveness
+    kind: disposition       # resentment -> Affinity down, Aggression drift
+    range: [0.0, 1.0]
+    default: 0.4
+    gen: { dist: normal, mean: 0.4, sd: 0.2 }
+    inherit: 0.4
+
+  - id: RiskAversion
+    label: Risk Aversion
+    kind: disposition       # raises the cost of actions tagged risk:* (gates.yaml: caution)
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.2 }
+    inherit: 0.4

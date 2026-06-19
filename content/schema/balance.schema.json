@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/balance.schema.json",
+  "title": "content/balance.yaml — global tuning constants (D10)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "world", "perception", "generation", "tag_levels",
+    "cost_terms", "mood", "adrenaline", "stamina", "urgency",
+    "self_calibration", "gossip", "planning", "forward_sim", "salience", "regen"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "world": { "$ref": "#/$defs/numberMap" },
+    "perception": { "$ref": "#/$defs/numberMap" },
+    "generation": { "$ref": "#/$defs/numberMap" },
+    "tag_levels": { "$ref": "#/$defs/nestedNumberMap" },
+    "cost_terms": { "$ref": "#/$defs/nestedNumberMap" },
+    "mood": { "$ref": "#/$defs/numberMap" },
+    "adrenaline": { "$ref": "#/$defs/numberMap" },
+    "stamina": { "$ref": "#/$defs/numberMap" },
+    "urgency": { "$ref": "#/$defs/numberMap" },
+    "self_calibration": { "$ref": "#/$defs/numberMap" },
+    "gossip": { "$ref": "#/$defs/numberMap" },
+    "resentment": { "$ref": "#/$defs/numberMap" },
+    "planning": { "$ref": "#/$defs/numberMap" },
+    "forward_sim": { "$ref": "#/$defs/numberMap" },
+    "salience": { "$ref": "#/$defs/numberMap" },
+    "regen": { "$ref": "#/$defs/numberMap" }
+  },
+  "$defs": {
+    "numberMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "number" }
+    },
+    "nestedNumberMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": { "type": "number" }
+      }
+    }
+  }
+}

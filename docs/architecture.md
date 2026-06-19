@@ -28,7 +28,7 @@ The engine does not import platform. Platform serializes and transports engine s
 ## 3. Platform modules
 | Module | Purpose | Depends on |
 |--------|---------|-----------|
-| `config` | Load `content/` data → registries (stats, actions, gates, needs); validate | core, stats, actions, gates, needs |
+| `config` | Load `content/` data → registries (stats, needs, actions, gates, object/item catalog); validate vs `content/schema/` + referential integrity | core, stats, actions, gates, needs |
 | `events` | why-trace + event stream (implements the engine's events interface) | core |
 | `persist` | Snapshot serialization, Redis live, Postgres backup | core, world (state types), data-contracts |
 | `api` (later) | SSE endpoint | events, persist |
@@ -65,6 +65,11 @@ Each module gets `backend/engine/<m>/SPEC.md` or `backend/platform/<m>/SPEC.md`.
 spec-architect generates SPECs leaf-first along this DAG. A module exceeding ~400 lines is split into sub-folders, each with its own SPEC.
 
 ## 7. Content boundary (D10)
-`content/stats.yaml · actions.yaml · gates.yaml · balance.yaml` (+ `content/schema/`).
-Engine code is **content-agnostic** — `config` loads it at startup to populate registries.
-Adding a stat / action / gate = **a data file + passing schema**, with no code change.
+`content/stats.yaml · needs.yaml · objects.yaml · actions.yaml · gates.yaml · balance.yaml`
+(+ `content/schema/` + `content/README.md`).
+- `needs.yaml` — need/value Dimensions + per-need `rate` only (D9: demand is derived, never authored).
+- `objects.yaml` — object_kinds + item_kinds carrying their **supply** Effect (D9). Placement/counts
+  are per-run world-gen / fixtures, not content.
+Engine code is **content-agnostic** — `config` loads these at startup to populate registries.
+Adding a stat / need / action / gate / object = **a data file + passing schema**, with no code change.
+`gates.yaml` is also the **contract** for the (unbuilt) `engine/gates` evaluator — see `content/README.md`.
