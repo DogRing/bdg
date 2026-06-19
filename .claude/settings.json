@@ -33,6 +33,13 @@
       "Read(./.env*)"
     ]
   },
+  "hooks": {
+  "PostToolUse": [
+    { "matcher": "Write|Edit",
+      "hooks": [{ "type": "command",
+        "command": "cd /home/coder/workspace/bdg/backend && gofmt -l . && go vet ./... && go test ./..." }] }
+    ]
+  },
   "env": {
     "GOROOT": "/home/coder/go",
     "GOPATH": "/home/coder/go-workspace",

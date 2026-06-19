@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: Implements a single module to its SPEC. Code + tests.
+description: Use PROACTIVELY to implement or edit one Go module to its SPEC.md (code + tests). Trigger when a leaf module is ready to build.
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: sonnet
 permissionMode: acceptEdits

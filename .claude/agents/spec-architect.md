@@ -1,6 +1,6 @@
 ---
 name: spec-architect
-description: Decomposes PRD/design into module SPECs. Writes no code.
+description: Use PROACTIVELY when module SPECs must be (re)decomposed from PRD/design/architecture. Writes SPEC.md only, no code. Trigger on "decompose", "write SPEC", "next batch".
 tools: Read, Write, Glob, Grep
 model: opus
 permissionMode: acceptEdits

@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Verifies an implementation against its SPEC. Read-only. PASS or structured NEEDS_FIX.
+description: Use PROACTIVELY immediately after a module is implemented or edited. Verifies against SPEC.md, read-only. Returns PASS or structured NEEDS_FIX.
 tools: Read, Bash, Glob, Grep
 model: sonnet
 ---
