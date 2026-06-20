@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/needs.schema.json",
-  "title": "content/needs.yaml — need/value dimensions (D9/D10)",
+  "title": "content/needs.yaml — need/value dimension catalog (D9/D10)",
+  "description": "The need/value Dimension CATALOG: which dimensions exist, their kind, default posture/setpoint/referent, and salience curve. Per-need RATE constants (decay_per_tick, satisfaction_threshold) for consumable needs live in content/balance.yaml's `needs:` block — NOT here (D9: rate only, kept in the single tuning file). engine/needs.Load merges this catalog with the balance rate block. platform/config cross-checks that every consumable dimension here has a balance rate entry and vice-versa.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "needs"],
@@ -18,11 +19,13 @@
     "need": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "rate", "default", "salience"],
+      "required": ["id", "kind", "default", "salience"],
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
-        "kind": { "enum": ["consumable", "conditional"] },
-        "rate": { "type": "number", "minimum": 0 },
+        "kind": {
+          "description": "consumable = time-driven (its rate lives in balance.yaml needs:<id>); conditional = event-driven (no rate, absent from the balance needs: block).",
+          "enum": ["consumable", "conditional"]
+        },
         "default": {
           "type": "object",
           "additionalProperties": false,
@@ -42,14 +45,7 @@
             "gain": { "type": "number", "minimum": 0 }
           }
         }
-      },
-      "allOf": [
-        {
-          "comment": "consumable needs must drift (rate>0); conditional needs are event-driven (rate==0)",
-          "if": { "properties": { "kind": { "const": "conditional" } } },
-          "then": { "properties": { "rate": { "const": 0 } } }
-        }
-      ]
+      }
     }
   }
 }

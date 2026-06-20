@@ -1,42 +1,48 @@
-# content/needs.yaml — need / value dimensions (data-driven, D9 / D10)
+# content/needs.yaml — need / value dimension CATALOG (data-driven, D9 / D10)
 #
 # platform/config loads this into the engine/needs registry. A Value is
 # {Dimension, Ref, Posture, Setpoint} (docs/glossary.md); the Dimensions it may
 # target are defined here. Adding a dimension is a data change, no code.
 #
+# This file is the CATALOG only (which dimensions exist + posture/setpoint/salience).
+# Per-need RATE constants for CONSUMABLE needs (decay_per_tick, satisfaction_threshold)
+# live in content/balance.yaml's `needs:` block — the single tuning file — NOT here.
+# engine/needs.Load merges the two; platform/config cross-checks that every consumable
+# dimension below has a matching balance.yaml needs:<id> rate (and vice-versa).
+#
 # D9 — objects carry ONLY their satisfaction Effect (supply); see content/objects.yaml.
 #      There is NO "future need" field anywhere. Demand is derived by the planner as
 #      `rate x predicted-time` and forward-simulated; provisioning subgoals emerge.
-#      Authors set ONLY the per-need `rate` here — never quantities or schedules.
+#      Authors set ONLY the per-need rate (in balance.yaml) — never quantities or schedules.
 #
 # Schema: content/schema/needs.schema.json
+#         (rate block schema: content/schema/balance.schema.json — `needs`)
 
 schema_version: 1
 
 # kind:
-#   consumable  — the satisfaction level decays by time at `rate` (per game-minute);
+#   consumable  — the satisfaction level decays by time (rate in balance.yaml needs:<id>);
 #                 the planner forward-rolls it and inserts provisioning when a setpoint
 #                 breach is predicted. Replenished by an action Effect / object supply.
 #   conditional — not time-driven; set by world/social state (threats, standing, terrain).
-#                 `rate` is 0; salience comes from the current gap to setpoint.
+#                 No rate; not listed in the balance.yaml needs: block. Salience comes from
+#                 the current gap to setpoint.
 #
 # default.* are the agent-generation defaults for a fresh Value on this Dimension;
 # individual agents perturb setpoint by disposition (engine/values).
 needs:
   - id: Satiety
-    kind: consumable
-    rate: 0.00070            # satiety lost per game-minute (~ full -> empty in a long day)
+    kind: consumable          # rate: balance.yaml needs.Satiety
     default:
       posture: MaintainAbove
       setpoint: 0.55
       referent: Self
     salience:
-      curve: deficit         # salience ~ max(0, setpoint - level)
+      curve: deficit          # salience ~ max(0, setpoint - level)
       gain: 1.0
 
   - id: Hydration
-    kind: consumable
-    rate: 0.00110            # thirst grows faster than hunger
+    kind: consumable          # rate: balance.yaml needs.Hydration
     default:
       posture: MaintainAbove
       setpoint: 0.50
@@ -46,8 +52,7 @@ needs:
       gain: 1.1
 
   - id: Rest
-    kind: consumable
-    rate: 0.00045            # fatigue accrues across a waking day; cleared by Sleep
+    kind: consumable          # rate: balance.yaml needs.Rest
     default:
       posture: MaintainAbove
       setpoint: 0.45
@@ -57,8 +62,7 @@ needs:
       gain: 0.9
 
   - id: Safety
-    kind: conditional        # driven by perceived threats / shelter, not by the clock
-    rate: 0.0
+    kind: conditional        # driven by perceived threats / shelter, not by the clock (no rate)
     default:
       posture: PreventBelow
       setpoint: 0.40
@@ -68,8 +72,7 @@ needs:
       gain: 1.3              # threats spike salience hard (feeds Urgency -> Adrenaline)
 
   - id: Standing
-    kind: conditional        # social standing; emerges from ToM distribution + reliance
-    rate: 0.0
+    kind: conditional        # social standing; emerges from ToM distribution + reliance (no rate)
     default:
       posture: Maximize
       setpoint: 0.50
@@ -79,8 +82,7 @@ needs:
       gain: 0.7
 
   - id: Openness
-    kind: conditional        # vista / view quality of the current place (drives 조망 disputes)
-    rate: 0.0
+    kind: conditional        # vista / view quality of the current place (drives 조망 disputes; no rate)
     default:
       posture: Maximize
       setpoint: 0.35
@@ -88,3 +90,13 @@ needs:
     salience:
       curve: gap_to_max
       gain: 0.5
+
+  - id: Social
+    kind: consumable          # rate: balance.yaml needs.Social; slow decay drives agents to seek others
+    default:
+      posture: MaintainAbove
+      setpoint: 0.30
+      referent: Self
+    salience:
+      curve: deficit
+      gain: 0.6

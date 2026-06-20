@@ -42,6 +42,16 @@ object_kinds:
       provides: [ has_water, at_water ]
       depletes: false         # effectively unlimited
 
+  - id: tool_bench
+    mobile: false
+    # The workbench the P1 Craft action operates on. Yields a crafted tool; the gather→craft
+    # chain (materials → has_tool) is assembled by the planner, never authored here (D3).
+    harvest:
+      action: Craft
+      yields: crafted_tool
+      provides: [ has_tool ]
+      depletes: false         # the bench is reusable
+
   - id: shelter
     mobile: false
     # A structure that supplies needs in-place while occupied (no item yielded).
@@ -64,3 +74,11 @@ item_kinds:
     stackable: true
     perishable: false
     supply: { Hydration: 0.45 }
+
+  - id: crafted_tool
+    stackable: false
+    perishable: false
+    # A crafted tool's "supply" is a tiny Standing contribution (skilled output is socially
+    # legible). Its real value is instrumental (it enables other actions) — but D9 requires a
+    # supply Effect, and tools are not consumed for need-satisfaction, so the value is minimal.
+    supply: { Standing: 0.05 }

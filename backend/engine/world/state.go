@@ -1,0 +1,242 @@
+package world
+
+import (
+	"sort"
+
+	"github.com/dogring/bdg/engine/actions"
+	"github.com/dogring/bdg/engine/agent"
+	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/engine/planner"
+	"github.com/dogring/bdg/engine/rng"
+	"github.com/dogring/bdg/engine/spatial"
+	"github.com/dogring/bdg/engine/stats"
+	"github.com/dogring/bdg/engine/tom"
+)
+
+// ── WorldState: serializable snapshot for resume (testing.md §1) ────────────────
+
+// WorldState is a public, copyable snapshot of the world's mutable state at one
+// tick. Captures tick counter, root RNG state, every agent's full public state
+// (incl. ToM[self] means), every object, and per-agent known-object sets.
+type WorldState struct {
+	Tick     core.Tick
+	RNGState rng.RNGState
+	Agents   []agentDigest
+	Objects  []objectRecord
+	Known    []knownDigest // sorted by AgentID (D12)
+}
+
+// agentDigest is one agent's full public state for capture/restore.
+type agentDigest struct {
+	ID              core.AgentID
+	Pos             core.Vec2
+	RealStats       stats.Stats
+	Stamina         float64
+	Mood            float64
+	Adrenaline      float64
+	NeedIntensities map[core.Dimension]float64
+	Inventory       map[core.Tag]int
+	Goal            core.Dimension
+	PlanActions     []string            // ActionIDs in plan (serialized)
+	PlanHorizon     int
+	PlanIdx         int
+	Elapsed         core.GameMinutes
+	Coping          agent.CopingState
+	Latent          []agent.LatentGoal
+	SelfEstStats    map[core.StatID]tom.StatDist
+	AgentCfg        agent.Config
+}
+
+// knownDigest carries one agent's known-object set.
+type knownDigest struct {
+	AgentID core.AgentID
+	Objects []agent.KnownObject // sorted by ObjectID (D12)
+}
+
+// ── State() — capture ──────────────────────────────────────────────────────────
+
+// State returns a serializable snapshot of the world's current mutable state.
+func (w *World) State() WorldState {
+	ws := WorldState{
+		Tick:     w.tick,
+		RNGState: w.rootRNG.State(),
+	}
+
+	for _, agentID := range w.agentIDs {
+		a := w.agents[agentID]
+		d := agentDigest{
+			ID:              a.ID,
+			Pos:             a.Pos,
+			RealStats:       a.RealStats.Clone(),
+			Stamina:         a.Stamina,
+			Mood:            a.Mood,
+			Adrenaline:      a.Adrenaline,
+			NeedIntensities: cloneDimMap(a.NeedIntensities),
+			Inventory:       cloneTagMap(a.Inventory),
+			Goal:            a.Goal,
+			PlanActions:     actionIDsToStrings(a.Plan.Actions),
+			PlanHorizon:     a.Plan.Horizon,
+			PlanIdx:         a.PlanIdx,
+			Elapsed:         a.Elapsed,
+			Coping:          a.Coping,
+			Latent:          cloneLatents(a.Latent),
+			AgentCfg:        a.Cfg,
+		}
+		if selfBelief, ok := a.ToM.Self(a.ToM.SelfID()); ok {
+			d.SelfEstStats = cloneSDists(selfBelief.EstStats)
+		}
+		ws.Agents = append(ws.Agents, d)
+	}
+
+	for _, objID := range w.objectIDs {
+		ws.Objects = append(ws.Objects, w.objects[objID])
+	}
+
+	for _, agentID := range w.agentIDs {
+		known := w.knownObjects[agentID]
+		var kos []agent.KnownObject
+		objIDs := make([]core.ObjectID, 0, len(known))
+		for oid := range known {
+			objIDs = append(objIDs, oid)
+		}
+		sort.Slice(objIDs, func(i, j int) bool { return string(objIDs[i]) < string(objIDs[j]) })
+		for _, oid := range objIDs {
+			kos = append(kos, known[oid])
+		}
+		ws.Known = append(ws.Known, knownDigest{AgentID: agentID, Objects: kos})
+	}
+
+	return ws
+}
+
+// ── RestoreState() — restore ───────────────────────────────────────────────────
+
+// RestoreState overwrites the world's mutable state from a previously-captured
+// WorldState. The spatial hash is rebuilt from agent/object positions.
+func (w *World) RestoreState(ws WorldState) {
+	w.tick = ws.Tick
+	w.rootRNG.Restore(ws.RNGState)
+
+	w.agents = make(map[core.AgentID]*agent.Agent, len(ws.Agents))
+	w.agentIDs = make([]core.AgentID, 0, len(ws.Agents))
+	for _, d := range ws.Agents {
+		// Reconstruct ToM with the real stats registry so Observe/GossipUpdate work.
+		restoredToM := tom.NewToM(d.ID, d.RealStats.Clone(), 0.5, rng.New(0), w.svc.Stats, d.AgentCfg.Rates)
+		if d.SelfEstStats != nil {
+			restoredToM.SetSelfStats(cloneSDists(d.SelfEstStats))
+		}
+		a := agent.New(d.ID, d.Pos, d.RealStats.Clone(), restoredToM, d.AgentCfg)
+		a.Stamina = d.Stamina
+		a.Mood = d.Mood
+		a.Adrenaline = d.Adrenaline
+		a.NeedIntensities = cloneDimMap(d.NeedIntensities)
+		a.Inventory = cloneTagMap(d.Inventory)
+		a.Goal = d.Goal
+		a.Plan = planner.Plan{Actions: stringsToActionIDs(d.PlanActions), Horizon: d.PlanHorizon}
+		a.PlanIdx = d.PlanIdx
+		a.Elapsed = d.Elapsed
+		a.Coping = d.Coping
+		a.Latent = cloneLatents(d.Latent)
+
+		w.agents[d.ID] = a
+		w.agentIDs = append(w.agentIDs, d.ID)
+	}
+
+	w.objects = make(map[core.ObjectID]objectRecord, len(ws.Objects))
+	w.objectIDs = make([]core.ObjectID, 0, len(ws.Objects))
+	for _, obj := range ws.Objects {
+		w.objects[obj.ID] = obj
+		w.objectIDs = append(w.objectIDs, obj.ID)
+	}
+
+	rebuildSpatialHash(w.spatial, w.agentIDs, w.agents, w.objects)
+
+	w.knownObjects = make(map[core.AgentID]map[core.ObjectID]agent.KnownObject)
+	for _, kd := range ws.Known {
+		m := make(map[core.ObjectID]agent.KnownObject, len(kd.Objects))
+		for _, ko := range kd.Objects {
+			m[ko.ID] = ko
+		}
+		w.knownObjects[kd.AgentID] = m
+	}
+
+	w.currentSounds = nil
+	w.currentSnap = nil
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+func rebuildSpatialHash(sh *spatial.SpatialHash, agentIDs []core.AgentID, agents map[core.AgentID]*agent.Agent, objects map[core.ObjectID]objectRecord) {
+	// Clear and rebuild: remove all, then re-insert.
+	for _, id := range agentIDs {
+		sh.Remove(core.ObjectID(id))
+	}
+	for _, obj := range objects {
+		sh.Remove(obj.ID)
+	}
+	for _, id := range agentIDs {
+		a := agents[id]
+		sh.Insert(core.ObjectID(id), a.Pos)
+	}
+	for _, obj := range objects {
+		sh.Insert(obj.ID, obj.Pos)
+	}
+}
+
+func cloneDimMap(m map[core.Dimension]float64) map[core.Dimension]float64 {
+	if m == nil {
+		return nil
+	}
+	out := make(map[core.Dimension]float64, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneTagMap(m map[core.Tag]int) map[core.Tag]int {
+	if m == nil {
+		return nil
+	}
+	out := make(map[core.Tag]int, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneLatents(src []agent.LatentGoal) []agent.LatentGoal {
+	if src == nil {
+		return nil
+	}
+	out := make([]agent.LatentGoal, len(src))
+	copy(out, src)
+	return out
+}
+
+func cloneSDists(src map[core.StatID]tom.StatDist) map[core.StatID]tom.StatDist {
+	if src == nil {
+		return nil
+	}
+	out := make(map[core.StatID]tom.StatDist, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+func actionIDsToStrings(ids []actions.ActionID) []string {
+	out := make([]string, len(ids))
+	for i, a := range ids {
+		out[i] = string(a)
+	}
+	return out
+}
+
+func stringsToActionIDs(strs []string) []actions.ActionID {
+	out := make([]actions.ActionID, len(strs))
+	for i, s := range strs {
+		out[i] = actions.ActionID(s)
+	}
+	return out
+}

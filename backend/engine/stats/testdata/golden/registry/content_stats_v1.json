@@ -1,0 +1,40 @@
+{
+  "ids": [
+    "Aggression",
+    "Agility",
+    "Greed",
+    "Honesty",
+    "Impulsivity",
+    "Intelligence",
+    "RiskAversion",
+    "Sociability",
+    "Strength",
+    "Vindictiveness"
+  ],
+  "capabilities": [
+    "Agility",
+    "Intelligence",
+    "Strength"
+  ],
+  "dispositions": [
+    "Aggression",
+    "Greed",
+    "Honesty",
+    "Impulsivity",
+    "RiskAversion",
+    "Sociability",
+    "Vindictiveness"
+  ],
+  "defaults": {
+    "Aggression": 0.4,
+    "Agility": 0.5,
+    "Greed": 0.5,
+    "Honesty": 0.6,
+    "Impulsivity": 0.5,
+    "Intelligence": 0.5,
+    "RiskAversion": 0.5,
+    "Sociability": 0.5,
+    "Strength": 0.5,
+    "Vindictiveness": 0.4
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "gate_ids": [
+    "capability_floor",
+    "conscience",
+    "knowledge"
+  ],
+  "reads": [
+    "Aggression",
+    "Agility",
+    "Honesty",
+    "Intelligence",
+    "Strength"
+  ],
+  "results": [
+    {
+      "action_tags": [
+        "uses:Strength"
+      ],
+      "self_stats": {
+        "Agility": 0.5,
+        "Intelligence": 0.5,
+        "Strength": 0.8
+      },
+      "visible": true,
+      "trace_length": 1,
+      "trace": [
+        {
+          "gate": "capability_floor",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "action_tags": [
+        "uses:Strength"
+      ],
+      "self_stats": {
+        "Agility": 0.5,
+        "Intelligence": 0.5,
+        "Strength": 0.1
+      },
+      "visible": false,
+      "trace_length": 1,
+      "trace": [
+        {
+          "gate": "capability_floor",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "action_tags": [
+        "abstraction:low"
+      ],
+      "self_stats": {
+        "Intelligence": 0.3
+      },
+      "visible": true,
+      "trace_length": 1,
+      "trace": [
+        {
+          "gate": "knowledge",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "action_tags": [
+        "abstraction:low"
+      ],
+      "self_stats": {
+        "Intelligence": 0.1
+      },
+      "visible": false,
+      "trace_length": 1,
+      "trace": [
+        {
+          "gate": "knowledge",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "action_tags": [
+        "norm:transgressive"
+      ],
+      "self_stats": {
+        "Aggression": 0.3,
+        "Honesty": 0.2
+      },
+      "visible": true,
+      "trace_length": 1,
+      "trace": [
+        {
+          "gate": "conscience",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "action_tags": [
+        "norm:transgressive"
+      ],
+      "self_stats": {
+        "Aggression": 0.3,
+        "Honesty": 0.8
+      },
+      "visible": false,
+      "trace_length": 1,
+      "trace": [
+        {
+          "gate": "conscience",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "action_tags": [
+        "social"
+      ],
+      "self_stats": {},
+      "visible": true,
+      "trace_length": 0
+    }
+  ]
+}

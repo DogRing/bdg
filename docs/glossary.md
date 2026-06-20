@@ -23,7 +23,7 @@ The `(KR: …)` hints cross-reference the Korean input docs (`PRD.md`, `design.m
 | Concept | Canonical | Notes |
 |---------|-----------|-------|
 | Value | `Value{Dimension, Ref, Posture, Setpoint}` | Root of every goal. |
-| Dimension | `Dimension` | `Satiety, Rest, Safety, Standing, Openness…` |
+| Dimension | `Dimension` | `Satiety, Hydration, Rest, Safety, Standing, Openness…` (a `core.Dimension`; `engine/needs` aliases it `NeedID`). |
 | Referent | `Referent{Kind, ID}` | Pointer the evaluation reads. `Kind = Self|Other|Place|Collective` |
 | Posture | `Posture` | `Maximize | MaintainAbove | PreventBelow` |
 | Value map | `Known map[ObjectID]Valuation` | Per-agent standing value over known objects. |
@@ -48,10 +48,11 @@ The `(KR: …)` hints cross-reference the Korean input docs (`PRD.md`, `design.m
 ## Gates & cost
 | Concept | Canonical | Notes |
 |---------|-----------|-------|
-| Gate | `Gate{Reads []StatID; Eval→(visible bool, costMod float64)}` | Registered in a registry. |
-| Visibility / preference | `visibility` / `preference` | Hard (AND) / soft (multiply). |
-| Cost-term library | `effort, risk, moral, social…` | Reusable terms composing cost. |
-| Deadband | `Deadband` | Prevents gate flicker. |
+| Gate | `Gate{id, tags []Tag, expr GateExpr}` | Tag-matched (D4) boolean visibility predicate over `ToM[self]` stats + action tags. Registered in a registry. |
+| GateExpr | recursive predicate tree | leaf `{stat,op,value}` (reads `ToM[self]`, D8) or `{tag}`; composite `{and}`/`{or}`/`{not}`. |
+| Visibility (AND) | `visibility` | An action is visible iff **every** matching gate's `expr` is true (hard AND). Gates carry no cost. |
+| Cost (tag-derived) | planner cost | Action cost = tag-derived terms (`effort, risk, moral, social…`) composed in the **planner**, not in gates. |
+| Cost-term library | `effort, risk, moral, social…` | Reusable terms composing cost (`balance.yaml cost_terms × tag_levels`), read by the planner. |
 | Deliberation budget | `Budget` | Search depth. |
 | Stickiness | `Stickiness` | Bonus to keep the current goal (anti-thrash). |
 
@@ -70,7 +71,7 @@ The `(KR: …)` hints cross-reference the Korean input docs (`PRD.md`, `design.m
 | Concept | Canonical | Notes |
 |---------|-----------|-------|
 | Mood | `Mood` | `+= λ·(actual − expected progress)`, decays to baseline. |
-| Adrenaline | `Adrenaline` | Urgency-triggered surge → loosens gates → crash. |
+| Adrenaline | `Adrenaline` | Urgency-triggered surge → loosens planner cost/visibility → crash. |
 | Stamina | `Stamina` | Consumable budget; replenished by sleep/rest. |
 | Urgency | `Urgency` | Acts on deliberation time, conscience threshold, adrenaline. |
 | Coping | `Coping` | rebind / longing / latent / apathy. |

@@ -5,6 +5,9 @@
 # D4 — cost and gates are DERIVED FROM TAGS, never written per-action. An action lists
 #      `tags`; gates.yaml matches tags to decide visibility/cost; balance.yaml gives the
 #      magnitude of each tag level and the cost-term weights. No bespoke cost here.
+#      THERE IS NO PER-ACTION `gates:` LIST AND NO PER-ACTION `cost:` FIELD — both would
+#      reintroduce per-action wiring forbidden by D4. Gates are tag-matched in gates.yaml;
+#      cost is composed from tags in the planner (balance.yaml cost_terms × tag_levels).
 # D9 — consumption actions deliver the CONSUMED item's supply (objects.yaml). Self-sourced
 #      effects (sleep) use `effect_per_minute`. Never author quantities tied to the future.
 #
@@ -22,6 +25,13 @@
 #
 # Predicate binding (at_target / has_food …) is parametric; the planner binds the concrete
 # object instance. Schema: content/schema/actions.schema.json
+#
+# Target kind (brief mapping): an action's TARGET is expressed by `target_kind`
+#   • none     → no target_kind and no requires-at-target (e.g. Rest, Sleep)
+#   • location → MoveTo (binds a Vec2 destination via the at_target predicate)
+#   • object   → target_kind names an objects.yaml object_kind (Forage, Eat-via-item, Craft …)
+#   • agent    → target is another agent; expressed by the near_other predicate (Hunt, Signal,
+#                Attack). "Animal" targets (Hunt prey) are object_kinds tagged as creatures.
 
 schema_version: 1
 
@@ -56,28 +66,32 @@ actions:
   - id: Eat
     tags: [ "effort:low" ]
     requires: [ has_food ]
-    consumes_item: any_food            # the consumed item's supply is the Effect (D9)
+    produces: [ has_Satiety ]
     duration: 6
+    effect: { Satiety: 0.40 }         # P1: direct effect (item-supply chain deferred)
     interruptible: true
 
   - id: Drink
     tags: [ "effort:none" ]
-    target_kind: water_source          # may drink in place …
-    requires_any: [ at_water, has_water ]   # … or consume a carried water item
-    consumes_item: water
+    target_kind: water_source
+    requires: [ at_target ]            # P1: reached via MoveTo (at_water alias deferred)
+    produces: [ has_Hydration ]
     duration: 3
+    effect: { Hydration: 0.50 }       # P1: direct effect (item-supply chain deferred)
     interruptible: true
 
   # ── Recovery ─────────────────────────────────────────────────────────────────
   - id: Sleep
     tags: [ "effort:none", "risk:low" ]   # vulnerable while sleeping -> Safety gate matters
     duration: 360
+    produces: [ has_Rest ]
     effect_per_minute: { Rest: 0.0030 }
     interruptible: true
 
   - id: Rest
     tags: [ "effort:none" ]
     duration: 30
+    produces: [ has_Rest ]
     effect_per_minute: { Rest: 0.0010 }   # weaker than Sleep; tops up Stamina between tasks
     interruptible: true
 
@@ -106,6 +120,33 @@ actions:
     duration: 3
     interruptible: true
 
+  # ── Trade negotiation (P2 — atomic negotiation protocol) ─────────────────────
+  # Offer → AcceptTrade (tradeComplete) or RejectTrade (tradeRejected)
+  # D3: each step is atomic; the planner chains them via predicates.
+  # D4: cost/visibility from tags only — no per-action cost or norm field.
+  - id: Offer
+    tags: [ "social", "effort:low", "abstraction:low" ]
+    requires: [ near_other ]
+    produces: [ has_Social, tradeOffered ]
+    duration: 3
+    effect: { Social: 0.35 }           # social interaction satisfies part of Social need
+    interruptible: true
+
+  - id: AcceptTrade
+    tags: [ "social", "cooperative", "effort:none" ]
+    requires: [ near_other, tradeOffered ]
+    produces: [ has_Social, tradeComplete ]
+    duration: 2
+    effect: { Social: 0.35 }           # completing the trade satisfies Social need
+    interruptible: false               # committed once begun
+
+  - id: RejectTrade
+    tags: [ "social", "effort:none" ]
+    requires: [ near_other, tradeOffered ]
+    produces: [ tradeRejected ]
+    duration: 1
+    interruptible: true
+
   - id: GiveItem
     tags: [ "social", "cooperative", "effort:low" ]
     requires: [ near_other, holding ]
@@ -121,7 +162,23 @@ actions:
     duration: 6
     interruptible: true
 
-  # ── Construction (cooperative; P6 emergent building) ─────────────────────────
+  # ── Crafting / construction (P1 craft loop + P6 emergent building) ────────────
+  # Craft is the brief's P1 atomic craft action: it USES Intelligence (capability_floor
+  # gate via the uses:Intelligence tag) and is an abstraction:med method (knowledge gate),
+  # so a low-Intelligence agent cannot SEE it (D8). It operates on a workbench object_kind
+  # and places a crafted item into inventory. D3: it is ATOMIC — the planner assembles the
+  # gather→craft chain via the `produces`/`requires` reverse index; this entry hand-draws
+  # no tree. D4: no per-action cost — effort:high + the uses:Intelligence tag drive cost in
+  # the planner.
+  - id: Craft
+    tags: [ "uses:Intelligence", "effort:high", "noise:low", "abstraction:med" ]
+    target_kind: tool_bench
+    requires: [ at_target, has_materials ]
+    produces: [ has_tool ]
+    produces_item: crafted_tool
+    duration: 90
+    interruptible: true
+
   - id: Build
     tags: [ "uses:Strength", "effort:high", "noise:med", "cooperative", "abstraction:high" ]
     requires: [ at_target, has_materials ]

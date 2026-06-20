@@ -1,0 +1,46 @@
+# Scenario A — Hungry Hunter
+#
+# A single agent with high Agility starts starving (Satiety intensity=0.8,
+# above threshold 0.55). A berry bush is visible within sight radius.
+# Within 25 ticks the agent must autonomously plan Forage→Eat, execute both
+# actions, and end with lower Satiety intensity than it started.
+#
+# Golden outcome (seed=42, 25 ticks):
+#   Satiety: 0.8000 → 0.0049 (two full Forage+Eat cycles completed)
+#   Plan at end: [Forage,Eat,Forage,Eat]  (provisioning for future need)
+#
+# Used by: engine/world/scenario_a_test.go::TestScenarioA_HungryHunter
+
+seed: 42
+ticks: 25
+
+world:
+  outcome_difficulty_base: 50.0   # default; effort:med → difficulty=75; Agility=80 ≥ 75 ✓
+
+agents:
+  - id: hunter
+    pos: [0, 0]
+    rng_seed: 42
+    overrides:
+      Agility: 80.0               # ensures Forage succeeds (real stat pin, post-spawn)
+    initial_needs:
+      Satiety: 0.8                # well above threshold 0.55 → hungry
+
+objects:
+  - id: berry_bush_0
+    kind: berry_bush
+    pos: [3, 0]                   # within sight radius (18 world units)
+    supply:
+      Satiety: 0.5
+
+# fixture actions (simplified, from engine/world test fixture):
+#   Forage: effort:med, uses:Agility, duration=12, produces=[has_food]
+#   Eat:    effort:low,              duration=6,  requires=[has_food], effect={Satiety:0.5}
+
+assertions:
+  - kind: direction
+    what: NeedIntensities[Satiety]
+    direction: decreased
+    note: "Agent must eat at least once in 25 ticks"
+  - kind: determinism
+    note: "Two runs with seed=42 must produce byte-identical state digests (D12)"

@@ -10,6 +10,8 @@
       "Bash(go test:*)",
       "Bash(go vet:*)",
       "Bash(go run:*)",
+      "Bash(go mod:*)",
+      "Bash(go get:*)",
       "Bash(gofmt:*)",
       "Bash(goimports:*)",
       "Bash(make:*)",
@@ -19,18 +21,16 @@
       "Bash(grep:*)"
     ],
     "ask": [
-      "Bash(go mod:*)",
-      "Bash(go get:*)",
-      "Bash(git:*)",
-      "Bash(docker:*)",
-      "Bash(docker compose:*)"
+      "Bash(git:*)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
       "Read(./secrets/**)",
-      "Read(./.env*)"
+      "Read(./.env*)",
+      "Bash(docker:*)",
+      "Bash(docker compose:*)"
     ]
   },
   "hooks": {

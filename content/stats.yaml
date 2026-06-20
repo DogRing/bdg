@@ -11,16 +11,20 @@
 schema_version: 1
 
 # Per-entry fields:
-#   id     — canonical StatID (docs/glossary.md). The identifier pattern is the only
-#            structural check; referential integrity is the loader's job (D10).
-#   label  — human-readable name for UI / why-trace (optional; defaults to id).
+#   id      — canonical StatID (docs/glossary.md). The identifier pattern is the only
+#             structural check; referential integrity is the loader's job (D10).
+#   label   — human-readable display name for UI / why-trace ONLY (optional; defaults to id).
+#             NOT read by engine/platform logic today — cosmetic, non-load-bearing metadata.
 #   kind:
 #     capability  — read by capability gates / outcomes / prediction (Strength, Agility, Intelligence)
 #     disposition — value weights that raise goals (the dispositional axes)
-#   range   — [min, max] clamp for both Real Stats and ToM beliefs.
-#   default — initial / fallback value (optional; defaults to the range midpoint).
-#             Must satisfy min <= default <= max (loader-enforced cross-field check).
-#   gen     — agent-generation distribution (sampled with the injected seeded RNG, D12).
+#   range   — [min, max] clamp for both Real Stats and ToM beliefs (min <= max).
+#   gen     — agent-GENERATION distribution sampled at spawn with the injected seeded RNG (D12).
+#             This is the PRIMARY source of a fresh agent's value and takes PRECEDENCE over
+#             `default` (which is never used for sampling).
+#   default — FALLBACK / baseline value used only when `gen` is absent, and the value
+#             Registry.Defaults() fills in (zero-config / reset / missing key). Optional;
+#             defaults to the range midpoint. Must satisfy min <= default <= max (loader check).
 #   inherit — parent inheritance weight in [0,1]; (1 - inherit) is fresh perturbation.
 stats:
   # ── Capability ──────────────────────────────────────────────────────────────
@@ -51,7 +55,7 @@ stats:
   # ── Disposition (value weighting) ───────────────────────────────────────────
   - id: Aggression
     label: Aggression
-    kind: disposition
+    kind: disposition       # high Aggression can make a transgression visible (gates.yaml: conscience)
     range: [0.0, 1.0]
     default: 0.4
     gen: { dist: normal, mean: 0.4, sd: 0.2 }
@@ -67,7 +71,7 @@ stats:
 
   - id: Honesty
     label: Honesty
-    kind: disposition       # raises the conscience barrier (gates.yaml: conscience)
+    kind: disposition       # the moral barrier: low Honesty makes a transgression visible (gates.yaml: conscience)
     range: [0.0, 1.0]
     default: 0.6
     gen: { dist: normal, mean: 0.6, sd: 0.2 }
@@ -99,7 +103,7 @@ stats:
 
   - id: RiskAversion
     label: Risk Aversion
-    kind: disposition       # raises the cost of actions tagged risk:* (gates.yaml: caution)
+    kind: disposition       # raises the cost of actions tagged risk:* (planner risk cost-term, not a gate)
     range: [0.0, 1.0]
     default: 0.5
     gen: { dist: normal, mean: 0.5, sd: 0.2 }

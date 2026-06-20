@@ -10,18 +10,18 @@ The engine does not import platform. Platform serializes and transports engine s
 ## 2. Engine modules
 | Module | Purpose | Depends on (paths) | Leaf level |
 |--------|---------|--------------------|-----------|
-| `core` | Types: `StatID`, `Tag`, `Pred`, `Referent`, `Vec2`, `GameMinutes`, cross-cutting interfaces | — | **L0** |
+| `core` | Types: `StatID`, `Dimension`, `Tag`, `Pred`, `Referent`, `Vec2`, `GameMinutes`, cross-cutting interfaces | — | **L0** |
 | `rng` | Deterministic seeded RNG wrapper | — | **L0** |
 | `worldtime` | tick ↔ game-minute conversion, 12× scale | core | L1 |
 | `spatial` | Free coordinates + spatial hash, radius queries | core | L1 |
 | `stats` | `Stats` vector + `StatRegistry` | core | L1 |
-| `gates` | `Gate` registry, eval (visibility AND, costMod product) | core, stats | L2 |
-| `needs` | Need dimensions, rates, decay, forward-roll helpers | core, stats | L2 |
-| `tom` | `Belief` (incl. self), reputation distribution, gossip, initial estimates | core, stats | L2 |
+| `gates` | `Gate` registry, eval (boolean visibility predicate trees; AND across matching gates) | core, stats | L2 |
+| `needs` | Need dimension catalog + rates (from balance.yaml), decay, forward-roll helpers | core, stats | L2 |
+| `tom` | `Belief` (incl. self), reputation distribution, gossip, initial estimates | core, stats, rng | L2 |
 | `actions` | Catalog, tags, effect, Duration, `Producers` | core, stats, gates | L3 |
 | `values` | Value map, Standing, Salience, appraisal | core, stats, needs, tom | L3 |
 | `perception` | Three senses (Sight LoS, Smell gradient, Hearing) | core, spatial | L3 |
-| `planner` | HTN + GOAP, forward-sim, budget, gate application | core, actions, gates, needs, values | L4 |
+| `planner` | HTN + GOAP, forward-sim, budget, gate application, **tag-derived cost** | core, actions, gates, needs, values | L4 |
 | `agent` | Decision loop, durative execution, coping | core, stats, needs, values, tom, planner, perception | L5 |
 | `world` | Orchestrator: spawn, tick, intent collection, apply + conflict resolution | core, spatial, worldtime, rng, agent, actions, (events iface) | L6 |
 
@@ -44,7 +44,7 @@ core ─┬─ worldtime ─┐
 rng ──────────────────────────────────────── world
 content ── config ── (stats/actions/gates/needs registries)
 ```
-No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `tom` does not know `values`. `perception` does not import `world`; it operates on a passed-in world view.
+No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `tom` does not know `values`. `perception` does not import `world`; it operates on a passed-in world view. `tom` also depends on `rng` (injected seeded generator for the calibrated self-belief at construction).
 
 ## 5. Leaf-first build order (topological)
 ```
@@ -67,7 +67,12 @@ spec-architect generates SPECs leaf-first along this DAG. A module exceeding ~40
 ## 7. Content boundary (D10)
 `content/stats.yaml · needs.yaml · objects.yaml · actions.yaml · gates.yaml · balance.yaml`
 (+ `content/schema/` + `content/README.md`).
-- `needs.yaml` — need/value Dimensions + per-need `rate` only (D9: demand is derived, never authored).
+- `needs.yaml` — need/value Dimension **catalog** (kind, posture, setpoint, salience). Per-need
+  **rate** (`decay_per_tick`, `satisfaction_threshold`) lives in `balance.yaml`'s `needs:` block —
+  rate only (D9: demand is derived, never authored). `engine/needs.Load` merges the two.
+- `gates.yaml` — gate registry as boolean **predicate trees** (`{id, tags, expr}`; schema_version
+  2). Gates are tag-matched (D4) visibility preconditions reading `ToM[self]` (D8); **cost derives
+  from tags in the planner**, not from gates.
 - `objects.yaml` — object_kinds + item_kinds carrying their **supply** Effect (D9). Placement/counts
   are per-run world-gen / fixtures, not content.
 Engine code is **content-agnostic** — `config` loads these at startup to populate registries.

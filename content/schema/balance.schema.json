@@ -7,11 +7,26 @@
   "required": [
     "schema_version", "world", "perception", "generation", "tag_levels",
     "cost_terms", "mood", "adrenaline", "stamina", "urgency",
-    "self_calibration", "gossip", "planning", "forward_sim", "salience", "regen"
+    "self_calibration", "gossip", "planning", "forward_sim", "salience", "regen",
+    "needs", "values", "planner"
   ],
   "properties": {
     "schema_version": { "const": 1 },
-    "world": { "$ref": "#/$defs/numberMap" },
+    "world": {
+      "type": "object",
+      "description": "World-level tunables read by engine/world (bytes injected by platform/config). All keys required; platform/config validates this block before calling world.New so a missing key is caught at startup (D10).",
+      "additionalProperties": false,
+      "required": ["tick_minutes", "real_scale", "day_minutes", "spatial_hash_cell", "reliance_threshold", "outcome_difficulty_base", "backup_every_ticks"],
+      "properties": {
+        "tick_minutes":            { "type": "integer", "minimum": 1, "description": "Game-minutes advanced per tick (engine/worldtime)." },
+        "real_scale":              { "type": "integer", "minimum": 1, "description": "Real-time compression factor (24 game-h = 2 real-h → 12)." },
+        "day_minutes":             { "type": "integer", "minimum": 1, "description": "Game-minutes per in-world day (24 × 60 = 1440)." },
+        "spatial_hash_cell":       { "type": "number",  "exclusiveMinimum": 0, "description": "SpatialHash cell edge in world units; choose ≈ avg perception radius for best locality." },
+        "reliance_threshold":      { "type": "number",  "exclusiveMinimum": 0, "maximum": 1, "description": "Share of agents pointing their RelyOn[f] at one holder that triggers RoleEmerged emission (D2). Stub: unused until tom.Belief.RelyOn is formalized." },
+        "outcome_difficulty_base": { "type": "number",  "exclusiveMinimum": 0, "description": "The Real Stat level at which an action resolves as Succeeded under neutral (no effort/risk modifier) conditions." },
+        "backup_every_ticks":      { "type": "integer", "minimum": 1, "description": "Emit SnapshotReady every N ticks; platform/persist handles the actual write." }
+      }
+    },
     "perception": { "$ref": "#/$defs/numberMap" },
     "generation": { "$ref": "#/$defs/numberMap" },
     "tag_levels": { "$ref": "#/$defs/nestedNumberMap" },
@@ -26,7 +41,93 @@
     "planning": { "$ref": "#/$defs/numberMap" },
     "forward_sim": { "$ref": "#/$defs/numberMap" },
     "salience": { "$ref": "#/$defs/numberMap" },
-    "regen": { "$ref": "#/$defs/numberMap" }
+    "regen": { "$ref": "#/$defs/numberMap" },
+    "needs": {
+      "type": "object",
+      "description": "Per-need rate constants read by engine/needs (the bytes are injected by platform/config — engine/needs never reads a file path, D10). Keys are canonical Dimension ids from docs/glossary.md (Satiety, Hydration, Rest, Safety, Standing, Openness, …) and are cross-checked against content/needs.yaml by platform/config. This is the AUTHORITATIVE source of the per-need rate/threshold for consumable needs: 'decay_per_tick' is the per-tick (= per game-minute) satisfaction loss (D9: rate only — demand = rate × predicted-time is DERIVED by the planner, never authored), and 'satisfaction_threshold' is the setpoint in [0,1] below which the need is unmet. Conditional, non-time-driven needs (content/needs.yaml kind:conditional, rate 0) are NOT listed here — additionalProperties below forbids a zero/absent decay.",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["decay_per_tick", "satisfaction_threshold"],
+        "properties": {
+          "decay_per_tick": {
+            "type": "number",
+            "description": "Satisfaction lost per tick (= per game-minute). Strictly positive; a need that does not drift with time is a conditional need (content/needs.yaml kind:conditional) and is not listed here.",
+            "exclusiveMinimum": 0
+          },
+          "satisfaction_threshold": {
+            "type": "number",
+            "description": "Setpoint in [0,1]; below this the need is unmet and raises salience.",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    "values": {
+      "type": "object",
+      "description": "Value-arbitration tuning read by engine/values (bytes injected by platform/config — engine/values never reads a file path, D10). Currently a per-Dimension weight map used by Priority(d) = Salience(d) × weight(d). These weights bias WHICH need an agent pursues next; they NEVER select or order actions (that is the planner, D5).",
+      "additionalProperties": false,
+      "required": ["weights"],
+      "properties": {
+        "weights": {
+          "type": "object",
+          "description": "Per-Dimension weight ≥ 0. Keys are canonical Dimension ids (docs/glossary.md); platform/config cross-checks each against content/needs.yaml. A Dimension absent here defaults to weight 1.0 in engine/values.",
+          "minProperties": 1,
+          "additionalProperties": { "type": "number", "minimum": 0 },
+          "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
+        }
+      }
+    },
+    "planner": {
+      "type": "object",
+      "description": "Deliberation-engine tunables read by engine/planner (bytes injected by platform/config — engine/planner never reads a file path, D10). Distinct from the 'planning' block, which holds engine/agent's cross-tick budget-scaling + anti-thrash stickiness/deadband; the planner reads ONLY this block. Provides the HTN/GOAP search caps (budget.*), the forward-sim base lookahead (base_horizon_ticks; the Intelligence-gated horizon is floor(base_horizon_ticks × perceived_intelligence / max_intelligence), min 1 tick, D9), the per-Tag additive cost weights (tag_costs; cost(action) = Σ tag_costs[tag], D4 — the cost channel transferred out of engine/gates at schema_version 2), and the urgency relaxation trigger (urgency_threshold; a gated action becomes visible iff Urgency exceeds it — conscience loosening).",
+      "additionalProperties": false,
+      "required": ["budget", "base_horizon_ticks", "tag_costs", "urgency_threshold"],
+      "properties": {
+        "budget": {
+          "type": "object",
+          "description": "Hard search caps; a breach aborts the Plan call with ErrBudgetExceeded (no silent truncation, so a why-trace can record the abort).",
+          "additionalProperties": false,
+          "required": ["max_depth", "max_actions", "max_nodes"],
+          "properties": {
+            "max_depth": {
+              "type": "integer",
+              "description": "Max HTN recursion depth (precondition-chain ceiling; prevents infinite loops).",
+              "minimum": 1
+            },
+            "max_actions": {
+              "type": "integer",
+              "description": "Max assembled plan length (actions in the sequence).",
+              "minimum": 1
+            },
+            "max_nodes": {
+              "type": "integer",
+              "description": "Max GOAP nodes expanded per Plan call.",
+              "minimum": 1
+            }
+          }
+        },
+        "base_horizon_ticks": {
+          "type": "integer",
+          "description": "Base forward-sim lookahead in ticks (= game-minutes). The effective horizon is Intelligence-gated: floor(base_horizon_ticks × perceived_intelligence / max_intelligence), with a minimum of 1 tick when perceived Intelligence is 0.",
+          "minimum": 1
+        },
+        "urgency_threshold": {
+          "type": "number",
+          "description": "Dynamic-visibility relaxation trigger in [0,1]: a normally-invisible (gated) action becomes available for one Plan call iff Urgency (max Salience across all Dimensions) exceeds this (conscience loosening).",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "tag_costs": {
+          "type": "object",
+          "description": "Per-Tag additive cost weight ≥ 0 (D4). cost(action) = Σ tag_costs[tag] over the action's tags; a tag absent here contributes 0. Used as the tie-breaker among equal-Priority, equal-depth candidates (lower cost wins; remaining ties break by lexicographic ActionID, D12). Keys are core.Tag strings; platform/config cross-checks each against the tags actually used in content/actions.yaml.",
+          "minProperties": 1,
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        }
+      }
+    }
   },
   "$defs": {
     "numberMap": {

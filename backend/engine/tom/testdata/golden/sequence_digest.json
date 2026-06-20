@@ -1,0 +1,54 @@
+{
+  "self_id": "a",
+  "subjects": [
+    "a",
+    "b",
+    "c"
+  ],
+  "means": {
+    "a": {
+      "Agility": 0.394905591208,
+      "Greed": 0.677605164633,
+      "Honesty": 0.405417208718,
+      "Intelligence": 0.590095531007,
+      "Strength": 0.7937138584819999
+    },
+    "b": {
+      "Agility": 0.4936,
+      "Greed": 0.5,
+      "Honesty": 0.5,
+      "Intelligence": 0.5,
+      "Strength": 0.539936
+    },
+    "c": {
+      "Agility": 0.5,
+      "Greed": 0.5,
+      "Honesty": 0.5,
+      "Intelligence": 0.4944,
+      "Strength": 0.5
+    }
+  },
+  "variances": {
+    "a": {
+      "Agility": 0,
+      "Greed": 0,
+      "Honesty": 0,
+      "Intelligence": 0,
+      "Strength": 0
+    },
+    "b": {
+      "Agility": 0.005399999999999999,
+      "Greed": 0.009,
+      "Honesty": 0.009,
+      "Intelligence": 0.009,
+      "Strength": 0.0045324
+    },
+    "c": {
+      "Agility": 0.009,
+      "Greed": 0.009,
+      "Honesty": 0.009,
+      "Intelligence": 0.0027,
+      "Strength": 0.009
+    }
+  }
+}

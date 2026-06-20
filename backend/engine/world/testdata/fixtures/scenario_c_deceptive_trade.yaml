@@ -1,0 +1,46 @@
+# Scenario C — Deceptive Trade
+# Fixture documenting the parameters for the Scenario C integration test.
+#
+# Agent A has surplus meat and low Honesty (30/100). In a trade offer to B,
+# A inflates ClaimedValue (0.80) while the actual supply is only 0.20 (fraud).
+# Agent C is far away and does not witness the trade.
+#
+# Trade signal pipeline (emitSignal) is a P1 stub; fraud detection is applied
+# manually in the test via RecordFraud, representing what P3 wiring will automate.
+#
+# Test file: engine/world/scenario_c_test.go
+
+seed: 99
+ticks: 10
+
+agents:
+  - id: agent-a
+    pos: [0, 0]
+    real_stats:
+      Honesty: 30         # low — disposed to deceive (range [0,100])
+    inventory: [ raw_meat, raw_meat, raw_meat ]   # surplus; offered in trade
+
+  - id: agent-b
+    pos: [1, 0]
+    real_stats:
+      Intelligence: 60    # moderate — fair perceiver of value
+    inventory: [ coin, coin, coin, coin, coin ]   # surplus coins; exchange target
+
+  - id: agent-c
+    pos: [1000, 1000]     # non-witness; far outside sight/hearing radius
+    real_stats: {}
+
+trade_signal:
+  sender: agent-a
+  receiver: agent-b
+  claimed_value: 0.80     # A's inflated claim (Truth hidden from B)
+  actual_effect: 0.20     # meat's actual supply; diff=0.60 > FraudThreshold(0.20)
+
+assertions:
+  direction: b.ToM[agent-a].Honesty < prior   # drops after fraud detection
+  isolation: c.ToM[agent-a].Honesty == prior  # non-witness; no update
+
+golden:
+  b_honesty_before: 50.00   # stat midpoint prior (range [0,100])
+  b_honesty_after:  49.90   # dropped by FraudHonestyDrop=0.10
+  c_honesty:        50.00   # unchanged; non-witness isolation

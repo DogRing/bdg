@@ -28,7 +28,7 @@
         "id": { "$ref": "#/$defs/identifier" },
         "label": {
           "type": "string",
-          "description": "Human-readable name for UI / why-trace. Optional; defaults to id.",
+          "description": "Human-readable display name for UI / why-trace ONLY. Optional. NOT read by engine or platform logic today (engine/stats carries it through and ignores it); falls back to id when absent. Purely cosmetic, non-load-bearing metadata — safe to omit.",
           "minLength": 1
         },
         "kind": {
@@ -37,25 +37,25 @@
         },
         "range": {
           "type": "array",
-          "description": "[min, max] inclusive clamp for Real Stats and ToM beliefs. min <= max.",
+          "description": "[min, max] inclusive clamp for Real Stats and ToM beliefs. min <= max (cross-field, enforced by platform/config / engine.stats.Load, beyond JSON Schema).",
           "items": { "type": "number" },
           "minItems": 2,
           "maxItems": 2
         },
-        "default": {
-          "type": "number",
-          "description": "Initial / fallback value. Optional; defaults to the range midpoint. Must lie within range — platform/config / engine.stats.Load enforces min <= default <= max (cross-field, beyond JSON Schema)."
-        },
         "gen": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Agent-generation distribution (sampled with the injected seeded RNG, D12).",
+          "description": "Agent-GENERATION distribution: how a fresh agent's value for this stat is sampled at spawn, with the injected seeded RNG (D12). This is the PRIMARY source of initial values and takes PRECEDENCE over 'default' — 'default' is never used for sampling. Required in the shipped content.",
           "required": ["dist", "mean", "sd"],
           "properties": {
             "dist": { "enum": ["normal", "uniform"] },
             "mean": { "type": "number" },
             "sd": { "type": "number", "minimum": 0 }
           }
+        },
+        "default": {
+          "type": "number",
+          "description": "FALLBACK / baseline value used ONLY when 'gen' is absent or when a vector is built without sampling (Registry.Defaults(): zero-config, reset, or a missing key). When 'gen' is present it WINS for initial assignment and 'default' is ignored for sampling. Optional; defaults to the range midpoint (min+max)/2. Must lie within range — platform/config / engine.stats.Load enforces min <= default <= max (cross-field, beyond JSON Schema)."
         },
         "inherit": {
           "type": "number",

@@ -1,93 +1,162 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/gates.schema.json",
-  "title": "content/gates.yaml — tag-matched gate registry (D4/D10)",
+  "title": "content/gates.yaml — tag-matched gate registry, predicate-tree form (D4/D10)",
+  "description": "Data-driven gate registry loaded by platform/config into the engine/gates Registry. A gate is a PRECONDITION on actions, selected BY TAG (D4) — never per-action code. Gates are EVALUATED AT PLANNING TIME by the planner against a read-only agent snapshot (ToM[self] stats, per D8), and are NEVER stored on objects, values, or goals (D5: the gate lives on the action side, not the goal/object side). Each gate is a recursive boolean predicate EXPRESSION ('expr'): a leaf compares a stat against a value ({stat,op,value}, reading ToM[self]), a live body scalar ({body,op,value}, NEW v3), or tests action-tag membership ({tag}); composite nodes combine children with {and:[…]}, {or:[…]}, or {not:expr}. A gate's expr evaluating false hides the action from the agent; the action is visible iff EVERY matching gate's expr is true (hard AND across matching gates). Adding a stat / tag / gate is a DATA edit, not a code or schema edit (D10). Identifiers and StatIDs must match docs/glossary.md; platform/config cross-checks every referenced StatID against content/stats.yaml. schema_version 3 adds the body-scalar leaf and optional cost_rule (data-contracts §0 incompatible-change bump).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "gates"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": {
+      "const": 3,
+      "description": "Bumped 2→3 for the body-scalar leaf + cost_rule additions (data-contracts §0)."
+    },
     "gates": {
       "type": "array",
+      "description": "All gate definitions. Evaluated at planning time against a read-only agent snapshot, never persisted on objects (D5).",
       "minItems": 1,
       "items": { "$ref": "#/$defs/gate" }
     }
   },
   "$defs": {
-    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
-    "tag": { "type": "string", "pattern": "^[a-z][a-z]*(:[A-Za-z_]+)?$" },
-    "tagPrefix": { "type": "string", "pattern": "^[a-z]+:?$" },
-    "ref": {
+    "identifier": {
+      "type": "string",
+      "description": "Canonical GateID (docs/glossary.md identifier pattern). Must start with a letter.",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "tag": {
+      "type": "string",
+      "description": "An action Tag (family or family:value), e.g. 'uses:Strength', 'norm:transgressive', 'social'. Used both in a gate's 'tags' match list and in a {tag} leaf membership test.",
+      "pattern": "^[a-z][a-z]*(:[A-Za-z_]+)?$"
+    },
+    "statRef": {
+      "type": "string",
+      "description": "A StatID (cross-checked against content/stats.yaml by platform/config). Always read from ToM[self] (the agent's self-belief) — decisions read self-belief, never Real Stats (D8). gates do NOT correct self-belief toward Real Stats; calibration lives in engine/tom.",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "bodyScalar": {
+      "type": "string",
+      "description": "A canonical BodyScalar field name (NEW v3): Stamina, Mood, Adrenaline, or Urgency. Cross-checked by platform/config against the known set.",
+      "enum": ["Stamina", "Mood", "Adrenaline", "Urgency"]
+    },
+    "op": {
+      "description": "Comparison operator for a stat or body-scalar leaf.",
+      "enum": [">=", ">", "<=", "<", "==", "!="]
+    },
+    "expr": {
+      "description": "A recursive boolean predicate node. EXACTLY ONE shape: a stat-comparison leaf ({stat,op,value}), a body-scalar leaf ({body,op,value}, NEW v3), a tag-membership leaf ({tag}), or a composite ({and:[…]} | {or:[…]} | {not:expr}). Evaluated at planning time against the agent snapshot + the candidate action's tags; never stored on an object (D5).",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
+      "maxProperties": 3,
       "properties": {
-        "stat": { "type": "string", "pattern": "^(@uses|[A-Za-z][A-Za-z0-9_]*)$" },
-        "from": { "enum": ["self", "real"] },
-        "body": { "enum": ["Stamina", "Adrenaline", "Mood"] },
-        "signal": { "enum": ["Urgency"] },
-        "tag_level": { "type": "string", "pattern": "^[a-z]+$" },
-        "const": { "type": "number" },
-        "complement": { "type": "boolean" }
-      }
-    },
-    "term": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["w", "factors"],
-      "properties": {
-        "w": { "type": "number" },
-        "factors": {
+        "stat": { "$ref": "#/$defs/statRef" },
+        "body": {
+          "$ref": "#/$defs/bodyScalar",
+          "description": "Body-scalar leaf (NEW v3): true iff cmp(AgentSnapshot.<body>, op, value). Reads the live Body scalar — Stamina, Mood, Adrenaline, or Urgency — NOT ToM[self]."
+        },
+        "op": { "$ref": "#/$defs/op" },
+        "value": { "type": "number", "description": "The threshold the stat or body scalar is compared against." },
+        "tag": {
+          "$ref": "#/$defs/tag",
+          "description": "Tag-membership leaf: true iff the candidate action carries this exact tag. Lets a gate reference the action's own tags inside its predicate (D4)."
+        },
+        "and": {
           "type": "array",
+          "description": "Composite AND: true iff EVERY child expr is true.",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/ref" }
+          "items": { "$ref": "#/$defs/expr" }
+        },
+        "or": {
+          "type": "array",
+          "description": "Composite OR: true iff ANY child expr is true.",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/expr" }
+        },
+        "not": {
+          "$ref": "#/$defs/expr",
+          "description": "Composite NOT: true iff the child expr is false."
         }
-      }
-    },
-    "when": {
-      "type": "object",
-      "additionalProperties": false,
-      "minProperties": 1,
-      "properties": {
-        "tags_any": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/tag" } },
-        "tag_prefix": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/tagPrefix" } }
-      }
+      },
+      "oneOf": [
+        {
+          "comment": "stat-comparison leaf",
+          "required": ["stat", "op", "value"],
+          "not": { "anyOf": [
+            { "required": ["body"] }, { "required": ["tag"] },
+            { "required": ["and"] }, { "required": ["or"] }, { "required": ["not"] }
+          ] }
+        },
+        {
+          "comment": "body-scalar leaf (NEW v3)",
+          "required": ["body", "op", "value"],
+          "not": { "anyOf": [
+            { "required": ["stat"] }, { "required": ["tag"] },
+            { "required": ["and"] }, { "required": ["or"] }, { "required": ["not"] }
+          ] }
+        },
+        {
+          "comment": "tag-membership leaf",
+          "required": ["tag"],
+          "not": { "anyOf": [
+            { "required": ["stat"] }, { "required": ["body"] },
+            { "required": ["op"] }, { "required": ["value"] },
+            { "required": ["and"] }, { "required": ["or"] }, { "required": ["not"] }
+          ] }
+        },
+        {
+          "comment": "AND composite",
+          "required": ["and"],
+          "not": { "anyOf": [
+            { "required": ["stat"] }, { "required": ["body"] }, { "required": ["tag"] },
+            { "required": ["or"] }, { "required": ["not"] }
+          ] }
+        },
+        {
+          "comment": "OR composite",
+          "required": ["or"],
+          "not": { "anyOf": [
+            { "required": ["stat"] }, { "required": ["body"] }, { "required": ["tag"] },
+            { "required": ["and"] }, { "required": ["not"] }
+          ] }
+        },
+        {
+          "comment": "NOT composite",
+          "required": ["not"],
+          "not": { "anyOf": [
+            { "required": ["stat"] }, { "required": ["body"] }, { "required": ["tag"] },
+            { "required": ["and"] }, { "required": ["or"] }
+          ] }
+        }
+      ]
     },
     "gate": {
       "type": "object",
+      "description": "One gate definition: an id, the action tags it governs (D4), a recursive boolean predicate 'expr', and an optional cost_rule (NEW v3). The gate matches a candidate action iff the action carries ANY tag in 'tags' (empty/absent 'tags' = matches every action). For a matched action the gate's 'expr' is evaluated against the agent snapshot; false hides the action. Evaluated at planning time, never stored on an object/goal (D5).",
       "additionalProperties": false,
-      "required": ["id", "kind", "formula", "terms"],
+      "required": ["id", "expr"],
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
-        "kind": { "enum": ["visibility", "preference"] },
-        "formula": { "enum": ["threshold_gte", "affine_cost"] },
-        "when": { "$ref": "#/$defs/when" },
-        "per_matched_tag": { "$ref": "#/$defs/tagPrefix" },
-        "requires_known": { "type": "boolean" },
-        "terms": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/term" } },
-        "threshold": { "type": "number" },
-        "deadband": { "type": "number", "minimum": 0 },
-        "base": { "type": "number" },
-        "min": { "type": "number" },
-        "max": { "type": "number" }
-      },
-      "allOf": [
-        {
-          "comment": "visibility gates use threshold_gte + threshold; preference gates use affine_cost + base",
-          "if": { "properties": { "kind": { "const": "visibility" } } },
-          "then": {
-            "required": ["threshold"],
-            "properties": { "formula": { "const": "threshold_gte" } }
-          }
+        "tags": {
+          "type": "array",
+          "description": "Action tags this gate governs (D4). The gate applies to a candidate action iff the action has ANY of these tags. Omit or leave empty to apply to ALL actions.",
+          "items": { "$ref": "#/$defs/tag" }
         },
-        {
-          "if": { "properties": { "kind": { "const": "preference" } } },
-          "then": {
-            "required": ["base"],
-            "properties": { "formula": { "const": "affine_cost" } }
+        "expr": { "$ref": "#/$defs/expr" },
+        "cost_rule": {
+          "type": "object",
+          "description": "Optional cost-multiplier rule (NEW v3). A gate with a cost_rule emits its mult when expr is true; its visibility verdict is ALWAYS true (it never hides an action).",
+          "additionalProperties": false,
+          "required": ["mult"],
+          "properties": {
+            "mult": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Cost multiplier emitted when this gate's expr is true (e.g. 0.50 for half cost)."
+            }
           }
         }
-      ]
+      }
     }
   }
 }

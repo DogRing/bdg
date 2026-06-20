@@ -18,11 +18,37 @@ world:
   real_scale: 12                  # 24 game-hours = 2 real-hours
   day_minutes: 1440               # 24 * 60
   spatial_hash_cell: 8.0          # spatial-hash cell edge (world units); ~ avg perception radius
+  reliance_threshold: 0.5         # share ∈ (0,1] of agents pointing at one RelyOn holder → RoleEmerged (D2)
+  outcome_difficulty_base: 50.0   # Real Stat level at which an action succeeds with neutral effort
+  backup_every_ticks: 60          # emit SnapshotReady every N ticks (platform/persist handles the write)
 perception:
-  sight_radius: 18.0              # line-of-sight range (world units)
-  smell_radius: 10.0              # scent-gradient falloff range
-  hearing_radius: 14.0            # scaled by an action's noise:* tag
+  sight_radius: 18.0              # line-of-sight range (world units); engine/perception Sight
+  smell_radius: 10.0              # scent-gradient falloff range; engine/perception Smell
+  hearing_radius: 14.0            # base hearing range; scaled by an action's noise:* tag
 
+# ── Need rates (AUTHORITATIVE source for engine/needs; data-driven, D9 / D10) ────
+# Per-need (per glossary Dimension) decay + setpoint. The engine/needs loader reads THIS
+# block (bytes injected by platform/config — engine/needs never opens a file, D10). Keys are
+# canonical Dimension ids (docs/glossary.md); platform/config cross-checks them against
+# content/needs.yaml.
+#   decay_per_tick          — satisfaction lost per tick (= per game-minute). D9: this is the
+#                             ONLY authored demand input; demand = rate × predicted-time is
+#                             DERIVED by the planner, never authored.
+#   satisfaction_threshold  — setpoint in [0,1]; below this the need is unmet (raises salience).
+# Only CONSUMABLE (time-driven) needs appear here; the schema requires decay_per_tick > 0.
+# Conditional needs (Safety, Standing, Openness — content/needs.yaml kind:conditional, no rate)
+# are event-driven, carry no decay, and are intentionally absent from this block.
+needs:
+  Satiety:   { decay_per_tick: 0.00070, satisfaction_threshold: 0.55 }  # full -> empty over a long day
+  Hydration: { decay_per_tick: 0.00110, satisfaction_threshold: 0.50 }  # thirst grows faster than hunger
+  Rest:      { decay_per_tick: 0.00045, satisfaction_threshold: 0.45 }  # fatigue accrues over a waking day
+  Social:    { decay_per_tick: 0.00020, satisfaction_threshold: 0.30 }  # slow social need; drives trade / signal
+
+# ── Value arbitration weights (read by engine/values; data-driven, D10) ──────────
+# Per-Dimension tunable weight used by Priority(d) = Salience(d) × weight(d). engine/values
+# reads THIS block (bytes injected by platform/config — engine/values never opens a file,
+# D10) via Load(). Keys are canonical Dimension ids (docs/glossary.md); platform/config
+# cross-checks them against content/needs.yaml (every value weight key names a known
 # ── Agent generation (sampled with the injected seeded RNG, D12) ────────────────
 generation:
   village_size: 40                # default agent count (PRD scale: 30–200)
@@ -31,7 +57,9 @@ generation:
   initial_belief_noise: 0.15      # sd of ToM[self]/ToM[X] error vs Real Stats at spawn (drives
                                   # the over/under-estimation asymmetry, D8)
 
-# ── Tag magnitudes (D4): named levels referenced by gates.yaml tag_level + cost_terms ──
+# ── Tag magnitudes (D4): named levels read by the planner's tag-derived cost (cost_terms) ──
+# Also fed to engine/gates only as the tag a {tag} leaf tests for; the MAGNITUDES below are a
+# planner-cost concern (gates are boolean, schema_version 2 — they carry no magnitude/cost).
 tag_levels:
   effort:      { none: 0.0, low: 0.20, med: 0.50, high: 0.90 }
   risk:        { low: 0.20, med: 0.50, high: 0.90 }
@@ -39,8 +67,9 @@ tag_levels:
   noise:       { low: 0.20, med: 0.50, high: 0.90 }
   abstraction: { low: 0.25, med: 0.55, high: 0.90 }
 
-# ── Cost-term library (additive base cost from TAGS; gates multiply on top) ─────
-# raw_cost(action) = Σ termWeight · magnitude. Decisions then read costMod from gates.yaml.
+# ── Cost-term library (additive cost from TAGS; composed in the PLANNER, not gates) ─────
+# raw_cost(action) = Σ termWeight · magnitude, assembled by engine/planner. Gates no longer
+# contribute a cost multiplier (schema_version 2: gates are boolean visibility only).
 cost_terms:
   time:   { per_minute: 0.010 }   # duration cost (durative actions); distance folds into MoveTo
   effort: { weight: 1.0 }         # × tag_levels.effort
@@ -58,6 +87,7 @@ adrenaline:
   surge: 0.6                      # added on trigger
   decay: 0.03                     # per game-minute toward 0 (the crash)
   max: 1.0
+  crash_stamina_penalty: 0.50     # Stamina -= AdrDecay × this on the adrenaline crash (NEW P3)
 stamina:
   max: 1.0
   drain_per_effort: 0.015         # per game-minute, × tag_levels.effort, while acting
@@ -76,6 +106,23 @@ gossip:
 resentment:
   affinity_drop: 0.15             # on harm, Affinity decreases by this × Vindictiveness
   aggression_drift: 0.02          # slow Aggression drift while resentment persists
+  per_trigger: 0.05               # NEW P3: Resentment += this × Vindictiveness per trigger event
+  threshold: 0.30                 # NEW P3: above this, aggression_drift applies to ToM[self]
+
+# ── Gates (P3 gate thresholds + adrenaline multiplier) ──────────────────────────
+# Read by engine/gates (embedded in gate expr values) and engine/agent (crash coupling).
+gates:
+  stamina_effort_high_threshold: 0.20   # stamina gate floor for effort:high visibility
+  apathy_mood_threshold:        -0.60   # mood at/below which abstraction:med+ is hidden
+  conscience_urgency_threshold:  0.70   # urgency above which the conscience barrier lowers
+  adrenaline_cost_multiplier:    0.50   # cost ×multiplier when Adrenaline >= 0.70 on hard actions
+
+# ── Coping cascade (P3) ──────────────────────────────────────────────────────────
+coping:
+  rebind_min_intelligence: 0.4    # < this → skip Rebinding, go directly to Latent (D8 object-fixation)
+  apathy_fail_streak: 3           # Latent → Apathy at this FailStreak
+  apathy_recover_mood: 0.15       # Mood += this on Apathy→Idle recovery
+  apathy_budget_penalty: 0.5      # planner budget × (1−this) while Apathy
 
 # ── Planning / arbitration ──────────────────────────────────────────────────────
 planning:
@@ -87,6 +134,49 @@ forward_sim:
   horizon_minutes: 720            # max look-ahead (12 game-hours); gated by Intelligence
   horizon_per_intelligence: 1440  # + Intelligence · this added to horizon (low-IQ ≈ no provisioning)
   step_minutes: 15                # need-trajectory roll granularity
+
+# ── Planner (read by engine/planner; data-driven, D10) ───────────────────────────
+# Authoritative tunables for the deliberation engine (engine/planner). Bytes injected by
+# platform/config — engine/planner never opens a file (D10). Distinct from the `planning:`
+# block above (which carries engine/agent's cross-tick budget-scaling + anti-thrash
+# stickiness/deadband). The planner reads ONLY this `planner:` block.
+#   budget.*            — hard search caps; a breach aborts the Plan call with ErrBudgetExceeded
+#                         (no silent truncation, so a why-trace can record the abort).
+#   base_horizon_ticks  — forward-sim base lookahead; the Intelligence-gated horizon is
+#                         floor(base_horizon_ticks × perceived_intelligence / max_intelligence),
+#                         clamped to a minimum of 1 tick (D9 provisioning foresight, scenario H).
+#   tag_costs.<Tag>     — per-Tag additive cost weight; cost(action) = Σ tag_costs[tag] over its
+#                         tags (D4). Tie-breaker among equal-Priority, equal-depth candidates
+#                         (lower cost wins; remaining ties break by lexicographic ActionID, D12).
+#                         A tag absent here contributes 0. platform/config cross-checks each key
+#                         against the tags actually used in content/actions.yaml.
+#   urgency_threshold   — dynamic visibility relaxation: a gated (normally-invisible) action
+#                         becomes available iff Urgency (max Salience across Dimensions) exceeds
+#                         this (conscience loosening; scenario B). Per-call + transient only.
+planner:
+  budget:
+    max_depth: 6                  # max HTN recursion depth (precondition-chain ceiling)
+    max_actions: 16               # max assembled plan length
+    max_nodes: 256                # max GOAP nodes expanded per Plan call
+  base_horizon_ticks: 720         # base forward-sim lookahead (≈ 12 game-hours at max Intelligence)
+  urgency_threshold: 0.65         # Urgency above this relaxes a failing gate (mirrors adrenaline trigger)
+  tag_costs:                      # per-Tag cost weight (D4); cost(action) = Σ over its tags
+    "effort:low":          0.20
+    "effort:med":          0.50
+    "effort:high":         0.90
+    "risk:low":            0.16
+    "risk:med":            0.40
+    "risk:high":           0.72
+    "violent:low":         0.45
+    "violent:med":         0.90
+    "violent:high":        1.50
+    "noise:low":           0.08
+    "noise:med":           0.20
+    "noise:high":          0.36
+    "norm:transgressive":  1.50
+    "social":              0.05
+    "cooperative":         0.05
+
 salience:
   proximity_gain: 0.5             # perceptual proximity boost to EffValue
   proximity_falloff: 12.0         # world-units e-folding distance for proximity salience
@@ -95,3 +185,17 @@ salience:
 regen:
   berry_bush: 480                 # a depleted bush regrows in ~8 game-hours
   prey_respawn: 720               # a hunted prey instance respawns elsewhere after ~12h
+
+# ── Value weights (per-Dimension arbitration, engine/values) ────────────────────
+# Population-default dimension weights used by the planner's Priority arbitration.
+# Weights are ≥ 0; a Dimension absent here defaults to 1.0. These are the STATIC
+# defaults — individual agents may perturb them by disposition later (engine/agent).
+values:
+  weights:
+    Safety:     1.40
+    Hydration:  1.05
+    Satiety:    1.00
+    Rest:       0.85
+    Standing:   0.60
+    Openness:   0.40
+    Social:     0.80
