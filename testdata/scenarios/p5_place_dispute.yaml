@@ -1,0 +1,29 @@
+# P5 scenario — Place value (Openness) vs a neighbour's Build
+#
+# A resident holds a Place value: keep the Openness (view quality) of "home" at or above
+# 0.6. A neighbour with the materials and Strength to Build sits next to that home. When
+# the world's place quality for "home" drops below the setpoint (a structure rising in the
+# view), the resident's appraisePlace raises its urgency proxy — the Scenario-E wiring.
+#
+# Stats are normalized [0,1]. Note: an autonomous Build also depends on the builder having
+# a goal that the `structure_built` predicate serves; this fixture pins the actors and the
+# place so the Place-referent appraisal path is exercised and reproducible.
+
+agents:
+  - id: "resident"
+    stats: { Intelligence: 0.6, Agility: 0.6, Strength: 0.5, Honesty: 0.7, Aggression: 0.2 }
+    values:
+      - { dimension: Openness, ref: { kind: Place, id: "home" }, weight: 0.8, posture: MaintainAbove, setpoint: 0.6 }
+    inventory: {}
+    pos: { x: 0, y: 0 }
+
+  - id: "builder"
+    stats: { Intelligence: 0.5, Agility: 0.5, Strength: 0.85, Honesty: 0.6, Aggression: 0.3 }
+    values: []
+    inventory: { timber: 4, stone: 2 }
+    pos: { x: 2, y: 0 }
+
+objects:
+  - { id: "home", kind: shelter, pos: { x: 0, y: 0 }, supply: { Rest: 0.5 } }
+  - { id: "well1", kind: water_source, pos: { x: 0, y: 4 } }
+  - { id: "bush1", kind: berry_bush, pos: { x: 4, y: 0 } }

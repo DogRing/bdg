@@ -1,6 +1,6 @@
 # SPEC — `engine/gates`
 
-> Status: `NEEDS_FIX` (P3 extension drafted; implementer picks up the "Implement (P3)" items)
+> Status: `READY` (P3 implemented & tested: body-scalar leaves, cost_rule, stamina/apathy/adrenaline gates + conscience urgency-relief. Golden `testdata/golden/p3_gates.json` + table tests in `p3_gates_test.go`.)
 > Leaf level: `L2`  ·  Owner agent: `<filled by implementer>`
 
 ## Purpose
@@ -267,49 +267,49 @@ func (reg *Registry) ReadsBody() []BodyScalar
 
 ## Acceptance Criteria (testable)
 
-- [ ] **P1/P2 gates unchanged (no regression)**: the shipped `capability_floor`, `knowledge`, and
+- [x] **P1/P2 gates unchanged (no regression)**: the shipped `capability_floor`, `knowledge`, and
   base `conscience` predicates still load and evaluate identically; the existing golden snapshot
   (or a regenerated, human-approved one) still passes for the non-body-scalar cases.
-- [ ] **Loads schema_version 3 from an injected `io.Reader`**: `Load` builds a `Registry` from
+- [x] **Loads schema_version 3 from an injected `io.Reader`**: `Load` builds a `Registry` from
   in-memory YAML bytes against a stub `stats.Registry`; the registry contains exactly the gate ids
   in the source (`adrenaline`, `apathy`, `capability_floor`, `conscience`, `knowledge`, `stamina`).
-- [ ] **`stamina` gate hides `effort:high` when drained**: an action tagged `effort:high` with
+- [x] **`stamina` gate hides `effort:high` when drained**: an action tagged `effort:high` with
   `AgentSnapshot.Stamina = 0.10` → `Result.Visible == false`; the same action at `Stamina = 0.30`
   → `Visible == true`; an `effort:low`/`effort:none` action is unaffected at any Stamina.
   Table-driven; **golden snapshot** for the `Stamina = 0.10` (or `0.0`) case (task AC: "Stamina 0
   agent: effort:high invisible").
-- [ ] **`apathy` gate narrows cognition at low Mood**: `Mood = -0.70` → an `abstraction:med` or
+- [x] **`apathy` gate narrows cognition at low Mood**: `Mood = -0.70` → an `abstraction:med` or
   `abstraction:high` action is `Visible == false`; an `abstraction:low` action stays visible;
   `Mood = -0.50` → all visible. Table-driven over the `-0.60` boundary.
-- [ ] **`conscience` urgency relief (scenario B)**: a `norm:transgressive` action with
+- [x] **`conscience` urgency relief (scenario B)**: a `norm:transgressive` action with
   `ToM[self].Honesty = 0.60` and `Aggression = 0.45` (fails the base predicate) becomes
   `Visible == true` when `Urgency = 0.80` (> `0.70`) via the relief branch (`Honesty < 0.55` OR
   `Aggression ≥ 0.50` — here neither, so it is the **lowered** bound that flips: confirm the
   authored branch makes Take visible at the relaxed thresholds with the intended disposition). At
   `Urgency = 0.50` the base predicate governs and it stays hidden. Table-driven + tie-in to the
   agent/planner scenario-B golden (Take appears in PlanBuilt steps).
-- [ ] **`adrenaline` gate cost discount**: an action tagged `effort:high` with
+- [x] **`adrenaline` gate cost discount**: an action tagged `effort:high` with
   `Adrenaline = 0.75` → `Result.CostMultiplier == 0.50`; the same action at `Adrenaline = 0.40`
   → `CostMultiplier == 1.0`; a `risk:high` and a `violent:high` action both get the discount at
   high Adrenaline; an `effort:low` non-violent action stays `1.0`. The gate never sets
   `Visible == false`. Table-driven.
-- [ ] **CostMultiplier is the product of matching rules, default 1.0**: an action matched by no
+- [x] **CostMultiplier is the product of matching rules, default 1.0**: an action matched by no
   cost-rule gate yields `CostMultiplier == 1.0`; the adrenaline discount composes multiplicatively
   if a second cost rule is ever added (single-rule today → exactly `0.50`).
-- [ ] **Body-scalar leaf reads live Body, not ToM (NEW v3)**: a `stamina`/`apathy`/urgency leaf
+- [x] **Body-scalar leaf reads live Body, not ToM (NEW v3)**: a `stamina`/`apathy`/urgency leaf
   evaluation changes only when the corresponding `AgentSnapshot` body field changes; `SelfStats`
   alone never flips a body-scalar leaf. (Guards the D8-vs-body split.)
-- [ ] **Decisions read `ToM[self]` for stat leaves (D8)**: `capability_floor`/base-`conscience`
+- [x] **Decisions read `ToM[self]` for stat leaves (D8)**: `capability_floor`/base-`conscience`
   evaluation uses `SelfStats`; the `AgentSnapshot` exposes no Real-Stats field.
-- [ ] **Unknown references rejected at load (semantic check)**: `Load` errors on a stat leaf naming
+- [x] **Unknown references rejected at load (semantic check)**: `Load` errors on a stat leaf naming
   an absent StatID, a body-scalar leaf naming an unknown `Body`, a node with >1 shape, or a
   `CostRule.Mult ≤ 0`. Table-driven.
-- [ ] **Determinism (D12)**: `IDs()`, `Trace` ordering, `Reads()`/`ReadsBody()` are lexicographic
+- [x] **Determinism (D12)**: `IDs()`, `Trace` ordering, `Reads()`/`ReadsBody()` are lexicographic
   and identical across repeated calls and a second `Load` of the same bytes. `Evaluate` is a pure
   function: same `(Action, AgentSnapshot)` → same `Result` (golden over shipped content + fixtures).
-- [ ] **Read-only inputs**: a property test confirms `AgentSnapshot` and `Action.Tags` are
+- [x] **Read-only inputs**: a property test confirms `AgentSnapshot` and `Action.Tags` are
   unchanged after `Evaluate`.
-- [ ] **`Reads()`/`ReadsBody()` unions**: `Reads()` returns exactly the stat-leaf StatIDs
+- [x] **`Reads()`/`ReadsBody()` unions**: `Reads()` returns exactly the stat-leaf StatIDs
   (`Aggression, Agility, Honesty, Intelligence, Strength`); `ReadsBody()` returns
   (`Adrenaline, Mood, Stamina, Urgency`), each sorted.
 

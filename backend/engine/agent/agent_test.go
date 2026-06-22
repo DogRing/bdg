@@ -223,10 +223,15 @@ func testAgent(id core.AgentID, realStats stats.Stats, cfg Config) *Agent {
 
 // mockWorldView satisfies WorldView for testing.
 type mockWorldView struct {
-	entities  []perception.PerceivedEntity
-	sounds    []perception.SoundEvent
-	knownObjs []KnownObject
-	beliefs   map[core.AgentID]tom.Belief
+	entities        []perception.PerceivedEntity
+	sounds          []perception.SoundEvent
+	knownObjs       []KnownObject
+	beliefs         map[core.AgentID]tom.Belief
+	triggers        []core.AgentID
+	placeQuality    func(core.ObjectID) float64      // overrides for PlaceQuality queries
+	agentIDs        []core.AgentID                   // P6: agent IDs for reliance/vote queries
+	incomingSignals map[core.AgentID][]core.Signal   // P6: signals addressed to each agent
+	entityTags      map[core.ObjectID][]core.Tag     // P6 BLOCKER-1: per-entity tag overrides for Sight
 }
 
 func (m *mockWorldView) EntitiesInRadius(center core.Vec2, radius float64) []perception.PerceivedEntity {
@@ -234,6 +239,11 @@ func (m *mockWorldView) EntitiesInRadius(center core.Vec2, radius float64) []per
 }
 
 func (m *mockWorldView) Tags(id core.ObjectID) []core.Tag {
+	if m.entityTags != nil {
+		if tags, ok := m.entityTags[id]; ok {
+			return tags
+		}
+	}
 	return nil
 }
 
@@ -258,9 +268,37 @@ func (m *mockWorldView) HasPendingOffer(receiver core.AgentID) bool {
 	return false
 }
 
+func (m *mockWorldView) ResentmentTriggers(self core.AgentID) []core.AgentID {
+	return m.triggers
+}
+
+func (m *mockWorldView) PlaceQuality(placeID core.ObjectID) float64 {
+	if m.placeQuality != nil {
+		return m.placeQuality(placeID)
+	}
+	return 1.0 // default: pristine
+}
+
+
+func (m *mockWorldView) MemberNeedIntensities() map[core.AgentID]map[core.Dimension]float64 {
+	return nil // mock: no collective member data by default
+}
+
+func (m *mockWorldView) AgentIDs() []core.AgentID {
+	return m.agentIDs
+}
+
+func (m *mockWorldView) IncomingSignals(self core.AgentID) []core.Signal {
+	if m.incomingSignals == nil {
+		return nil
+	}
+	return m.incomingSignals[self]
+}
+
 func newMockWorldView() *mockWorldView {
 	return &mockWorldView{
-		beliefs: make(map[core.AgentID]tom.Belief),
+		beliefs:         make(map[core.AgentID]tom.Belief),
+		incomingSignals: make(map[core.AgentID][]core.Signal),
 	}
 }
 
@@ -799,25 +837,40 @@ func TestApplyOutcome_MoodUpdate(t *testing.T) {
 
 // TestApplyOutcome_NeedDeltaApplication verifies need deltas are applied.
 func TestApplyOutcome_NeedDeltaApplication(t *testing.T) {
+	t.Run("basic delta application", func(t *testing.T) {
+		cfg := DefaultConfig()
+		regs := makeTestRegs(t)
+		realStats := regs.stats.Defaults()
+		selfToM := tom.NewToM("agent_1", realStats, 0.5, rng.New(42), regs.stats, cfg.Rates)
+		agent := New("agent_1", core.Vec2{}, realStats, selfToM, cfg)
+		agent.NeedIntensities["Satiety"] = 0.60
+
+		outcome := ActionOutcome{
+			Action:    "Eat",
+			Status:    Succeeded,
+			Completed: true,
+			Effect:    map[core.Dimension]float64{"Satiety": 0.40},
+		}
+
+		emit := core.NoopEmitter{}
+		agent.ApplyOutcome(outcome, rng.New(0), cfg, regs.stats, emit)
+
+		if agent.NeedIntensities["Satiety"] >= 0.60 {
+			t.Errorf("NeedIntensity should decrease, got %v", agent.NeedIntensities["Satiety"])
+		}
+	})
+}
+
+// P5: Config loading tests
+func TestDefaultConfig_P5SocialFields(t *testing.T) {
 	cfg := DefaultConfig()
-	regs := makeTestRegs(t)
-	realStats := regs.stats.Defaults()
-	selfToM := tom.NewToM("agent_1", realStats, 0.5, rng.New(42), regs.stats, cfg.Rates)
-	agent := New("agent_1", core.Vec2{}, realStats, selfToM, cfg)
-	agent.NeedIntensities["Satiety"] = 0.60
-
-	outcome := ActionOutcome{
-		Action:    "Eat",
-		Status:    Succeeded,
-		Completed: true,
-		Effect:    map[core.Dimension]float64{"Satiety": 0.40},
+	if cfg.BondAffinityGain != 0.20 {
+		t.Errorf("BondAffinityGain = %v, want 0.20", cfg.BondAffinityGain)
 	}
-
-	emit := core.NoopEmitter{}
-	agent.ApplyOutcome(outcome, rng.New(0), cfg, regs.stats, emit)
-
-	// Intensity should decrease by delta.
-	if agent.NeedIntensities["Satiety"] >= 0.60 {
-		t.Errorf("NeedIntensity should decrease, got %v", agent.NeedIntensities["Satiety"])
+	if cfg.MinCareThreshold != 0.30 {
+		t.Errorf("MinCareThreshold = %v, want 0.30", cfg.MinCareThreshold)
+	}
+	if cfg.MaxPossiblePriority != 2.5 {
+		t.Errorf("MaxPossiblePriority = %v, want 2.5", cfg.MaxPossiblePriority)
 	}
 }

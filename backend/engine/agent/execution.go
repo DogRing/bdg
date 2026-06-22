@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"math"
+
 	"github.com/dogring/bdg/engine/actions"
 	"github.com/dogring/bdg/engine/core"
 	"github.com/dogring/bdg/engine/planner"
@@ -29,7 +31,11 @@ func (a *Agent) needsReplan(goalChanged bool) bool {
 // and trace, or an error that triggers the coping cascade.
 // P3: threads live body scalars (Stamina, Mood, Adrenaline, Urgency) into the
 // planner snapshot so the P3 gates can read them.
-func (a *Agent) replan(world WorldView, now core.Tick, rng *rng.RNG, svc Services, priorities []planner.DimensionPriority) (planner.Plan, planner.Trace, error) {
+// P5: combinedPriority is the max of self-priority and max Other-referent priority
+// (computed by appraiseOthers). This urgency proxy drives the planner's conscience
+// loosening: when caring for an Other in distress raises urgency above the threshold,
+// transgressive actions become visible.
+func (a *Agent) replan(world WorldView, now core.Tick, rng *rng.RNG, svc Services, priorities []planner.DimensionPriority, combinedPriority float64) (planner.Plan, planner.Trace, error) {
 	// Build known object set from WorldView.
 	knownObjs := world.KnownObjects(a.ID)
 	knownSet := make(map[core.ObjectID]struct{}, len(knownObjs))
@@ -40,30 +46,44 @@ func (a *Agent) replan(world WorldView, now core.Tick, rng *rng.RNG, svc Service
 	// Get self-belief (ToM[self], D8).
 	selfBelief, _ := a.ToM.Self(a.ToM.SelfID())
 
-	// Compute Urgency: max Salience × UrgencyFromDeficit, clamped [0,1].
-	maxSalience := 0.0
-	for _, p := range priorities {
-		if float64(p.Salience) > maxSalience {
-			maxSalience = float64(p.Salience)
-		}
-	}
-	urgency := clamp01(maxSalience * a.Cfg.UrgencyFromDeficit)
+	// Compute Urgency from combinedPriority (self + Other-referent max).
+	// Normalize by MaxPossiblePriority and clamp to [0,1].
+	urgency := clamp01(combinedPriority / a.Cfg.MaxPossiblePriority)
 
 	// Populate SatisfiedFacts from current world state.
 	var satisfiedFacts []core.Pred
 	entities := world.EntitiesInRadius(a.Pos, interactionRadius)
+	nearOther := false
+	ownedByOther := false
 	for _, e := range entities {
 		if e.ID == core.ObjectID(a.ID) {
 			continue
 		}
+		isAgent := false
+		hasItems := false
 		for _, tag := range e.Tags {
-			if tag == "agent" {
-				satisfiedFacts = append(satisfiedFacts, "near_other")
-				goto doneNearOther
+			switch tag {
+			case "agent":
+				isAgent = true
+			case "has_items":
+				hasItems = true
+			}
+		}
+		if isAgent {
+			nearOther = true
+			if hasItems {
+				ownedByOther = true
 			}
 		}
 	}
-doneNearOther:
+	if nearOther {
+		satisfiedFacts = append(satisfiedFacts, "near_other")
+	}
+	if ownedByOther {
+		// A nearby agent holds items the current agent could Take (B-3: owned_by_other
+		// is a world-state fact, not an action producer — planner SPEC §World-state facts).
+		satisfiedFacts = append(satisfiedFacts, "owned_by_other")
+	}
 	if world.HasPendingOffer(a.ID) {
 		satisfiedFacts = append(satisfiedFacts, "tradeOffered")
 	}
@@ -94,8 +114,11 @@ doneNearOther:
 
 // execute emits the intent for the current step in the durative plan.
 // It advances Elapsed and applies Stamina drain/regen but does NOT check
-// completion — that's the world's job (reported via ApplyOutcome).
-func (a *Agent) execute(now core.Tick, actReg *actions.Registry) Intent {
+// completion — that's the world's job (reported via ApplyOutcome). The
+// concrete object the action operates on is bound into Intent.Target here
+// (the planner picks the ACTION; the agent binds the instance — D3 parametric
+// targeting), so the world can resolve resource conflicts over it.
+func (a *Agent) execute(now core.Tick, actReg *actions.Registry, world WorldView) Intent {
 	// No plan or plan exhausted — nothing to execute.
 	if len(a.Plan.Actions) == 0 || a.PlanIdx >= len(a.Plan.Actions) {
 		return Intent{
@@ -107,6 +130,7 @@ func (a *Agent) execute(now core.Tick, actReg *actions.Registry) Intent {
 
 	actionID := a.Plan.Actions[a.PlanIdx]
 	tickMinutes := core.GameMinutes(1)
+	target := a.bindTarget(actionID, actReg, world)
 
 	if a.Elapsed == 0 {
 		// First tick of this action — start it.
@@ -114,6 +138,7 @@ func (a *Agent) execute(now core.Tick, actReg *actions.Registry) Intent {
 			Kind:   IntentStart,
 			Agent:  a.ID,
 			Action: actionID,
+			Target: target,
 			Tick:   now,
 		}
 		a.Elapsed += tickMinutes
@@ -126,11 +151,42 @@ func (a *Agent) execute(now core.Tick, actReg *actions.Registry) Intent {
 		Kind:   IntentContinue,
 		Agent:  a.ID,
 		Action: actionID,
+		Target: target,
 		Tick:   now,
 	}
 	a.Elapsed += tickMinutes
 	a.applyStaminaDelta(actionID, actReg, tickMinutes)
 	return intent
+}
+
+// bindTarget resolves the concrete object instance an action operates on, for
+// Intent.Target. Object-targeted actions (Forage→berry_bush, Hunt→prey,
+// Craft→tool_bench, Drink→water_source, TakeShelter→shelter) bind the NEAREST
+// known object of the action's target_kind; ties break by ObjectID, since
+// KnownObjects is ObjectID-sorted (D12). Actions with no object target (Rest,
+// MoveTo's location, social/agent actions) bind the empty ObjectID — the world
+// treats an empty Target as "no resource", so they never contend.
+func (a *Agent) bindTarget(actionID actions.ActionID, actReg *actions.Registry, world WorldView) core.ObjectID {
+	if actReg == nil || world == nil {
+		return ""
+	}
+	def, ok := actReg.Get(actionID)
+	if !ok || def.Target != actions.TargetObject || def.TargetKindID == "" {
+		return ""
+	}
+
+	var best core.ObjectID
+	bestDist := math.MaxFloat64
+	for _, ko := range world.KnownObjects(a.ID) {
+		if ko.Kind != def.TargetKindID {
+			continue
+		}
+		if d := a.Pos.Distance(ko.Pos); d < bestDist {
+			bestDist = d
+			best = ko.ID
+		}
+	}
+	return best
 }
 
 // applyStaminaDelta applies Stamina drain (for effort) and regen (for Rest/Sleep)
@@ -213,9 +269,11 @@ func (a *Agent) emitSignal(now core.Tick, world WorldView) Intent {
 			return Intent{Kind: IntentNone, Agent: a.ID, Tick: now}
 		}
 		// ClaimedValue is inflated inversely with Honesty (D8: reads ToM[self]).
+		// It lerps from the honest floor to the dishonest ceiling as perceived Honesty
+		// falls (D10: band from balance.yaml trade.claim_inflate_{min,max}; no literal).
 		honesty := clamp01(a.perceivedStat("Honesty") / 100.0)
-		claimedValue := 0.50 + (1.0-honesty)*0.40 // low-honesty → higher claim
-		truth := honesty * claimedValue             // truth proportional to honesty
+		claimedValue := a.Cfg.ClaimInflateMin + (1.0-honesty)*(a.Cfg.ClaimInflateMax-a.Cfg.ClaimInflateMin)
+		truth := honesty * claimedValue // truth proportional to honesty
 		return Intent{
 			Kind:  IntentSignal,
 			Agent: a.ID,

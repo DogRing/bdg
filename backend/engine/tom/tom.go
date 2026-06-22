@@ -19,6 +19,10 @@ import (
 // keyed by the owning agent's own id (ToM[self], D8).
 type SubjectID = core.AgentID
 
+// Function names a service an agent relies on another to provide (glossary: Reliance edge).
+// Canonical declaration is core.Function; this alias makes map keys interoperate.
+type Function = core.Function
+
 // StatDist is the mean/variance summary of a stat estimate.
 // Variance >= 0 encodes uncertainty: high variance = low confidence (a fresh /
 // hearsay belief); it shrinks toward 0 as direct evidence accumulates.
@@ -29,15 +33,15 @@ type StatDist struct {
 
 // Belief is one subject-model (glossary: Belief = ToM[X]).
 // Fields: EstStats, Trust, Affinity, LastSeen, Ledger, RelyOn.
-// Ledger and RelyOn are reserved fields populated by engine/agent + engine/values;
-// their update logic is out of scope here (this module only carries the storage).
+// Ledger update logic is out of scope here (this module only carries the storage).
+// RelyOn is updated via AdjustRelyOn; the DECISION of when/whom is engine/agent's.
 type Belief struct {
 	EstStats map[core.StatID]StatDist // per-stat estimate (mean + uncertainty)
 	Trust    float64                  // credibility weight applied to THIS subject's claims when it gossips; [0,1]
 	Affinity float64                  // signed relational stance; updated by engine/agent
 	LastSeen core.Tick                // tick of the last direct observation
 	Ledger   any                      // reserved: social-exchange ledger; populated by engine/agent
-	RelyOn   any                      // reserved: reliance edges map; populated by engine/agent + engine/values
+	RelyOn   map[Function]float64     // P6: reliance edges — how much this observer relies on subject per Function; [0,1]
 }
 
 // ToM is one agent's whole theory-of-mind: subject id -> Belief, INCLUDING self.
@@ -74,6 +78,8 @@ type Rates struct {
 	TradeRejectAffinityDrop float64 // Affinity drop magnitude on rejection
 	FraudHonestyDrop        float64 // Honesty mean drop per fraud detection
 	FraudThreshold          float64 // claimedValue−actualEffect above which fraud fires
+	// P6 influence — content/balance.yaml politics.influence_weight
+	InfluenceWeight float64 // reflection ratio for influence-amplified gossip; [0, 1]
 }
 
 // DefaultRates returns the canonical rate constants from the SPEC's
@@ -89,6 +95,8 @@ func DefaultRates() Rates {
 		TradeRejectAffinityDrop: 0.02,
 		FraudHonestyDrop:        0.10,
 		FraudThreshold:          0.20,
+		// P6 influence
+		InfluenceWeight: 0.5,
 	}
 }
 
@@ -184,15 +192,16 @@ func (t ToM) Observe(subject core.AgentID, ev StatEvidence) {
 // gossip). If trustWeight < rates.MinTrust the claim is ignored (no-op).
 // Creates the belief from the initial seed if subject is unknown.
 // GossipUpdate NEVER touches ToM[self] (self is only calibrated by Observe, D8).
-func (t ToM) GossipUpdate(subject core.AgentID, source Belief, trustWeight float64) {
+func (t ToM) GossipUpdate(subject core.AgentID, source Belief, trustWeight float64) map[core.StatID]float64 {
 	if trustWeight < t.rates.MinTrust {
-		return
+		return nil
 	}
 	if subject == t.self {
-		return // D8: gossip never touches self-belief
+		return nil // D8: gossip never touches self-belief
 	}
 
 	b := t.getOrCreateBeliefForGossip(subject, trustWeight)
+	deltas := make(map[core.StatID]float64)
 
 	for _, sid := range t.reg.IDs() {
 		sd, sdOk := b.EstStats[sid]
@@ -202,6 +211,7 @@ func (t ToM) GossipUpdate(subject core.AgentID, source Belief, trustWeight float
 		}
 
 		def, _ := t.reg.Def(sid)
+		oldMean := sd.Mean
 		delta := t.rates.Alpha * trustWeight * (claimSD.Mean - sd.Mean)
 		sd.Mean += delta
 		sd.Mean = def.Clamp(sd.Mean)
@@ -213,10 +223,15 @@ func (t ToM) GossipUpdate(subject core.AgentID, source Belief, trustWeight float
 		sd.Variance *= (1 + t.rates.Alpha*trustWeight*0.1)
 
 		b.EstStats[sid] = sd
+		actualDelta := sd.Mean - oldMean
+		if actualDelta != 0 {
+			deltas[sid] = actualDelta
+		}
 	}
 
 	b.LastSeen = 0 // gossip is not a direct observation
 	t.belief[subject] = b
+	return deltas
 }
 
 // ReputationDist DERIVES the reputation distribution of subject across the
@@ -366,6 +381,137 @@ func (t ToM) RecordFraud(other core.AgentID, claimedValue, actualEffect float64,
 	b.EstStats[honestyStatID] = sd
 	b.LastSeen = tick
 	t.belief[other] = b
+}
+
+// ── P6 Reliance & Influence ──────────────────────────────────────────────────
+
+// AdjustRelyOn folds a reliance increment toward `target` for `function` into
+// this observer's belief about target: RelyOn[function] += delta, clamped to [0,1].
+// Seeds the belief (initial estimate) if target is unknown. delta may be negative
+// (reliance decays / shifts away). This is the ONLY mutator of RelyOn; the
+// WHEN/WHOM decision is engine/agent's.
+func (t ToM) AdjustRelyOn(target core.AgentID, function Function, delta float64) {
+	b := t.getOrSeedBelief(target)
+	if b.RelyOn == nil {
+		b.RelyOn = make(map[Function]float64)
+	}
+	current := b.RelyOn[function]
+	b.RelyOn[function] = clamp(current+delta, 0, 1)
+	t.belief[target] = b
+}
+
+// BestProviderFor ranks candidates as reliance targets for `function` and returns
+// the best (trusted AND competent) plus its score, or ("", 0) if none qualifies.
+// Score = Trust[candidate] * EstStats[candidate][stat].Mean / maxPossibleStat,
+// where maxPossibleStat is the stat's Max from the registry.
+// Deterministic: candidates are evaluated in sorted AgentID order; ties break by
+// lower id (D12).
+func (t ToM) BestProviderFor(function Function, statSet []core.StatID, candidates []core.AgentID) (core.AgentID, float64) {
+	if len(candidates) == 0 {
+		return "", 0
+	}
+
+	// Sort candidates for deterministic evaluation (D12).
+	sorted := make([]core.AgentID, len(candidates))
+	copy(sorted, candidates)
+	sort.Slice(sorted, func(i, j int) bool {
+		return string(sorted[i]) < string(sorted[j])
+	})
+
+	// Use the first stat in statSet as the relevant stat for competence.
+	var relevantStat core.StatID
+	var maxPossible float64
+	if len(statSet) > 0 {
+		relevantStat = statSet[0]
+		if def, ok := t.reg.Def(relevantStat); ok {
+			maxPossible = def.Max
+		}
+	}
+
+	bestID := core.AgentID("")
+	bestScore := float64(-1)
+
+	for _, id := range sorted {
+		b := t.getOrSeedBelief(id)
+
+		// Trust component.
+		score := b.Trust
+
+		// Competence component: EstStats[relevantStat].Mean / maxPossible.
+		if relevantStat != "" && maxPossible > 0 {
+			if sd, ok := b.EstStats[relevantStat]; ok {
+				competence := sd.Mean / maxPossible
+				score *= competence
+			} else {
+				score = 0
+			}
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestID = id
+		}
+		// Ties break by lexicographic AgentID (already in sorted order, so first
+		// encountered with equal score wins — that's the lower id).
+	}
+
+	if bestID == "" {
+		return "", 0
+	}
+	return bestID, bestScore
+}
+
+// Influence DERIVES the social weight of `subject` for `function`: the mean of
+// RelyOn[function] across the supplied observer beliefs about subject (D6-style:
+// Influence is never a stored scalar — it is this aggregate over the RelyOn
+// distribution, exactly as reputation is an aggregate over EstStats).
+//
+// If observers is empty, returns 0.
+func (t ToM) Influence(subject core.AgentID, fn Function, observers []Belief) float64 {
+	if len(observers) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, obs := range observers {
+		if obs.RelyOn != nil {
+			sum += obs.RelyOn[fn]
+		}
+	}
+	return sum / float64(len(observers))
+}
+
+// ── ToM Prune (memory bounding) ───────────────────────────────────────────────
+
+// PruneBeliefs removes stale beliefs (LastSeen < currentTick - maxAge) to bound
+// memory in long runs. It NEVER prunes the self-belief (ToM[self], D8) and keeps
+// at least minKeep beliefs regardless of age (to retain recent social context).
+// Iterates subjects in sorted order (D12).
+func (t ToM) PruneBeliefs(currentTick core.Tick, maxAge core.Tick, minKeep int) {
+	if maxAge <= 0 {
+		return // 0 = never prune (current behaviour)
+	}
+	threshold := currentTick - maxAge
+	subjects := t.Subjects()
+
+	var toRemove []SubjectID
+	for i, id := range subjects {
+		if id == t.self {
+			continue // D8: NEVER prune self-belief
+		}
+		// Keep at least minKeep beliefs (the most recent ones, which come
+		// last in sorted order — last elements of the slice; we count from
+		// the end).
+		if len(subjects)-i <= minKeep {
+			continue
+		}
+		b := t.belief[id]
+		if b.LastSeen < threshold {
+			toRemove = append(toRemove, id)
+		}
+	}
+	for _, id := range toRemove {
+		delete(t.belief, id)
+	}
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────

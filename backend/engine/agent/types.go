@@ -56,13 +56,17 @@ type Intent struct {
 // Kind, Intent, Valence, ClaimedValue, Truth, Intensity}). Truth is HIDDEN from the
 // receiver — only the emitter and god know it; the receiver weighs the claim by its
 // own ToM[emitter].Trust.
+// P6: Function field added for SignalVote delegation signals.
+// P6: Target field added — the voted holder for Vote signals (empty otherwise).
 type Signal struct {
-	Kind         SignalKind // assertion | request | threat | offer
+	Kind         SignalKind    // assertion | request | threat | offer | vote
 	Toward       core.AgentID
-	Valence      float64 // signed stance in [-1,1]
-	ClaimedValue float64 // the value the emitter CLAIMS
-	Truth        float64 // the value the emitter actually believes (HIDDEN; deception = |Claimed-Truth|)
-	Intensity    float64 // how forcefully it is pushed, in [0,1]
+	Valence      float64       // signed stance in [-1,1]
+	ClaimedValue float64       // the value the emitter CLAIMS
+	Truth        float64       // the value the emitter actually believes (HIDDEN; deception = |Claimed-Truth|)
+	Intensity    float64       // how forcefully it is pushed, in [0,1]
+	Function     core.Function // P6: for Vote signals — the delegated Function (empty otherwise)
+	Target       core.AgentID  // P6: for Vote signals — the voted holder agent (empty otherwise)
 }
 
 // SignalKind names a signal's pragmatic kind (canonical strings, not hardcoded logic).
@@ -119,6 +123,10 @@ type WorldView interface {
 	BeliefOf(self, subject core.AgentID) (tom.Belief, bool) // another agent's belief, for gossip folding
 	HasPendingOffer(receiver core.AgentID) bool              // true if another agent has sent an unresolved Offer to receiver
 	ResentmentTriggers(self core.AgentID) []core.AgentID     // NEW P3: agents who rejected/beat self this tick, AgentID-stable order
+	PlaceQuality(placeID core.ObjectID) float64              // quality of a place ∈ [0,1]; 1 = pristine (no obstruction), 0 = fully blocked
+	MemberNeedIntensities() map[core.AgentID]map[core.Dimension]float64 // NEW P5: need intensities for all other agents in the village; caller MUST NOT mutate the returned map; returns nil if world doesn't track this
+	AgentIDs() []core.AgentID                                           // NEW P6: all agent IDs in the village (excluding self), sorted (D12)
+	IncomingSignals(self core.AgentID) []core.Signal                    // NEW P6: signals addressed to self this tick (for vote/hearsay processing)
 }
 
 // KnownObject is one object in the agent's value map (glossary: Known map[ObjectID]Valuation).

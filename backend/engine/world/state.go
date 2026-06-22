@@ -17,13 +17,21 @@ import (
 
 // WorldState is a public, copyable snapshot of the world's mutable state at one
 // tick. Captures tick counter, root RNG state, every agent's full public state
-// (incl. ToM[self] means), every object, and per-agent known-object sets.
+// (incl. ToM[self] means), every object, per-agent known-object sets, and the
+// P6 emerged-roles set.
 type WorldState struct {
-	Tick     core.Tick
-	RNGState rng.RNGState
-	Agents   []agentDigest
-	Objects  []objectRecord
-	Known    []knownDigest // sorted by AgentID (D12)
+	Tick         core.Tick
+	RNGState     rng.RNGState
+	Agents       []agentDigest
+	Objects      []objectRecord
+	Known        []knownDigest // sorted by AgentID (D12)
+	EmergedRoles []emergedRoleEntry // sorted by Function (D12)
+}
+
+// emergedRoleEntry is a single (function → holder) record for serialization.
+type emergedRoleEntry struct {
+	Function core.Function
+	Holder   core.AgentID
 }
 
 // agentDigest is one agent's full public state for capture/restore.
@@ -106,6 +114,14 @@ func (w *World) State() WorldState {
 		ws.Known = append(ws.Known, knownDigest{AgentID: agentID, Objects: kos})
 	}
 
+	// Serialize emerged roles in sorted Function order (D12).
+	for _, fn := range sortedFunctionKeys(w.emergedRoles) {
+		ws.EmergedRoles = append(ws.EmergedRoles, emergedRoleEntry{
+			Function: fn,
+			Holder:   w.emergedRoles[fn],
+		})
+	}
+
 	return ws
 }
 
@@ -158,6 +174,12 @@ func (w *World) RestoreState(ws WorldState) {
 			m[ko.ID] = ko
 		}
 		w.knownObjects[kd.AgentID] = m
+	}
+
+	// Restore emerged roles.
+	w.emergedRoles = make(map[core.Function]core.AgentID, len(ws.EmergedRoles))
+	for _, e := range ws.EmergedRoles {
+		w.emergedRoles[e.Function] = e.Holder
 	}
 
 	w.currentSounds = nil
@@ -239,4 +261,16 @@ func stringsToActionIDs(strs []string) []actions.ActionID {
 		out[i] = actions.ActionID(s)
 	}
 	return out
+}
+
+// sortedFunctionKeys returns the keys of m sorted lexicographically (D12).
+func sortedFunctionKeys(m map[core.Function]core.AgentID) []core.Function {
+	keys := make([]core.Function, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return string(keys[i]) < string(keys[j])
+	})
+	return keys
 }

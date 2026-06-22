@@ -65,7 +65,7 @@ func TestForwardSimNoProvisionLowIntelligence(t *testing.T) {
 	regs := makeTestRegs(t)
 	pl := newPlanner(t, regs, defaultConfig())
 
-	// Low perceived Intelligence → short horizon (= 1)
+	// Low perceived Intelligence → 0/100 = 0.0 < 0.4 → hard skip → horizon = 0
 	agent := defaultAgent()
 	agent.SelfModel = beliefFromMeans(map[core.StatID]float64{"Intelligence": 0, "Strength": 100, "Honesty": 50})
 	// Same need intensities as the high-Intelligence test
@@ -77,19 +77,17 @@ func TestForwardSimNoProvisionLowIntelligence(t *testing.T) {
 		t.Fatalf("Plan failed: %v", err)
 	}
 
-	// Zero Intelligence → horizon = 1 (minimum viable foresight)
-	if plan.Horizon != 1 {
-		t.Errorf("expected horizon=1 for Intelligence=0, got %d", plan.Horizon)
+	// Zero Intelligence → P5 hard skip → horizon = 0
+	if plan.Horizon != 0 {
+		t.Errorf("expected horizon=0 for Intelligence=0 (P5 hard skip), got %d", plan.Horizon)
 	}
 
-	// With horizon=1, Satiety demand = 0.00070*1 = 0.0007
-	// slack = 0.55 - 0.3 = 0.25 → deficit = 0.0007 - 0.25 = -0.2493 < 0
-	// → NO provisioning inserted
+	// horizon=0 → forward-sim loop not entered → no provisioning
 	if len(trace.Provisioned) > 0 {
-		t.Errorf("GOLDEN FAIL: low Intelligence should NOT trigger provisioning (no deficit), got %v", trace.Provisioned)
+		t.Errorf("GOLDEN FAIL: low Intelligence (hard skip) should NOT provision, got %v", trace.Provisioned)
 	}
 
-	t.Logf("GOLDEN Scenario-H (low Intel): horizon=%d provisioned=%v actions=%v",
+	t.Logf("GOLDEN Scenario-H (low Intel, P5 hard skip): horizon=%d provisioned=%v actions=%v",
 		plan.Horizon, trace.Provisioned, plan.Actions)
 }
 
@@ -152,20 +150,22 @@ func TestForwardSimMidIntelligence(t *testing.T) {
 
 func TestIntelligenceHorizonZero(t *testing.T) {
 	statReg := mustLoadStats(t, testStatsYAML)
+	// 0/100 = 0.0 < 0.4 threshold → P5 hard skip → 0.
 	horizon := computeHorizon(
 		beliefFromMeans(map[core.StatID]float64{"Intelligence": 0}),
-		"Intelligence", statReg, 720,
+		"Intelligence", statReg, 720, 0.4,
 	)
-	if horizon != 1 {
-		t.Errorf("expected horizon=1 for Intelligence=0, got %d", horizon)
+	if horizon != 0 {
+		t.Errorf("expected horizon=0 (P5 hard skip, 0 < 0.4), got %d", horizon)
 	}
 }
 
 func TestIntelligenceHorizonMax(t *testing.T) {
 	statReg := mustLoadStats(t, testStatsYAML)
+	// 100/100 = 1.0 >= 0.4 → gradual formula.
 	horizon := computeHorizon(
 		beliefFromMeans(map[core.StatID]float64{"Intelligence": 100}),
-		"Intelligence", statReg, 720,
+		"Intelligence", statReg, 720, 0.4,
 	)
 	if horizon != 720 {
 		t.Errorf("expected horizon=720 for Intelligence=Max, got %d", horizon)
@@ -174,12 +174,51 @@ func TestIntelligenceHorizonMax(t *testing.T) {
 
 func TestIntelligenceHorizonHalf(t *testing.T) {
 	statReg := mustLoadStats(t, testStatsYAML)
+	// 50/100 = 0.5 >= 0.4 → gradual formula.
 	horizon := computeHorizon(
 		beliefFromMeans(map[core.StatID]float64{"Intelligence": 50}),
-		"Intelligence", statReg, 720,
+		"Intelligence", statReg, 720, 0.4,
 	)
 	if horizon != 360 {
 		t.Errorf("expected horizon=360 for half Intelligence, got %d", horizon)
+	}
+}
+
+// ── P5 Lookahead threshold tests ────────────────────────────────────────────
+
+func TestIntelligenceHorizonAtExactThreshold(t *testing.T) {
+	statReg := mustLoadStats(t, testStatsYAML)
+	// 40/100 = 0.4 >= 0.4 → gradual branch active, minimum 1.
+	horizon := computeHorizon(
+		beliefFromMeans(map[core.StatID]float64{"Intelligence": 40}),
+		"Intelligence", statReg, 720, 0.4,
+	)
+	if horizon < 1 {
+		t.Errorf("expected horizon >= 1 at exact threshold (0.4 >= 0.4), got %d", horizon)
+	}
+}
+
+func TestIntelligenceHorizonJustBelowThreshold(t *testing.T) {
+	statReg := mustLoadStats(t, testStatsYAML)
+	// 39/100 = 0.39 < 0.4 → hard skip → 0.
+	horizon := computeHorizon(
+		beliefFromMeans(map[core.StatID]float64{"Intelligence": 39}),
+		"Intelligence", statReg, 720, 0.4,
+	)
+	if horizon != 0 {
+		t.Errorf("expected horizon=0 (P5 hard skip, 0.39 < 0.4), got %d", horizon)
+	}
+}
+
+func TestIntelligenceHorizonWithCustomThreshold(t *testing.T) {
+	statReg := mustLoadStats(t, testStatsYAML)
+	// 50/100 = 0.5 < 0.6 → hard skip.
+	horizon := computeHorizon(
+		beliefFromMeans(map[core.StatID]float64{"Intelligence": 50}),
+		"Intelligence", statReg, 720, 0.6,
+	)
+	if horizon != 0 {
+		t.Errorf("expected horizon=0 (0.5 < 0.6 threshold), got %d", horizon)
 	}
 }
 
@@ -211,4 +250,65 @@ func TestForwardSimProvisionMath(t *testing.T) {
 	if !found {
 		t.Errorf("Satiety should be provisioned: deficit=0.254 > 0, got %v", trace.Provisioned)
 	}
+}
+
+// ── P5: Scenario H integration ──────────────────────────────────────────────
+
+func TestScenarioH_LowIntelSkipsProvisioning(t *testing.T) {
+	// Low-Intel agent (perceivedIntelligence = 0.35 < 0.40):
+	// Should get NO provisioning subgoal inserted.
+	regs := makeTestRegs(t)
+	pl := newPlanner(t, regs, defaultConfig())
+
+	agent := defaultAgent()
+	agent.SelfModel = beliefFromMeans(map[core.StatID]float64{"Intelligence": 35, "Strength": 100, "Honesty": 50})
+	agent.NeedIntensities = map[core.Dimension]float64{"Satiety": 0.3, "Hydration": 0.2, "Rest": 0.15}
+
+	vals := []DimensionPriority{{Dim: "Satiety", Priority: 0.8, Salience: 0.8}}
+	plan, trace, err := pl.Plan(agent, vals, rng.New(42))
+	if err != nil {
+		t.Fatalf("Plan failed: %v", err)
+	}
+
+	// 35/100 = 0.35 < 0.4 → hard skip → horizon = 0, no provisioning
+	if plan.Horizon != 0 {
+		t.Errorf("expected horizon=0 (0.35 < 0.4), got %d", plan.Horizon)
+	}
+	if len(trace.Provisioned) > 0 {
+		t.Errorf("P5 Scenario H: low Intel should NOT provision, got %v", trace.Provisioned)
+	}
+	t.Logf("P5 H (low): horizon=%d provisioned=%v actions=%v", plan.Horizon, trace.Provisioned, plan.Actions)
+}
+
+func TestScenarioH_HighIntelInsertsProvisioning(t *testing.T) {
+	// High-Intel agent (perceivedIntelligence = 0.75 >= 0.40):
+	// Should get provisioning subgoal inserted.
+	regs := makeTestRegs(t)
+	pl := newPlanner(t, regs, defaultConfig())
+
+	agent := defaultAgent()
+	agent.SelfModel = beliefFromMeans(map[core.StatID]float64{"Intelligence": 75, "Strength": 100, "Honesty": 50})
+	agent.NeedIntensities = map[core.Dimension]float64{"Satiety": 0.3, "Hydration": 0.2, "Rest": 0.15}
+
+	vals := []DimensionPriority{{Dim: "Satiety", Priority: 0.8, Salience: 0.8}}
+	plan, trace, err := pl.Plan(agent, vals, rng.New(42))
+	if err != nil {
+		t.Fatalf("Plan failed: %v", err)
+	}
+
+	// 75/100 = 0.75 >= 0.4 → gradual formula active.
+	if plan.Horizon < 500 {
+		t.Errorf("expected long horizon for high Intel, got %d", plan.Horizon)
+	}
+	// With sufficient horizon, Satiety should be provisioned.
+	hasSatiety := false
+	for _, d := range trace.Provisioned {
+		if d == "Satiety" {
+			hasSatiety = true
+		}
+	}
+	if !hasSatiety {
+		t.Errorf("P5 Scenario H: high Intel should provision Satiety, got %v", trace.Provisioned)
+	}
+	t.Logf("P5 H (high): horizon=%d provisioned=%v actions=%v", plan.Horizon, trace.Provisioned, plan.Actions)
 }

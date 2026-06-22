@@ -70,7 +70,7 @@ func (v Vec2) Scale(f float64) Vec2       { return Vec2{v.X * f, v.Y * f} }
 func (v Vec2) DistSq(o Vec2) float64     { dx, dy := v.X-o.X, v.Y-o.Y; return dx*dx + dy*dy }
 func (v Vec2) Distance(o Vec2) float64   // math.Sqrt(v.DistSq(o))
 
-// ── Referent ─────────────────────────────────────────────────────────────────
+// ── Referent & Value ─────────────────────────────────────────────────────────
 
 // ReferentKind classifies the target of a Value evaluation.
 type ReferentKind uint8
@@ -86,6 +86,26 @@ const (
 type Referent struct {
     Kind ReferentKind
     ID   ObjectID // empty when Kind == Self
+}
+
+// Posture names the direction a Value evaluates: whether the agent wants to
+// Maximize, MaintainAbove, or PreventBelow the setpoint (glossary §Values & goals).
+type Posture uint8
+
+const (
+    Maximize       Posture = iota // as much as possible
+    MaintainAbove                 // keep at or above the setpoint
+    PreventBelow                  // keep from falling below the setpoint
+)
+
+// Value is a root value: a goal direction expressed as (Dimension, Referent, Posture, Setpoint).
+// An agent may carry many Values — one per referent-and-dimension pair it cares about.
+// The planner selects the highest-Salience value to pursue; how to pursue it is the planner's job (D5).
+type Value struct {
+    Dimension Dimension
+    Ref       Referent
+    Posture   Posture
+    Setpoint  float64 // the threshold/aspiration level for this dimension-and-referent (in [0,1])
 }
 
 // ── Events interface (dependency inversion) ──────────────────────────────────
@@ -127,6 +147,7 @@ const (
     SignalReject                     // decline a previously received offer
     SignalGreet                      // social acknowledgement, no commitment
     SignalThreaten                   // assert intent to harm unless compliance
+    SignalVote                       // P6: publicly delegate a Function to `Toward` (emergent politics)
 )
 
 // Signal is a structured social communication passed between agents.
@@ -144,7 +165,14 @@ type Signal struct {
     ClaimedValue float64    // asserted deal value in Dimension units
     Truth        float64    // sender's actual veracity [0, 1]; NOT visible to receiver
     Intensity    float64    // urgency / emotional force [0, 1]
+    Function     Function   // P6: for SignalVote — the delegated Function (empty otherwise)
 }
+
+// Function names a service an agent relies on another to provide (glossary: Reliance edge):
+// e.g. "safety", "judgment", "knowledge". D2/D7 — a content/glossary id, never a hardcoded enum
+// or role type; an emergent role is a CLUSTER of RelyOn edges over a Function, not a Function.
+// Mirrors tom.Function (this is the canonical L0 declaration the other packages alias).
+type Function string
 ```
 
 ## Dependencies

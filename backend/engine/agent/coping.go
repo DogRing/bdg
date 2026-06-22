@@ -108,7 +108,7 @@ func (a *Agent) enterLatentDirect(now core.Tick, emit core.EventEmitter) {
 // attempt rebinding. Low Intelligence agents suffer object-fixation (D8 / design
 // §1.4) and skip directly to Longing.
 //
-// P3: uses the explicit RebindMinIntelligence constant (balance.yaml coping.rebind_min_intelligence).
+// P3: uses the explicit RebindMinIntelligence constant; P5: read from balance.yaml intelligence.rebind_threshold.
 // Normalizes perceived Intelligence to [0,1] by dividing by the stat's max range.
 func (a *Agent) canRebind(statsReg *stats.Registry) bool {
 	perceivedIntel := a.normalizedIntelligence(statsReg)

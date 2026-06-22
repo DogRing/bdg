@@ -141,30 +141,78 @@ func (d Def) BreachAt(level0, setpoint float64, horizon core.GameMinutes) (at co
 // Salience returns the momentary salience of this dimension given the current level and
 // setpoint, per the dimension's Curve and Gain. Read by engine/values arbitration; bounded ≥ 0.
 func (d Def) Salience(level, setpoint float64) float64
+
+// ── Conditional-need driver (BLOCKER-1: ACTIVATED — was previously undriven) ──────
+//
+// A Conditional dimension (Safety, Standing, Openness) is NOT clock-driven (Rate == 0), so the
+// consumable decay loop never touches it. Its INTENSITY (the grown need pressure the agent stores
+// in NeedIntensities[id], where higher = worse) must instead be driven by world/social STATE.
+// For Safety, the driving state is the set of currently-perceived threatening agents, supplied by
+// the agent loop (engine/agent phase 1 hostile-tag scan → the threat AgentIDs). This module owns
+// only the PURE intensity update; the per-agent stored level lives on the Agent (Out of Scope).
+//
+// UpdateConditionalNeeds is a PURE function (no clock, no RNG, no stored state): given the current
+// stored intensity for this Conditional dimension and the list of perceived threats this tick, it
+// returns the NEW intensity. The caller (engine/agent) stores the result into NeedIntensities[id].
+// The driver is parameterised by two injected constants (D10 — from content/balance.yaml's
+// `threats:` block, threaded in by the caller; this package hardcodes neither):
+//
+//   perThreatGain — intensity added per perceived threat this tick (balance.yaml threats.per_threat_intensity)
+//   decayPerTick  — intensity removed per tick when NO threat is perceived (balance.yaml threats.safety_decay)
+//
+// Formula (deterministic; clamped to [0,1]):
+//
+//   if len(threats) == 0:                 // no threat in perception radius this tick
+//       new = clamp01( cur − decayPerTick )            // decays toward 0 over ~ceil(cur/decayPerTick) ticks
+//   else:                                 // at least one threat perceived
+//       new = clamp01( cur + perThreatGain × float64(len(threats)) )  // rises ∝ threat count
+//
+// Returns `cur` unchanged for a non-Conditional Def (Safety/Standing/Openness only; consumable
+// needs decay via Level, not here). `threats` is iterated only for its LENGTH (count), so its
+// element order is irrelevant — but callers MUST pass a count-stable (deduplicated, sorted-id)
+// slice so the same world state yields the same count (D12). The method reads NO field naming an
+// action/object/effect (D5: needs do not encode satisfaction).
+func (d Def) UpdateConditionalNeeds(cur float64, threats []core.AgentID, perThreatGain, decayPerTick float64) float64
 ```
 
 > `Load` takes two `io.Reader`s, not paths — the engine performs **no filesystem IO**
 > (architecture §1). `platform/config` opens `content/needs.yaml` and `content/balance.yaml`,
 > runs the JSON-schema validation on each, and passes the readers/bytes here.
 
+> **`UpdateConditionalNeeds` signature note (BLOCKER-1).** The task brief names the entry
+> `UpdateConditionalNeeds(threats []core.AgentID)`. Because `engine/needs` is **stateless** (the
+> registry is immutable; per-agent need *levels* live on the Agent — Out of Scope), the method
+> cannot store the intensity itself; it is a PURE function that *takes the current intensity and the
+> tuning constants and returns the new intensity*. The two injected scalars keep it D10-clean (no
+> rate literal in this package). The agent's wrapper (`engine/agent`, §F below) supplies
+> `a.NeedIntensities[cfg.SafetyDim]` as `cur`, the phase-1 threat AgentIDs as `threats`, and the two
+> constants from `cfg`, then writes the result back. If a future caller wants the bare
+> `UpdateConditionalNeeds(threats []core.AgentID)` shape, it must close over `(cur, gain, decay)` —
+> the constants stay injected either way.
+
 ## Dependencies
 
-- `engine/core` — `GameMinutes`, `ReferentKind`, and `Dimension` (the `NeedID` alias;
+- `engine/core` — `GameMinutes`, `ReferentKind`, `AgentID`, and `Dimension` (the `NeedID` alias;
   `engine/core/SPEC.md` now exports `type Dimension string`). (Plus a YAML decoder and stdlib
   `sort`.)
 - `engine/stats` — referenced for type alignment only (need-level vectors reuse the `Stats`
   shape conceptually); no behavioural dependency. May be dropped if unused at implementation.
 - **Contract**: `content/schema/needs.schema.json` defines the on-disk shape of the dimension
   catalog (`content/needs.yaml`). `content/schema/balance.schema.json` defines the `needs:`
-  rate block (`content/balance.yaml`). The per-need `decay_per_tick` is the **only** authored
-  demand input (D9). `platform/config` bridges file → schema-validate → `Load` for both.
+  rate block (`content/balance.yaml`) **and the new `threats.per_threat_intensity` /
+  `threats.safety_decay` scalars** that parameterise the conditional driver. The per-need
+  `decay_per_tick` is the **only** authored *consumable* demand input (D9); the two conditional
+  scalars are the **only** authored Safety-pressure inputs. `platform/config` bridges file →
+  schema-validate → `Load` for both, and threads the two `threats.*` scalars into the agent
+  `Config` (BLOCKER-2 wiring).
 
 ## Owned Data
 
 - `Registry` and `Def` value types. The `Registry` is **immutable after `Load`** and owns its
   internal map + precomputed sorted id slice — no other module mutates it.
-- Per-agent need **levels** (the dynamic satisfaction state) are owned by the agent/world state,
-  not here; this module provides only the shape and the pure roll helpers.
+- Per-agent need **levels** (the dynamic satisfaction/intensity state, incl. the Conditional
+  Safety intensity) are owned by the agent/world state, not here; this module provides only the
+  shape, the pure consumable roll helpers, and the pure conditional driver (`UpdateConditionalNeeds`).
 
 ## Invariants
 
@@ -174,11 +222,17 @@ func (d Def) Salience(level, setpoint float64) float64
   are *computed* by `forward-sim`, never read from a field. Objects carry only their supply
   `Effect` (see `engine/actions` + `content/objects.yaml`), never a need.
 - **Need rate is loaded, never hardcoded (D10)**: the consumable decay/threshold constants come
-  from the injected `balance.yaml` `needs:` block. This package contains **no** numeric rate
-  literal and **no** file path — both inputs are injected `io.Reader`s.
+  from the injected `balance.yaml` `needs:` block; the conditional driver's `perThreatGain` /
+  `decayPerTick` come from the injected `balance.yaml threats:` block (passed in by the caller).
+  This package contains **no** numeric rate literal and **no** file path.
+- **Conditional needs are driven by STATE, not the clock (D9, design §"conditional")**: a
+  `Conditional` dimension has `Rate == 0` and is **never** touched by the consumable decay loop.
+  Its intensity changes ONLY through the pure `UpdateConditionalNeeds` driver, fed by world/social
+  state (for Safety: the perceived-threat count). `UpdateConditionalNeeds` returns `cur` unchanged
+  for a non-Conditional `Def` (it never substitutes for consumable decay).
 - **Needs do not encode satisfaction (D5)**: the registry says *what* needs exist and *how fast*
-  they intensify; it says **nothing** about which action/object satisfies them. The
-  what-is-wanted (needs/values) and how-to-get-it (planning) live in separate modules.
+  they intensify; it says **nothing** about which action/object satisfies them. `UpdateConditionalNeeds`
+  reads no action/object/effect field — only a threat count and two scalars.
 - **Consumable ⟺ has a balance rate; conditional ⟺ none**: every `Consumable` dimension in
   `needs.yaml` MUST have a `balance.yaml needs:<id>` entry (with `decay_per_tick > 0`), and
   every key in the balance `needs:` block MUST name a `Consumable` dimension. A `Conditional`
@@ -191,9 +245,9 @@ func (d Def) Salience(level, setpoint float64) float64
 - **Bounds well-formed (semantic check)**: every `Def` has `Rate ≥ 0`, `Threshold ∈ [0,1]`,
   `Setpoint ∈ [0,1]`, `Gain ≥ 0`, and a recognized `Posture`/`Curve`/`Referent`. Consumable
   needs additionally require `Rate > 0`. `Load` rejects violations and duplicate ids.
-- **Pure, clock-free helpers (D12)**: `Level`/`Demand`/`BreachAt`/`Salience` are pure functions
-  — no `time.Now()`, no RNG, no global state. Given identical inputs they return identical
-  outputs (golden-stable).
+- **Pure, clock-free helpers (D12)**: `Level`/`Demand`/`BreachAt`/`Salience`/`UpdateConditionalNeeds`
+  are pure functions — no `time.Now()`, no RNG, no global state. Given identical inputs they return
+  identical outputs (golden-stable). `UpdateConditionalNeeds`'s result is clamped to `[0,1]`.
 - **Immutable after init**: `Registry` exposes no setter and no writable field; returned slices
   are copies.
 - **No hardcoded need names (D10)**: this package never references `"Satiety"`, `"Safety"`, etc.
@@ -240,6 +294,28 @@ func (d Def) Salience(level, setpoint float64) float64
   rates (e.g. `Satiety` from full crosses its 0.55 threshold at the expected minute).
 - [ ] **`Salience` per curve**: `Deficit` → `max(0, setpoint − level)·Gain`; `GapToMax` →
   `(1 − level)·Gain`; both ≥ 0 (table-driven).
+- [ ] **Conditional driver: no threat → intensity unchanged-then-decays toward 0 (BLOCKER-1)**:
+  for the `Safety` `Def`, `UpdateConditionalNeeds(cur, nil, gain, decay)` and
+  `UpdateConditionalNeeds(cur, []core.AgentID{}, gain, decay)` both return
+  `max(0, cur − decay)` — strictly: starting from `cur == 0` it stays `0` (never goes negative);
+  starting from `cur == 0.50` with `decay == 0.10` it returns `0.40`, and N=⌈0.50/0.10⌉=5 repeated
+  empty-threat calls drive it to `0`. Table-driven over `(cur, decay)` pairs incl. the `cur==0` /
+  `cur<decay` clamp-at-0 case.
+- [ ] **Conditional driver: ≥ 1 threat → intensity rises, ∝ count, clamped (BLOCKER-1)**:
+  `UpdateConditionalNeeds(0, []core.AgentID{"B"}, gain, decay)` returns `gain` (> 0);
+  `UpdateConditionalNeeds(0, []core.AgentID{"B","C"}, gain, decay)` returns `2·gain`;
+  the result is clamped to `1.0` once `cur + gain·count ≥ 1` (e.g. `cur==0.9, count==3, gain==0.1`
+  → `1.0`, not `1.2`). Result is **monotonically non-decreasing in `len(threats)`**. Table-driven.
+- [ ] **Conditional driver: count-only, order-independent, pure (D12)**:
+  `UpdateConditionalNeeds(cur, []core.AgentID{"B","C"}, …)` equals
+  `UpdateConditionalNeeds(cur, []core.AgentID{"C","B"}, …)` (depends only on count); calling it
+  with identical inputs twice returns identical floats; it draws no RNG and reads no clock.
+- [ ] **Conditional driver is a no-op on consumable Defs**: `UpdateConditionalNeeds(cur, threats,
+  gain, decay)` returns `cur` unchanged for a `Consumable` `Def` (e.g. `Satiety`) regardless of
+  the threat list — consumable pressure flows through `Level`/decay only.
+- [ ] **Conditional driver constants are injected, not literal (D10)**: a grep guard confirms the
+  `perThreatGain`/`decayPerTick` magnitudes appear nowhere as literals in `engine/needs` logic;
+  they arrive only as parameters.
 - [ ] **Immutable after init**: the public API exposes no mutator; mutating a returned id slice
   does not change the registry.
 - [ ] **No literal need name in source (D10)**: grep guard — no `"Satiety"`/`"Safety"`/… literal
@@ -247,9 +323,10 @@ func (d Def) Salience(level, setpoint float64) float64
 
 > Structural JSON-schema validation of `content/needs.yaml` and `content/balance.yaml` against
 > their schemas, and referential integrity (need ids used by `objects.yaml`/`actions.yaml`
-> exist here; balance `needs:` keys match `needs.yaml` ids), are **platform/config** ACs — they
-> own the file IO and the schemas. This module proves only semantic checks reachable from the
-> injected readers.
+> exist here; balance `needs:` keys match `needs.yaml` ids; the `threats.per_threat_intensity` /
+> `threats.safety_decay` scalars exist and are ≥ 0), are **platform/config** ACs — they own the
+> file IO and the schemas. This module proves only semantic checks reachable from the injected
+> readers and the pure driver behaviour.
 
 ## Out of Scope
 
@@ -259,39 +336,47 @@ func (d Def) Salience(level, setpoint float64) float64
 - Composing a `Value{Dimension, Ref, Posture, Setpoint}`, the per-agent value map (`Known`),
   `Standing`/`Salience` arbitration, and EffValue → `engine/values`.
 - Per-agent dynamic need **levels** and their decay during a tick → `engine/agent` / `engine/world`
-  state (they call `Def.Level`).
+  state (they call `Def.Level` for consumables and `Def.UpdateConditionalNeeds` for conditionals).
+- **Detecting the perceived threats** (scanning perceived entities/signals for a threat tag and
+  producing the threat `[]core.AgentID`) → `engine/agent` phase 1 (it then passes the list here).
+  This module owns only the intensity arithmetic, not the perception.
 - The forward-sim **horizon** and step size (`forward_sim.*`) and the urgency mapping
   (`urgency.from_deficit`) → `content/balance.yaml`, read by `engine/planner` / `engine/agent`.
 
 ## Open Questions
 
-- None blocking. **Both prior escalations are resolved** by human-confirmed decisions:
+- None blocking. **Prior escalations resolved** by human-confirmed decisions:
   (1) `NeedID` is an alias of `core.Dimension` (added to `engine/core/SPEC.md`), using glossary
-  Dimension names — never `hunger`/`social`. (2) Per-need **rate** constants now load from the
-  `needs:` block in `content/balance.yaml` (schema updated:
-  `content/schema/balance.schema.json` now permits `needs:` with required
-  `decay_per_tick`/`satisfaction_threshold`); the dimension *catalog* (kind, posture, referent,
-  salience curve) remains in `content/needs.yaml` (its per-entry `rate` field has been removed —
-  see `content/schema/needs.schema.json`). `Load` merges the two injected readers and
-  cross-checks consumable-need rate coverage.
+  Dimension names — never `hunger`/`social`. (2) Per-need **rate** constants load from the
+  `needs:` block in `content/balance.yaml`; the dimension *catalog* remains in `content/needs.yaml`.
+  `Load` merges the two injected readers and cross-checks consumable-need rate coverage.
+  (3) **BLOCKER-1 (conditional Safety driver)** is resolved by the pure `UpdateConditionalNeeds`
+  helper above; its two tuning scalars (`threats.per_threat_intensity`, `threats.safety_decay`)
+  are added to `content/balance.yaml`'s `threats:` block and `content/schema/balance.schema.json`,
+  threaded into the agent `Config` by `platform/config`. Confirm the two initial values
+  (suggested `per_threat_intensity: 0.20`, `safety_decay: 0.05`) with balance tuning.
 
 ## Notes
 
 - **Two-source split (post-escalation)**: `content/needs.yaml` is the dimension *catalog*;
   `content/balance.yaml needs:<id>` is the consumable *rate* table. This keeps tunable scalars in
   the single tuning file (`balance.yaml`, the auto-tuning target — testing.md §5) while the
-  catalog stays in the needs file. The two are merged at `Load` and cross-validated. The former
-  per-entry `rate` field in `content/needs.yaml` has been **removed** (and dropped from
-  `content/schema/needs.schema.json`); the balance `needs:` block is now the sole authoritative
-  rate source, so there is no dual-source conflict to reconcile.
+  catalog stays in the needs file. The two are merged at `Load` and cross-validated.
+- **Conditional driver lives here, perception lives in the agent (BLOCKER-1).** The arithmetic that
+  turns "N threats perceived this tick" into a Safety intensity is a pure need-layer concern and
+  belongs here next to `Level`/`Demand` (so it is golden-testable in isolation). *Which* perceived
+  entities count as threats (the hostile-tag scan) is the agent's perception job (`engine/agent`
+  §F) — keeping the what-is-wanted (need pressure) and how-it-is-sensed (perception) split (D5).
+- **Why a count, not the agent ids.** The Safety driver only needs the *number* of perceived
+  threats this tick; the `[]core.AgentID` is taken (rather than an `int`) to match the task brief's
+  signature and to leave room for a future per-threat weighting (e.g. by distance or hostility) —
+  but the P6 implementation reads only `len(threats)`, so it stays count-stable and deterministic.
 - The on-disk catalog shape (`content/needs.yaml`) uses `id`, `kind`, `default.{posture,
-  setpoint, referent}`, and `salience.{curve, gain}`. The loader maps `default.posture→Posture`,
-  `default.referent→Referent`, etc.
-- `Need ≠ Goal ≠ Target` (glossary): this module owns the *need/value dimension* layer only. A
-  `Goal` is a concrete goal-state assembled by the planner; a `Target` is the object. Keep them
-  distinct.
-- Need **levels** are serialized as part of agent `body` state (data-contracts §1) by `persist`;
-  this module fixes the dimension *definitions*, which serialize implicitly through the
-  config_hash (data-contracts §3), not per-tick.
+  setpoint, referent}`, and `salience.{curve, gain}`.
+- `Need ≠ Goal ≠ Target` (glossary): this module owns the *need/value dimension* layer only.
+- Need **levels** (incl. the conditional Safety intensity) are serialized as part of agent `body`
+  state (data-contracts §1) by `persist`; this module fixes the dimension *definitions*.
 - `Setpoint`/`Posture`/`Referent` here are *defaults*; individual agents perturb the setpoint by
   disposition in `engine/values`. This module carries the generation defaults only.
+</content>
+</invoke>

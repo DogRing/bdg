@@ -1,0 +1,578 @@
+[
+  {
+    "params": {
+      "gossip_alpha": 0.05,
+      "conscience_urgency_threshold": 0.5
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.05,
+      "conscience_urgency_threshold": 0.6
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.05,
+      "conscience_urgency_threshold": 0.7
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.05,
+      "conscience_urgency_threshold": 0.8
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.1,
+      "conscience_urgency_threshold": 0.5
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.1,
+      "conscience_urgency_threshold": 0.6
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.1,
+      "conscience_urgency_threshold": 0.7
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.1,
+      "conscience_urgency_threshold": 0.8
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.2,
+      "conscience_urgency_threshold": 0.5
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.2,
+      "conscience_urgency_threshold": 0.6
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.2,
+      "conscience_urgency_threshold": 0.7
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  },
+  {
+    "params": {
+      "gossip_alpha": 0.2,
+      "conscience_urgency_threshold": 0.8
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 99,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 42,
+        "crime_rate": 0,
+        "reputation_variance": 0.0003,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 71,
+        "transgressive_actions": 0
+      },
+      {
+        "seed": 123,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 95,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0.0001,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 88,
+      "transgressive_actions": 0
+    }
+  }
+]

@@ -100,3 +100,13 @@ needs:
     salience:
       curve: deficit
       gain: 0.6
+
+  - id: Comfort
+    kind: consumable          # rate: balance.yaml needs.Comfort
+    default:
+      posture: MaintainAbove
+      setpoint: 0.35
+      referent: Self
+    salience:
+      curve: deficit
+      gain: 0.8

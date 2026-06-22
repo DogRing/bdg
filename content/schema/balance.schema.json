@@ -16,15 +16,16 @@
       "type": "object",
       "description": "World-level tunables read by engine/world (bytes injected by platform/config). All keys required; platform/config validates this block before calling world.New so a missing key is caught at startup (D10).",
       "additionalProperties": false,
-      "required": ["tick_minutes", "real_scale", "day_minutes", "spatial_hash_cell", "reliance_threshold", "outcome_difficulty_base", "backup_every_ticks"],
+      "required": ["tick_minutes", "real_scale", "day_minutes", "spatial_hash_cell", "outcome_difficulty_base", "backup_every_ticks"],
       "properties": {
         "tick_minutes":            { "type": "integer", "minimum": 1, "description": "Game-minutes advanced per tick (engine/worldtime)." },
         "real_scale":              { "type": "integer", "minimum": 1, "description": "Real-time compression factor (24 game-h = 2 real-h → 12)." },
         "day_minutes":             { "type": "integer", "minimum": 1, "description": "Game-minutes per in-world day (24 × 60 = 1440)." },
         "spatial_hash_cell":       { "type": "number",  "exclusiveMinimum": 0, "description": "SpatialHash cell edge in world units; choose ≈ avg perception radius for best locality." },
-        "reliance_threshold":      { "type": "number",  "exclusiveMinimum": 0, "maximum": 1, "description": "Share of agents pointing their RelyOn[f] at one holder that triggers RoleEmerged emission (D2). Stub: unused until tom.Belief.RelyOn is formalized." },
         "outcome_difficulty_base": { "type": "number",  "exclusiveMinimum": 0, "description": "The Real Stat level at which an action resolves as Succeeded under neutral (no effort/risk modifier) conditions." },
-        "backup_every_ticks":      { "type": "integer", "minimum": 1, "description": "Emit SnapshotReady every N ticks; platform/persist handles the actual write." }
+        "backup_every_ticks":      { "type": "integer", "minimum": 1, "description": "Emit SnapshotReady every N ticks; platform/persist handles the actual write." },
+        "plan_interval":           { "type": "integer", "minimum": 1, "description": "Plan-interval: agents per planning slice; 1 = all agents plan every tick. Higher values spread planner load across ticks." },
+        "prune_threshold":         { "type": "integer", "minimum": 0, "description": "Max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune (current behavior)." }
       }
     },
     "perception": { "$ref": "#/$defs/numberMap" },
@@ -77,6 +78,11 @@
           "minProperties": 1,
           "additionalProperties": { "type": "number", "minimum": 0 },
           "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
+        },
+        "collective_aggregation_mode": {
+          "type": "string",
+          "description": "Aggregation mode for Collective referent evaluation: 'mean' or 'min'.",
+          "enum": ["mean", "min"]
         }
       }
     },
@@ -127,7 +133,72 @@
           "additionalProperties": { "type": "number", "minimum": 0 }
         }
       }
-    }
+    },
+    "intelligence": {
+      "type": "object",
+      "description": "Intelligence-gated branch thresholds (P5). Perceived Intelligence is normalized to [0,1] (ToM[self] Intelligence / max stat, D8) and read by three modules — engine/planner (lookahead), engine/agent (rebind), engine/values (other-referent). Bytes injected by platform/config (D10).",
+      "additionalProperties": false,
+      "required": ["lookahead_threshold", "rebind_threshold", "other_intel_threshold"],
+      "properties": {
+        "lookahead_threshold":   { "type": "number", "minimum": 0, "maximum": 1, "description": "engine/planner: perceived Intelligence below this skips forward-sim entirely (no provisioning subgoals); at/above, the gradual horizon formula applies." },
+        "rebind_threshold":      { "type": "number", "minimum": 0, "maximum": 1, "description": "engine/agent: perceived Intelligence below this skips Rebinding and goes straight to Latent (D8 object-fixation). Supersedes the deprecated coping.rebind_min_intelligence." },
+        "other_intel_threshold": { "type": "number", "minimum": 0, "maximum": 1, "description": "engine/values: perceived Intelligence below this makes the Other-referent use the mood proxy; at/above it uses the unmet-need estimate." }
+      }
+    },
+    "social": {
+      "type": "object",
+      "description": "Social bond tunables (P5). Read by engine/agent for Other-referent bond multiplier and care threshold.",
+      "additionalProperties": false,
+      "required": ["bond_affinity_gain", "min_care_threshold"],
+      "properties": {
+        "bond_affinity_gain":  { "type": "number", "minimum": 0, "description": "Multiplier applied to base weight: 1 + Affinity * bond_affinity_gain." },
+        "min_care_threshold":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Affinity threshold above which an Other is considered cared-for." }
+      }
+    },
+    "politics": {
+      "type": "object",
+      "description": "Emergent institutions/politics tunables (P6). Reliance (RelyOn) accretion, delegation Votes, role-cluster detection, and social Influence. A role is the emergent RelyOn cluster over a Function — there is NO role type (D2). Read by engine/world (role_convergence_threshold) + engine/agent (the rest).",
+      "additionalProperties": false,
+      "required": ["role_convergence_threshold", "influence_weight"],
+      "properties": {
+        "role_convergence_threshold": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Share of agents relying on one holder for a Function → engine/world emits RoleEmerged on the rising edge. Supersedes the retired world.reliance_threshold." },
+        "influence_weight":           { "type": "number", "minimum": 0, "description": "Reflection ratio: signalWeight = trust·(1 + influence_weight·Influence). 0 disables Influence weighting." },
+        "rely_cost_threshold":        { "type": "number", "exclusiveMinimum": 0, "description": "Plan cost above which a Function counts self-unsolvable, forming a RelyOn edge." },
+        "relyon_delta":               { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "RelyOn[function] increment toward the chosen provider on a self-failure." },
+        "vote_rely_threshold":        { "type": "number", "minimum": 0, "maximum": 1, "description": "Private reliance strength that licenses emitting a Vote." },
+        "vote_urgency_threshold":     { "type": "number", "minimum": 0, "maximum": 1, "description": "Distributed urgency threshold above which an agent emits a Vote (combined urgency proxy)." },
+        "vote_relyon_delta":          { "type": "number", "minimum": 0, "maximum": 1, "description": "RelyOn increment a heard Vote folds into the receiver toward the voted holder." }
+      }
+    },
+    "threats": {
+      "type": "object",
+      "description": "Threat-perception tunables (P5/P6 BLOCKER-1). Read by engine/agent for hostile-tag detection; platform/config resolves hostile_tags into Config.ThreatTags. engine/agent never branches on a tag literal (D10). The per_threat_intensity and safety_decay fields parameterise the conditional Safety-intensity driver (engine/needs.Def.UpdateConditionalNeeds).",
+      "additionalProperties": false,
+      "required": ["hostile_tags", "per_threat_intensity", "safety_decay"],
+      "properties": {
+        "hostile_tags": {
+          "type": "array",
+          "description": "core.Tag strings on a perceived signal/entity that trigger a defensive Safety-goal insertion (engine/agent phase 1).",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "safety_threat_threshold": { "type": "number", "minimum": 0, "maximum": 1, "description": "When the collective Safety mean drops below this, a defensive (Patrol) goal fires (engine/agent collective appraisal, P5)." },
+        "per_threat_intensity": { "type": "number", "minimum": 0, "maximum": 1, "description": "P6 BLOCKER-1: Safety intensity added per perceived threat, injected into needs.UpdateConditionalNeeds (balance.yaml threats.per_threat_intensity)." },
+        "safety_decay": { "type": "number", "minimum": 0, "maximum": 1, "description": "P6 BLOCKER-1: Safety intensity removed per tick when no threat is perceived, injected into needs.UpdateConditionalNeeds (balance.yaml threats.safety_decay)." }
+      }
+    },
+    "trade": {
+      "type": "object",
+      "description": "Trade-signal tunables (P5). Read by engine/agent when emitting an Offer signal; bytes injected by platform/config (D10). The deceptive-claim band: a fully-honest agent (perceived Honesty = 1, D8 reads ToM[self]) claims claim_inflate_min; a fully-dishonest agent (perceived Honesty = 0) inflates to claim_inflate_max. claimed = min + (1 − honesty)·(max − min).",
+      "additionalProperties": false,
+      "required": ["claim_inflate_min", "claim_inflate_max"],
+      "properties": {
+        "claim_inflate_min": { "type": "number", "minimum": 0, "maximum": 1, "description": "Claim floor: the ClaimedValue an agent with perceived Honesty = 1 offers (no inflation)." },
+        "claim_inflate_max": { "type": "number", "minimum": 0, "maximum": 1, "description": "Claim ceiling: the ClaimedValue an agent with perceived Honesty = 0 offers (maximum inflation); must be ≥ claim_inflate_min." }
+      }
+    },
+    "coping": { "$ref": "#/$defs/numberMap" },
+    "gates": { "$ref": "#/$defs/numberMap" }
   },
   "$defs": {
     "numberMap": {

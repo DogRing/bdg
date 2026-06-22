@@ -1,0 +1,40 @@
+# P5 scenario — High/Low-Intelligence behavioral divergence
+#
+# Two parents who care for the same child, identical in every way EXCEPT perceived
+# Intelligence. The high-Intel parent runs forward-sim (lookahead ≥ intelligence.
+# lookahead_threshold) and PROVISIONS — its plans prepend Forage/Drink to cover future
+# Satiety/Hydration deficits. The low-Intel parent (below the threshold) skips forward-sim
+# and reacts only to the present need. The divergence is visible in the PlanBuilt event
+# `provisioned`/`steps` fields and in plan length.
+#
+# Stats are normalized [0,1] (content/stats.yaml). Run:
+#   go -C backend run . -seed=1 -ticks=5760 -scenario=../testdata/scenarios/p5_intel_divergence.yaml
+
+agents:
+  - id: "parent_hi"
+    stats: { Intelligence: 0.8, Honesty: 0.85, Aggression: 0.2, Agility: 0.7, Strength: 0.5 }
+    values:
+      - { dimension: Wellbeing, ref: { kind: Other, id: "child" }, weight: 0.9, posture: MaintainAbove, setpoint: 0.5 }
+    inventory: {}
+    needs: { Satiety: 0.50, Hydration: 0.45 }
+    pos: { x: 0, y: 0 }
+
+  - id: "parent_lo"
+    stats: { Intelligence: 0.3, Honesty: 0.85, Aggression: 0.2, Agility: 0.7, Strength: 0.5 }
+    values:
+      - { dimension: Wellbeing, ref: { kind: Other, id: "child" }, weight: 0.9, posture: MaintainAbove, setpoint: 0.5 }
+    inventory: {}
+    needs: { Satiety: 0.50, Hydration: 0.45 }
+    pos: { x: 2, y: 0 }
+
+  - id: "child"
+    stats: { Intelligence: 0.3, Agility: 0.3, Strength: 0.3 }
+    values: []
+    inventory: {}
+    needs: { Satiety: 0.85 }
+    pos: { x: 1, y: 0 }
+
+objects:
+  - { id: "bush1", kind: berry_bush, pos: { x: 3, y: 0 } }
+  - { id: "bush2", kind: berry_bush, pos: { x: -3, y: 0 } }
+  - { id: "well1", kind: water_source, pos: { x: 0, y: 3 } }

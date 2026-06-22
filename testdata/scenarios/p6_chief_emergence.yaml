@@ -1,0 +1,67 @@
+# P6 integration scenario G — emergent "chief" (safety delegation)
+#
+# A predatory agent (high Aggression, low Honesty) lives beside three food-holding
+# peasants and one well-equipped guard_candidate (high Strength/Intelligence/
+# Sociability/Honesty). As the thief's Satiety need bites, the conscience gate
+# allows Take (Honesty=0.15<0.40); Forage is invisible (Intelligence=0.15<0.20
+# abstraction:low gate) and there are no berry bushes. The thief's Take exposes
+# norm:transgressive to nearby observers each tick it runs, driving their conditional
+# Safety intensity up via driveConditionalSafety.
+#
+# Each peasant and the guard hold a Collective Safety value (MaintainAbove 0.6).
+# When the thief Takes, goalForced fires: peasants adopt Safety goal → Patrol
+# unreachable (no village_center) → handleRelianceTrigger fires → BestProviderFor
+# picks guard_candidate (alphabetically first among non-self candidates, since 'g'<'p').
+# As the three peasants each accumulate RelyOn[Safety][guard_candidate], relianceScan
+# emits RoleEmerged when share ≥ 0.5 (3/5 = 0.60).
+#
+# Agent-ID ordering ensures guard_candidate sorts before peasant_* (D12 tie-breaking):
+#   sorted IDs: guard_candidate, peasant_1, peasant_2, peasant_3, thief
+#
+# Thief stats: Agility=0.7 (capability_floor ≥ 0.15 → MoveTo visible),
+#              Intelligence=0.15 (abstraction:low gate 0.20 → Forage invisible),
+#              Honesty=0.2 (conscience gate < 0.40 → Take visible).
+
+agents:
+  - id: thief
+    stats: { Aggression: 0.8, Honesty: 0.2, Strength: 0.7, Stamina: 1.0,
+             Agility: 0.7, Intelligence: 0.15 }
+    values: []
+    inventory: {}
+    pos: { x: 5, y: 5 }
+
+  - id: guard_candidate
+    stats: { Strength: 0.8, Intelligence: 0.7, Sociability: 0.7, Honesty: 0.8,
+             Agility: 0.6 }
+    values:
+      - { dimension: Safety, ref: { kind: Collective }, weight: 0.9,
+          posture: MaintainAbove, setpoint: 0.6 }
+    inventory: {}
+    pos: { x: 3, y: 5 }
+
+  - id: peasant_1
+    stats: { Honesty: 0.7, Intelligence: 0.5, Agility: 0.5 }
+    values:
+      - { dimension: Safety, ref: { kind: Collective }, weight: 0.8,
+          posture: MaintainAbove, setpoint: 0.6 }
+    inventory: { food: 3 }
+    pos: { x: 2, y: 2 }
+
+  - id: peasant_2
+    stats: { Honesty: 0.7, Intelligence: 0.5, Agility: 0.5 }
+    values:
+      - { dimension: Safety, ref: { kind: Collective }, weight: 0.8,
+          posture: MaintainAbove, setpoint: 0.6 }
+    inventory: { food: 3 }
+    pos: { x: 3, y: 2 }
+
+  - id: peasant_3
+    stats: { Honesty: 0.6, Intelligence: 0.4, Agility: 0.5 }
+    values:
+      - { dimension: Safety, ref: { kind: Collective }, weight: 0.7,
+          posture: MaintainAbove, setpoint: 0.6 }
+    inventory: { food: 2 }
+    pos: { x: 4, y: 2 }
+
+objects:
+  - { id: water_1, kind: water_source, pos: { x: 3, y: 0 } }

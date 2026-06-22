@@ -151,6 +151,7 @@ func defaultConfig() PlannerConfig {
 		},
 		BaseHorizonTicks: 720,
 		UrgencyThreshold: 0.65,
+		LookaheadThreshold: 0.4,
 		TagCosts: map[core.Tag]float64{
 			"effort:low":   0.20,
 			"effort:med":   0.50,

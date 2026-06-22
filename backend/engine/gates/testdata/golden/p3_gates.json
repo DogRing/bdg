@@ -1,0 +1,281 @@
+{
+  "gate_ids": [
+    "adrenaline",
+    "apathy",
+    "conscience",
+    "stamina"
+  ],
+  "reads": [
+    "Aggression",
+    "Honesty"
+  ],
+  "reads_body": [
+    "Adrenaline",
+    "Mood",
+    "Stamina",
+    "Urgency"
+  ],
+  "results": [
+    {
+      "name": "stamina: drained agent → effort:high invisible",
+      "action_tags": [
+        "effort:high"
+      ],
+      "stamina": 0,
+      "mood": 0,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": false,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "adrenaline",
+          "passed": true,
+          "mult": 1
+        },
+        {
+          "gate": "stamina",
+          "passed": false,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "stamina: rested agent → effort:high visible",
+      "action_tags": [
+        "effort:high"
+      ],
+      "stamina": 0.5,
+      "mood": 0,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "adrenaline",
+          "passed": true,
+          "mult": 1
+        },
+        {
+          "gate": "stamina",
+          "passed": true,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "stamina: at threshold 0.20 → visible (\u003e=)",
+      "action_tags": [
+        "effort:high"
+      ],
+      "stamina": 0.2,
+      "mood": 0,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "adrenaline",
+          "passed": true,
+          "mult": 1
+        },
+        {
+          "gate": "stamina",
+          "passed": true,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "stamina: effort:low unaffected (gate not matched)",
+      "action_tags": [
+        "effort:low"
+      ],
+      "stamina": 0,
+      "mood": 0,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 1
+    },
+    {
+      "name": "apathy: depressed → abstraction:med invisible",
+      "action_tags": [
+        "abstraction:med"
+      ],
+      "stamina": 0,
+      "mood": -0.8,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": false,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "apathy",
+          "passed": false,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "apathy: depressed → abstraction:high invisible",
+      "action_tags": [
+        "abstraction:high"
+      ],
+      "stamina": 0,
+      "mood": -0.8,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": false,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "apathy",
+          "passed": false,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "apathy: normal mood → abstraction:med visible",
+      "action_tags": [
+        "abstraction:med"
+      ],
+      "stamina": 0,
+      "mood": 0,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "apathy",
+          "passed": true,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "apathy: depressed but abstraction:low unaffected",
+      "action_tags": [
+        "abstraction:low"
+      ],
+      "stamina": 0,
+      "mood": -0.8,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 1
+    },
+    {
+      "name": "adrenaline: high arousal → violent:high cost ×0.5",
+      "action_tags": [
+        "violent:high"
+      ],
+      "stamina": 0,
+      "mood": 0,
+      "adrenaline": 0.9,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 0.5,
+      "trace": [
+        {
+          "gate": "adrenaline",
+          "passed": true,
+          "mult": 0.5
+        }
+      ]
+    },
+    {
+      "name": "adrenaline: low arousal → no discount",
+      "action_tags": [
+        "violent:high"
+      ],
+      "stamina": 0,
+      "mood": 0,
+      "adrenaline": 0.1,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "adrenaline",
+          "passed": true,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "adrenaline: high arousal + effort:high (rested) → visible \u0026 discounted",
+      "action_tags": [
+        "effort:high"
+      ],
+      "stamina": 0.8,
+      "mood": 0,
+      "adrenaline": 0.9,
+      "urgency": 0,
+      "visible": true,
+      "cost_multiplier": 0.5,
+      "trace": [
+        {
+          "gate": "adrenaline",
+          "passed": true,
+          "mult": 0.5
+        },
+        {
+          "gate": "stamina",
+          "passed": true,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "conscience: high urgency lowers barrier → visible",
+      "action_tags": [
+        "norm:transgressive"
+      ],
+      "self_stats": {
+        "Aggression": 0.3,
+        "Honesty": 0.5
+      },
+      "stamina": 0,
+      "mood": 0,
+      "adrenaline": 0,
+      "urgency": 0.8,
+      "visible": true,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "conscience",
+          "passed": true,
+          "mult": 1
+        }
+      ]
+    },
+    {
+      "name": "conscience: low urgency keeps barrier → invisible",
+      "action_tags": [
+        "norm:transgressive"
+      ],
+      "self_stats": {
+        "Aggression": 0.3,
+        "Honesty": 0.5
+      },
+      "stamina": 0,
+      "mood": 0,
+      "adrenaline": 0,
+      "urgency": 0,
+      "visible": false,
+      "cost_multiplier": 1,
+      "trace": [
+        {
+          "gate": "conscience",
+          "passed": false,
+          "mult": 1
+        }
+      ]
+    }
+  ]
+}

@@ -13,7 +13,7 @@ import (
 	"github.com/dogring/bdg/engine/values"
 )
 
-// ── The agent ───────────────────────────────────────────────────────────────────
+// The agent
 
 // Agent is one simulated villager: its dynamic Body state, its ToM (incl. ToM[self],
 // D8), its current Goal and durative Plan, and its coping state. Owned and mutated
@@ -24,10 +24,10 @@ type Agent struct {
 	ID  core.AgentID
 	Pos core.Vec2
 
-	// Body — the dynamic state (glossary §State layers).
-	Inventory       map[core.Tag]int           // item-kind id → count (sorted-key iteration only, D12)
+	// Body — the dynamic state (glossary State layers).
+	Inventory       map[core.Tag]int           // item-kind id count (sorted-key iteration only, D12)
 	Stamina         float64                    // consumable effort budget, in [0, StaminaMax]
-	Mood            float64                    // signed; += λ·(actual−expected), decays to baseline
+	Mood            float64                    // signed; += lambda*(actual-expected), decays to baseline
 	Adrenaline      float64                    // urgency-driven surge in [0, AdrMax]
 	NeedIntensities map[core.Dimension]float64 // grown need intensity per Dimension (higher = worse)
 
@@ -36,6 +36,11 @@ type Agent struct {
 
 	// ToM — the agent's whole theory-of-mind, INCLUDING ToM[self]; decisions read ToM[self] (D8).
 	ToM tom.ToM
+
+	// Values — the agent's held value directions (Dimension + Referent + Posture + Setpoint).
+	// What the agent ultimately cares about. Grows as the agent discovers new referents.
+	// Populated at construction from the needs.yaml defaults and per-agent disposition modulation.
+	Values []core.Value
 
 	// Cfg — immutable per-agent config (injected at construction from balance.yaml, D10).
 	// Stored on Agent so Tick has access to all tunables without bloating the method signature.
@@ -47,13 +52,13 @@ type Agent struct {
 	PlanIdx int             // index of the action currently executing within Plan.Actions
 	Elapsed core.GameMinutes // game-minutes the current action has been running (durative progress)
 
-	Coping     CopingState   // where the agent sits in the coping cascade (design §3)
-	FailStreak int           // NEW P3: consecutive failed re-plans; resets on any plan/action success
+	Coping     CopingState   // where the agent sits in the coping cascade (design 3)
+	FailStreak int           // P3: consecutive failed re-plans; resets on any plan/action success
 	Latent     []LatentGoal  // unmet goals stored below the surface (Longing/Latent), feed Resentment
-	Resentment float64       // NEW P3: accrues while Latent on trigger events; drives Aggression/Affinity drift (D2)
+	Resentment float64       // P3: accrues while Latent on trigger events; drives Aggression/Affinity drift (D2)
 }
 
-// ── Config (every rate from content/balance.yaml; no hardcoded constant, D10) ───
+// Config (every rate from content/balance.yaml; no hardcoded constant, D10)
 
 // Config bundles every tunable the agent loop reads, injected by the caller (read
 // from content/balance.yaml via platform/config). The agent hardcodes NO numeric
@@ -72,7 +77,7 @@ type Config struct {
 
 	// stamina dynamics
 	StaminaMax     float64 // balance.yaml stamina.max
-	DrainPerEffort float64 // balance.yaml stamina.drain_per_effort (× effort tag level)
+	DrainPerEffort float64 // balance.yaml stamina.drain_per_effort (effort tag level)
 	RegenRest      float64 // balance.yaml stamina.regen_rest
 	RegenSleep     float64 // balance.yaml stamina.regen_sleep
 
@@ -80,7 +85,7 @@ type Config struct {
 	UrgencyFromDeficit float64 // balance.yaml urgency.from_deficit
 	BudgetPenalty      float64 // balance.yaml urgency.budget_penalty
 
-	// β self-calibration (D8): applied ONLY on a resolved attempt, per used stat.
+	// beta self-calibration (D8): applied ONLY on a resolved attempt, per used stat.
 	Beta float64 // balance.yaml self_calibration.beta
 
 	// resentment drift fed by latent goals
@@ -93,28 +98,56 @@ type Config struct {
 
 	// budget scaling — shaped into a planner.Budget per Tick
 	BudgetBase            int // base GOAP/HTN search nodes
-	BudgetPerIntelligence int // + perceived Intelligence · this
+	BudgetPerIntelligence int // + perceived Intelligence * this
 
 	// gossip credibility floor used when folding interaction signals
-	Rates tom.Rates // α, β, min_trust, initial_belief_noise — threaded to ToM updates
+	Rates tom.Rates // alpha, beta, min_trust, initial_belief_noise — threaded to ToM updates
 
-	// ── P3 additions ───────────────────────────────────────────────────────────
+	// P3: stamina effort-level resolution
+	EffortLevels map[core.Tag]float64 // balance.yaml tag_levels.effort
 
-	// stamina effort-level resolution: effort tag → level (balance.yaml tag_levels.effort).
-	EffortLevels map[core.Tag]float64 // e.g. {effort:none:0, effort:low:.20, effort:med:.50, effort:high:.90}
-
-	// adrenaline ↔ stamina coupling.
+	// adrenaline stamina coupling
 	CrashStaminaPenalty float64 // balance.yaml adrenaline.crash_stamina_penalty
 
-	// coping cascade.
-	RebindMinIntelligence float64 // balance.yaml coping.rebind_min_intelligence
+	// coping cascade
+	RebindMinIntelligence float64 // balance.yaml intelligence.rebind_threshold
 	ApathyFailStreak      int     // balance.yaml coping.apathy_fail_streak
 	ApathyRecoverMood     float64 // balance.yaml coping.apathy_recover_mood
 	ApathyBudgetPenalty   float64 // balance.yaml coping.apathy_budget_penalty
 
-	// resentment accrual.
+	// resentment accrual
 	ResentmentPerTrigger float64 // balance.yaml resentment.per_trigger
 	ResentmentThreshold  float64 // balance.yaml resentment.threshold
+
+	// P5: trade-signal deceptive-claim band
+	ClaimInflateMin float64 // balance.yaml trade.claim_inflate_min
+	ClaimInflateMax float64 // balance.yaml trade.claim_inflate_max
+
+	// P5: Other-referent bond multiplier and care threshold
+	BondAffinityGain    float64 // balance.yaml social.bond_affinity_gain
+	MinCareThreshold    float64 // balance.yaml social.min_care_threshold
+	MaxPossiblePriority float64 // ceiling to normalize Other-referent priority into urgency proxy; default 2.5
+
+	// P5: collective-safety defensive trigger (BLOCKER-2). When the mean collective
+	// satisfaction (1 − mean member need-intensity) for a Collective value's dimension
+	// drops below this, the holder adopts that dimension as a defensive goal (→ Patrol).
+	SafetyThreatThreshold float64 // balance.yaml threats.safety_threat_threshold
+
+	// P6 BLOCKER-1: threat perception tags and Safety-dimension config
+	ThreatTags          []core.Tag      // balance.yaml threats.hostile_tags — tags that trigger defensive Safety goal insertion
+	SafetyDim           core.Dimension  // content/needs.yaml Safety dimension id, resolved by platform/config
+	ThreatPerThreatGain float64         // balance.yaml threats.per_threat_intensity — Safety intensity added per perceived threat
+	ThreatSafetyDecay   float64         // balance.yaml threats.safety_decay — Safety intensity removed per tick with no threat
+
+	// P6: reliance + vote policy thresholds
+	RelyCostThreshold    float64 // balance.yaml politics.rely_cost_threshold — plan cost above which a Function counts self-unsolvable
+	RelyOnDelta          float64 // balance.yaml politics.relyon_delta — δ added to RelyOn on self-failure
+	VoteRelyThreshold    float64 // balance.yaml politics.vote_rely_threshold — private reliance strength that licenses a Vote
+	VoteUrgencyThreshold float64 // balance.yaml politics.vote_urgency_threshold — distributed urgency above which an agent emits a Vote
+	VoteRelyOnDelta      float64 // balance.yaml politics.vote_relyon_delta — δ a heard Vote folds into RelyOn
+
+	// P6: influence weighting for incoming signals
+	InfluenceWeight float64 // balance.yaml politics.influence_weight — signalWeight = trust·(1 + influence_weight·Influence)
 }
 
 // DefaultConfig returns the canonical Config from content/balance.yaml (for tests / headless).
@@ -179,10 +212,32 @@ func DefaultConfig() Config {
 		// P3: resentment
 		ResentmentPerTrigger: 0.05,
 		ResentmentThreshold:  0.30,
+
+		// P5: trade-signal deceptive-claim band
+		ClaimInflateMin: 0.50,
+		ClaimInflateMax: 0.90,
+
+		// P5: Other-referent social tuning
+		BondAffinityGain:    0.20,
+		MinCareThreshold:    0.30,
+		MaxPossiblePriority: 2.5,
+
+		// P5: collective-safety defensive trigger (BLOCKER-2)
+		SafetyThreatThreshold: 0.30,
+
+		// P6: reliance + vote policy thresholds
+		RelyCostThreshold:    1.2,
+		RelyOnDelta:          0.15,
+		VoteRelyThreshold:    0.4,
+		VoteUrgencyThreshold: 0.65,
+		VoteRelyOnDelta:      0.10,
+
+		// P6: influence weighting for incoming signals
+		InfluenceWeight: 0.5,
 	}
 }
 
-// ── Services (borrowed read-only, passed per-Tick) ──────────────────────────────
+// Services (borrowed read-only, passed per-Tick)
 
 // Services bundles the shared, immutable upstream services the loop needs each tick.
 // They are borrowed read-only (constructed once by the world, shared across all
@@ -194,11 +249,11 @@ type Services struct {
 	Planner *planner.Planner   // HTN+GOAP deliberation (engine/planner)
 	Values  *values.Config     // per-Dimension arbitration weights (engine/values)
 	Needs   *needs.Registry    // need catalog + forward-roll helpers (engine/needs)
-	Stats   *stats.Registry    // stat metadata (capability set, ranges) — no hardcoded ids (D7)
-	Actions *actions.Registry  // action catalog (tags, duration, producers) — for execution
+	Stats   *stats.Registry    // stat metadata (capability set, ranges) - no hardcoded ids (D7)
+	Actions *actions.Registry  // action catalog (tags, duration, producers) - for execution
 }
 
-// ── Construction ────────────────────────────────────────────────────────────────
+// Construction
 
 // New constructs an Agent with its generated Real Stats, seeded ToM (incl. ToM[self],
 // built by engine/tom with the injected rng), starting Body state from cfg, and an
@@ -214,6 +269,7 @@ func New(id core.AgentID, pos core.Vec2, realStats stats.Stats, selfToM tom.ToM,
 		NeedIntensities: make(map[core.Dimension]float64),
 		RealStats:       realStats,
 		ToM:             selfToM,
+		Values:          nil,
 		Cfg:             cfg,
 		Goal:            "",
 		Plan:            planner.Plan{},
@@ -226,7 +282,7 @@ func New(id core.AgentID, pos core.Vec2, realStats stats.Stats, selfToM tom.ToM,
 	}
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────────
+// Helpers
 
 // clamp clamps v to [lo, hi].
 func clamp(v, lo, hi float64) float64 {

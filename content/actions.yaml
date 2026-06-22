@@ -190,8 +190,8 @@ actions:
   #    suppresses; they become visible only when drive overcomes the barrier, design §3) ──
   - id: Take
     tags: [ "effort:low", "noise:low", "norm:transgressive", "risk:med", "social:covert" ]
-    requires: [ at_target, owned_by_other ]
-    produces: [ holding ]              # taking an owned item without consent
+    requires: [ near_other, owned_by_other ]
+    produces: [ holding, has_food ]    # taking an owned food item; has_food satisfies Eat's precondition
     duration: 4
     interruptible: true
 
@@ -199,6 +199,68 @@ actions:
     tags: [ "uses:Strength", "effort:high", "noise:high", "violent:high",
             "norm:transgressive", "risk:high" ]
     requires: [ near_other ]
-    produces: [ struck ]
+    produces: [ has_Safety ]            # deterrence/coercion: satisfies a defensive Safety goal
     duration: 5
     interruptible: false               # committed once swung
+
+  # Social care (P5 — Scenario D parent-feed-child)
+  - id: Cook
+    tags: [ "uses:Intelligence", "effort:med", "noise:low", "abstraction:med" ]
+    target_kind: fire_pit
+    requires: [ at_target, has_raw_food ]
+    produces: [ has_cooked_food ]
+    duration: 20
+    interruptible: true
+
+  - id: Comfort
+    tags: [ "social", "effort:low", "abstraction:med" ]
+    requires: [ near_other ]
+    produces: [ comforted ]
+    duration: 15
+    interruptible: true
+
+  - id: Feed
+    tags: [ "social", "effort:low", "abstraction:med" ]
+    requires: [ near_other, has_food ]
+    produces: [ comforted, sated ]
+    duration: 8
+    interruptible: true
+
+  # ── Public safety (P5 — Scenario G prerequisite) ─────────────────────────────
+  # Patrol is a low-abstraction vigilance action taken when collective safety is low.
+  # It produces `has_Safety` — the Safety-dimension producer predicate the planner
+  # resolves a Safety goal to (dimensionToProducerPredicate) — so a defensive Safety
+  # goal reaches Patrol; `public_safety` is kept as the collective-state marker. The
+  # location precondition is `at_target` (satisfied by MoveTo to the village_center,
+  # matching Forage→berry_bush); `near_target` had no producer and was unreachable.
+  - id: Patrol
+    tags: [ "uses:Agility", "effort:med", "noise:low", "abstraction:low" ]
+    target_kind: village_center
+    requires: [ at_target ]
+    produces: [ public_safety, has_Safety ]
+    effect: { Safety: 0.15 }
+    duration: 12
+    interruptible: true
+
+  # Report is a social action for alerting other agents to a threat. It requires being
+  # near another agent and produces an "alerted" predicate that can trigger downstream
+  # collective response (Scenario G: village chief emergence requires alert propagation).
+  - id: Report
+    tags: [ "social", "effort:low", "abstraction:med" ]
+    requires: [ near_other ]
+    produces: [ alerted ]
+    duration: 5
+    interruptible: true
+
+  # ── Delegation (P6 — emergent institutions) ──────────────────────────────────
+  # Vote publicly delegates a Function (safety/judgment/knowledge) to a target: a social
+  # signal that lets reliance (RelyOn) converge faster than private accretion under shared
+  # distress. It carries no need Effect — it never competes with survival goals — and is
+  # NOT a role/institution (D2): the emergent role is the RelyOn cluster engine/world detects.
+  # The delegated Function rides on the emitted Signal (core.Signal.Function), not on a tag.
+  - id: Vote
+    tags: [ "social", "effort:low", "abstraction:high" ]
+    requires: [ near_other ]
+    produces: [ voted ]
+    duration: 3
+    interruptible: true

@@ -1,0 +1,31 @@
+# P5 scenario — Theft pressure → collective safety drop → Patrol (Scenario G)
+#
+# A low-asset, hungry agent under theft pressure (empty inventory + high Satiety need) sits
+# beside a patroller who holds a Collective value: keep the VILLAGE's Safety at or above 0.6.
+# Both villagers start with a degraded Safety standing, so the village's mean collective
+# satisfaction (1 − mean Safety intensity) sits below threats.safety_threat_threshold (0.30).
+# The patroller therefore adopts a defensive Safety goal (BLOCKER-2 wiring) and the planner
+# routes it to Patrol at the village_center (Patrol produces `has_Safety`).
+#
+# Stats are normalized [0,1]. The village_center is placed under the patroller so the
+# MoveTo→Patrol chain is short and deterministic.
+
+agents:
+  - id: "patroller"
+    stats: { Intelligence: 0.6, Agility: 0.7, Strength: 0.6, Honesty: 0.8, Aggression: 0.3 }
+    values:
+      - { dimension: Safety, ref: { kind: Collective, id: "village" }, weight: 1.0, posture: MaintainAbove, setpoint: 0.6 }
+    inventory: {}
+    needs: { Safety: 0.80 }
+    pos: { x: 0, y: 0 }
+
+  - id: "pauper"
+    stats: { Intelligence: 0.5, Agility: 0.6, Strength: 0.4, Honesty: 0.4, Aggression: 0.5 }
+    values: []
+    inventory: {}
+    needs: { Satiety: 0.90, Safety: 0.80 }
+    pos: { x: 2, y: 0 }
+
+objects:
+  - { id: "village_center", kind: village_center, pos: { x: 0, y: 0 } }
+  - { id: "bush1", kind: berry_bush, pos: { x: 6, y: 0 } }

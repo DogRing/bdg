@@ -23,6 +23,7 @@ import (
 
 	"github.com/dogring/bdg/engine/core"
 	"github.com/dogring/bdg/engine/needs"
+	"github.com/dogring/bdg/engine/tom"
 	"gopkg.in/yaml.v3"
 )
 
@@ -78,13 +79,193 @@ func ComputePriority(sal Salience, weight float64) Priority {
 	return Priority(float64(sal) * weight)
 }
 
+// ── Referent-aware appraisal input (P5) ──────────────────────────────────────────
+
+// ReferentInput is the resolved (currentIntensity, maxIntensity) pair that feeds the
+// four appraisal functions, for any referent kind. The caller derives it from the referent
+// and passes it to ComputeStanding. This keeps the formula functions unchanged (D5).
+type ReferentInput struct {
+	CurrentIntensity float64 // how much the need/state has grown (higher = worse)
+	MaxIntensity     float64 // setpoint / maximum tolerable intensity
+}
+
+// DeriveReferentInput resolves the appraisal input for a given referent, dimension,
+// and the agent's current knowledge. It is a pure function (D5/D12): no RNG, no global
+// state, no map ranging for logic.
+//
+// Per-kind derivation (SPEC § P5 — Referent-aware appraisal):
+//
+// Self (ref.Kind == core.Self):
+//
+//	CurrentIntensity = selfIntensity
+//	MaxIntensity     = needDef.Threshold
+//
+// Other (ref.Kind == core.Other):
+//
+//	Low-foresight  (perceivedIntelligence < cfg.OtherLowIntelThreshold):
+//	    mood proxy: read the target's perceived Mood as a gross welfare indicator.
+//	    CurrentIntensity = 1 - clamp01( moodMean / maxMood )
+//	High-foresight (perceivedIntelligence >= cfg.OtherLowIntelThreshold):
+//	    unmet-need proxy: mean over belief.EstStats of (1 - clamp01(mean(s)/max(s))),
+//	    iterated in sorted StatID order (D12).
+//	MaxIntensity = needDef.Threshold (same as Self).
+//
+// Place (ref.Kind == core.Place):
+//
+//	CurrentIntensity = 1 - placeQuality
+//	MaxIntensity     = 1.0
+//
+// Collective (ref.Kind == core.Collective):
+//
+//	When CollectiveAggregationMode == "mean":
+//	    CurrentIntensity = mean CurrentIntensity across members
+//	    MaxIntensity     = mean MaxIntensity across members
+//	When CollectiveAggregationMode == "min":
+//	    CurrentIntensity = min CurrentIntensity across members  (worst-off member drives urgency)
+//	    MaxIntensity     = mean MaxIntensity across members
+func DeriveReferentInput(
+	ref core.Referent,
+	dim core.Dimension,
+	selfIntensity float64,
+	needDef needs.Def,
+	belief tom.Belief,
+	placeQuality float64,
+	members []ReferentInput,
+	perceivedIntelligence float64,
+	moodStatID core.StatID,
+	cfg *Config,
+) ReferentInput {
+	switch ref.Kind {
+	case core.Self:
+		return ReferentInput{
+			CurrentIntensity: selfIntensity,
+			MaxIntensity:     needDef.Threshold,
+		}
+
+	case core.Other:
+		var currentIntensity float64
+		// Branch: low-foresight (mood proxy) vs high-foresight (unmet-need proxy).
+		if perceivedIntelligence < cfg.OtherLowIntelThreshold {
+			// Low-foresight: use the target's perceived Mood as a gross welfare indicator.
+			// A deeply negative mood → high intensity ("they are suffering").
+			// The caller normalizes Mood to a [-1, 1] range before passing the belief;
+			// maxMood = 1.0 as the default scale (the caller is responsible for passing
+			// a normalized fraction, D7: no hardcoded literal in logic — the moodStatID
+			// is resolved from the registry, not the scale).
+			sd, ok := belief.EstStats[moodStatID]
+			if !ok {
+				currentIntensity = 1.0 // worst case: cannot discern → assume suffering
+			} else {
+				moodMean := sd.Mean
+				// Normalize mood from [-1, 1] to [0, 1], then invert for intensity.
+				// (moodMean + 1) / 2 maps [-1,1] → [0,1]; 0.5 = neutral.
+				normalizedMood := (moodMean + 1.0) / 2.0
+				currentIntensity = 1 - clamp01(normalizedMood)
+			}
+		} else {
+			// High-foresight: unmet-need proxy.
+			// Mean over EstStats of (1 - clamp01(mean(s) / max(s))).
+			// Iterate in sorted StatID order (D12).
+			// The stat max defaults to 100.0 (the shipped stats.yaml range [0,100]).
+			statIDs := sortedStatKeys(belief.EstStats)
+			var sum float64
+			var count int
+			maxVal := 100.0
+			for _, sid := range statIDs {
+				sd := belief.EstStats[sid]
+				ratio := clamp01(sd.Mean / maxVal)
+				sum += 1 - ratio
+				count++
+			}
+			if count > 0 {
+				currentIntensity = sum / float64(count)
+			} else {
+				currentIntensity = 1.0
+			}
+		}
+
+		return ReferentInput{
+			CurrentIntensity: currentIntensity,
+			MaxIntensity:     needDef.Threshold,
+		}
+
+	case core.Place:
+		// Place: placeQuality ∈ [0,1]; CurrentIntensity = 1 - placeQuality.
+		return ReferentInput{
+			CurrentIntensity: 1 - clamp01(placeQuality),
+			MaxIntensity:     1.0,
+		}
+
+		case core.Collective:
+			if len(members) == 0 {
+				return ReferentInput{
+					CurrentIntensity: 0,
+					MaxIntensity:     0,
+				}
+			}
+			var sumCurrent, sumMax float64
+			minCurrent := members[0].CurrentIntensity
+			for _, m := range members {
+				sumCurrent += m.CurrentIntensity
+				sumMax += m.MaxIntensity
+				if m.CurrentIntensity < minCurrent {
+					minCurrent = m.CurrentIntensity
+				}
+			}
+			n := float64(len(members))
+			currentIntensity := sumCurrent / n
+			if cfg.CollectiveAggregationMode == "min" {
+				currentIntensity = minCurrent
+			}
+			return ReferentInput{
+				CurrentIntensity: currentIntensity,
+				MaxIntensity:     sumMax / n,
+			}
+
+	default:
+		// Unknown referent kind — fall back to Self semantics.
+		return ReferentInput{
+			CurrentIntensity: selfIntensity,
+			MaxIntensity:     needDef.Threshold,
+		}
+	}
+}
+
+// sortedStatKeys returns the sorted keys of estStats (D12).
+func sortedStatKeys(estStats map[core.StatID]tom.StatDist) []core.StatID {
+	keys := make([]core.StatID, 0, len(estStats))
+	for k := range estStats {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return string(keys[i]) < string(keys[j])
+	})
+	return keys
+}
+
+// getStatDefFromBelief retrieves the stat range info from the belief's EstStats.
+// Since the Belief type doesn't carry min/max, we derive a pseudo-def from the
+// mean value using a heuristic default range of [0, 100].
+func getStatDefFromBelief(belief tom.Belief, statID core.StatID) (struct{ Min, Max float64 }, bool) {
+	_, ok := belief.EstStats[statID]
+	if !ok {
+		return struct{ Min, Max float64 }{Min: 0, Max: 100}, false
+	}
+	// We don't have the actual min/max from the registry — use the same default
+	// range that shipped stats.yaml uses.
+	return struct{ Min, Max float64 }{Min: 0, Max: 100}, true
+}
+
 // ── Config (the values: block of content/balance.yaml) ───────────────────────────
 
 // Config holds the per-Dimension arbitration weights loaded from content/balance.yaml's
-// values.weights block. Immutable after Load.
+// values.weights block, plus the P5 OtherLowIntelThreshold from the intelligence block
+// and CollectiveAggregationMode from the values block. Immutable after Load.
 type Config struct {
-	weights map[core.Dimension]float64
-	dims    []core.Dimension // sorted lexicographically (D12)
+	weights                  map[core.Dimension]float64
+	dims                     []core.Dimension // sorted lexicographically (D12)
+	OtherLowIntelThreshold   float64          // balance.yaml intelligence.other_intel_threshold; default 0.5
+	CollectiveAggregationMode string          // "mean" or "min"; balance.yaml values.collective_aggregation_mode; default "mean"
 }
 
 // Load parses ONLY the top-level values: block from r (the bytes of content/balance.yaml —
@@ -149,9 +330,33 @@ func Load(r io.Reader) (*Config, error) {
 		return string(dims[i]) < string(dims[j])
 	})
 
+	// Read intelligence.other_intel_threshold (P5). Default 0.5 if missing.
+	otherLowIntelThreshold := 0.5
+	if intelBlock, ok := raw["intelligence"]; ok {
+		if intelMap, ok := intelBlock.(map[string]any); ok {
+			if thrRaw, ok := intelMap["other_intel_threshold"]; ok {
+				if thr, ok := thrRaw.(float64); ok {
+					otherLowIntelThreshold = thr
+				}
+			}
+		}
+	}
+
+	// Read values.collective_aggregation_mode (P5). Default "mean" if missing.
+	collectiveAggregationMode := "mean"
+	if aggRaw, ok := valuesMap["collective_aggregation_mode"]; ok {
+		if aggStr, ok := aggRaw.(string); ok {
+			if aggStr == "mean" || aggStr == "min" {
+				collectiveAggregationMode = aggStr
+			}
+		}
+	}
+
 	return &Config{
-		weights: weights,
-		dims:    dims,
+		weights:                  weights,
+		dims:                     dims,
+		OtherLowIntelThreshold:   otherLowIntelThreshold,
+		CollectiveAggregationMode: collectiveAggregationMode,
 	}, nil
 }
 

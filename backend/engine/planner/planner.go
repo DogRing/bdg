@@ -32,14 +32,15 @@ var ErrUnreachable = errors.New("planner: goal unreachable within budget")
 // Safe to share across goroutines during the read/plan phase (each Plan call
 // is a pure function of its arguments + the registries).
 type Planner struct {
-	actionsReg        *actions.Registry
-	gatesReg          *gates.Registry
-	needsReg          *needs.Registry
-	statsReg          *stats.Registry
-	cfg               PlannerConfig
-	sortedTagCostKeys []core.Tag    // precomputed sorted keys for D12 iteration
-	intelligenceStat  core.StatID   // resolved Intelligence StatID (D7)
-	baseHorizonTicks  int           // from cfg
+	actionsReg         *actions.Registry
+	gatesReg           *gates.Registry
+	needsReg           *needs.Registry
+	statsReg           *stats.Registry
+	cfg                PlannerConfig
+	sortedTagCostKeys  []core.Tag  // precomputed sorted keys for D12 iteration
+	intelligenceStat   core.StatID // resolved Intelligence StatID (D7)
+	baseHorizonTicks   int         // from cfg
+	lookaheadThreshold float64     // P5: below this, forward-sim is skipped entirely
 }
 
 // New constructs a Planner from the already-loaded registries and an injected
@@ -63,15 +64,24 @@ func New(
 		baseHorizon = 1
 	}
 
+	lookaheadThreshold := cfg.LookaheadThreshold
+	if lookaheadThreshold < 0 {
+		lookaheadThreshold = 0
+	}
+	if lookaheadThreshold > 1 {
+		lookaheadThreshold = 1
+	}
+
 	return &Planner{
-		actionsReg:        actReg,
-		gatesReg:          gateReg,
-		needsReg:          needReg,
-		statsReg:          statReg,
-		cfg:               cfg,
-		sortedTagCostKeys: sortedKeys,
-		intelligenceStat:  intelStat,
-		baseHorizonTicks:  baseHorizon,
+		actionsReg:         actReg,
+		gatesReg:           gateReg,
+		needsReg:           needReg,
+		statsReg:           statReg,
+		cfg:                cfg,
+		sortedTagCostKeys:  sortedKeys,
+		intelligenceStat:   intelStat,
+		baseHorizonTicks:   baseHorizon,
+		lookaheadThreshold: lookaheadThreshold,
 	}
 }
 
@@ -114,16 +124,22 @@ func (p *Planner) Plan(
 
 	goalDim := values[0].Dim
 
-	// ── 2. Compute Intelligence-gated horizon ─────────────────────────────────
+	// ── 2. Compute Intelligence-gated horizon (P5 lookahead threshold) ────────
 	horizonTicks := computeHorizon(
 		agent.SelfModel,
 		p.intelligenceStat,
 		p.statsReg,
 		p.baseHorizonTicks,
+		p.lookaheadThreshold,
 	)
 
-	// ── 3. Forward-sim provisioning (D9) ─────────────────────────────────────
-	provisionedDims := forwardSimProvision(p.needsReg, agent.NeedIntensities, horizonTicks)
+	// ── 3. Forward-sim provisioning (D9) — hard-skip at horizon=0 (P5) ─────────
+	var provisionedDims []core.Dimension
+	if horizonTicks > 0 {
+		provisionedDims = forwardSimProvision(p.needsReg, agent.NeedIntensities, horizonTicks)
+	} else {
+		provisionedDims = nil
+	}
 
 	// ── 4. GOAP + HTN search for the goal ─────────────────────────────────────
 	ss := &searchState{

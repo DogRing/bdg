@@ -215,9 +215,9 @@ func TestReadsToMSelf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan failed: %v", err)
 	}
-	// SelfModel Intelligence=10 → horizon ~72, not 720 (which would use CurrentStats=100)
+	// SelfModel Intelligence=10 → 10/100 = 0.1 < 0.4 threshold → hard skip → 0
 	if plan.Horizon >= 720 {
-		t.Errorf("horizon should use SelfModel (Intelligence=10), not CurrentStats (100). Got %d", plan.Horizon)
+		t.Errorf("horizon should use SelfModel (Intelligence=10, hard skip). Got %d", plan.Horizon)
 	}
 }
 
@@ -303,6 +303,7 @@ func TestDefaultsFromConfig(t *testing.T) {
 		BaseHorizonTicks: 100,
 		TagCosts:         map[core.Tag]float64{"effort:low": 0.10},
 		UrgencyThreshold: 0.80,
+		LookaheadThreshold: 0.4,
 	}
 	pl := newPlanner(t, regs, cfg)
 	agent := defaultAgent()
@@ -339,16 +340,17 @@ func TestTraceProvisionedDimsOrder(t *testing.T) {
 	}
 }
 
-// ── Horizon edge cases ──────────────────────────────────────────────────────
+// ── Horizon edge cases (P5 lookahead threshold) ─────────────────────────────
 
 func TestHorizonHandlesMissingIntelligence(t *testing.T) {
 	statReg := mustLoadStats(t, testStatsYAML)
+	// With missing Intelligence stat, perceivedIntel = 0 < 0.4 → hard skip → 0.
 	horizon := computeHorizon(
 		beliefFromMeans(map[core.StatID]float64{"Strength": 50}),
-		"Intelligence", statReg, 720,
+		"Intelligence", statReg, 720, 0.4,
 	)
-	if horizon != 1 {
-		t.Errorf("expected horizon=1 when Intelligence missing, got %d", horizon)
+	if horizon != 0 {
+		t.Errorf("expected horizon=0 (P5 hard skip, no Intelligence stat), got %d", horizon)
 	}
 }
 

@@ -69,6 +69,26 @@ type Referent struct {
 	ID   ObjectID // empty when Kind == Self
 }
 
+// Posture names the direction a Value evaluates: whether the agent wants to
+// Maximize, MaintainAbove, or PreventBelow the setpoint (glossary §Values & goals).
+type Posture uint8
+
+const (
+	Maximize       Posture = iota // as much as possible
+	MaintainAbove                 // keep at or above the setpoint
+	PreventBelow                  // keep from falling below the setpoint
+)
+
+// Value is a root value: a goal direction expressed as (Dimension, Referent, Posture, Setpoint).
+// An agent may carry many Values — one per referent-and-dimension pair it cares about.
+// The planner selects the highest-Salience value to pursue; how to pursue it is the planner's job (D5).
+type Value struct {
+	Dimension Dimension
+	Ref       Referent
+	Posture   Posture
+	Setpoint  float64 // the threshold/aspiration level for this dimension-and-referent (∈ [0,1])
+}
+
 // ── Events interface (dependency inversion) ───────────────────────────────────
 //
 // The engine emits observability events through EventEmitter.
@@ -110,6 +130,7 @@ const (
 	SignalReject                     // decline a previously received offer
 	SignalGreet                      // social acknowledgement, no commitment
 	SignalThreaten                   // assert intent to harm unless compliance
+	SignalVote                       // collective judgment vote (P6: delegate a Function to the target)
 )
 
 // Signal is a structured social communication passed between agents.
@@ -118,6 +139,10 @@ const (
 // Truth is the sender's actual veracity fraction. It is NEVER directly observable
 // to the receiver; the receiver infers it via ToM[sender].Trust. The engine
 // attaches Truth to Signal only for the event stream / why-trace.
+//
+// P6: Source and Target fields added for SignalVote — Source is the voter,
+// Target is the voted holder (the agent being delegated to). Function is the
+// delegated Function.
 type Signal struct {
 	Kind         SignalKind // classification of the social act
 	Intent       Pred       // predicate being proposed/demanded (e.g. "has_food")
@@ -125,4 +150,19 @@ type Signal struct {
 	ClaimedValue float64    // asserted deal value in Dimension units
 	Truth        float64    // sender's actual veracity [0, 1]; NOT visible to receiver
 	Intensity    float64    // urgency / emotional force [0, 1]
+	Function     Function   // P6: for SignalVote — the delegated Function (empty otherwise)
+	Source       AgentID    // P6: for SignalVote — the voting agent (empty otherwise)
+	Target       AgentID    // P6: for SignalVote — the voted holder (empty otherwise)
 }
+
+// Function names a service an agent relies on another to provide (glossary: Reliance edge).
+// D7/D2 — content/glossary id, never a hardcoded enum or role type; an emergent role is a
+// CLUSTER of RelyOn edges over a Function, not a Function itself (the reliance-cluster signal,
+// never the name stored anywhere).
+type Function string
+
+const (
+	FuncSafety    Function = "Safety"    // protection from harm
+	FuncJudgment  Function = "Judgment"  // arbitration / dispute resolution
+	FuncKnowledge Function = "Knowledge" // information / expertise
+)

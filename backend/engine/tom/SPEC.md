@@ -1,6 +1,6 @@
 # SPEC — `engine/tom`
 
-> Status: `READY`
+> Status: `P4` — gossip cluster divergence + ReputationGossip event wiring added
 > Leaf level: `L2`  ·  Owner agent: `implementer`
 
 ## Purpose
@@ -46,7 +46,12 @@ type Belief struct {
                                          // names). In [0,1].
     Affinity    float64                  // signed relational stance; updated by engine/agent
     LastSeen    core.Tick                // tick of the last direct observation (glossary)
-    // RelyOn / Ledger: owned/updated by engine/agent + engine/values (see Out of Scope).
+    // P6: reliance edges — how much THIS observer relies on `subject` for each Function
+    // (safety/judgment/knowledge…). The keys are core/content Function ids (D7: never a
+    // hardcoded enum here). Updated only via AdjustRelyOn (primitive below); the DECISION
+    // of when/whom to rely on lives in engine/agent (see P6 Reliance & Influence Contract).
+    RelyOn      map[Function]float64
+    // Ledger: reserved, owned/updated by engine/agent + engine/values (see Out of Scope).
 }
 
 // ToM is one agent's whole theory-of-mind: subject id → Belief, INCLUDING self.
@@ -67,6 +72,8 @@ type Rates struct {
     TradeRejectAffinityDrop float64 // Affinity drop on rejection, magnitude (default 0.02)
     FraudHonestyDrop        float64 // Honesty mean drop on detected fraud (default 0.10)
     FraudThreshold          float64 // claimedValue−actualEffect above which fraud fires (default 0.20)
+    // P6 influence — content/balance.yaml politics.influence_weight
+    InfluenceWeight float64 // reflection ratio for influence-amplified gossip; [0,1] (default 0.5)
 }
 
 // DefaultRates returns the canonical rate constants from content/balance.yaml.
@@ -107,7 +114,12 @@ type StatEvidence struct {
 // shrink to zero from gossip; see Invariants). If trustWeight < balance.gossip.min_trust the
 // claim is ignored (no-op). Creates the belief from the initial seed if `subject` is unknown.
 // GossipUpdate NEVER touches ToM[self] (self is only calibrated by Observe, D8).
-func (t ToM) GossipUpdate(subject core.AgentID, source Belief, trustWeight float64)
+//
+// Returns the per-stat mean delta it applied (newMean − oldMean), keyed by StatID, for the
+// caller (engine/agent) to emit one ReputationGossip event per changed stat (see P4 Gossip
+// Propagation Contract + Out of Scope). A no-op call (below min_trust, or self) returns an empty
+// map — the caller emits nothing.
+func (t ToM) GossipUpdate(subject core.AgentID, source Belief, trustWeight float64) map[core.StatID]float64
 
 // ReputationDist DERIVES the reputation distribution of `subject` across the supplied observer
 // models (D6: reputation is NEVER a stored single value — it is this aggregate). It returns,
@@ -217,6 +229,113 @@ func (t ToM) RecordFraud(other core.AgentID, claimedValue, actualEffect float64,
 - **No values dependency (architecture §4)**: `tom` does NOT import `engine/values`
   (`values → tom` is one-way). This module knows nothing about goals or EffValue.
 
+## P4 Gossip Propagation Contract
+
+Specifies how hearsay propagates through a **trust graph** so that disconnected trust clusters
+hold divergent reputations indefinitely (the D6 factional-contradiction signal). This module
+provides only the *fold* (`GossipUpdate`); the *who-tells-whom* sequencing is owned by
+`engine/agent` (signal emission, tick phase 6) and `engine/world` (signal delivery, phase 4e).
+The contract below fixes the joint behaviour so all three modules agree.
+
+- **Source → receiver fold (one call site).** When an agent `A` delivers a Signal to agent `B`
+  (engine/agent tick phase 6 → engine/world phase 4e), `B` folds `A`'s model of each subject `C`
+  carried in the Signal context by calling, on `B`'s own ToM:
+
+  ```
+  delta := B.ToM.GossipUpdate(C, A_belief_of_C, trustWeight = B.ToM[A].Trust)
+  ```
+
+  where `A_belief_of_C` is obtained by the caller via `WorldSnapshot.BeliefOf(A, C)` (the
+  source's `Belief` about `C`), and `B.ToM[A].Trust` is the receiver's credibility in the source.
+  The folding math is `tom`'s; the gather of the source belief and the trust weight is the
+  caller's (`engine/agent` / `engine/world`).
+
+- **Trust bridge (cluster-isolation corollary of the existing min_trust no-op).** If there is no
+  direct trust edge between source and receiver — `B.ToM[A].Trust < balance.gossip.min_trust` —
+  `GossipUpdate` is a no-op and returns an empty delta map. Gossip therefore **cannot cross a
+  zero-trust gap**: the existing min_trust no-op invariant, read at the graph level, *is* the
+  cluster boundary. No special-case code is required to isolate clusters; the boundary falls out
+  of the per-edge trust gate.
+
+- **Cluster divergence (D6 corollary — MUST PERSIST).** Two agents in disconnected trust clusters
+  (no chain of `≥ min_trust` trust edges between them) will hold **divergent** `ToM[C]` estimates
+  indefinitely. This divergence **MUST NOT be collapsed, averaged, reconciled, or "corrected"**
+  anywhere — not in `tom`, not in `engine/agent`, not in `engine/world`. It is the mechanism that
+  produces factional reputation contradiction. The only place the divergence surfaces as a single
+  number is `ReputationDist`, and there it surfaces as **variance** (the spread of opinion), never
+  as a collapsed mean. There is no anti-divergence routine in this module by design.
+
+- **Propagation is one-hop per tick.** `A` gossips to `B` in tick `T`; `B`'s updated `ToM[C]`
+  becomes part of tick `T+1`'s snapshot, from which `B` may in turn gossip onward. There is **no
+  transitive multi-hop fold within a single tick** — a claim cannot travel `A → B → D` in one
+  tick. This bounds per-tick work and keeps the propagation order independent of agent-apply order
+  within the tick (D12: only the snapshot read at tick start feeds gossip; mid-tick belief changes
+  are not visible to other folders until the next snapshot).
+
+- **`GossipUpdate` never touches `ToM[self]` (reinforced).** Self-belief is calibrated only by
+  `Observe` (D8). A `GossipUpdate` whose `subject == receiver.SelfID()` is a no-op and returns an
+  empty delta map — hearsay about oneself never edits `ToM[self]`. This is checked before the
+  min_trust gate so the self-protection holds regardless of trust weight.
+
+## P6 Reliance & Influence Contract (emergent institutions)
+
+P6 turns the carried-but-inert `RelyOn` field into the substrate for emergent roles and political
+weight. `tom` owns the **storage and the two pure primitives** (the reliance increment and the
+Influence aggregate); it does NOT decide *when* to rely or *how* signals are weighted — those
+triggers read gates/costs and live in `engine/agent` (mirrors the Affinity / GossipUpdate split).
+
+```go
+// Function names a service one agent can rely on another to provide (glossary: Reliance edge).
+// D7/D2: these are content/glossary ids (e.g. "safety", "judgment", "knowledge"), NEVER a
+// hardcoded enum or role type — a role is the EMERGENT cluster of RelyOn edges, not a Function.
+// Canonical declaration is core.Function (the L0 leaf); tom aliases it so map keys interoperate.
+type Function = core.Function
+
+// AdjustRelyOn folds a reliance increment toward `target` for `function` into the observer's
+// belief about `target`: RelyOn[function] += δ, clamped to [0,1]. Seeds the belief (initial
+// estimate) if `target` is unknown. δ may be negative (reliance decays / shifts away). This is
+// the ONLY mutator of RelyOn; the WHEN/WHOM decision is engine/agent's (see below). Mirrors
+// AdjustAffinity: a storage primitive, no policy.
+func (t ToM) AdjustRelyOn(target core.AgentID, function Function, delta float64)
+
+// BestProviderFor ranks `candidates` as reliance targets for `function` and returns the best
+// (trusted AND competent) plus its score, or ("", 0) if none qualifies. Score combines this
+// observer's Trust in the candidate with the candidate's perceived competence for the function's
+// stat set (EstStats; D7 — the caller passes which stats the function draws on, no literal here).
+// Deterministic: candidates are evaluated in sorted AgentID order; ties break by lower id (D12).
+func (t ToM) BestProviderFor(function Function, statSet []core.StatID, candidates []core.AgentID) (core.AgentID, float64)
+
+// Influence DERIVES the social weight of `subject` for `function`: the mean of
+// RelyOn[function] across the supplied observer Beliefs about subject (D6-style:
+// Influence is NEVER a stored scalar — it is this aggregate over the RelyOn
+// distribution, exactly as reputation is an aggregate over EstStats). `observers`
+// is each agent's Belief ABOUT `subject` (the caller gathers ToM_X[subject]).
+// If observers is empty, returns 0. Per-function only (caller iterates functions).
+// The caller scales it by balance influence_weight when folding a signal (below).
+func (t ToM) Influence(subject core.AgentID, function Function, observers []Belief) float64
+```
+
+**How Influence reaches signal weight (kept out of `GossipUpdate`'s signature).** `GossipUpdate`
+already weights a hearsay claim by `trustWeight`. P6 does NOT change that signature: the **caller**
+(`engine/agent`, at the signal-fold site) pre-scales the weight by the source's Influence —
+
+    signalWeight = clamp01( trustWeight · (1 + influence_weight · Influence(source, observers)) )
+
+then calls `GossipUpdate(subject, sourceModel, signalWeight)`. `influence_weight`
+(`content/balance.yaml politics.influence_weight`) is the reflection ratio. Consequence (the table
+AC): with equal `trustWeight` and claim, a higher-Influence source yields a larger per-stat mean
+delta. `tom` owns the `Influence` derivation; the agent owns the application — no new GossipUpdate
+parameter, no hidden global.
+
+**Invariants (P6).**
+- `Influence` and "role" are **derived, never stored** (D6 generalized): no `Influence` field on
+  `Belief`, no `Role`/`Chief` type anywhere in `tom`. A struct/grep guard confirms it.
+- `AdjustRelyOn` is the sole RelyOn mutator; `RelyOn` values stay in `[0,1]`; all folds and the
+  Influence sum iterate `Subjects()` / sorted Function order (D12 — no map ranged for logic).
+- `Function` carries no behavior — it is an opaque id. No code branches on a specific Function
+  literal (D2/D7); the safety/judgment/knowledge split is content, surfaced via the stat set the
+  caller passes to `BestProviderFor`.
+
 ## Acceptance Criteria (testable)
 
 - [ ] **Self-belief seeded with calibrated noise (D8)**: `NewToM(self, realStats, …, rng, reg)`
@@ -260,9 +379,38 @@ func (t ToM) RecordFraud(other core.AgentID, claimedValue, actualEffect float64,
   `ToM[other].EstStats[honestyStatID].Mean` is strictly less than before; within threshold is a no-op.
 - [ ] **No fraud below threshold**: `RecordFraud` with `claimedValue − actualEffect ≤ FraudThreshold`
   leaves EstStats unchanged.
+- [ ] **Gossip trust-cluster isolation (P4)**: three agents A, B, C. A witnesses an event that sets
+  `ToM_A[X][s].Mean` to a non-midpoint value. A gossips to B (`Trust_B[A] = 0.8 ≥ min_trust`): B's
+  `ToM[X][s].Mean` shifts toward A's claim. A does **not** interact with C
+  (`Trust_C[A] < min_trust`): C's `ToM[X][s].Mean` is **unchanged**. After the gossip the two
+  observers disagree. Verified by a table-driven scenario test with a golden on the per-observer
+  delta. (This is **Scenario C, gossip extension** — the end-to-end propagation/event assertions
+  live in `engine/agent/SPEC.md` "Scenario C Extension — Gossip Trust-Cluster Propagation (P4)".)
+- [ ] **Variance preserved across cluster boundary (P4)**: `ReputationDist(X, []Belief{B_of_X,
+  C_of_X})` over the post-gossip beliefs returns a **HIGH** variance for stat `s` — the spread
+  between B's updated mean and C's unchanged mean. Threshold: `Variance > |delta_B| / 2` (the
+  cross-observer spread is at least half the shift B took). Confirms the factional-disagreement
+  signal is measurable and is **not** collapsed (D6).
 
 > Structural validation of `content/balance.yaml` (the rate keys) is a **platform/config** AC.
 > This module proves only behaviour reachable from injected rates + an injected `*rng.RNG`.
+
+- [ ] **`AdjustRelyOn` folds and clamps (P6)**: `AdjustRelyOn(target, "safety", δ)` on an unknown
+  target seeds the belief and sets `RelyOn["safety"] = clamp01(δ)`; a second call accumulates and
+  clamps at 1.0; a negative δ decays it (floor 0). `RelyOn` is untouched on other functions/targets.
+- [ ] **`Influence` is the mean received-reliance per function (P6)**: given observer beliefs about
+  `subject` with `RelyOn["Safety"]` edges {A→subject:0.6, B→subject:0.3, C→subject:0.0},
+  `Influence(subject, "Safety", observers)` returns (0.6+0.3+0.0)/3 = 0.3. A set of observers with no
+  RelyOn for a function returns 0. Iteration order does not change the result (D12).
+- [ ] **Influence-weighted gossip moves beliefs more (P6, TABLE)**: holding `trustWeight`, the source
+  claim, and α fixed, fold the SAME claim about C from a HIGH-Influence source vs a LOW-Influence
+  source using `signalWeight = clamp01(trustWeight·(1 + influence_weight·Influence))`. Assert
+  `|Δmean_high| > |Δmean_low|` across rows {Influence ∈ 0, 0.5, 2.0} × {influence_weight ∈ 0.25, 0.5}.
+  At `influence_weight = 0` the two collapse to the plain trust-weighted delta (Influence has no
+  effect) — the control row.
+- [ ] **No stored Influence / role type (P6, D6/D2 guard)**: grep/struct guard — no `Influence`
+  field on `Belief`, no `Role`/`Chief`/`Faction` type in `engine/tom`; Influence exists only as the
+  `Influence(...)` derivation.
 
 ## Out of Scope
 
@@ -271,15 +419,25 @@ func (t ToM) RecordFraud(other core.AgentID, claimedValue, actualEffect float64,
 - **Reading `ToM[self]` for gate/cost decisions** → `engine/gates` consumes the self-stat values
   (this module produces them; gates do not import tom — the agent passes `ToM[self]` into the
   gate `AgentSnapshot`).
-- `Affinity` / `Ledger` / `RelyOn` *update* dynamics (resentment, reliance edges, emergent roles
-  as reliance clusters) → `engine/agent` + `engine/values` (the fields are carried on `Belief`
-  but their update rules live there). `tom` only provides storage + the estimate/gossip core.
+- `Affinity` / `Ledger` *update* dynamics (resentment, ledgers) → `engine/agent` + `engine/values`.
+- **The reliance *trigger* (P6)** — deciding that a Function is hard to self-solve (gate-blocked or
+  cost > threshold) and therefore calling `AdjustRelyOn` toward `BestProviderFor(...)` → `engine/agent`
+  (it alone sees gates/costs). `tom` owns RelyOn **storage** (`AdjustRelyOn`), provider ranking
+  (`BestProviderFor`), and the `Influence` aggregate — the primitives, not the policy. Likewise
+  emergent **roles** as reliance clusters are detected in `engine/world` over the `RelyOn`
+  distribution `tom` exposes; `tom` defines no role type (D2).
 - `Signal{Kind, Intent, Valence, ClaimedValue, Truth, Intensity}` construction and the
   truth/deception layer → `engine/agent` interaction (a gossip claim's `Truth` is hidden; this
   module just folds the claimed mean it is handed).
-- The `BeliefUpdated` / `ReputationGossip` event emission (data-contracts §4) → emitted by the
-  caller (`engine/agent`) via the `core.EventEmitter`; this module returns the deltas it makes
-  available for that trace but does not emit.
+- **`BeliefUpdated` event emission** (data-contracts §4) → emitted by the caller (`engine/agent`)
+  via the `core.EventEmitter`; this module returns the per-stat deltas it makes available for that
+  trace but does not emit.
+- **`ReputationGossip` event emission** (data-contracts §4) → the emission spec lives in
+  `platform/events/SPEC.md`; `engine/agent` emits it via the injected `core.EventEmitter` after
+  each `GossipUpdate` call, passing `{about: C, from: A, trust: trustWeight, stat: s, delta:
+  (newMean − oldMean)}` **per stat that changed** (the deltas `GossipUpdate` returns). A no-op
+  gossip (below `min_trust`, or self) returns an empty delta map and emits nothing. `tom` itself
+  never emits.
 - The compact `tom_digest` serialization (top-K relationships; data-contracts §1/§3) →
   `platform/persist` reads `Subjects()`/`Belief` to build it.
 
@@ -298,6 +456,11 @@ func (t ToM) RecordFraud(other core.AgentID, claimedValue, actualEffect float64,
   between-observer spread is the D6-critical signal (factional disagreement), so it is the
   specified default; folding within-observer variance can be added later without breaking the
   signature (same return type). Flag if the within term is wanted for P1.
+- **`GossipUpdate` return type addition (NOT blocking; P4).** P4 changes `GossipUpdate` to return
+  `map[core.StatID]float64` (the per-stat mean deltas) so `engine/agent` can emit one
+  `ReputationGossip` event per changed stat without re-reading the belief before/after. This is
+  additive for the engine math (the fold is unchanged) but is a signature change any existing
+  caller must adopt. Confirm before the implementer touches existing `GossipUpdate` call sites.
 
 ## Notes
 
@@ -314,3 +477,5 @@ func (t ToM) RecordFraud(other core.AgentID, claimedValue, actualEffect float64,
   uncertainty channel `Stats` does not carry.
 - All folds iterate `stats.Registry.IDs()` order so a `tom_digest` is byte-deterministic
   (data-contracts §0 sorted-key rule, D12).
+</content>
+</invoke>

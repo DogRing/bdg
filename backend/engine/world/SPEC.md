@@ -54,16 +54,47 @@ import (
 // (number / number / integer) and minimum constraints (>0 / >0 / ≥1).
 // platform/config performs structural validation against the schema BEFORE calling world.New —
 // so a missing key will be caught at startup, not at runtime.
+//
+// IMPLEMENTER (scale extension): also add the five world.* keys below to BOTH files, with
+// these canonical keys and defaults (all OPTIONAL in the schema — a missing key falls back to
+// the documented default, so existing content keeps working unchanged):
+//   world:
+//     plan_workers:       0     # goroutine pool size for the parallel plan phase; 0 → runtime.NumCPU()
+//     plan_interval:      1     # round-robin replan stride; 1 → every agent replans every tick
+//     prune_interval:     360   # ticks between ToM prune passes
+//     prune_threshold:    720   # LastSeen gap (ticks) past which a ToM subject is decayed then removed
+//     prune_decay_factor: 0.0   # multiplier applied to a pruned Belief before removal (0.0 = zero out)
+// Schema types/constraints: plan_workers integer ≥0; plan_interval integer ≥1; prune_interval
+// integer ≥1; prune_threshold integer ≥1; prune_decay_factor number ∈ [0,1]. These keys are
+// NOT in the `required` array (backward compatibility — see Notes §Scale).
 type Config struct {
     SpatialHashCell       float64 // balance.yaml world.spatial_hash_cell — SpatialHash cell edge
-    RelianceThreshold     float64 // balance.yaml world.reliance_threshold — share of agents relying
-                                  //   on one holder for a Function → emit RoleEmerged (D2).
-                                  //   Stub: until tom.Belief.RelyOn is formalized this path is a
-                                  //   no-op; threshold is still injected so the stub compiles.
+    RoleConvergenceThreshold float64 // balance.yaml politics.role_convergence_threshold — share of
+                                  //   agents relying on one holder for a Function → emit RoleEmerged
+                                  //   on the rising edge (D2). P6: supersedes the retired
+                                  //   world.reliance_threshold placeholder; drives the live full scan.
     OutcomeDifficultyBase float64 // balance.yaml world.outcome_difficulty_base — base difficulty an
                                   //   action's used stat is resolved against (vs Real Stat).
     BackupEveryTicks      int     // balance.yaml world.backup_every_ticks — emit SnapshotReady every
                                   //   N ticks (the world signals; it does NOT write to persist).
+    // ── Scale-extension tunables (parallel plan · time-slicing · ToM prune) ──
+    // Read from content/balance.yaml world.* by platform/config (same path as the keys above;
+    // none hardcoded, D10). The defaults reproduce the prior single-threaded, replan-every-tick,
+    // never-prune world byte-for-byte, so adding them changes no existing behaviour.
+    PlanWorkers      int     // balance.yaml world.plan_workers — goroutine pool size for the
+                            //   parallel plan phase. 0 → runtime.NumCPU(). The fan-out is read-only
+                            //   on the snapshot; intents are sorted before apply (D12) so the result
+                            //   is byte-identical to PlanWorkers == 1.
+    PlanInterval     int     // balance.yaml world.plan_interval — round-robin replan stride.
+                            //   0/1 → every agent replans every tick (backward-compatible default).
+                            //   N → an agent at sorted-index i replans only on ticks where T mod N
+                            //   == (i mod N); off-slot agents only execute their durative step.
+    PruneInterval    int     // balance.yaml world.prune_interval — ticks between ToM prune passes.
+                            //   The prune pass runs on ticks where T mod PruneInterval == 0.
+    PruneThreshold   int     // balance.yaml world.prune_threshold — LastSeen gap (ticks) past which
+                            //   a ToM subject is decayed then removed.
+    PruneDecayFactor float64 // balance.yaml world.prune_decay_factor — multiplier applied to a
+                            //   pruned subject's Belief before removal (0.0 = zero out then remove).
 }
 
 // DefaultConfig returns the canonical Config from content/balance.yaml world.* (tests/headless).
@@ -181,13 +212,31 @@ Phase 2 — PLAN (parallel-safe, read-only):
     agent.Tick(snapshot, now, fork, svc, emit). The agent reads the snapshot and returns []Intent.
   - The snapshot is NEVER mutated. Each agent gets its OWN rng fork (no shared RNG draws across
     agents in this phase) so the order of agent evaluation cannot change any agent's draws.
-  - P1: sequential over sorted ids. Future: parallelizable because every Tick is read-only on
-    shared state and uses a private rng fork (the fork derivation is the determinism anchor).
+  - PARALLEL FAN-OUT (D12-safe): the per-agent agent.Tick calls are launched on a goroutine pool
+    of size cfg.PlanWorkers (0 → runtime.NumCPU()) over the read-only snapshot. Each goroutine
+    reads ONLY the snapshot and its own rng fork; NO goroutine writes world state. Results are
+    collected (a per-agent []Intent slot indexed by sorted position, or a channel) and, after ALL
+    goroutines complete, gathered into one []Intent. Because each agent's fork is keyed by its
+    sorted-id position (not by goroutine scheduling order), the gathered intents are independent of
+    the order goroutines happened to run in. cfg.PlanWorkers == 1 degenerates to the sequential
+    walk; the two paths MUST be byte-identical (see Acceptance — Scale & performance).
+  - TIME-SLICING (round-robin replan): an agent runs the FULL plan (agent.Tick deliberation) on a
+    given tick only when it is in this tick's plan slot:
+        planSlot(agentID) = sortedIndex(agentID) mod cfg.PlanInterval   (PlanInterval 0/1 ⇒ always)
+        replans this tick  iff  w.tick mod cfg.PlanInterval == planSlot(agentID)
+    `sortedIndex` is the agent's position in the canonical sorted w.agentIDs slice (D12 — NEVER
+    derived from map iteration). An agent NOT in this tick's slot does NOT replan; it instead
+    advances its current durative action ONE step (the execute path) and emits the continuation
+    intent (IntentContinue) for it. The execute path therefore runs for EVERY agent every tick;
+    only the deliberation (goal/plan selection) is time-sliced. An agent mid-durative-action is
+    NEVER interrupted when its plan tick arrives — the state machine continues normally and a new
+    plan is selected only at the natural action boundary (the agent's own durative policy).
 
 Phase 3 — COLLECT intents:
   - Gather every []Intent from every agent into one []Intent, then STABLE-SORT by Intent.Agent
     (AgentID, lexicographic, D12). Ties (multiple intents from one agent) keep emission order.
-    This sorted slice is the authoritative apply order.
+    This sorted slice is the authoritative apply order. The sort runs AFTER the parallel fan-out
+    has fully joined, so the apply order is independent of goroutine scheduling.
 
 Phase 4 — APPLY (serial, fixed AgentID order, D12):
   - Iterate the sorted intents serially (no parallelism that can interleave mutations):
@@ -204,7 +253,8 @@ Phase 4 — APPLY (serial, fixed AgentID order, D12):
          in this same sorted serial phase, so no two agents' belief writes interleave.
       e. Deliver any IntentSignal: hand the Signal to the receiver via its ApplyOutcome/gossip
          hook (the world decides who-receives-what; folding math is the agent's, see OoS).
-  - After all intents: advance the tick counter; run the reliance-cluster scan (below); emit
+  - After all intents: advance the tick counter; run the reliance-cluster scan (below); run the
+    ToM prune pass (below) when the tick is on the prune schedule; emit
     TickDone{tick, agent_count, intent_count}; emit SnapshotReady every BackupEveryTicks ticks.
 ```
 
@@ -273,42 +323,81 @@ Outcome fields populated for ApplyOutcome:
 After the apply phase, scan reliance edges across agents to detect emergent functional roles
 (design §1.6 "창발 제도": 역할은 자료형이 아니다).
 
-### P1 stub (implement this first)
+### Full scan (P6 — ACTIVATED)
 
-`tom.Belief.RelyOn` and a `Function` type are not yet formalized in `engine/tom`. Until that
-contract is settled, the implementer **MUST** ship a no-op stub:
-
-```go
-// relianceScan is the cluster-detection step run after every apply phase.
-// P1 STUB: tom.Belief.RelyOn has no concrete shape yet; this is intentionally a no-op.
-// Replace with the full scan below once engine/tom formalizes RelyOn + Function.
-// Scenario G is deferred — all other P1 acceptance criteria are unaffected.
-func (w *World) relianceScan() { /* no-op stub — see Open Questions */ }
-```
-
-The stub must still compile against `engine/tom`; it MUST NOT reach into `Belief.RelyOn` until
-that field is formalized. The `cfg.RelianceThreshold` is injected and carried but not read here.
-
-### Full scan (activate once tom.Belief.RelyOn is formalized)
+`engine/tom` formalizes `type Function string` and `Belief.RelyOn map[Function]float64` (see
+`engine/tom/SPEC.md` §P6 Reliance & Influence Contract), so the P1 no-op stub is **replaced** by the
+scan below. The share threshold is the P6 key `politics.role_convergence_threshold`
+(`Config.RoleConvergenceThreshold`), which **supersedes** the P1 placeholder `world.reliance_threshold`
+(the old key/field is retired).
 
 ```
-for each Function f referenced across agents' ToM RelyOn edges (iterate agents in AgentIDs() order, D12):
-    share[holder] = (count of agents whose RelyOn[f] points strongest at holder) / agent_count
-    if max(share) ≥ cfg.RelianceThreshold:
-        emit RoleEmerged{function: f, holder: argmax, reliance_share: share[holder]}
+RelyOn edges live on each agent's ToM ABOUT OTHERS: agent x relies on holder h for f iff
+x.ToM[h].RelyOn[f] is the strongest such edge x holds for f (x's chosen provider for f).
+
+per Function f, in sorted Function order over the union of functions referenced across agents (D12):
+    for each agent x (AgentIDs() order, D12):
+        h* = argmax_h x.ToM[h].RelyOn[f]   (the holder x relies on most for f; skip if max == 0)
+        votes[f][h*]++
+    holder  = argmax_h votes[f][h]          (ties → lower AgentID, D12)
+    share   = votes[f][holder] / agent_count
+    if share ≥ cfg.RoleConvergenceThreshold AND (f,holder) was NOT already emerged last scan:
+        emit RoleEmerged{function: f, holder: holder, reliance_share: share}   // RISING EDGE only
+    if share < cfg.RoleConvergenceThreshold: clear (f,*) from the emerged set   // allow re-emergence
 ```
 
-- This is **emergent detection ONLY**: the world defines **no** `Role` type, no chief/leader
-  enum, no institution (D2). It reads the `RelyOn` distribution that `engine/agent`/`engine/values`
-  maintain on `tom.Belief` and reports a statistic.
-- The scan is deterministic: agents and Functions are iterated in sorted order; the argmax
-  tie-breaks by lower holder `AgentID` (D12). No rng.
+- **Emit on the RISING EDGE only.** The world keeps a small `emerged map[Function]AgentID` of the
+  currently-emerged (function→holder) pairs and emits `RoleEmerged` only when a (function,holder)
+  pair first crosses the threshold — NOT every tick it stays converged (keeps the event stream and
+  the Scenario-G golden clean). A holder change for the same function (succession) is a new rising
+  edge → a new event. Dropping below the threshold clears the entry so a later re-convergence emits
+  again. The `emerged` set is owned state, serialized with the world (so resume stays byte-identical).
+- This is **emergent detection ONLY**: the world defines **no** `Role` type, no chief/leader enum,
+  no institution (D2). It reads the `RelyOn` distribution that `engine/agent` maintains on
+  `tom.Belief` and reports a statistic. The grep/struct guard (Invariants) forbids a `Role` type here.
+- Deterministic: functions, agents, and holders are iterated/argmax'd in sorted order; ties break
+  by lower `AgentID`; no rng.
 
-Activation checklist (do NOT activate before all are done):
-- [ ] `engine/tom` SPEC formalizes `type Function string` and `Belief.RelyOn map[Function]float64`
-- [ ] `engine/agent` or `engine/values` populates `RelyOn` edges during deliberation
-- [ ] `content/balance.yaml world.reliance_threshold` is present (already required for the stub Config)
-- [ ] Scenario G fixture in `docs/testing.md §4` is written and a golden recorded
+Activation checklist (P6 — all met):
+- [x] `engine/tom` formalizes `type Function string` and `Belief.RelyOn map[Function]float64` (§P6).
+- [x] `engine/agent` populates `RelyOn` edges during deliberation (see `engine/agent/SPEC.md` §P6
+  VoteAction & reliance trigger).
+- [x] `content/balance.yaml politics.role_convergence_threshold` is present (Config source below).
+- [x] Scenario G fixture + golden recorded (`docs/testing.md §4`; AC below).
+
+## ToM pruning (scale — bounded O(N²) ToM memory)
+
+To keep per-agent ToM size bounded as the population and runtime grow, the world runs a periodic
+**prune pass** that drops stale subject beliefs. Each `tom.Belief` already tracks `LastSeen` (the
+tick of the last direct observation; see `engine/tom/SPEC.md`). The prune pass uses that gap.
+
+```
+prune pass — runs after the reliance scan, ONLY on ticks where
+    cfg.PruneInterval > 0 AND w.tick mod cfg.PruneInterval == 0:
+
+for each agent a in AgentIDs() (sorted, D12):
+    for each subject s in a.ToM.Subjects() (sorted, D12):
+        if s == a.ToM.SelfID(): continue                 // never prune ToM[self] (D8)
+        if (w.tick - a.ToM[s].LastSeen) > cfg.PruneThreshold:
+            decay a.ToM[s].Belief by ×cfg.PruneDecayFactor    // 0.0 ⇒ zero out
+            remove subject s from a.ToM                        // then drop the entry entirely
+```
+
+- **Decay then remove.** The Belief is multiplied by `cfg.PruneDecayFactor` and then the map entry
+  is removed. With the default `PruneDecayFactor = 0.0` the decay zeros the Belief before removal
+  (a no-op observable difference vs straight removal, but the hook is in place for a future fade
+  feature — see Notes §Scale). A value like `0.5` would let a faint trace persist if a later phase
+  chooses to keep decayed-but-nonzero entries; for P1 the entry is always removed after decay.
+- **Re-encounter re-initializes (NOT a bug).** If a pruned subject is later perceived again (Sight
+  returns them), the next observation calls the SAME first-encounter initialization path
+  (`engine/tom` initial-estimate seed via `Observe`/`GossipUpdate` on an unknown subject) — there
+  is **no** special "warm-start" branch. The re-seeded Belief uses the engine/tom defaults
+  (LastSeen updated to the current tick; EstStats reset to the prior-from-perception seed). This is
+  the intended behaviour: forgetting is real, and re-acquaintance starts fresh.
+- **Self is never pruned (D8).** `ToM[self]` is exempt — self-perception is calibrated only by
+  action, never aged out.
+- **Deterministic (D12):** the prune pass iterates agents in `AgentIDs()` (sorted) order and, within
+  each agent, subjects in `ToM.Subjects()` (sorted) order; no `map` is ranged for logic. No rng.
 
 ## Dependencies
 
@@ -329,7 +418,8 @@ Activation checklist (do NOT activate before all are done):
   (D12 order), `Kinds(Capability)` to compose the resolution stat, `Clamp` for sampled values.
   No hardcoded stat name (D7/D10).
 - `engine/tom` — `ToM`, `Belief` (read `RelyOn` for the reliance scan; `NewToM` to seed `ToM[self]`
-  at Spawn with the injected rng). The world reads `Belief.RelyOn`; it does not own the update math.
+  at Spawn with the injected rng; read `LastSeen`/`Subjects()` for the prune pass). The world reads
+  `Belief.RelyOn`/`LastSeen`; it does not own the update math.
 - `engine/perception`, `engine/planner`, `engine/needs`, `engine/values` — **borrowed via
   `Services` only** (the world assembles `agent.Services` and threads it to `Tick`; it does not
   call these directly beyond building the snapshot's perception view).
@@ -345,7 +435,12 @@ Activation checklist (do NOT activate before all are done):
 - Every live `agent.Agent` (keyed by `AgentID`, with a precomputed sorted-id slice for D12
   iteration). The world mutates an agent ONLY through `agent.Tick`/`agent.ApplyOutcome` in the
   proper phase — it never reaches into an agent's `Body`/`ToM` fields directly (it MAY read
-  `RealStats` for outcome resolution and `ToM.RelyOn` for the reliance scan).
+  `RealStats` for outcome resolution, `ToM.RelyOn` for the reliance scan, and `ToM` LastSeen for
+  the prune pass; the prune pass removes stale ToM subjects via the `engine/tom` API).
+- The **plan-slot schedule**: the round-robin replan assignment (agentID → slot) derived purely
+  from the sorted `w.agentIDs` index mod `cfg.PlanInterval` (no separate stored map is required —
+  it is recomputed from the sorted slice each tick; D12), and the **prune-pass scheduler** (the
+  tick-mod-`cfg.PruneInterval` gate). Both are derived state, not authored input.
 - Every placed object: `{id, kind, pos, supply, contents/state}` (the world's own object record;
   data-contracts §1 `world.objects[]`). Objects carry **supply only** (D9 — no future-need field).
 - The single `spatial.SpatialHash` (derived state; rebuilt from positions on resume — never
@@ -392,13 +487,31 @@ Plus:
 - **Tag-derived resolution & cost (D4)**: the stat an action resolves against is derived from its
   `Tags`, not a bespoke per-action function or field.
 - **All constants injected (D10)**: no literal for cell size / reliance threshold / difficulty /
-  backup interval / stat-or-action name appears in logic; every constant flows from `Config` /
-  `worldtime.Config` / the injected registries. A grep guard confirms it.
+  backup interval / plan-worker count / plan interval / prune interval-threshold-decay / stat-or-
+  action name appears in logic; every constant flows from `Config` / `worldtime.Config` / the
+  injected registries. A grep guard confirms it.
 - **No IO (architecture §1)**: imports no `os`/`net`/filesystem package; reads no file; emits only
   through the injected `EventEmitter`; the snapshot WRITE is `platform/persist` (the world emits
   `SnapshotReady`, it does not serialize/transport).
 - **Snapshot is read-only & tick-scoped**: agents mutate nothing through the `WorldSnapshot`; it is
   valid only for the tick it was taken on (a stub that panics on write proves the read-only claim).
+- **Parallel-plan read-only (D12 extension)**: goroutines in the plan phase read ONLY the
+  `WorldSnapshot` (and their own rng fork); world state — agents, objects, the SpatialHash, the
+  tick counter, the prune/reliance state — is NEVER written until the serial apply phase. A
+  write-guard snapshot + a `-race` run prove no plan-phase goroutine mutates shared state.
+- **Intent sort after fan-out (D12)**: intents from the parallel goroutines are gathered and
+  stable-sorted by `AgentID` AFTER all goroutines join, BEFORE apply. The result is byte-identical
+  to the serial-plan path (`PlanWorkers == 1`) given the same seed — the parallel golden asserts it.
+- **Plan-slot determinism (D12)**: `planSlot(agentID) = sortedIndex(agentID) mod cfg.PlanInterval`,
+  where `sortedIndex` is the agent's position in the canonical `w.agentIDs` slice — NEVER derived
+  from map iteration. An off-slot agent does not replan but its execute path still runs (every
+  agent executes its durative step every tick); a mid-durative agent is never interrupted by its
+  plan tick. `PlanInterval` 0 or 1 ⇒ every agent replans every tick (backward compatible).
+- **ToM prune re-init (engine/tom contract)**: a pruned ToM subject is decayed by
+  `cfg.PruneDecayFactor` then removed from the ToM map; a later re-encounter calls the SAME
+  first-encounter initialization path (`engine/tom` unknown-subject seed) — there is no special
+  "warm-start" branch. `ToM[self]` is never pruned (D8). The prune pass iterates agents and
+  subjects in sorted order (D12).
 
 ## Acceptance Criteria (testable)
 
@@ -436,11 +549,18 @@ Plus:
   (*WorldSnapshot)(nil)` compiles; `EntitiesInRadius`/`Tags`/`IsOpaque`/`SoundEvents`/
   `KnownObjects`/`BeliefOf` return tick-scoped data; `KnownObjects` is in `ObjectID` order (D12).
   A write-attempt on the snapshot is impossible (read-only API; no mutator exposed).
-- [ ] **RoleEmerged stub compiles and is a no-op (D2, P1)**: the `relianceScan()` stub compiles,
-  does not reach into `tom.Belief.RelyOn`, emits nothing, and a struct/grep guard confirms NO
-  `Role`/institution type exists in `engine/world`. The full scan (threshold-gated `RoleEmerged`
-  emission, tie-break by AgentID, scenario G fixture) is a **deferred AC** — it activates only
-  after the `engine/tom` + `engine/agent` pre-conditions in §Emergent-reliance are all checked off.
+- [ ] **No `Role` type exists (D2 guard, all phases)**: a struct/grep guard confirms NO
+  `Role`/`Chief`/`Faction`/institution type in `engine/world`; `RoleEmerged` carries only
+  `{function, holder, reliance_share}` — a statistic over `RelyOn`, never a stored role object.
+- [ ] **Reliance full scan emits RoleEmerged on the rising edge (P6, D2)**: with agents whose
+  `ToM[h].RelyOn["safety"]` points a super-threshold share at one holder `h`, `relianceScan`
+  emits exactly **one** `RoleEmerged{function:"safety", holder:h, reliance_share:share}` on the tick
+  the share first crosses `cfg.RoleConvergenceThreshold`, and **nothing** on subsequent ticks while
+  it stays converged (rising-edge debounce via the owned `emerged` set). Share below threshold →
+  no emission and the entry clears. Holder change at/above threshold → a new event (succession).
+  Deterministic over two runs (D12); tie-break by lower `AgentID`.
+- [ ] **Scenario G — chained theft → RoleEmerged (P6, GOLDEN)**: the integration AC below
+  (§Acceptance — Scenario G) records the `RoleEmerged` event and reliance_share as a golden.
   Document the stub's presence in the implementer note with a `// TODO(scenario-G)` tag.
 - [ ] **TickDone / SnapshotReady events**: every `Tick()` emits `TickDone{tick, agent_count,
   intent_count}`; `SnapshotReady` is emitted exactly every `BackupEveryTicks` ticks and never
@@ -460,10 +580,55 @@ Plus:
   distributed Safety drop → `RelyOn` converges → `RoleEmerged`) and scenario **B** (need-driven
   intent selection end-to-end through one full tick: agent Ticks, world resolves, agent's
   `ApplyOutcome` folds back). Assertions test direction/existence, not exact numbers (§4).
+- [ ] **Scenario G — chained theft → safety↓ → Patrol → RelyOn convergence → RoleEmerged (P6, GOLDEN)**:
+  the integration chain end-to-end. Setup (fixture, fixed seed): several villagers + one capable
+  guardian near a `village_center`; a low-asset agent commits repeated `Take` (chained theft) so
+  each victim's `Safety` intensity rises (collective Safety drops). Per `engine/agent` §P6, victims
+  whose **safety Function** is self-unsolvable (gate-blocked / cost > threshold) `AdjustRelyOn` toward
+  the guardian (`BestProviderFor("safety", …)`), optionally accelerated by `Vote`; the guardian's
+  `defensiveCollectiveGoal` fires → it `Patrol`s. Assertions:
+  - direction: mean collective Safety intensity rises across the theft window; the guardian executes
+    ≥1 `Patrol`; the guardian's received-RelyOn share for `"safety"` crosses `RoleConvergenceThreshold`.
+  - **exactly one** `RoleEmerged{function:"safety", holder:guardian, reliance_share:s}` on the rising
+    edge; none on the converged ticks that follow.
+  - **golden**: the `RoleEmerged` payload (`function`, `holder`, `reliance_share` to fixed precision)
+    and its tick, byte-stable across two runs (D12). Recorded under `testdata/golden/scenario_g_*.json`.
+
+### Scale & performance
+
+- [ ] **Smoke (race-clean) — 200 agents × 1440 ticks**: spawning 200 agents and running 1440 ticks
+  with seed 1 completes without OOM or deadlock under `-race` (a -race smoke test; no goroutine
+  leak, no data race reported by the plan-phase fan-out).
+- [ ] **Parallel plan is byte-identical to serial (D12)**: running with `plan_workers > 1` produces
+  byte-identical tick states (state digest per tick) to `plan_workers == 1` at EVERY tick, asserted
+  on a 50-agent, 100-tick golden recorded under `testdata/golden/parallel_plan.json`. The fan-out
+  + intent sort + serial apply path matches the sequential walk exactly given the same seed.
+- [ ] **Plan-slot round-robin (D12, table-driven)**: with `plan_interval = 3`, the agent at
+  sorted-index 0 replans on ticks 0,3,6,…; sorted-index 1 on 1,4,7,…; sorted-index 2 on 2,5,8,…
+  (table-driven over the (sortedIndex, tick) grid; the slot is `sortedIndex mod plan_interval` and
+  the replan condition is `tick mod plan_interval == slot`).
+- [ ] **Off-slot agents still execute (every tick)**: an agent NOT in this tick's plan slot still
+  executes its current durative action (emits the continuation intent / advances its step). The
+  execute phase runs every tick for ALL agents; only deliberation is time-sliced. A test with
+  `plan_interval > 1` asserts an off-slot, mid-durative agent still produces an `IntentContinue`
+  and is not interrupted.
+- [ ] **ToM prune removes after threshold (table-driven)**: after `prune_threshold` ticks of no
+  Sight contact with a subject, the subject's ToM entry is removed. Table: a gap JUST BELOW
+  threshold → the entry is still present; AT/ABOVE threshold → the entry is decayed (×
+  `prune_decay_factor`) then removed. `ToM[self]` is never pruned regardless of gap.
+- [ ] **Prune re-encounter re-initializes (NOT a bug)**: after a subject is pruned, re-encountering
+  the agent (Sight returns them → next `Observe`) re-initializes the ToM entry to the first-encounter
+  defaults (`LastSeen` updated to the current tick; Belief reset to the prior-from-perception seed,
+  not the pre-prune values). Asserts the SAME initialization path is taken, with no warm-start branch.
+- [ ] **Prune iteration order is sorted (D12)**: the prune pass iterates agent IDs in sorted order
+  and, within each agent, ToM subjects in sorted order — verified by logging the iteration order in
+  a determinism test and matching it to `AgentIDs()` / `ToM.Subjects()`. Two runs are byte-identical.
 
 > Structural JSON-schema validation of the `content/balance.yaml world.*` block this module reads
-> (incl. the three new keys — see Open Questions) is a **platform/config** AC (it owns the file IO
-> + schema). This module proves only behaviour reachable from the injected `Config`/`Services`.
+> (incl. the three new keys — see Open Questions — and the five scale-extension keys
+> plan_workers/plan_interval/prune_interval/prune_threshold/prune_decay_factor) is a
+> **platform/config** AC (it owns the file IO + schema). This module proves only behaviour
+> reachable from the injected `Config`/`Services`.
 
 ## Out of Scope
 
@@ -488,6 +653,13 @@ Plus:
 - **Sense modeling** (LoS occlusion, smell gradient, hearing falloff) → `engine/perception`; the
   world supplies the proximity candidates (`SpatialHash`) + the object tags/opacity to the sensor.
 - **Frontend / API** → `platform/api` (later, architecture §3).
+- **SIMD vectorisation** of the plan/apply hot loops → not done (and not planned for P1); the
+  scale work here is goroutine fan-out only.
+- **Persistent / long-lived worker pools** → NOT done. The plan-phase goroutines are spun up and
+  joined WITHIN a single `Tick()` (per-tick fan-out); there is no pool that outlives a tick (see
+  Notes §Scale for why P1 avoids the lifecycle complexity).
+- **Cross-machine / distributed simulation** (sharding agents across processes/hosts) → out of
+  scope; the world is a single-process orchestrator.
 
 ## Open Questions
 
@@ -498,18 +670,23 @@ Plus:
   **as the first step before writing any Go code** for this module; `platform/config` structural
   validation will catch any missing key at startup. `DefaultConfig()` may carry test-only fallbacks
   but all logic paths read the injected `Config` value. This unblocks P1 wiring.
-- **`RelyOn` / `Function` type — RESOLVED as P1 stub; scenario G deferred.** `tom.Belief.RelyOn`
-  and a `Function` type are not yet formalized in `engine/tom`; the world's `RoleEmerged` scan
-  depends on them. **Decision**: the implementer ships `relianceScan()` as an explicit no-op stub
-  (see §Emergent-reliance "P1 stub"). The stub compiles, does not reach `Belief.RelyOn`, and carries
-  a `// TODO(scenario-G)` tag. The `RoleEmerged` acceptance criterion is deferred (also noted in
-  §Acceptance Criteria). Scenario G is the only P1 item this affects; all other tick-loop,
-  conflict, outcome, spawn, and snapshot ACs are fully unblocked. The activation checklist in
-  §Emergent-reliance defines the exact pre-conditions for replacing the stub.
-- **Role-detection threshold & succession (design §4 open item; NOT blocking the basic emit).**
-  design.md lists "역할 검출 임계·승계" as unresolved. P1 uses a single `reliance_threshold` share
-  with no succession/decay (a holder stays "emerged" while the share holds). Succession (what
-  happens when reliance shifts to a new holder) and hysteresis are deferred. Escalate before tuning G.
+- **Scale-extension `balance.yaml world.*` keys — RESOLVED, OPTIONAL (backward compatible).** The
+  five keys (`plan_workers`, `plan_interval`, `prune_interval`, `prune_threshold`,
+  `prune_decay_factor`) are specified in `Config` with defaults (see §Public Interface). They are
+  NOT in the schema `required` array — a missing key falls back to its documented default so existing
+  content/runs are unaffected (plan_interval default 1 ⇒ replan-every-tick; plan_workers 0 ⇒
+  NumCPU; the never-prune path is reachable by a large prune_interval). The implementer adds the
+  keys + (optional) schema entries with the type/min constraints noted in the `Config` block.
+- **`RelyOn` / `Function` type — RESOLVED (P6); stub REPLACED.** `tom.Belief.RelyOn` and
+  `tom.Function` are formalized (`engine/tom/SPEC.md` §P6), and `engine/agent` populates the edges
+  (`engine/agent/SPEC.md` §P6). The P1 no-op `relianceScan()` stub is therefore **replaced** by the
+  live full scan (§Emergent-reliance). Scenario G is no longer deferred — its golden AC is below.
+- **Role-detection threshold & succession (P6).** P6 uses a single share threshold
+  `politics.role_convergence_threshold` with **rising-edge** emission (the owned `emerged` set):
+  a holder stays emerged silently while its share holds; a shift of the plurality to a new holder
+  is a **succession** — a fresh rising edge → a new `RoleEmerged` for the same function. Hysteresis
+  (a separate clear-threshold below the emit-threshold to damp flapping) is **deferred**; P6 clears
+  on the same threshold. Escalate before tuning if flapping appears in long Scenario-G runs.
 - **Multi-stat outcome composition (NOT blocking P1).** An action with several `uses:<StatID>`
   tags (e.g. `Hunt` uses Strength AND Agility) needs a fixed composition for the resolution stat
   and the conflict stat. P1 uses a deterministic, tag-order-stable mean (or min) of the
@@ -558,3 +735,32 @@ Plus:
 - **Durative scaling lives here.** Per `engine/agent` §Durative, the base `ActionDef.Duration` is
   scaled by stats/distance at execution — the world (apply phase) owns that scaling and uses
   `worldtime.Clock.TicksForMinutes` to convert; the planner uses the base duration only.
+
+### Notes — Scale (parallel plan · time-slicing · ToM prune)
+
+- **Why `plan_interval` default = 1 is backward compatible.** With `plan_interval = 1` every
+  agent's `planSlot` is `sortedIndex mod 1 == 0` and the replan condition `tick mod 1 == 0` is
+  always true — so every agent replans every tick, exactly the pre-time-slicing behaviour. The
+  determinism goldens recorded before time-slicing remain valid at the default. Time-slicing only
+  changes behaviour when `plan_interval > 1`, and even then it is a performance/throughput trade
+  (fewer full plans per tick), not a semantic change to a single agent's durative execution.
+- **Why goroutines are per-tick (no persistent pool) for P1.** A `Tick()` spins up the plan-phase
+  goroutines and joins them all before phase 3 begins. A long-lived worker pool would add lifecycle
+  state (shutdown, backpressure, panic propagation across ticks) that buys little at P1 scale and
+  risks leaking goroutines or coupling tick boundaries — both hazards for the determinism/resume
+  invariants. The fan-out is cheap relative to per-agent planning, so per-tick creation is the
+  simple, safe choice; a persistent pool is an explicit future optimisation (Out of Scope).
+- **Why intents are sorted AFTER the fan-out joins.** Goroutine completion order is nondeterministic
+  by design, so the gathered intents must be stable-sorted by `AgentID` (and each agent's own forks
+  keyed by sorted position) before apply. This is the single line that makes the parallel path
+  byte-identical to the serial path — it is asserted by the `parallel_plan.json` golden.
+- **`prune_decay_factor = 0.0` means "zero then remove".** The default multiplies a stale Belief by
+  0 (zeroing it) and then removes the map entry — observationally the same as a straight removal at
+  P1, but the decay hook is deliberately in place. A future value like `0.5` would let a Belief fade
+  gradually (a faint, decaying rumor trace) before removal — useful for rumor-persistence scenarios
+  — and would be enabled behind a feature flag once the "keep decayed-but-nonzero" path is specified.
+  For P1 the entry is always removed after the decay multiply.
+- **Re-encounter after prune is intentional forgetting.** Because the prune pass removes the subject
+  entirely, a later Sight contact re-seeds the Belief through the same unknown-subject initialization
+  `engine/tom` uses on a first encounter. The agent "forgets" and then "re-learns" — this is the
+  designed memory bound, not a regression. Tests assert the re-init path is taken (no warm-start).

@@ -190,7 +190,7 @@ func TestReferentKind_Constants(t *testing.T) {
 	}
 }
 
-// SignalKind constants have the expected iota values (Offer=0..Threaten=4).
+// SignalKind constants have the expected iota values (Offer=0..Vote=5).
 func TestSignalKind_Constants(t *testing.T) {
 	cases := []struct {
 		name string
@@ -202,6 +202,7 @@ func TestSignalKind_Constants(t *testing.T) {
 		{"SignalReject", SignalReject, 2},
 		{"SignalGreet", SignalGreet, 3},
 		{"SignalThreaten", SignalThreaten, 4},
+		{"SignalVote", SignalVote, 5},
 	}
 	for _, tc := range cases {
 		if tc.got != tc.want {
@@ -221,6 +222,38 @@ func TestSignal_ZeroValue(t *testing.T) {
 	}
 	if s.Valence != 0 || s.ClaimedValue != 0 || s.Truth != 0 || s.Intensity != 0 {
 		t.Errorf("zero Signal floats not zero: %+v", s)
+	}
+}
+
+// Function constants have expected string values.
+func TestFunction_Constants(t *testing.T) {
+	if FuncSafety != "Safety" {
+		t.Errorf("FuncSafety = %q, want %q", FuncSafety, "Safety")
+	}
+	if FuncJudgment != "Judgment" {
+		t.Errorf("FuncJudgment = %q, want %q", FuncJudgment, "Judgment")
+	}
+	if FuncKnowledge != "Knowledge" {
+		t.Errorf("FuncKnowledge = %q, want %q", FuncKnowledge, "Knowledge")
+	}
+}
+
+// Signal can carry a Function field (P6).
+func TestSignal_FunctionField(t *testing.T) {
+	s := Signal{
+		Kind:     SignalVote,
+		Function: FuncSafety,
+	}
+	if s.Kind != SignalVote {
+		t.Errorf("Signal.Kind = %d, want %d", s.Kind, SignalVote)
+	}
+	if s.Function != FuncSafety {
+		t.Errorf("Signal.Function = %q, want %q", s.Function, FuncSafety)
+	}
+	// Zero value: Function is empty
+	var zero Signal
+	if zero.Function != "" {
+		t.Errorf("zero Signal.Function = %q, want empty", zero.Function)
 	}
 }
 

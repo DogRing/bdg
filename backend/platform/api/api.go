@@ -1,0 +1,109 @@
+// Package api provides the read-only HTTP boundary for the simulation:
+// liveness/readiness probes, SSE event stream, snapshot/agent query endpoints.
+// It holds no simulation state, never advances the tick, and enforces the god-view
+// boundary (D8): real_stats appears in agent responses only when both startup GodMode
+// and per-request ?god=true are set.
+package api
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/platform/persist"
+)
+
+// Server wires all HTTP handlers onto one http.ServeMux and exposes ListenAndServe.
+// It holds no simulation state; it reads Redis through the injected store and a minimal
+// read client (RedisReader) and serialises the result. All routes are registered in New.
+type Server struct {
+	live   persist.LiveStore // ReadSnapshot + key/shape contracts
+	rds    RedisReader       // PING, HGETALL agent hash, XREAD events, GET snapshot
+	gv     GodViewStore      // QueryEvents — the /api/god/why event source (Postgres); may be nil
+	keyer  persist.Keyer    // sim:{run}:* key strings (never hand-formatted)
+	runID  core.RunID       // which sim run to tail/query
+	godMode bool            // startup flag; gates real_stats on /api/agents/{id}?god=true AND all /api/god/*
+	mux    *http.ServeMux
+	addr   string
+}
+
+// GodViewStore is the read-side of Postgres for /api/god/why queries.
+// It MAY be nil when cfg.GodMode is false (all /api/god/* routes 403 before touching it).
+type GodViewStore interface {
+	QueryEvents(ctx context.Context, run core.RunID, agentID core.AgentID, tick core.Tick) ([]core.Event, error)
+}
+
+// Config holds the API-layer knobs injected at construction.
+type Config struct {
+	Addr    string       // e.g. ":8080" from HTTP_ADDR env
+	RunID   core.RunID   // which sim run to tail/query
+	GodMode bool         // startup-only: enables real_stats on /api/agents/{id}?god=true
+}
+
+// RedisReader is the minimal Redis surface api needs for the read path.
+// All key strings come from persist.Keyer; api formats none.
+type RedisReader interface {
+	Ping(ctx context.Context) error
+	Get(ctx context.Context, key string) ([]byte, error)
+	HGetAll(ctx context.Context, key string) (map[string]string, error)
+	XRead(ctx context.Context, key, lastID string, block time.Duration) (entries []StreamEntry, newLastID string, err error)
+}
+
+// StreamEntry is one Redis STREAM entry the SSE tail forwards.
+type StreamEntry struct {
+	ID     string
+	Fields map[string]string
+}
+
+// New wires the mux (all routes registered here) and returns a ready Server.
+// It does not bind a socket — ListenAndServe does.
+func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *Server {
+	s := &Server{
+		live:    live,
+		rds:     rds,
+		gv:      gv,
+		keyer:   persist.Keyer{Run: cfg.RunID},
+		runID:   cfg.RunID,
+		godMode: cfg.GodMode,
+		mux:     http.NewServeMux(),
+		addr:    cfg.Addr,
+	}
+	// Register routes in New (no global state, D12).
+	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
+	s.mux.HandleFunc("GET /sse", s.handleSSE)
+	s.mux.HandleFunc("GET /api/snapshot", s.handleSnapshot)
+	s.mux.HandleFunc("GET /api/agents/{id}", s.handleAgent)
+	s.mux.HandleFunc("GET /api/god/agent/{id}/divergence", s.handleGodDivergence)
+	s.mux.HandleFunc("GET /api/god/reputation/{id}", s.handleGodReputation)
+	s.mux.HandleFunc("GET /api/god/relations", s.handleGodRelations)
+	s.mux.HandleFunc("GET /api/god/why/{agent_id}/{tick}", s.handleGodWhy)
+	return s
+}
+
+// ListenAndServe binds s.addr and serves until ctx is cancelled (graceful shutdown)
+// or a fatal listen error occurs.
+func (s *Server) ListenAndServe(ctx context.Context) error {
+	hs := &http.Server{
+		Addr:    s.addr,
+		Handler: s.mux,
+	}
+	done := make(chan error, 1)
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		done <- hs.Shutdown(shutdownCtx)
+	}()
+	err := hs.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return <-done
+	}
+	return err
+}
+
+// Handler returns the underlying http.Handler (the wired mux) for test injection.
+func (s *Server) Handler() http.Handler {
+	return s.mux
+}

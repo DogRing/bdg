@@ -28,7 +28,7 @@ Encode scenarios A–H from `docs/design.md` / `PRD.md` as named fixtures. Each 
 | C deceptive trade | after exposure, only the *witness cluster's* `ToM[A].Honesty` drops (other clusters unchanged) |
 | D love-driven crime | `wellbeing(child)` weight lowers the conscience threshold more strongly than urgency |
 | F dead-end goal | high-Intelligence rebinds; low-Intelligence fixates (no rebind) |
-| G chief emerges | distributed safety drop → `RelyOn` converges to one holder (cluster forms) |
+| G chief emerges (P6) | chained theft → collective safety↓ → Patrol → `RelyOn` converges to one holder (Votes accelerate under shared urgency) → `RoleEmerged{function:"safety"}` on the rising edge (golden); higher-Influence signals shift ToM more |
 | H long journey | high-Intelligence inserts a provisioning subgoal before departure; low-Intelligence does not |
 - Assertions test **direction / existence** (did it emerge or not), not exact numbers. Numbers are tuned in §5.
 

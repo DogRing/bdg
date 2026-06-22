@@ -127,8 +127,9 @@ func TestGetRoundTrip(t *testing.T) {
 			wantDuration:     6,
 			wantTarget:       TargetNone,
 			wantTargetKindID: "",
-			wantProduces:     nil,
-			wantConsumesItem: "any_food",
+			wantProduces:     []core.Pred{"has_Satiety"},
+			wantConsumesItem: "", // P1: direct-effect Eat; item-supply chain deferred
+			wantEffectLen:    1,  // effect: { Satiety: 0.40 }
 			wantInterruptible: true,
 		},
 		{
@@ -146,7 +147,7 @@ func TestGetRoundTrip(t *testing.T) {
 			wantDuration:     30,
 			wantTarget:       TargetNone,
 			wantTargetKindID: "",
-			wantProduces:     nil,
+			wantProduces:     []core.Pred{"has_Rest"},
 			wantEffectPMinLen: 1,
 			wantInterruptible: true,
 		},
@@ -185,7 +186,7 @@ func TestGetRoundTrip(t *testing.T) {
 			wantDuration:     5,
 			wantTarget:       TargetAgent,
 			wantTargetKindID: "",
-			wantProduces:     []core.Pred{"struck"},
+			wantProduces:     []core.Pred{"has_Safety"},
 			wantInterruptible: false,
 		},
 	}
@@ -318,14 +319,14 @@ func TestProducers(t *testing.T) {
 		pred core.Pred
 		want []ActionID
 	}{
-		{pred: "has_food", want: []ActionID{"Forage", "Hunt"}},
+		{pred: "has_food", want: []ActionID{"Forage", "Hunt", "Take"}},
 		{pred: "at_target", want: []ActionID{"MoveTo"}},
 		{pred: "holding", want: []ActionID{"PickUp", "Take"}},
 		{pred: "has_tool", want: []ActionID{"Craft"}},
 		{pred: "signalled", want: []ActionID{"Signal"}},
 		{pred: "transferred", want: []ActionID{"GiveItem", "Trade"}},
 		{pred: "sheltered", want: []ActionID{"TakeShelter"}},
-		{pred: "struck", want: []ActionID{"Attack"}},
+		{pred: "has_Safety", want: []ActionID{"Attack", "Patrol"}},
 		{pred: "structure_built", want: []ActionID{"Build"}},
 		{pred: "nonexistent", want: nil},
 	}
@@ -387,7 +388,7 @@ func TestTargetKindDerivation(t *testing.T) {
 		{id: "Signal",       wantKind: TargetAgent,    wantKindID: ""},
 		{id: "GiveItem",     wantKind: TargetAgent,    wantKindID: ""},
 		{id: "Trade",        wantKind: TargetAgent,    wantKindID: ""},
-		{id: "Take",         wantKind: TargetNone,     wantKindID: ""}, // Take has requires: [at_target, owned_by_other], produces: [holding]; Wait — this has at_target in requires, not in produces!
+		{id: "Take",         wantKind: TargetAgent,    wantKindID: ""}, // near_other in requires → TargetAgent
 		{id: "Attack",       wantKind: TargetAgent,    wantKindID: ""},
 	}
 
@@ -456,32 +457,19 @@ func TestNoGateCostField(t *testing.T) {
 func TestConsumptionActionNoDirectEffect(t *testing.T) {
 	reg := loadTestActions(t)
 
-	// Eat has consumes_item and must have empty Effect.
-	def, ok := reg.Get("Eat")
-	if !ok {
-		t.Fatal("Eat not found")
-	}
-	if def.ConsumesItem == "" {
-		t.Fatal("Eat should have ConsumesItem")
-	}
-	if len(def.Effect) != 0 {
-		t.Errorf("Eat.Effect should be empty (D9), got %v", def.Effect)
-	}
-
-	// Drink has consumes_item and must have empty Effect.
-	def, ok = reg.Get("Drink")
-	if !ok {
-		t.Fatal("Drink not found")
-	}
-	if def.ConsumesItem == "" {
-		t.Fatal("Drink should have ConsumesItem")
-	}
-	if len(def.Effect) != 0 {
-		t.Errorf("Drink.Effect should be empty (D9), got %v", def.Effect)
+	// D9 invariant (loader-enforced): ANY action with consumes_item must have an
+	// empty direct Effect — the consumed item's supply IS the effect. Assert it
+	// holds across the whole shipped catalog, not just one named action.
+	for _, id := range reg.IDs() {
+		def, _ := reg.Get(id)
+		if def.ConsumesItem != "" && len(def.Effect) > 0 {
+			t.Errorf("D9 violation: %q consumes_item=%q but has direct Effect %v",
+				id, def.ConsumesItem, def.Effect)
+		}
 	}
 
-	// GiveItem has consumes_item and must have empty Effect.
-	def, ok = reg.Get("GiveItem")
+	// GiveItem is the shipped consumption action: consumes_item set, Effect empty.
+	def, ok := reg.Get("GiveItem")
 	if !ok {
 		t.Fatal("GiveItem not found")
 	}
@@ -490,6 +478,21 @@ func TestConsumptionActionNoDirectEffect(t *testing.T) {
 	}
 	if len(def.Effect) != 0 {
 		t.Errorf("GiveItem.Effect should be empty (D9), got %v", def.Effect)
+	}
+
+	// P1 design: the item-supply chain for subsistence is deferred — Eat and Drink
+	// carry NO consumes_item and apply a direct Effect instead (content/actions.yaml).
+	for _, id := range []ActionID{"Eat", "Drink"} {
+		def, ok := reg.Get(id)
+		if !ok {
+			t.Fatalf("%s not found", id)
+		}
+		if def.ConsumesItem != "" {
+			t.Errorf("%s should have no ConsumesItem (P1 direct-effect), got %q", id, def.ConsumesItem)
+		}
+		if len(def.Effect) == 0 {
+			t.Errorf("%s should have a direct Effect (P1 direct-effect design)", id)
+		}
 	}
 
 	// Sleep has no consumes_item, but has effect_per_minute.
@@ -721,8 +724,8 @@ func TestHasAndLen(t *testing.T) {
 		t.Error("Has(Nonexistent) should be false")
 	}
 
-	if reg.Len() != 16 {
-		t.Errorf("Len = %d, want 16", reg.Len())
+	if reg.Len() != 25 {
+		t.Errorf("Len = %d, want 25", reg.Len())
 	}
 }
 

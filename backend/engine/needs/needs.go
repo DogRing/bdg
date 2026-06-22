@@ -284,6 +284,39 @@ func (d Def) Salience(level, setpoint float64) float64 {
 	return s
 }
 
+// ── Conditional-need driver (BLOCKER-1) ──────────────────────────────────────
+
+// UpdateConditionalNeeds is a PURE function (no clock, no RNG, no stored state):
+// given the current stored intensity for this Conditional dimension and the list
+// of perceived threats this tick, it returns the NEW intensity. The caller
+// (engine/agent) stores the result into NeedIntensities[id].
+//
+// For a Conditional Def:
+//
+//	len(threats) == 0 → new = clamp01(cur − decayPerTick)   // decay toward 0
+//	len(threats) > 0  → new = clamp01(cur + perThreatGain × float64(len(threats)))
+//
+// Returns `cur` unchanged for a non-Conditional Def (consumable pressure flows
+// through Level/decay only). `threats` is iterated only for its LENGTH (count),
+// so its element order is irrelevant.
+func (d Def) UpdateConditionalNeeds(cur float64, threats []core.AgentID, perThreatGain, decayPerTick float64) float64 {
+	if d.Kind != Conditional {
+		return cur
+	}
+	if len(threats) == 0 {
+		newVal := cur - decayPerTick
+		if newVal < 0 {
+			return 0
+		}
+		return newVal
+	}
+	newVal := cur + perThreatGain*float64(len(threats))
+	if newVal > 1 {
+		return 1
+	}
+	return newVal
+}
+
 // ── YAML intermediate types ──────────────────────────────────────────────────
 
 // rawNeed is one entry in content/needs.yaml's needs array.

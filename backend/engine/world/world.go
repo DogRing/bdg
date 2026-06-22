@@ -25,21 +25,25 @@ import (
 // content/balance.yaml world.* via platform/config). The world hardcodes NO
 // numeric constant (D10).
 type Config struct {
-	SpatialHashCell       float64
-	RelianceThreshold     float64
-	OutcomeDifficultyBase float64
-	BackupEveryTicks      int
-	MoveSpeedPerTick      float64 // fraction of remaining distance covered per tick (0,1]
+	SpatialHashCell            float64
+	RoleConvergenceThreshold   float64 // balance.yaml politics.role_convergence_threshold; supersedes the retired world.reliance_threshold
+	OutcomeDifficultyBase      float64
+	BackupEveryTicks           int
+	MoveSpeedPerTick           float64 // fraction of remaining distance covered per tick (0,1]
+	PlanInterval               int     // plan_interval: agents per planning slice; 1 = all agents plan every tick. Higher spreads planner load across ticks.
+	PruneThreshold             int     // prune_threshold: max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune.
 }
 
 // DefaultConfig returns the canonical Config from content/balance.yaml world.*.
 func DefaultConfig() Config {
 	return Config{
-		SpatialHashCell:       8.0,
-		RelianceThreshold:     0.5,
-		OutcomeDifficultyBase: 50.0,
-		BackupEveryTicks:      60,
-		MoveSpeedPerTick:      0.5,
+		SpatialHashCell:          8.0,
+		RoleConvergenceThreshold: 0.5,
+		OutcomeDifficultyBase:    50.0,
+		BackupEveryTicks:         60,
+		MoveSpeedPerTick:         0.5,
+		PlanInterval:             1,
+		PruneThreshold:           0,
 	}
 }
 
@@ -87,6 +91,26 @@ type World struct {
 
 	// P2 trade protocol: pending offer indexed by the intended receiver.
 	pendingOffers map[core.AgentID]pendingOffer
+
+	// P3 resentment: conflict losers from the PREVIOUS tick's apply phase,
+	// keyed by loser AgentID → the winner(s) who beat them over a shared
+	// resource. Populated at the end of each Tick's apply phase and read by
+	// agents in the next tick's plan phase (WorldView.ResentmentTriggers).
+	// Transient per-tick buffer, like currentSounds.
+	resentmentTriggers map[core.AgentID][]core.AgentID
+
+	// P6 emerged roles: last-known holder per Function. Used by relianceScan
+	// for rising-edge detection (emits RoleEmerged only when a (function,holder)
+	// pair first crosses the threshold). Owned state, serialized with the world
+	// (so resume stays byte-identical). DO NOT rename to Role — D2 forbids a
+	// role type; this is a cluster statistic.
+	emergedRoles map[core.Function]core.AgentID
+
+	// P6: pending signals collected during the apply phase, keyed by the
+	// intended receiver agent ID. Populated by applySignal for SignalVote and
+	// read by the next tick's snapshot IncomingSignals(). Cleared at the start
+	// of each tick.
+	pendingSignals map[core.AgentID][]core.Signal
 }
 
 // pendingOffer records an Offer signal awaiting response from the receiver.
@@ -120,7 +144,10 @@ func New(
 		svc:           svc,
 		actReg:        actReg,
 		emit:          emit,
-		pendingOffers: make(map[core.AgentID]pendingOffer),
+		pendingOffers:      make(map[core.AgentID]pendingOffer),
+		resentmentTriggers: make(map[core.AgentID][]core.AgentID),
+		emergedRoles:       make(map[core.Function]core.AgentID),
+		pendingSignals:     make(map[core.AgentID][]core.Signal),
 	}
 	return w
 }

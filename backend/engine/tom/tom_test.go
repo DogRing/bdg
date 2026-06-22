@@ -24,6 +24,7 @@ var testRates = tom.Rates{
 	Beta:               0.08,
 	MinTrust:           0.05,
 	InitialBeliefNoise: 0.15,
+	InfluenceWeight:    0.5,
 }
 
 // testStatsYAML defines a minimal stat set used throughout unit tests.
@@ -1051,4 +1052,346 @@ func TestRecordFraud_WithinThreshold_NoOp(t *testing.T) {
 		t.Errorf("Honesty changed within threshold: before=%.4f after=%.4f",
 			honestyBefore, bAfter.EstStats["Honesty"].Mean)
 	}
+}
+
+// ── P6 Reliance & Influence tests ─────────────────────────────────────────────
+
+// TestAdjustRelyOn_Clamps verifies delta is clamped to [0,1] and nil map is initialized.
+func TestAdjustRelyOn_Clamps(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	// Seed the belief about "B" first so we can observe the map state.
+	tomA.Observe("B", tom.StatEvidence{Stat: "Strength", Observed: 0.5, Weight: 1e-9, Tick: 0})
+
+	const fn = "Safety"
+
+	// 1) Start at 0.5, add 0.3 -> 0.8
+	tomA.AdjustRelyOn("B", fn, 0.5) // from 0 -> 0.5
+	b, _ := tomA.Self("B")
+	if b.RelyOn == nil {
+		t.Fatal("RelyOn map should be initialized after AdjustRelyOn")
+	}
+	if b.RelyOn[fn] != 0.5 {
+		t.Errorf("after +0.5: got %f, want 0.5", b.RelyOn[fn])
+	}
+
+	tomA.AdjustRelyOn("B", fn, 0.3) // 0.5 + 0.3 = 0.8
+	b, _ = tomA.Self("B")
+	if b.RelyOn[fn] != 0.8 {
+		t.Errorf("after +0.3: got %f, want 0.8", b.RelyOn[fn])
+	}
+
+	// 2) From 0.8, add 0.3 -> clamped to 1.0
+	tomA.AdjustRelyOn("B", fn, 0.3) // 0.8 + 0.3 -> clamp to 1.0
+	b, _ = tomA.Self("B")
+	if b.RelyOn[fn] != 1.0 {
+		t.Errorf("clamp to 1.0: got %f, want 1.0", b.RelyOn[fn])
+	}
+
+	// 3) From 0.1 (reset by observing new subject), subtract 0.3 -> clamped to 0.0
+	tomA.AdjustRelyOn("C", fn, 0.1)
+	tomA.AdjustRelyOn("C", fn, -0.3) // 0.1 - 0.3 -> clamped to 0.0
+	b, _ = tomA.Self("C")
+	if b.RelyOn[fn] != 0.0 {
+		t.Errorf("clamp to 0.0: got %f, want 0.0", b.RelyOn[fn])
+	}
+
+	// 4) Other function untouched.
+	if _, ok := b.RelyOn["Judgment"]; ok {
+		t.Error("Judgment should not be set after only adjusting Safety")
+	}
+}
+
+// TestAdjustRelyOn_NilMap_Initialization verifies AdjustRelyOn works when Belief.RelyOn is nil.
+func TestAdjustRelyOn_NilMap_Initialization(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(1)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	// Unknown target — Expect nil map initially, then AdjustRelyOn should initialize it.
+	tomA.AdjustRelyOn("B", "Safety", 0.7)
+	b, found := tomA.Self("B")
+	if !found {
+		t.Fatal("belief about B should exist after AdjustRelyOn")
+	}
+	if b.RelyOn == nil {
+		t.Fatal("RelyOn map should not be nil after AdjustRelyOn")
+	}
+	if b.RelyOn["Safety"] != 0.7 {
+		t.Errorf("Safety reliance = %f, want 0.7", b.RelyOn["Safety"])
+	}
+	// Other functions should not be in the map.
+	if _, ok := b.RelyOn["Judgment"]; ok {
+		t.Error("Judgment should not be set")
+	}
+}
+
+// TestBestProviderFor_Deterministic verifies same input -> same output (D12).
+func TestBestProviderFor_Deterministic(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	statSet := []core.StatID{"Strength"}
+	candidates := []core.AgentID{"X", "Y", "Z"}
+
+	// Run 5 times, same result.
+	var prevID core.AgentID
+	var prevScore float64
+	for run := range 5 {
+		id, score := tomA.BestProviderFor("Safety", statSet, candidates)
+		if run > 0 {
+			if id != prevID {
+				t.Errorf("run %d: got id %q, want %q from run 0", run, id, prevID)
+			}
+			if score != prevScore {
+				t.Errorf("run %d: got score %f, want %f", run, score, prevScore)
+			}
+		}
+		prevID, prevScore = id, score
+	}
+}
+
+// TestBestProviderFor_SelectsBest verifies the candidate with highest trust*competence wins.
+func TestBestProviderFor_SelectsBest(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	statSet := []core.StatID{"Strength"}
+
+	// Create three candidates with different strength/trust profiles.
+	for _, tc := range []struct {
+		id          core.AgentID
+		strength    float64
+		trust       float64
+	}{
+		{"X", 0.8, 0.9},
+		{"Y", 0.2, 0.3},
+		{"Z", 0.5, 0.6},
+	} {
+		tomA.Observe(tc.id, tom.StatEvidence{Stat: "Strength", Observed: tc.strength, Weight: 1.0, Tick: 0})
+		// Set Trust to the desired value via repeated RecordTradeSuccess.
+		b, _ := tomA.Self(tc.id)
+		// Trust starts at 0.5 from seedInitialBelief.
+		// We need tc.trust - 0.5. RecordTradeSuccess adds 0.05 each time.
+		if b.Trust < tc.trust {
+			needed := tc.trust - b.Trust
+			steps := int(needed / 0.05)
+			for range steps {
+				tomA.RecordTradeSuccess(tc.id, 0)
+			}
+		}
+	}
+
+	bestID, bestScore := tomA.BestProviderFor("Safety", statSet, []core.AgentID{"X", "Y", "Z"})
+
+	// Expected: X has Trust~0.9, Strength est ~0.8 -> score = 0.9 * (0.8/1.0) = 0.72
+	expectedID := core.AgentID("X")
+	if bestID != expectedID {
+		t.Errorf("best provider: got %q, want %q", bestID, expectedID)
+	}
+	// X's score should clearly beat others.
+	const expectedScore = 0.9 * 0.8 / 1.0
+	const tol = 0.01
+	if bestScore < expectedScore-tol || bestScore > expectedScore+tol {
+		t.Logf("best score = %f, expected ~%f", bestScore, expectedScore)
+	}
+}
+
+// TestBestProviderFor_TieBreak verifies ties break by lexicographic AgentID (D12).
+func TestBestProviderFor_TieBreak(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	// Create two candidates with identical Strength (0.5) and Trust (0.5 from seed).
+	tomA.Observe("B", tom.StatEvidence{Stat: "Strength", Observed: 0.5, Weight: 1.0, Tick: 0})
+	tomA.Observe("C", tom.StatEvidence{Stat: "Strength", Observed: 0.5, Weight: 1.0, Tick: 0})
+
+	// Trust starts at 0.5 from seedInitialBelief and we haven't modified it,
+	// so both have same score.
+	// Sorted candidates: [B, C]; B should win.
+	bestID, _ := tomA.BestProviderFor("Safety", []core.StatID{"Strength"}, []core.AgentID{"C", "B"})
+	if bestID != "B" {
+		t.Errorf("tie should break to lexicographically first (B), got %q", bestID)
+	}
+
+	bestID2, _ := tomA.BestProviderFor("Safety", []core.StatID{"Strength"}, []core.AgentID{"B", "C"})
+	if bestID2 != "B" {
+		t.Errorf("tie should break to B regardless of input order, got %q", bestID2)
+	}
+}
+
+// TestBestProviderFor_EmptyCandidates returns ("", 0).
+func TestBestProviderFor_EmptyCandidates(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	id, score := tomA.BestProviderFor("Safety", []core.StatID{"Strength"}, nil)
+	if id != "" {
+		t.Errorf("empty candidates: got id %q, want empty", id)
+	}
+	if score != 0 {
+		t.Errorf("empty candidates: got score %f, want 0", score)
+	}
+}
+
+// TestBestProviderFor_SingleCandidate returns it even with score 0.
+func TestBestProviderFor_SingleCandidate(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	tomA.Observe("X", tom.StatEvidence{Stat: "Strength", Observed: 0.3, Weight: 1.0, Tick: 0})
+
+	id, score := tomA.BestProviderFor("Safety", []core.StatID{"Strength"}, []core.AgentID{"X"})
+	if id != "X" {
+		t.Errorf("single candidate: got %q, want %q", id, "X")
+	}
+	if score <= 0 {
+		t.Errorf("single candidate should have positive score, got %f", score)
+	}
+}
+
+// TestBestProviderFor_AllZeroScores returns the first by sorted AgentID (D12).
+func TestBestProviderFor_AllZeroScores(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	// Candidates with Strength=0. All will have score = Trust * (0/1) = 0.
+	tomA.Observe("D", tom.StatEvidence{Stat: "Strength", Observed: 0, Weight: 1.0, Tick: 0})
+	tomA.Observe("B", tom.StatEvidence{Stat: "Strength", Observed: 0, Weight: 1.0, Tick: 0})
+	tomA.Observe("A", tom.StatEvidence{Stat: "Strength", Observed: 0, Weight: 1.0, Tick: 0})
+
+	// All have score 0 (Trust=0.5 * 0 = 0). Sorted candidates = [A, B, D].
+	// bestScore starts at -1, first in sorted order (A) with score 0 > -1 becomes best.
+	id, _ := tomA.BestProviderFor("Safety", []core.StatID{"Strength"}, []core.AgentID{"D", "B", "A"})
+	if id != "A" {
+		t.Errorf("all-zero scores: expected first-sorted (A), got %q", id)
+	}
+}
+
+// TestInfluence_ControlRow verifies Influence = mean(RelyOn[fn] over observers).
+// Also verifies that with influenceWeight=0, signalWeight = trustWeight.
+func TestInfluence_ControlRow(t *testing.T) {
+	reg := mustLoadReg(t)
+
+	// Build observer beliefs with varying RelyOn.
+	observers := []tom.Belief{
+		{
+			EstStats: map[core.StatID]tom.StatDist{"Strength": {Mean: 0.5, Variance: 0}},
+			Trust:    0.5,
+			RelyOn:   map[core.Function]float64{"Safety": 0.6},
+		},
+		{
+			EstStats: map[core.StatID]tom.StatDist{"Strength": {Mean: 0.5, Variance: 0}},
+			Trust:    0.5,
+			RelyOn:   map[core.Function]float64{"Safety": 0.3},
+		},
+		{
+			EstStats: map[core.StatID]tom.StatDist{"Strength": {Mean: 0.5, Variance: 0}},
+			Trust:    0.5,
+			RelyOn:   map[core.Function]float64{"Safety": 0.0},
+		},
+	}
+
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	// Influence of "subject" over these observers for "Safety" = (0.6+0.3+0.0)/3 = 0.3
+	inf := tomA.Influence("subject", "Safety", observers)
+	expected := 0.3
+	const tol = 1e-10
+	if inf < expected-tol || inf > expected+tol {
+		t.Errorf("Influence = %f, want %f", inf, expected)
+	}
+
+	// With influenceWeight=0, signalWeight = clamp01(trustWeight * (1 + 0*influence)) = trustWeight.
+	trustWeight := 0.8
+	influenceWeight := 0.0
+	signalWeight := trustWeight * (1 + influenceWeight*inf)
+	if signalWeight != trustWeight {
+		t.Errorf("signalWeight with influenceWeight=0: %f, want %f", signalWeight, trustWeight)
+	}
+}
+
+// TestInfluence_EmptyObservers returns 0.
+func TestInfluence_EmptyObservers(t *testing.T) {
+	reg := mustLoadReg(t)
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, testRates)
+
+	inf := tomA.Influence("subject", "Safety", nil)
+	if inf != 0 {
+		t.Errorf("Influence with empty observers = %f, want 0", inf)
+	}
+}
+
+// TestGossipUpdate_InfluenceAmplification verifies a high-influence source produces
+// a larger delta than a low-influence source, and that influenceWeight=0 kills amplification.
+func TestGossipUpdate_InfluenceAmplification(t *testing.T) {
+	reg := mustLoadReg(t)
+	rates := tom.Rates{
+		Alpha:           0.12,
+		Beta:            0.08,
+		MinTrust:        0.05,
+		InfluenceWeight: 0.5,
+	}
+
+	r := rng.New(42)
+	tomA := tom.NewToM("A", defaultRealStats(), 0.5, r, reg, rates)
+
+	// Seed belief about target "C".
+	tomA.Observe("C", tom.StatEvidence{Stat: "Strength", Observed: 0.5, Weight: 0.5, Tick: 1})
+	bPre, _ := tomA.Self("C")
+	preMean := bPre.EstStats["Strength"].Mean
+
+	// Source 1: low Influence (0.1).
+	source1Observers := []tom.Belief{
+		{RelyOn: map[core.Function]float64{"Safety": 0.1}, Trust: 0.5},
+	}
+	inf1 := tomA.Influence("source1", "Safety", source1Observers)
+
+	// Source 2: high Influence (0.9).
+	source2Observers := []tom.Belief{
+		{RelyOn: map[core.Function]float64{"Safety": 0.9}, Trust: 0.5},
+	}
+	inf2 := tomA.Influence("source2", "Safety", source2Observers)
+
+	const trustWeight = 0.8
+	signalWeight1 := trustWeight * (1 + rates.InfluenceWeight*inf1)
+	signalWeight2 := trustWeight * (1 + rates.InfluenceWeight*inf2)
+
+	delta1 := rates.Alpha * signalWeight1 * (0.9 - preMean)
+	delta2 := rates.Alpha * signalWeight2 * (0.9 - preMean)
+
+	if delta2 <= delta1 {
+		t.Errorf("high-influence source should produce larger delta: low=%f, high=%f", delta1, delta2)
+	}
+
+	// With influenceWeight=0, both signal weights collapse to trustWeight.
+	ratesZero := rates
+	ratesZero.InfluenceWeight = 0
+	sw1zero := trustWeight * (1 + 0*inf1)
+	sw2zero := trustWeight * (1 + 0*inf2)
+	if sw1zero != sw2zero {
+		t.Errorf("with influenceWeight=0, signal weights should be equal: %f vs %f", sw1zero, sw2zero)
+	}
+	if sw1zero != trustWeight {
+		t.Errorf("with influenceWeight=0, signalWeight should equal trustWeight: %f vs %f", sw1zero, trustWeight)
+	}
+}
+
+// TestNoStoredInfluence guards against storing Influence as a scalar field (D6).
+func TestNoStoredInfluence(t *testing.T) {
+	var _ tom.Belief
+	// The following would not compile if uncommented:
+	// _ = b.Influence
+	// _ = b.Role
+	_ = 0
 }

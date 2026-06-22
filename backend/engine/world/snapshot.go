@@ -20,11 +20,38 @@ var _ agent.WorldView = (*WorldSnapshot)(nil)
 type WorldSnapshot struct {
 	w    *World
 	tick core.Tick
+
+	// frozenActionTags is a per-agent snapshot of the current action's tags,
+	// captured at snapshot creation time. This is necessary for thread-safe
+	// parallel planning (Phase 2): agent goroutines call resolveTags concurrently
+	// and a.Tick writes to a.Plan/Actions, so reading those fields from the
+	// shared snapshot would be a data race. Frozen once, read-only thereafter.
+	frozenActionTags map[core.AgentID][]core.Tag
 }
 
 // newSnapshot creates a new snapshot bound to the current world state.
+// It freezes per-agent action tags for thread-safe concurrent access.
 func newSnapshot(w *World) *WorldSnapshot {
-	return &WorldSnapshot{w: w, tick: w.tick}
+	s := &WorldSnapshot{w: w, tick: w.tick}
+
+	// Freeze each agent's current action tags.
+	s.frozenActionTags = make(map[core.AgentID][]core.Tag, len(w.agents))
+	for _, agentID := range w.agentIDs {
+		a := w.agents[agentID]
+		if a == nil {
+			continue
+		}
+		var tags []core.Tag
+		if len(a.Plan.Actions) > 0 && a.PlanIdx < len(a.Plan.Actions) {
+			if actDef, ok := w.actReg.Get(a.Plan.Actions[a.PlanIdx]); ok {
+				tags = make([]core.Tag, len(actDef.Tags))
+				copy(tags, actDef.Tags)
+			}
+		}
+		s.frozenActionTags[agentID] = tags
+	}
+
+	return s
 }
 
 // ── perception.WorldSnapshot methods ───────────────────────────────────────────
@@ -66,13 +93,26 @@ func (s *WorldSnapshot) IsOpaque(id core.ObjectID) bool {
 }
 
 // resolveTags returns the tags for an entity (object or agent), sorted (D12).
+// For agents, the returned set always includes "agent"; it also includes:
+//   - "has_items" when the agent's Inventory is non-empty (lets replan inject owned_by_other)
+//   - the current action's tags from the frozen snapshot (safe for concurrent access)
 func (s *WorldSnapshot) resolveTags(id core.ObjectID) []core.Tag {
 	// Try as agent first.
 	if agentID := core.AgentID(id); true {
 		if a, ok := s.w.agents[agentID]; ok {
-			_ = a
-			// Agents have the "agent" tag.
-			return []core.Tag{"agent"}
+			tags := []core.Tag{"agent"}
+			// Expose inventory presence so replan can inject owned_by_other.
+			if len(a.Inventory) > 0 {
+				tags = append(tags, "has_items")
+			}
+			// Include the current action's tags from the frozen snapshot.
+			if frozenTags, ok := s.frozenActionTags[agentID]; ok {
+				tags = append(tags, frozenTags...)
+			}
+			sort.Slice(tags, func(i, j int) bool {
+				return string(tags[i]) < string(tags[j])
+			})
+			return tags
 		}
 	}
 	// Try as object.
@@ -140,12 +180,87 @@ func (s *WorldSnapshot) HasPendingOffer(receiver core.AgentID) bool {
 	return ok
 }
 
-// ResentmentTriggers returns the agents who rejected or beat self in a resource
-// conflict this tick (P3). AgentID-stable order. Stub for now — world conflict
-// resolution not yet fully built; returns nil.
+// ResentmentTriggers returns the agents who beat self in a resource conflict in
+// the previous tick's apply phase (P3), in AgentID-stable order (D12). The
+// world records a trigger for every conflict loser; only Latent agents act on
+// it (agent.accrueResentment). Returns nil when self lost no conflict.
 func (s *WorldSnapshot) ResentmentTriggers(self core.AgentID) []core.AgentID {
-	// P3 stub: world conflict resolution tracks resentment triggers in a future pass.
-	// For now, Latent agents will only accrue Resentment from explicit trigger events
-	// reported by the world when conflict resolution is implemented.
-	return nil
+	triggers, ok := s.w.resentmentTriggers[self]
+	if !ok || len(triggers) == 0 {
+		return nil
+	}
+	out := make([]core.AgentID, len(triggers))
+	copy(out, triggers)
+	sort.Slice(out, func(i, j int) bool { return string(out[i]) < string(out[j]) })
+	return out
+}
+
+// PlaceQuality returns the quality of a place, in [0,1]. 1 = pristine (no obstruction),
+// 0 = fully blocked. Place quality is derived from the configuration and
+// spatial state of the world (e.g., whether an opaque entity sits between
+// the place and a designated view direction). For now, a stub returning 1.0
+// always; the Scenario E test simulates view-blocking by overriding this
+// via mockWorldView.
+func (s *WorldSnapshot) PlaceQuality(placeID core.ObjectID) float64 {
+	_ = placeID
+	return 1.0
+}
+
+// MemberNeedIntensities returns the need intensities for all agents in the village.
+// Caller MUST NOT mutate the returned map. Returns nil if no agents exist.
+// This is used for Collective referent appraisal (P5 Scenario G).
+func (s *WorldSnapshot) MemberNeedIntensities() map[core.AgentID]map[core.Dimension]float64 {
+	if len(s.w.agents) == 0 {
+		return nil
+	}
+	result := make(map[core.AgentID]map[core.Dimension]float64, len(s.w.agents))
+	for _, agentID := range sortedAgentIDsMap(s.w.agents) {
+		a := s.w.agents[agentID]
+		if a == nil {
+			continue
+		}
+		// Make a copy of the need intensities to prevent caller mutation.
+		ni := make(map[core.Dimension]float64, len(a.NeedIntensities))
+		for _, dim := range sortedDimKeys(a.NeedIntensities) {
+			ni[dim] = a.NeedIntensities[dim]
+		}
+		result[agentID] = ni
+	}
+	return result
+}
+
+// AgentIDs returns all agent IDs in the village, sorted (D12).
+func (s *WorldSnapshot) AgentIDs() []core.AgentID {
+	return sortedAgentIDsMap(s.w.agents)
+}
+
+// IncomingSignals returns signals addressed to self this tick.
+// Populated from the world's pendingSignals buffer, which is filled during the
+// PREVIOUS tick's apply phase (by applySignal for SignalVote broadcasts).
+func (s *WorldSnapshot) IncomingSignals(self core.AgentID) []core.Signal {
+	return s.w.pendingSignals[self]
+}
+
+// sortedAgentIDsMap returns the sorted AgentID keys of a map[*Agent] (D12).
+func sortedAgentIDsMap(m map[core.AgentID]*agent.Agent) []core.AgentID {
+	keys := make([]core.AgentID, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return string(keys[i]) < string(keys[j])
+	})
+	return keys
+}
+
+// sortedDimKeys returns the sorted Dimension keys of a map (D12).
+func sortedDimKeys(m map[core.Dimension]float64) []core.Dimension {
+	keys := make([]core.Dimension, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return string(keys[i]) < string(keys[j])
+	})
+	return keys
 }

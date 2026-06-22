@@ -1024,6 +1024,132 @@ func TestLoad_FromInjectedReaders(t *testing.T) {
 	}
 }
 
+// ── AC: UpdateConditionalNeeds (BLOCKER-1) ───────────────────────────────────
+
+func TestUpdateConditionalNeeds_NoThreatDecays(t *testing.T) {
+	reg := mustLoad(t)
+	safety, ok := reg.Def("Safety")
+	if !ok {
+		t.Fatal("Safety not found")
+	}
+	if safety.Kind != Conditional {
+		t.Fatal("Safety should be conditional")
+	}
+
+	tests := []struct {
+		name     string
+		cur      float64
+		decay    float64
+		want     float64
+	}{
+		{name: "already zero", cur: 0, decay: 0.10, want: 0},
+		{name: "below decay", cur: 0.03, decay: 0.10, want: 0},
+		{name: "exact decay", cur: 0.10, decay: 0.10, want: 0},
+		{name: "partial decay", cur: 0.50, decay: 0.10, want: 0.40},
+		{name: "large decay", cur: 0.50, decay: 0.60, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := safety.UpdateConditionalNeeds(tt.cur, nil, 0.20, tt.decay)
+			if got != tt.want {
+				t.Errorf("UpdateConditionalNeeds(%v, nil, 0.20, %v) = %v, want %v", tt.cur, tt.decay, got, tt.want)
+			}
+			// Empty slice should behave same as nil.
+			got2 := safety.UpdateConditionalNeeds(tt.cur, []core.AgentID{}, 0.20, tt.decay)
+			if got2 != tt.want {
+				t.Errorf("UpdateConditionalNeeds(%v, [], 0.20, %v) = %v, want %v", tt.cur, tt.decay, got2, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateConditionalNeeds_ThreatRises(t *testing.T) {
+	reg := mustLoad(t)
+	safety, ok := reg.Def("Safety")
+	if !ok {
+		t.Fatal("Safety not found")
+	}
+
+	tests := []struct {
+		name     string
+		cur      float64
+		threats  []core.AgentID
+		gain     float64
+		want     float64
+	}{
+		{name: "one threat", cur: 0, threats: []core.AgentID{"B"}, gain: 0.20, want: 0.20},
+		{name: "two threats", cur: 0, threats: []core.AgentID{"B", "C"}, gain: 0.20, want: 0.40},
+		{name: "clamp at 1", cur: 0.90, threats: []core.AgentID{"B", "C", "D"}, gain: 0.10, want: 1.0},
+		{name: "already at cap", cur: 1.0, threats: []core.AgentID{"B"}, gain: 0.20, want: 1.0},
+		{name: "high gain clamp", cur: 0.80, threats: []core.AgentID{"B"}, gain: 0.50, want: 1.0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := safety.UpdateConditionalNeeds(tt.cur, tt.threats, tt.gain, 0.05)
+			if got != tt.want {
+				t.Errorf("UpdateConditionalNeeds(%v, %v, %v, 0.05) = %v, want %v", tt.cur, tt.threats, tt.gain, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateConditionalNeeds_OrderIndependent(t *testing.T) {
+	reg := mustLoad(t)
+	safety, ok := reg.Def("Safety")
+	if !ok {
+		t.Fatal("Safety not found")
+	}
+
+	// Different order should produce same result.
+	b1 := safety.UpdateConditionalNeeds(0, []core.AgentID{"B", "C"}, 0.20, 0.05)
+	b2 := safety.UpdateConditionalNeeds(0, []core.AgentID{"C", "B"}, 0.20, 0.05)
+	if b1 != b2 {
+		t.Errorf("order-dependent: %v != %v", b1, b2)
+	}
+
+	// Same inputs twice → same result (pure function).
+	r1 := safety.UpdateConditionalNeeds(0.50, []core.AgentID{"B"}, 0.20, 0.05)
+	r2 := safety.UpdateConditionalNeeds(0.50, []core.AgentID{"B"}, 0.20, 0.05)
+	if r1 != r2 {
+		t.Errorf("not pure: %v != %v", r1, r2)
+	}
+}
+
+func TestUpdateConditionalNeeds_NoopOnConsumable(t *testing.T) {
+	reg := mustLoad(t)
+	satiety, ok := reg.Def("Satiety")
+	if !ok {
+		t.Fatal("Satiety not found")
+	}
+
+	// For a consumable, UpdateConditionalNeeds returns cur unchanged regardless of threats.
+	got := satiety.UpdateConditionalNeeds(0.50, []core.AgentID{"B"}, 0.20, 0.05)
+	if got != 0.50 {
+		t.Errorf("consumable should return cur unchanged, got %v", got)
+	}
+
+	got2 := satiety.UpdateConditionalNeeds(0.50, nil, 0.20, 0.05)
+	if got2 != 0.50 {
+		t.Errorf("consumable should return cur unchanged for empty threats, got %v", got2)
+	}
+}
+
+func TestUpdateConditionalNeeds_MonotonicInThreatCount(t *testing.T) {
+	reg := mustLoad(t)
+	safety, ok := reg.Def("Safety")
+	if !ok {
+		t.Fatal("Safety not found")
+	}
+
+	// More threats should never decrease the result.
+	r0 := safety.UpdateConditionalNeeds(0, nil, 0.20, 0.05)
+	r1 := safety.UpdateConditionalNeeds(0, []core.AgentID{"B"}, 0.20, 0.05)
+	r2 := safety.UpdateConditionalNeeds(0, []core.AgentID{"B", "C"}, 0.20, 0.05)
+	if !(r0 <= r1 && r1 <= r2) {
+		t.Errorf("not monotonic: %v <= %v <= %v is false", r0, r1, r2)
+	}
+}
+
 // ── AC: Unknown need rejection ────────────────────────────────────────────────
 
 func TestRegistry_RejectsUnknown(t *testing.T) {

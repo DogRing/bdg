@@ -165,9 +165,10 @@ gates:
 	}
 
 	plannerCfg := planner.PlannerConfig{
-		Budget:           planner.Budget{MaxDepth: 6, MaxActions: 16, MaxNodes: 256},
-		BaseHorizonTicks: 720,
-		UrgencyThreshold: 0.65,
+		Budget:             planner.Budget{MaxDepth: 6, MaxActions: 16, MaxNodes: 256},
+		BaseHorizonTicks:   720,
+		UrgencyThreshold:   0.65,
+		LookaheadThreshold: 0.4, // content/balance.yaml intelligence.lookahead_threshold (P5)
 		TagCosts: map[core.Tag]float64{
 			"effort:low": 0.20, "effort:med": 0.50, "effort:none": 0.0,
 		},

@@ -18,9 +18,11 @@ world:
   real_scale: 12                  # 24 game-hours = 2 real-hours
   day_minutes: 1440               # 24 * 60
   spatial_hash_cell: 8.0          # spatial-hash cell edge (world units); ~ avg perception radius
-  reliance_threshold: 0.5         # share ∈ (0,1] of agents pointing at one RelyOn holder → RoleEmerged (D2)
+  # reliance_threshold RETIRED in P6 → see politics.role_convergence_threshold
   outcome_difficulty_base: 50.0   # Real Stat level at which an action succeeds with neutral effort
   backup_every_ticks: 60          # emit SnapshotReady every N ticks (platform/persist handles the write)
+  plan_interval: 1                # agents per planning slice; 1 = all agents plan every tick. Higher spreads planner load across ticks.
+  prune_threshold: 0              # max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune
 perception:
   sight_radius: 18.0              # line-of-sight range (world units); engine/perception Sight
   smell_radius: 10.0              # scent-gradient falloff range; engine/perception Smell
@@ -43,6 +45,7 @@ needs:
   Hydration: { decay_per_tick: 0.00110, satisfaction_threshold: 0.50 }  # thirst grows faster than hunger
   Rest:      { decay_per_tick: 0.00045, satisfaction_threshold: 0.45 }  # fatigue accrues over a waking day
   Social:    { decay_per_tick: 0.00020, satisfaction_threshold: 0.30 }  # slow social need; drives trade / signal
+  Comfort:   { decay_per_tick: 0.00120, satisfaction_threshold: 0.35 }  # comfort deficit; drives social care actions
 
 # ── Value arbitration weights (read by engine/values; data-driven, D10) ──────────
 # Per-Dimension tunable weight used by Priority(d) = Salience(d) × weight(d). engine/values
@@ -120,9 +123,23 @@ gates:
 # ── Coping cascade (P3) ──────────────────────────────────────────────────────────
 coping:
   rebind_min_intelligence: 0.4    # < this → skip Rebinding, go directly to Latent (D8 object-fixation)
+                                  # DEPRECATED (P5): moved to intelligence.rebind_threshold; kept here
+                                  # only for backward fallback — platform/config warns and prefers the
+                                  # new key.
   apathy_fail_streak: 3           # Latent → Apathy at this FailStreak
   apathy_recover_mood: 0.15       # Mood += this on Apathy→Idle recovery
   apathy_budget_penalty: 0.5      # planner budget × (1−this) while Apathy
+
+# ── Intelligence thresholds (P5; read by engine/planner + engine/agent + engine/values) ──
+# Governs three distinct Intelligence-gated branches, all injected (D10).
+intelligence:
+  lookahead_threshold: 0.4        # planner: perceived Intel (normalized [0,1]) BELOW this → skip
+                                  # forward-sim entirely (no provisioning subgoals). At/above:
+                                  # gradual horizon formula applies (engine/planner §Lookahead).
+  rebind_threshold: 0.4           # agent: perceived Intel BELOW this → skip Rebinding, go Latent
+                                  # (D8 object-fixation; replaces coping.rebind_min_intelligence).
+  other_intel_threshold: 0.5      # values: perceived Intel BELOW this → Other-referent uses mood
+                                  # proxy; at/above → uses unmet-need estimate (engine/values P5).
 
 # ── Planning / arbitration ──────────────────────────────────────────────────────
 planning:
@@ -145,6 +162,8 @@ forward_sim:
 #   base_horizon_ticks  — forward-sim base lookahead; the Intelligence-gated horizon is
 #                         floor(base_horizon_ticks × perceived_intelligence / max_intelligence),
 #                         clamped to a minimum of 1 tick (D9 provisioning foresight, scenario H).
+#                         Below intelligence.lookahead_threshold the horizon is HARD-SET to 0 and
+#                         forward-sim is skipped entirely (engine/planner §Lookahead, P5).
 #   tag_costs.<Tag>     — per-Tag additive cost weight; cost(action) = Σ tag_costs[tag] over its
 #                         tags (D4). Tie-breaker among equal-Priority, equal-depth candidates
 #                         (lower cost wins; remaining ties break by lexicographic ActionID, D12).
@@ -181,6 +200,31 @@ salience:
   proximity_gain: 0.5             # perceptual proximity boost to EffValue
   proximity_falloff: 12.0         # world-units e-folding distance for proximity salience
 
+# ── Threat perception (P5; read by engine/agent hostile-tag detection + collective appraisal) ─
+threats:
+  hostile_tags:                   # Tags on perceived signals/entities that trigger Safety goal
+    - "violent:high"              # insertion (engine/agent phase 1). Resolved by platform/config
+    - "hostile"                   # into Config.ThreatTags; engine/agent never branches on literals.
+    - "encroach"
+    - "norm:transgressive"        # P6: covert transgressive acts (Take) also register as threats
+  safety_threat_threshold: 0.30   # when collective Safety mean drops below this, defensive goal fires
+  per_threat_intensity: 0.20      # P6 BLOCKER-1: Safety intensity added per perceived threat (UpdateConditionalNeeds)
+  safety_decay: 0.05              # P6 BLOCKER-1: Safety intensity removed per tick with no threat (UpdateConditionalNeeds)
+
+# ── Social bond tuning (P5; read by engine/agent Other-referent appraisal) ──────────
+social:
+  bond_affinity_gain: 0.20          # base weight multiplier: 1 + Affinity * this; amplifies care for close others
+  min_care_threshold: 0.3           # Affinity below this: Other is not "cared-for"; referent appraisal skipped
+
+# ── Trade signalling (P5; read by engine/agent Offer-signal emission) ─────────────
+# The deceptive-claim band. ClaimedValue is inflated inversely with perceived Honesty
+# (D8: reads ToM[self] Honesty). A fully-honest agent claims the floor; a fully-dishonest
+# agent inflates to the ceiling — engine/agent hardcodes neither bound (D10):
+#   ClaimedValue = claim_inflate_min + (1 − honesty)·(claim_inflate_max − claim_inflate_min)
+trade:
+  claim_inflate_min: 0.50         # claim floor: a fully-honest agent (perceived Honesty=1) claims this
+  claim_inflate_max: 0.90         # claim ceiling: a fully-dishonest agent (perceived Honesty=0) inflates to this
+
 # ── Resource regrowth (game-minutes) ────────────────────────────────────────────
 regen:
   berry_bush: 480                 # a depleted bush regrows in ~8 game-hours
@@ -199,3 +243,24 @@ values:
     Standing:   0.60
     Openness:   0.40
     Social:     0.80
+    Comfort:    0.70
+
+  # P5: collective referent aggregation mode. "mean" = average across village members;
+  # "min" = use the minimum safety across members (the least-suffering member drives evaluation).
+  collective_aggregation_mode: "min"
+
+# ── Politics & emergent institutions (P6) ────────────────────────────────────────
+# Reliance (RelyOn) accretion, delegation Votes, role detection, and social Influence.
+# A "role" is the EMERGENT cluster of RelyOn edges over a Function — there is NO role type (D2).
+# read by: engine/world (role_convergence_threshold) · engine/agent (the rest) · engine/tom (Influence application).
+politics:
+  role_convergence_threshold: 0.5   # share ∈ (0,1] of agents relying on one holder for a Function →
+                                    #   engine/world emits RoleEmerged on the rising edge. Supersedes
+                                    #   the retired world.reliance_threshold placeholder.
+  influence_weight: 0.5             # reflection ratio: signalWeight = trust·(1 + influence_weight·Influence);
+                                    #   a high-Influence source shifts a receiver's ToM more (0 = off).
+  rely_cost_threshold: 1.2          # plan cost above which a Function counts "self-unsolvable" → RelyOn forms
+  relyon_delta: 0.15                # δ added to RelyOn[function] toward the chosen provider on self-failure
+  vote_rely_threshold: 0.4          # private reliance strength that licenses emitting a Vote
+  vote_urgency_threshold: 0.15      # distributed urgency above which an agent emits a Vote; single threat × 0.20 intensity = 0.20 > 0.15
+  vote_relyon_delta: 0.10           # δ a heard Vote folds into the receiver's RelyOn toward the voted holder

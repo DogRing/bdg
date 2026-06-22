@@ -1,0 +1,30 @@
+[
+  {
+    "params": {
+      "gossip_alpha": 0.1,
+      "conscience_urgency_threshold": 0.6
+    },
+    "seeds": [
+      {
+        "seed": 1,
+        "crime_rate": 0,
+        "reputation_variance": 0,
+        "role_convergence": false,
+        "safety_mean": 0,
+        "starvation_concentration": 0,
+        "total_actions": 17,
+        "transgressive_actions": 0
+      }
+    ],
+    "avg": {
+      "seed": 0,
+      "crime_rate": 0,
+      "reputation_variance": 0,
+      "role_convergence": false,
+      "safety_mean": 0,
+      "starvation_concentration": 0,
+      "total_actions": 17,
+      "transgressive_actions": 0
+    }
+  }
+]

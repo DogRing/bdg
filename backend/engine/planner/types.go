@@ -39,6 +39,11 @@ type PlannerConfig struct {
 	BaseHorizonTicks int                  // forward-sim base lookahead (planner.base_horizon_ticks)
 	TagCosts         map[core.Tag]float64 // per-Tag cost weight (planner.tag_costs.<Tag>)
 	UrgencyThreshold float64              // gate-relaxation trigger (planner.urgency_threshold)
+
+	// LookaheadThreshold is the P5 hard-gate: below this perceived Intelligence
+	// fraction, forward-sim is completely skipped (no provisioning subgoals).
+	// Injected from balance.yaml intelligence.lookahead_threshold. Default 0.4.
+	LookaheadThreshold float64
 }
 
 // ── Inputs (read-only per Plan call) ───────────────────────────────────────────

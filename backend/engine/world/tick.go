@@ -2,6 +2,7 @@ package world
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/dogring/bdg/engine/actions"
 	"github.com/dogring/bdg/engine/agent"
@@ -19,19 +20,63 @@ import (
 // and event sequence.
 func (w *World) Tick() {
 	// ── Phase 1: READ (snapshot) ──────────────────────────────────────────
+	// Clear pending signals from the previous tick before taking the snapshot.
+	// The snapshot freezes the cleared state; signals collected in this tick's
+	// apply phase will be available through the NEXT tick's snapshot.
+	w.pendingSignals = make(map[core.AgentID][]core.Signal)
 	w.currentSnap = newSnapshot(w)
 
 	// ── Phase 2: PLAN (per-agent Tick, read-only on shared state) ─────────
 	// Advance root RNG once for this tick's plan phase (deterministic anchor).
 	planSeed := int64(w.rootRNG.Float64() * 1e15)
 
-	var allIntents []agent.Intent
+	// Pre-allocate with estimated capacity (2 intents per agent is a safe upper bound).
+	allIntents := make([]agent.Intent, 0, len(w.agentIDs)*2)
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	// Iterate w.agentIDs (sorted, D12) to assign goroutines. Each goroutine
+	// resolves its own agent reference from w.agents (read-only map access).
 	for i, agentID := range w.agentIDs {
-		a := w.agents[agentID]
-		fork := rng.New(planSeed + int64(i))
-		intents := a.Tick(w.currentSnap, w.tick, fork, w.svc, w.emit)
-		allIntents = append(allIntents, intents...)
+
+		// Time slicing (plan_interval): when PlanInterval > 1, only a subset
+		// of agents plan each tick. Agents outside the current slice still
+		// advance their current durative action by calling a.Tick (which is
+		// read-only on shared state) but with a cheaper path (no replan).
+		// The subset is: (i % PlanInterval) == (tick % PlanInterval).
+		if w.cfg.PlanInterval > 1 && (i%w.cfg.PlanInterval) != (int(w.tick)%w.cfg.PlanInterval) {
+			// This agent is outside the current planning slice.
+			// Call a.Tick as normal — the agent will still execute its current
+			// action (phase 6 of the agent loop) even if it doesn't replan.
+			// Determinism preserved: same RNG fork regardless of slicing, so
+			// an agent's own Tick outcome is independent of which tick slot it
+			// occupies.
+			wg.Add(1)
+			go func(agentID core.AgentID, idx int) {
+				defer wg.Done()
+				fork := rng.New(planSeed + int64(idx))
+				intents := w.agents[agentID].Tick(w.currentSnap, w.tick, fork, w.svc, w.emit)
+				mu.Lock()
+				allIntents = append(allIntents, intents...)
+				mu.Unlock()
+			}(agentID, i)
+			continue
+		}
+
+		// Full planning path (or PlanInterval == 1, the default).
+		wg.Add(1)
+		go func(agentID core.AgentID, idx int) {
+			defer wg.Done()
+			fork := rng.New(planSeed + int64(idx))
+			intents := w.agents[agentID].Tick(w.currentSnap, w.tick, fork, w.svc, w.emit)
+			mu.Lock()
+			allIntents = append(allIntents, intents...)
+			mu.Unlock()
+		}(agentID, i)
 	}
+
+	wg.Wait()
 
 	// ── Phase 3: COLLECT (stable-sort by AgentID, D12) ────────────────────
 	sort.SliceStable(allIntents, func(i, j int) bool {
@@ -83,7 +128,14 @@ func (w *World) Tick() {
 	// ── Post-apply ────────────────────────────────────────────────────────
 	w.tick++
 	w.currentSounds = newSounds
+	// P3: record this tick's resource-conflict losers → winners, for the NEXT
+	// tick's plan phase to surface via WorldView.ResentmentTriggers.
+	w.resentmentTriggers = w.conflictResentmentTriggers(allIntents, conflictGroups)
 	w.relianceScan()
+
+	// ToM prune: remove stale beliefs (memory bounding for long runs).
+	// Never prunes if PruneThreshold == 0 (current behaviour).
+	w.pruneToMBeliefs()
 
 	// Emit TickDone.
 	w.emitTickDone()
@@ -91,6 +143,24 @@ func (w *World) Tick() {
 	// Emit SnapshotReady every BackupEveryTicks ticks.
 	if w.cfg.BackupEveryTicks > 0 && int(w.tick)%w.cfg.BackupEveryTicks == 0 {
 		w.emitSnapshotReady()
+	}
+}
+
+// pruneToMBeliefs prunes stale ToM beliefs for every agent. Never prunes
+// self-belief (D8). Skips if PruneThreshold == 0 (default = never prune).
+func (w *World) pruneToMBeliefs() {
+	if w.cfg.PruneThreshold <= 0 {
+		return
+	}
+	maxAge := core.Tick(w.cfg.PruneThreshold)
+	// Keep at least 5 beliefs for social context.
+	const minKeep = 5
+	for _, agentID := range w.agentIDs {
+		a := w.agents[agentID]
+		if a == nil {
+			continue
+		}
+		a.ToM.PruneBeliefs(w.tick, maxAge, minKeep)
 	}
 }
 
@@ -124,8 +194,31 @@ func (w *World) isConflictLoser(i int, intent agent.Intent, groups map[conflictK
 	if !ok || len(indices) <= 1 {
 		return false // no conflict
 	}
+	return i != w.conflictWinnerIdx(indices, allIntents)
+}
 
-	// Find the winner among the group.
+// conflictResentmentTriggers maps each resource-conflict loser to the winner(s)
+// that beat them this tick (P3). The world reports a trigger for EVERY loser;
+// only Latent agents act on it (agent.accrueResentment — separation of D2/D5).
+// Deterministic: built in allIntents order (already AgentID-sorted), winners via
+// conflictWinnerIdx (D12). Returns an empty map when no conflicts occurred.
+func (w *World) conflictResentmentTriggers(allIntents []agent.Intent, groups map[conflictKey][]int) map[core.AgentID][]core.AgentID {
+	triggers := make(map[core.AgentID][]core.AgentID)
+	for i, intent := range allIntents {
+		if !w.isConflictLoser(i, intent, groups, allIntents) {
+			continue
+		}
+		indices := groups[conflictKey(intent.Target)]
+		winner := allIntents[w.conflictWinnerIdx(indices, allIntents)].Agent
+		triggers[intent.Agent] = append(triggers[intent.Agent], winner)
+	}
+	return triggers
+}
+
+// conflictWinnerIdx returns the index (into allIntents) of the winner among a
+// conflict group. Winner: highest relevant Real Stat; tie-break by lower
+// AgentID (D12). Pure over the group ordering, so the verdict is deterministic.
+func (w *World) conflictWinnerIdx(indices []int, allIntents []agent.Intent) int {
 	winnerIdx := indices[0]
 	winnerStat := w.conflictStat(allIntents[winnerIdx])
 
@@ -143,7 +236,7 @@ func (w *World) isConflictLoser(i int, intent agent.Intent, groups map[conflictK
 		}
 	}
 
-	return i != winnerIdx
+	return winnerIdx
 }
 
 // conflictStat returns the relevant Real Stat for conflict resolution.
@@ -356,18 +449,31 @@ func (w *World) applyIntent(intent agent.Intent, outcome agent.ActionOutcome, so
 
 // ── Trade signal handling (P2) ────────────────────────────────────────────────
 
-// applySignal processes an IntentSignal for trade actions, updating ToM and
-// emitting trade events. Offer signals store a pending offer; Accept/Reject
-// resolve it and fire the appropriate RecordTrade* calls.
+// applySignal processes an IntentSignal for trade actions and P6 Vote signals,
+// updating ToM and emitting events. Trade signals (Offer/Accept/Reject) are
+// directed at a specific receiver (sig.Toward); Vote signals are broadcast to
+// every agent.
 func (w *World) applySignal(intent agent.Intent) {
 	sig := intent.Signal
-	if sig == nil || sig.Toward == "" {
+	if sig == nil {
 		return
 	}
 
 	senderID := intent.Agent
-	receiverID := core.AgentID(sig.Toward)
+	tick := w.tick
 
+	// Handle Vote signals separately — they broadcast, not directed at one receiver.
+	if sig.Kind == "Vote" {
+		w.applyVoteSignal(senderID, sig, tick)
+		return
+	}
+
+	// Trade signals: require a specific receiver.
+	if sig.Toward == "" {
+		return
+	}
+
+	receiverID := core.AgentID(sig.Toward)
 	receiver := w.agents[receiverID]
 	if receiver == nil {
 		return
@@ -376,8 +482,6 @@ func (w *World) applySignal(intent agent.Intent) {
 	if sender == nil {
 		return
 	}
-
-	tick := w.tick
 
 	switch sig.Kind {
 	case "Offer":
@@ -415,6 +519,65 @@ func (w *World) applySignal(intent agent.Intent) {
 		}
 
 		w.emitTradeEvent(senderID, receiverID, "TradeRejected", 0, tick)
+	}
+}
+
+// applyVoteSignal processes a Vote signal by broadcasting it to all agents.
+// For each receiver agent (excluding the voter), it:
+//  1. Directly adjusts the receiver's RelyOn toward the voted holder via AdjustRelyOn
+//  2. Stores the signal in pendingSignals for agent-level processing (IncomingSignals)
+//
+// The voted holder is sig.Target; the delegated Function is sig.Function.
+// The delta applied is from the world's config (VoteRelyOnDelta).
+func (w *World) applyVoteSignal(senderID core.AgentID, sig *agent.Signal, tick core.Tick) {
+	votedHolder := sig.Target
+	if votedHolder == "" {
+		return
+	}
+	fn := sig.Function
+	if fn == "" {
+		return
+	}
+
+	// Build the core.Signal for pendingSignals.
+	coreSig := core.Signal{
+		Kind:      core.SignalVote,
+		Intensity: sig.Intensity,
+		Function:  fn,
+		Source:    senderID,
+		Target:    votedHolder,
+	}
+
+	// Emit a VoteEvent for observability.
+	w.emit.Emit(core.Event{
+		SchemaVersion: 1,
+		Tick:          tick,
+		AgentID:       senderID,
+		Type:          "VoteEmitted",
+		Payload: map[string]any{
+			"voter":  string(senderID),
+			"target": string(votedHolder),
+			"function": string(fn),
+			"intensity": sig.Intensity,
+		},
+	})
+
+	// Broadcast to all agents (excluding the voter).
+	for _, agentID := range w.agentIDs {
+		if agentID == senderID {
+			continue
+		}
+		receiver := w.agents[agentID]
+		if receiver == nil {
+			continue
+		}
+
+		// Directly adjust RelyOn toward the voted holder using the receiver's
+		// configured VoteRelyOnDelta.
+		receiver.ToM.AdjustRelyOn(votedHolder, fn, receiver.Cfg.VoteRelyOnDelta)
+
+		// Store in pendingSignals for agent-level processing (IncomingSignals).
+		w.pendingSignals[agentID] = append(w.pendingSignals[agentID], coreSig)
 	}
 }
 

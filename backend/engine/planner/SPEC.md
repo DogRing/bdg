@@ -1,7 +1,12 @@
 # SPEC — `engine/planner`
 
-> Status: `DRAFT`
+> Status: `P5`
 > Leaf level: `L4`  ·  Owner agent: `<filled by implementer>`
+>
+> (P6 Blocker Group A — Blocker 3: documents that `owned_by_other` is a **world-state fact**
+> injected into `AgentSnapshot.SatisfiedFacts` by the execution layer, NOT an action producer
+> [so `Take` becomes reachable], and that `Attack` must produce a **goal-satisfying** predicate
+> [`has_Safety`] so a Safety goal can reach it. See "World-state facts" and the new ACs.)
 
 ## Purpose
 
@@ -52,6 +57,10 @@ type PlannerConfig struct {
     BaseHorizonTicks int                  // forward-sim base lookahead (planner.base_horizon_ticks)
     TagCosts         map[core.Tag]float64 // per-Tag cost weight (planner.tag_costs.<Tag>)
     UrgencyThreshold float64              // gate-relaxation trigger (planner.urgency_threshold)
+
+    LookaheadThreshold float64 // balance.yaml intelligence.lookahead_threshold — below this,
+                               // forward-sim is completely skipped (no provisioning subgoals).
+                               // Default 0.4.
 }
 
 // ── Inputs (read-only per Plan call) ────────────────────────────────────────────
@@ -64,9 +73,18 @@ type AgentSnapshot struct {
     Pos             core.Vec2                // current position (for distance-aware cost / MoveTo)
     CurrentStats    core.Stats               // the agent's stat vector (for reference; decisions use SelfModel, D8)
     SelfModel       tom.Belief               // ToM[self]: the self-belief (EstStats means) used for gate eval + horizon (D8)
-    NeedIntensities map[core.Dimension]float64 // current GROWN intensity per consumable dimension (higher = worse)
+    NeedIntensities map[core.Dimension]float64 // current GROWN intensity per dimension (higher = worse), incl. driven Safety
     Known           map[core.ObjectID]struct{} // objects this agent knows of (planner known-check)
-    Urgency         float64                  // max Salience across all Dimensions (drives relaxation)
+    Urgency         float64                  // max Priority across referents / max_priority (drives relaxation)
+
+    // SatisfiedFacts are the WORLD-STATE predicates that already hold for this agent THIS TICK,
+    // injected by the caller (engine/agent's replan). They seed the GOAP/HTN precondition check:
+    // a predicate in SatisfiedFacts needs NO producer action prepended (it is already true). These
+    // are facts about the world the agent is standing in — NOT facts an action produced — e.g.
+    // `near_other` (an agent is within interaction radius), `tradeOffered` (a pending Offer exists),
+    // and `owned_by_other` (a nearby agent holds items the agent could Take). See "World-state
+    // facts" below. The slice is caller-owned and never mutated/retained by the planner.
+    SatisfiedFacts []core.Pred
 }
 
 // DimensionPriority is one row of the Priority-ordered goal list produced by engine/values.
@@ -87,9 +105,6 @@ type Plan struct {
 }
 
 // Trace is the why-trace breakdown for one Plan call (data-contracts §4 PlanBuilt / GoalSelected).
-// It records the selected goal dimension, the competing candidate actions with their cost, the
-// gate verdicts consulted, whether relaxation was applied, and the provisioned dimensions. The
-// caller (engine/agent) emits this via core.EventEmitter; the planner does not emit (no IO).
 type Trace struct {
     GoalDim      core.Dimension
     Candidates   []Candidate     // competing producers considered for the root goal, in ActionID order
@@ -149,40 +164,36 @@ var (
 > `tom.Belief` is the self/other belief model the `engine/tom` SPEC exposes (its `Belief` type,
 > `= ToM[X]`, with `EstStats map[core.StatID]tom.StatDist`). The planner reads ONLY the
 > per-stat estimate means from `SelfModel` (the agent's self-belief, `ToM[self]`) for gate
-> evaluation and the horizon calc; it never mutates it. The planner accepts `tom.Belief`
-> directly — `engine/tom` is NOT modified to add an alias (see Open Questions).
+> evaluation and the horizon calc; it never mutates it.
 
 ## Dependencies
 
 - `engine/core` — `ActionID`, `Tag`, `Pred`, `Dimension`, `Vec2`, `ObjectID`, `Stats`, `Tick`.
-- `engine/stats` — `*Registry` (stat `[Min,Max]` for the Intelligence horizon `max_intelligence`;
-  `IDs()` order for any stat iteration), `Stats`.
+- `engine/stats` — `*Registry` (stat `[Min,Max]` for the Intelligence horizon; `IDs()` order),
+  `Stats`.
 - `engine/gates` — `*Registry`, `Evaluate(Action, AgentSnapshot) Result`, `gates.AgentSnapshot`,
-  `gates.Action` (the planner adapts its own `AgentSnapshot` + a candidate `ActionDef` into the
-  gate-side shapes; gates do NOT import actions — the planner mediates, architecture §4).
+  `gates.Action`.
 - `engine/needs` — `*Registry`, `Def`, and the pure forward-roll helpers `Def.Demand`,
-  `Def.BreachAt`, `Def.Level` (D9 forward-sim provisioning math lives in `needs`; the planner only
-  *calls* it and decides whether to insert a subgoal).
+  `Def.BreachAt`, `Def.Level` (D9 forward-sim provisioning math lives in `needs`).
 - `engine/actions` — `*Registry`, `ActionDef`, `Producers(pred) []ActionID` (GOAP reverse index),
-  `Effect` (to estimate a producer's contribution to a dimension during forward-sim).
+  `Effect`.
 - `engine/values` — `Priority`, `Salience` (the scalar types carried in `DimensionPriority`).
-  The planner consumes the already-computed appraisals; it never recomputes Standing/Salience (D5).
-- `engine/tom` — `Belief` (the `SelfModel` shape = `ToM[self]`; the planner reads its
-  `EstStats[<Intelligence>].Mean` for gate eval + horizon, D8). No `engine/tom` change required.
+- `engine/tom` — `Belief` (the `SelfModel` shape = `ToM[self]`). No `engine/tom` change required.
 - `engine/rng` — `*RNG` (injected, D12) for configured tie-breaking only.
 - **Contract**: `content/balance.yaml` `planner:` block (`budget.*`, `base_horizon_ticks`,
-  `tag_costs.*`, `urgency_threshold`) supplies `PlannerConfig`, injected by the caller via
-  `platform/config`. The planner hardcodes no constant (D10). Schema:
-  `content/schema/balance.schema.json` `planner` object.
+  `tag_costs.*`, `urgency_threshold`) plus the `intelligence.lookahead_threshold` scalar (P5)
+  supplies `PlannerConfig`. **`content/actions.yaml`** supplies the action catalog incl. the
+  `requires`/`produces` predicate wiring this SPEC's Blocker-3 notes reference (`Take` requires
+  `owned_by_other`; `Attack` produces `has_Safety` — see "World-state facts" + "Transgressive
+  reachability"). The planner hardcodes no constant (D10).
 
 ## Owned Data
 
 - The `Planner`, `Budget`, `PlannerConfig`, `Plan`, `Trace`, `Candidate`, `AgentSnapshot`,
   `DimensionPriority` value types and all search logic.
 - The `Planner` holds **borrowed** read-only registry pointers and a **copied** config (with a
-  precomputed sorted `[]core.Tag` of the `TagCosts` keys for D12 iteration). It mutates none of
-  its inputs. `AgentSnapshot`, `values`, and `rng` are caller-owned; `Plan` never retains them.
-- A `Plan`/`Trace` returned to the caller is freshly allocated each call (owned by the caller).
+  precomputed sorted `[]core.Tag` of the `TagCosts` keys for D12 iteration). `AgentSnapshot`
+  (incl. `SatisfiedFacts`), `values`, and `rng` are caller-owned; `Plan` never retains them.
 
 ## Planning model
 
@@ -192,287 +203,228 @@ The planner combines three mechanisms in one `Plan` call. The order is: select t
 
 ### 1. GOAP backward chaining
 
-- Start from the **highest-Priority** `Dim` in `values` (the first row after the defensive
-  Priority-desc, ActionID-tiebreak sort).
+- Start from the **highest-Priority** `Dim` in `values`.
 - Map the goal dimension to its satisfaction predicate(s) and use
-  `actions.Registry.Producers(pred) []core.ActionID` (the reverse index, glossary
-  `Producers map[Pred][]Action`) to enumerate candidate producer actions, **in `IDs()` order**.
-- For each candidate, evaluate its gate visibility via `gates.Registry.Evaluate(act, snap)`,
-  where `snap.SelfStats = SelfModel`'s stat means (D8 — the agent acts on its self-model, not
-  ground truth). A candidate with `Result.Visible == false` is rejected (unless relaxed — see §
-  "Dynamic visibility").
-- Among visible candidates, select the **shallowest** sequence that satisfies the root goal;
-  ties at equal depth are broken by **lower tag-derived cost**, then by **lexicographic
-  `ActionID`** (D12). The chosen producer becomes the plan's goal action (appended last).
+  `actions.Registry.Producers(pred) []core.ActionID` to enumerate candidate producer actions, **in
+  `IDs()` order**. The dimension→predicate mapping is the convention `has_<Dimension>` (e.g.
+  `Satiety` → `has_Satiety`, `Safety` → `has_Safety`); a producer of that predicate satisfies the
+  goal.
+- For each candidate, evaluate its gate visibility via `gates.Registry.Evaluate(act, snap)`. A
+  candidate with `Result.Visible == false` is rejected (unless relaxed — see § "Dynamic
+  visibility").
+- Among visible candidates, select the **shallowest** sequence; ties at equal depth break by
+  **lower tag-derived cost**, then by **lexicographic `ActionID`** (D12).
 
 ### 2. HTN forward decomposition
 
 - After choosing the goal action, check its preconditions: `ActionDef.Requires` (ALL must hold)
-  and `ActionDef.RequiresAny` (ANY satisfies). A precondition predicate holds if the agent state
-  satisfies it; an unmet predicate triggers a recursive GOAP step.
-- For each unmet predicate, find a producer (`Producers(pred)`) and recurse — the producer's own
-  preconditions are decomposed the same way. Prerequisite actions are **prepended** before the
-  goal action, yielding `[…prereqs…, goalAction]`.
-- Decomposition is an **emergent ordered sequence**, NOT a hand-defined task network. There is
-  **no** `Method`/`Task`/`Subtask` type anywhere in this module (D3) — the only structure is the
-  flat `Producers` reverse index from `engine/actions`.
+  and `ActionDef.RequiresAny` (ANY satisfies). A precondition predicate **holds** if it is in
+  `AgentSnapshot.SatisfiedFacts` (a world-state fact, § "World-state facts") OR a producer for it
+  is found and recursively decomposed; an unmet predicate with no producer makes the candidate
+  unreachable.
+- For each unmet predicate, find a producer (`Producers(pred)`) and recurse. Prerequisite actions
+  are **prepended** before the goal action, yielding `[…prereqs…, goalAction]`.
+- Decomposition is an **emergent ordered sequence**, NOT a hand-defined task network (D3).
 - Recursion is bounded by `Budget.MaxDepth`; expanded GOAP nodes by `Budget.MaxNodes`; final plan
-  length by `Budget.MaxActions`. Hitting any cap returns `ErrBudgetExceeded` (§ Budget).
+  length by `Budget.MaxActions`.
+
+### World-state facts (`SatisfiedFacts`, incl. `owned_by_other`) — Blocker 3
+
+Some preconditions are not produced by any action — they are **facts about the world the agent is
+currently standing in**. The caller (`engine/agent`'s `replan`) injects these into
+`AgentSnapshot.SatisfiedFacts` each tick by reading the world snapshot; the planner then treats any
+predicate in that slice as already satisfied (no producer needed). The injected world-state facts
+are:
+
+| Predicate        | Injected when … (world condition the caller checks)                                  |
+|------------------|--------------------------------------------------------------------------------------|
+| `near_other`     | an entity tagged `agent` is within `interactionRadius` of the agent.                 |
+| `tradeOffered`   | `world.HasPendingOffer(self)` is true.                                               |
+| `owned_by_other` | a nearby agent (within `interactionRadius`) has a **non-empty Inventory** (it holds items the agent could Take). |
+
+- **`owned_by_other` is a world-state fact, NOT an action producer.** `content/actions.yaml`'s
+  `Take` requires `[at_target, owned_by_other]`, and **no action anywhere `produces:
+  owned_by_other`** — so without this injection the predicate can never enter the fact set and
+  `Take` is permanently unreachable (the diagnosed blocker). The fix is in the **execution layer**
+  (`engine/agent` `replan`, the same place `near_other`/`tradeOffered` are already injected from the
+  world snapshot): when a nearby agent's Inventory is non-empty, append `owned_by_other` to
+  `SatisfiedFacts`. The planner change is purely that `SatisfiedFacts` short-circuits the
+  precondition check (which it already must do for `near_other`/`tradeOffered`).
+- This keeps D2/D3 intact: `owned_by_other` is not a hardcoded "theft" system — it is an ordinary
+  precondition fact derived from world state, and `Take` is an ordinary atomic action the conscience
+  gate hides until Urgency relaxes it (§ "Dynamic visibility").
+- **`at_target`** for `Take` is reached the normal way (a `MoveTo` producer prepended by HTN), same
+  as `Forage`'s `at_target` — it is NOT a world-state fact.
+
+### Transgressive reachability — `Attack` produces `has_Safety` (Blocker 3, design choice)
+
+`content/actions.yaml`'s `Attack` previously produced only `struck`, which satisfies **no** goal
+predicate — so no Priority-ordered goal could ever resolve to `Attack` and the planner had no reason
+to plan it (the diagnosed blocker). **Preferred design choice: option (b) — `Attack` produces
+`has_Safety` (active deterrence).** Attack's `produces` list becomes `[struck, has_Safety]`: striking
+a perceived threat is a way to satisfy the Safety dimension (remove the threat), so a Safety goal
+(raised by the §F threat-perception drive in `engine/agent`) can resolve to `Attack` as one
+high-cost, gated, `norm:transgressive` producer — competing with `Patrol`/`TakeShelter`/`Sleep`
+elsewhere. The conscience + risk gates keep it hidden until Urgency is high enough to relax them
+(scenario B mechanism), so a calm agent never attacks; only a cornered, high-Safety-urgency agent
+sees `Attack` become visible.
+
+- **Why (b) over (a)?** Option (a) (rename `struck` to a new `intimidated` predicate and author an
+  `intimidated`→Safety producer) adds a second predicate and a content indirection for no behavioral
+  gain; (b) reuses the existing `has_<Dimension>` convention the GOAP mapping already understands
+  (`Patrol` already produces `has_Safety`), so `Attack` slots into the Safety producer set with a
+  one-line `content/actions.yaml` edit and no new predicate vocabulary (glossary-clean). `struck`
+  is retained as the world-facing combat-resolution marker (the world reads it to apply damage).
+- **This is a `content/actions.yaml` edit**, not engine code: add `has_Safety` to `Attack.produces`.
+  The planner needs no change — it already enumerates `Producers(has_Safety)`; once `Attack` is in
+  that index it is considered (and gated) like any other Safety producer. (D2/D4: no hardcoded
+  combat system; visibility/cost flow from `Attack`'s tags `violent:high`, `risk:high`,
+  `norm:transgressive`, `effort:high`.)
 
 ### 3. Forward-sim provisioning (D9)
 
-For each **consumable** dimension `d` (`needs.Registry.Kinds(needs.Consumable)`, in `IDs()`
-order), the planner forward-simulates whether `d` will breach its setpoint within the horizon and,
-if so, inserts a provisioning subgoal **before** the current goal action. The provisioning need
-quantity is **derived, never authored** (D9): it is `need-rate × predicted-time`, computed via the
-`engine/needs` helpers — the planner stores no "future need" field.
-
-```
--- Per consumable dimension d, with Def = needs.Registry.Def(d):
-current_intensity(d)    = agent.NeedIntensities[d]            -- grown need (higher = worse)
-satisfaction_threshold(d) = Def.Threshold                     -- setpoint in [0,1]
-current_slack(d)        = satisfaction_threshold(d) - current_intensity(d)
-predicted_deficit(d, horizon) = Def.Demand(horizon_ticks) - current_slack(d)
-                              -- Def.Demand(t) = Rate × t  (engine/needs; the rate × predicted-time rule)
-
-if predicted_deficit(d, horizon) > 0:
-    insert a provisioning subgoal for d  (a producer action satisfying d) BEFORE the goal action
-```
-
-- `horizon_ticks` is the **Intelligence-gated lookahead** (next section). A low-foresight agent
-  (low perceived Intelligence) provisions little or not at all; a high-foresight agent provisions
-  far ahead — this reproduces scenario H (`docs/testing.md` §4) for free.
-- The provisioning producer is chosen by the same GOAP+HTN+cost rules as the goal action.
-- Multiple dimensions may breach; provisioning subgoals are inserted in `needs.IDs()` order
-  (D12), each before the goal action, so the assembled order is deterministic.
+(Unchanged — per consumable dimension `d`, forward-sim whether `d` breaches within the horizon and
+prepend a provisioning subgoal if `predicted_deficit > 0`; quantity = `need-rate × predicted-time`
+via the `engine/needs` helpers; iterate `needs.IDs()` order, D12. When `horizon_ticks == 0` (the
+hard skip below `LookaheadThreshold`) the provisioning loop is not entered.)
 
 ### Intelligence-gated lookahead (forward-sim horizon)
 
-The forward-sim horizon is derived from the agent's **self-perceived** Intelligence — the
-`ToM[self]` mean estimate for the Intelligence stat (D8: the agent acts on its self-model, so a
-self-underestimating agent literally looks less far ahead, and never gets evidence to correct it).
-
-```
-perceived_intelligence = SelfModel mean estimate for the Intelligence StatID  (ToM[self], D8)
-max_intelligence       = stats.Registry.Def(Intelligence).Max
-base_horizon           = PlannerConfig.BaseHorizonTicks   (content/balance.yaml planner.base_horizon_ticks)
-
-horizon_ticks = floor( base_horizon × (perceived_intelligence / max_intelligence) )
-
-if perceived_intelligence == 0:
-    horizon_ticks = 1        -- always look at least 1 tick ahead (minimum viable foresight)
-```
-
-- The Intelligence `StatID` is obtained from `stats.Registry.Kinds(stats.Capability)` /
-  `Registry.Has` — **never** a hardcoded `"Intelligence"` literal in planner logic (D7/D10). The
-  caller may pass the resolved Intelligence `StatID` in config if a composite is wanted (see Open
-  Questions); the default resolves it from the registry's capability set by the glossary id.
-- `perceived_intelligence` is read from `SelfModel.EstStats[<Intelligence StatID>].Mean`
-  (`tom.Belief.EstStats` — the self-belief means, D8).
-- `horizon_ticks` is reported as `Plan.Horizon`.
+(Unchanged — `perceived_intelligence = SelfModel mean for Intelligence`; below
+`LookaheadThreshold` → `horizon_ticks = 0` HARD SKIP; else `max(1, floor(base × pi/max))`. The
+threshold and the Intelligence `StatID` are injected/registry-resolved, no literal — D7/D10.)
 
 ### Tag-derived cost (absorbed from `engine/gates` schema_version 2)
 
-`engine/gates` (schema_version 2) is boolean-visibility-only and carries **no cost** (see
-`engine/gates/SPEC.md` Open Questions — cost was transferred here). The planner computes an
-action's cost from its **Tags** (D4), never a bespoke per-action function:
-
-```
-cost(action) = Σ  TagCosts[tag]   for tag in action.Tags         (iterate sorted tag keys, D12)
-```
-
-- `TagCosts` is `PlannerConfig.TagCosts`, loaded from `content/balance.yaml planner.tag_costs`.
-- Cost is the **tie-breaker among equal-Priority, equal-depth candidates**: lower cost wins; a
-  remaining tie breaks by lexicographic `ActionID` (D12). Cost never overrides Priority — a
-  higher-Priority goal is pursued even if its actions cost more (D5: want dominates how).
-- `TagCosts` is used read-only; the sum **must** iterate the precomputed sorted key slice, never
-  range the map (D12). A tag absent from `TagCosts` contributes 0.
+(Unchanged — `cost(action) = Σ TagCosts[tag]` over sorted tag keys, D12; cost is the tie-breaker
+among equal-Priority, equal-depth candidates; cost never overrides Priority, D5.)
 
 ### Dynamic visibility / conscience loosening (absorbed from `engine/gates`)
 
-`engine/gates` evaluates only stat (ToM[self]) and tag predicates; runtime body/signal-driven
-relaxation was transferred here (see `engine/gates/SPEC.md` Open Questions). After the normal gate
-verdict, the planner applies a **secondary relaxation step** for actions whose gate failed:
-
-```
-Urgency  = agent.Urgency   (= max Salience across all Dimensions, supplied by the caller)
-relaxed  = (Urgency > PlannerConfig.UrgencyThreshold)
-
-if a candidate's gate verdict is NOT Visible AND relaxed:
-    treat the candidate as visible for this Plan call only (conscience loosening)
-```
-
-- Relaxation is a **transient, per-call** override; it never mutates the gate registry or the
-  agent. It is recorded in `Trace.Relaxed` and per-candidate `Candidate.Visible` for the why-trace
-  (data-contracts §4 — "given enough urgency, theft becomes visible", scenario B).
-- Below the threshold, a gated action stays hidden. This is the only place gate visibility is
-  loosened; `engine/gates` itself is untouched (it cannot read `Urgency`).
+(Unchanged — `relaxed = (Urgency > UrgencyThreshold)`; a gated candidate is treated visible for the
+call only when relaxed; recorded in `Trace.Relaxed`/`Candidate.Visible`. This is what makes `Take`
+and the transgressive `Attack` visible under high Safety urgency — scenario B / the §F threat
+reflex.)
 
 ## Invariants
 
-- **Atomic-only plans, no task trees (D3)**: the module defines **no** `Method`, `Task`, or
-  `Subtask` type. A `Plan` is a flat `[]core.ActionID`; decomposition is an emergent ordered
-  sequence assembled from the `Producers` reverse index. A struct/grep guard confirms no
-  method/task/subtask type exists.
-- **What-vs-how separation (D5)**: the planner never computes `Standing`/`Salience`/`Priority`
-  (it receives them) and never edits a need/value definition. It answers only "given this Priority
-  ordering, what sequence of actions maximises it". A higher Priority is never overridden by lower
-  cost.
+- **Atomic-only plans, no task trees (D3)**: no `Method`/`Task`/`Subtask` type; a `Plan` is a flat
+  `[]core.ActionID`; decomposition is emergent from the `Producers` reverse index + `SatisfiedFacts`.
+- **What-vs-how separation (D5)**: the planner never computes `Standing`/`Salience`/`Priority` and
+  never edits a need/value definition. A higher Priority is never overridden by lower cost.
 - **Provisioning is derived, never authored (D9)**: provisioning quantity = `need-rate ×
-  predicted-time` via `needs.Def.Demand`/`BreachAt`; the planner stores **no** "future need" field
-  and reads none from any object/action. Objects carry only their supply `Effect`.
-- **Cost is tag-derived (D4)**: action cost = `Σ TagCosts[tag]`; there is **no** per-action cost
-  number anywhere (none on `ActionDef`, none here). Adding cost behaviour is a content edit (a tag
-  or a `planner.tag_costs` entry), never a Go branch (D10).
-- **Decisions read `ToM[self]` (D8)**: gate evaluation and the horizon calc read `SelfModel` stat
-  means, never `CurrentStats`/Real Stats. The planner never "corrects" a self-underestimate; a low
-  perceived Intelligence yields a short horizon and that is preserved (self-sealing — scenario F).
-- **Determinism (D12)**: `Plan` is a pure function of `(AgentSnapshot, values, registries, rng
-  state)`. All iteration uses sorted keys/slices — `actions.IDs()`/`Producers()` order,
-  `needs.IDs()` order, the precomputed sorted `TagCosts` keys, and `stats.IDs()` order — **never**
-  `map` ranging for logic. The defensive sort of `values` is Priority-desc then `Dim`-lexicographic.
-  All tie-breaks are deterministic: equal Priority → lower cost → lexicographic `ActionID`. `rng`
-  is consulted **only** after these deterministic comparisons (and, by default, not at all —
-  Notes). Same `AgentSnapshot` + `values` + `rng` seed/state → byte-identical `Plan` and `Trace`.
-- **Budget always terminates the search**: every recursion is bounded by `MaxDepth`, every
-  expansion by `MaxNodes`, every plan by `MaxActions`. A breach returns `ErrBudgetExceeded`; the
-  search never loops forever and never silently truncates.
-- **Read-only inputs**: `AgentSnapshot`, `values`, and every borrowed registry are never mutated;
-  the planner retains no reference to them past the `Plan` call. The gate registry is consulted,
-  never relaxed in place (relaxation is a transient per-call decision).
-- **No hardcoded ids (D7/D10)**: no `"Intelligence"`, `"Satiety"`, `"Eat"`, … literal in planner
-  logic; stat/need/action ids flow from the injected registries and config.
-- **No IO (architecture §1)**: imports no `os`/`net`/filesystem package; reads no file; emits no
-  event (the caller emits the returned `Trace`). All constants are injected via `PlannerConfig`.
+  predicted-time` via `needs.Def`; no "future need" field anywhere.
+- **Cost is tag-derived (D4)**: action cost = `Σ TagCosts[tag]`; no per-action cost number.
+- **World-state facts are inputs, not products (D2/D3)**: `owned_by_other`/`near_other`/
+  `tradeOffered` are read from `AgentSnapshot.SatisfiedFacts` (caller-injected from the world
+  snapshot); the planner never invents them and no action `produces` them. They short-circuit the
+  precondition check only — they do not add actions to the plan.
+- **Decisions read `ToM[self]` (D8)**: gate evaluation + horizon read `SelfModel` means, never Real
+  Stats. A low perceived Intelligence yields a short horizon / hard skip, preserved (self-sealing).
+- **Determinism (D12)**: `Plan` is pure over `(AgentSnapshot, values, registries, rng)`; all
+  iteration uses sorted keys/slices, incl. iterating `SatisfiedFacts` membership via a set/sorted
+  check (never relying on slice order for logic). Same inputs → byte-identical `Plan` + `Trace`.
+- **Budget always terminates**; **read-only inputs** (incl. `SatisfiedFacts` never mutated);
+  **no hardcoded ids (D7/D10)**; **no IO**.
 
 ## Acceptance Criteria (testable)
 
 - [ ] **GOAP backward chain selects a producer (D-GOAP)**: given a `Satiety` goal and a stub
-  `Producers` index returning `[Eat, Forage]`, the planner selects `Eat` when its gate passes;
-  when `Eat`'s gate fails it selects `Forage`. Table-driven against stub registries.
-- [ ] **HTN decomposition prepends prerequisites (golden snapshot)**: if `Eat` requires the
-  `has_food` predicate and `has_food` is false, the planner prepends a producer of `has_food`
-  (`Forage`/`Hunt`) so `Plan.Actions == [Forage, Eat]` (prereq first, goal last). Golden over the
-  shipped content + a fixture snapshot (`docs/testing.md` §3).
-- [ ] **Forward-sim inserts a provisioning subgoal (D9, scenario H)**: an agent with full current
-  slack but a large `predicted_deficit` (high need-rate × long horizon) gets a provisioning action
-  inserted before the goal; with a short horizon (low Intelligence) the same agent does **not**
-  (ties to testing.md §4 fixture H: high-Intelligence provisions, low-Intelligence does not).
-- [ ] **Intelligence horizon = 1 at perceived Intelligence 0**: an agent whose `SelfModel`
-  Intelligence mean is 0 yields `horizon_ticks == 1` (minimum viable foresight), regardless of
-  `base_horizon`.
-- [ ] **Intelligence horizon = base at perceived Intelligence = max**: an agent whose perceived
-  Intelligence equals `stats.Registry.Def(Intelligence).Max` yields `horizon_ticks ==
-  BaseHorizonTicks`.
-- [ ] **Intelligence horizon = floor(base/2) at perceived Intelligence = max/2**: an agent whose
-  perceived Intelligence is half of max yields `horizon_ticks == floor(BaseHorizonTicks/2)`
-  (table-driven over several perceived-Intelligence / base-horizon pairs, asserting the `floor`).
-- [ ] **`Budget.MaxDepth` aborts (no infinite loop)**: a contrived cyclic-precondition content set
-  forces decomposition past `MaxDepth`; `Plan` returns `ErrBudgetExceeded` (and likewise for
-  `MaxNodes` and `MaxActions`). Table-driven per cap.
-- [ ] **Tag-derived cost breaks an equal-Priority tie (D4)**: two equal-Priority producers of the
-  same depth, one carrying a tag with a higher `planner.tag_costs` weight — the lower-cost action
-  is `Chosen`; a remaining cost tie breaks by lexicographic `ActionID`. Table-driven.
-- [ ] **Dynamic visibility relaxation (scenario B)**: a candidate whose gate fails becomes
-  `Candidate.Visible == true` and may be `Chosen` when `agent.Urgency > UrgencyThreshold`
-  (`Trace.Relaxed == true`); below the threshold it stays hidden and is not chosen. Table-driven.
-- [ ] **Cost never overrides Priority (D5)**: a higher-Priority dimension's (costlier) producer is
-  chosen over a lower-Priority dimension's cheaper producer.
-- [ ] **No task-tree / no per-action cost type (D3/D4)**: struct/grep guard — no
-  `Method`/`Task`/`Subtask` type and no numeric cost field on any planner output type; `Plan` is a
-  flat `[]core.ActionID`.
-- [ ] **Reads `ToM[self]`, not Real Stats (D8)**: a gate evaluation and the horizon calc use
-  `SelfModel`; with `CurrentStats` high but `SelfModel` low, the action stays hidden and the
-  horizon stays short (self-sealing preserved; scenario F low-Intelligence fixates).
-- [ ] **Determinism: 1000 identical calls (D12)**: the same `AgentSnapshot` + `values` + `rng`
-  seed produces a byte-identical `Plan` and `Trace` across 1000 calls; a golden test records the
-  digest. A second run with a fresh registry from the same content reproduces it (cross-process).
-- [ ] **No constant hardcoded (D10)**: grep guard — no numeric budget/horizon/cost/threshold
-  literal and no stat/need/action-name literal in `engine/planner` logic; all flow from
-  `PlannerConfig` + the injected registries.
-- [ ] **`ErrNoGoal` / `ErrUnreachable`**: empty `values` → `ErrNoGoal`; a goal with no visible
-  producer within budget → `ErrUnreachable` (not a panic, not an empty plan masquerading as valid).
+  `Producers` index returning `[Eat, Forage]`, the planner selects `Eat` when its gate passes; when
+  `Eat`'s gate fails it selects `Forage`. Table-driven.
+- [ ] **HTN decomposition prepends prerequisites (golden snapshot)**: if `Eat` requires `has_food`
+  and `has_food` is false, the planner prepends a producer of `has_food` so `Plan.Actions ==
+  [Forage, Eat]`.
+- [ ] **`SatisfiedFacts` short-circuits a precondition (Blocker 3)**: a candidate requiring
+  `near_other` is reachable with NO prepended producer when `AgentSnapshot.SatisfiedFacts` contains
+  `near_other`, and unreachable (or requiring a producer that does not exist → `ErrUnreachable`)
+  when it does not. Table-driven over `{present, absent}`.
+- [ ] **`owned_by_other` injection makes `Take` reachable (Blocker 3, scenario)**: with the shipped
+  `content/actions.yaml`, a `Take` candidate (requires `[at_target, owned_by_other]`) is
+  **unreachable** when `SatisfiedFacts` lacks `owned_by_other` (no action produces it →
+  `ErrUnreachable` for a goal whose only producer is `Take`); when `SatisfiedFacts` includes
+  `owned_by_other` (and `at_target` is reached via a `MoveTo` producer), `Take` appears in the
+  planner `Candidate`s and, under relaxation, is `Chosen`. Asserts the diagnosed dead predicate is
+  now live ONLY via the world-state-fact channel.
+- [ ] **Execution-layer injects `owned_by_other` near a holder (Blocker 3, `engine/agent`)**: a
+  `replan` AC (in `engine/agent`) — given an agent positioned within `interactionRadius` of another
+  agent whose `Inventory` is non-empty, the built `AgentSnapshot.SatisfiedFacts` includes
+  `owned_by_other`; when the nearby agent's `Inventory` is empty (or no agent is near), it does NOT.
+  (Implemented in `engine/agent`; cross-referenced here because the planner contract relies on it.)
+- [ ] **`Attack` is a Safety producer (Blocker 3, content + planner)**: with `Attack.produces`
+  including `has_Safety` (the content edit), `actions.Registry.Producers("has_Safety")` includes
+  `Attack`; a Safety goal therefore lists `Attack` among its `Candidate`s. `Attack` is `Visible ==
+  false` (gated by `norm:transgressive`/`risk:high`) at low Urgency and becomes `Visible == true`
+  (and selectable) only when `Urgency > UrgencyThreshold` (relaxation). A Safety goal with `struck`
+  alone (the old content) would have **no** Safety producer from `Attack` — regression-guard the
+  predicate set.
+- [ ] **Forward-sim inserts a provisioning subgoal (D9, scenario H)**; **Intelligence horizon**
+  table (floor at threshold = 1, max → base, max/2 → floor(base/2)); **Lookahead hard-skip below
+  threshold** (`Plan.Horizon == 0`, `Trace.Provisioned` empty). (Unchanged.)
+- [ ] **`Budget.MaxDepth/MaxNodes/MaxActions` aborts (no infinite loop)** → `ErrBudgetExceeded`.
+- [ ] **Tag-derived cost breaks an equal-Priority tie (D4)**; **Dynamic visibility relaxation
+  (scenario B)**; **Cost never overrides Priority (D5)**. (Unchanged.)
+- [ ] **No task-tree / no per-action cost type (D3/D4)**; **Reads `ToM[self]`, not Real Stats
+  (D8)**; **Determinism: 1000 identical calls (D12)**; **No constant hardcoded (D10)**;
+  **`ErrNoGoal`/`ErrUnreachable`**. (Unchanged.)
 
-> Structural JSON-schema validation of the `content/balance.yaml planner:` block against
-> `content/schema/balance.schema.json`, and the cross-check that each `tag_costs` key names a tag
-> actually used in `content/actions.yaml`, are **platform/config** ACs (it owns the file IO + the
-> schema). This module proves only behaviour reachable from the injected `PlannerConfig`.
+> Structural JSON-schema validation of the `content/balance.yaml planner:` block, the
+> `intelligence.lookahead_threshold` scalar, and the **cross-check that `owned_by_other` has no
+> action producer (it is a world-state fact)** and that `has_Safety` appears in `Attack.produces`
+> are **platform/config** ACs (it owns the file IO + the schema). This module proves only behaviour
+> reachable from the injected `PlannerConfig` and the `SatisfiedFacts` it is handed.
 
 ## Out of Scope
 
-- Reading the file from disk and JSON-schema validation of the `planner:` block →
-  `platform/config` (architecture §3).
-- **Computing `Standing`/`Salience`/`Priority`/`EffValue`** and arbitrating which dimension is
-  wanted → `engine/values` (the planner receives the Priority-ordered `[]DimensionPriority`).
-- **Per-need decay, level roll, `Demand`/`BreachAt` math** → `engine/needs` (the planner calls
-  these pure helpers; it does not reimplement the forward-roll).
-- **Gate predicate evaluation** (the boolean AND-of-matching-gates over ToM[self] + tags) →
-  `engine/gates`; the planner only calls `Evaluate` and applies the Urgency relaxation on top.
-- **The action catalog, tags, `Producers` reverse index, `Effect`** → `engine/actions`.
-- **`ToM[self]` construction, β self-calibration, gossip** → `engine/tom`; the planner reads the
-  self-belief's stat means and never updates them.
-- **Executing the plan, durative progress, interruption, coping, `Stickiness`/`goal_deadband`
-  application, emitting `PlanBuilt`/`GoalSelected` events** → `engine/agent` (it calls `Plan`,
-  applies stickiness/deadband to the *goal choice* before/around the call, executes the returned
-  actions, and emits the `Trace`). `Stickiness`/`goal_deadband` are anti-thrash on goal *switching*
-  across ticks — an agent-loop concern, not a single-plan concern (see Open Questions).
-- **Outcome resolution** (does `Hunt` succeed, scaled by Real Stats), intent collection, and
-  conflict resolution → `engine/world`.
-- **Distance/stat scaling of `Duration`** at execution time → `engine/agent`/`engine/world`; the
-  planner uses base `Duration` only for cost estimation.
+- Reading the file from disk and JSON-schema validation → `platform/config`.
+- **Computing `Standing`/`Salience`/`Priority`/`EffValue`** → `engine/values`.
+- **Per-need decay, level roll, `Demand`/`BreachAt`, the conditional Safety driver** → `engine/needs`.
+- **Gate predicate evaluation** → `engine/gates`; the planner only calls `Evaluate` + Urgency relax.
+- **The action catalog, tags, `Producers` reverse index, `Effect`** → `engine/actions`. The
+  `Attack.produces += has_Safety` edit is a `content/actions.yaml` change (D10), not planner code.
+- **Constructing `AgentSnapshot.SatisfiedFacts`** (reading the world snapshot for `near_other`/
+  `tradeOffered`/`owned_by_other`) → `engine/agent`'s `replan` (execution layer). The planner only
+  consumes the slice it is given; it never queries the world.
+- **`ToM[self]` construction, β self-calibration, gossip** → `engine/tom`.
+- **Executing the plan, durative progress, interruption, coping, emitting events** → `engine/agent`.
+- **Outcome resolution** (does `Attack`/`Hunt` succeed, scaled by Real Stats; what `struck` does to
+  the target), intent collection, and conflict resolution → `engine/world`.
+- **The starvation-mid-journey end-to-end (scenario H full)** → `engine/world`/`engine/agent`.
 
 ## Open Questions
 
-- **RNG type: `*rng.RNG` vs `*rand.Rand` (NOT blocking P1; resolved to `*rng.RNG`).** The task
-  brief's signature wrote `rng *rand.Rand`, but the project's canonical deterministic generator is
-  `engine/rng.*RNG` (D12; `engine/rng/SPEC.md`), which `engine/tom` already injects. This SPEC uses
-  `*rng.RNG` to avoid a second RNG abstraction and to satisfy "no global/stdlib rand outside the
-  wrapper". Flag if a raw `*rand.Rand` is genuinely wanted — but that would violate the rng-wrapper
-  invariant, so `*rng.RNG` is the chosen contract.
-- **`SelfModel` type — RESOLVED: planner uses `tom.Belief` directly.** The task brief named the
-  self-model field `tom.AgentModel`; `engine/tom/SPEC.md` exposes no such alias (it has `tom.ToM` /
-  `tom.Belief` with `EstStats map[core.StatID]tom.StatDist`). Per human decision, the planner
-  accepts `tom.Belief` directly for `AgentSnapshot.SelfModel` and reads
-  `SelfModel.EstStats[<Intelligence StatID>].Mean` for the horizon and `SelfModel.EstStats` means
-  for gate evaluation. **`engine/tom` is NOT modified** — no `AgentModel` alias is added on the tom
-  side. The planner contract is stable: it depends only on `tom.Belief.EstStats`.
-- **Goal-satisfaction predicate mapping (NOT blocking P1).** GOAP needs to map a goal `Dimension`
-  to the predicate(s) a producer must `Produces`. Today the link is implicit (an action's `Effect`
-  names the dimension; its `Produces` names predicates like `has_food`). The planner resolves a
-  dimension's producers by querying `actions.Producers(pred)` over the predicate(s) whose producers
-  carry an `Effect` on that dimension. Confirm whether a dimension→predicate map should be authored
-  in content (e.g. `needs.yaml satisfied_by:`) or derived from action `Effect`s at `New`. Derived
-  is the default; flag if content authoring is preferred (D10 would favour content, but it adds a
-  schema field — escalate before any feature needing it).
-- **`Stickiness`/`goal_deadband` ownership (NOT blocking P1).** `content/balance.yaml planning.*`
-  carries `stickiness`/`goal_deadband` (anti-thrash). This SPEC places them in `engine/agent`'s
-  cross-tick goal-switching loop, not in single-call `Plan` (which is stateless). Confirm with the
-  agent SPEC author so neither double-applies them.
+- **RNG type: `*rng.RNG` (RESOLVED).** Uses `engine/rng.*RNG`, not stdlib rand.
+- **`SelfModel` type — RESOLVED: planner uses `tom.Belief` directly.**
+- **Goal-satisfaction predicate mapping (RESOLVED for the `has_<Dimension>` convention).** GOAP
+  maps a goal `Dimension` to the predicate `has_<Dimension>` and enumerates `Producers(has_<Dim>)`.
+  The Blocker-3 `Attack.produces += has_Safety` edit relies on this convention (it makes `Attack` a
+  `has_Safety` producer). If a content-authored `needs.yaml satisfied_by:` map is later preferred
+  over the convention, update this SPEC + the schema first; the convention is the default.
+- **`SatisfiedFacts` ownership (RESOLVED for Blocker 3).** World-state facts (`near_other`,
+  `tradeOffered`, `owned_by_other`) are injected by `engine/agent`'s `replan` from the world
+  snapshot — the planner never reads the world. `owned_by_other` joins the existing two; the only
+  planner-side requirement is that `SatisfiedFacts` membership short-circuits the precondition check
+  (already required for the existing two). Confirm with the agent SPEC author that `replan` adds the
+  Inventory check (it already builds `near_other`/`tradeOffered` there).
+- **`Stickiness`/`goal_deadband` ownership (NOT blocking).** Placed in `engine/agent`'s cross-tick
+  loop, not single-call `Plan`.
 
 ## Notes
 
-- **`planner:` block added to `content/balance.yaml`** (this batch) with `budget.{max_depth,
-  max_actions, max_nodes}`, `base_horizon_ticks`, `tag_costs.{Tag: weight}`, `urgency_threshold`;
-  the schema (`content/schema/balance.schema.json`) `planner` object was added to match. The
-  pre-existing `planning:` / `forward_sim:` / `tag_levels:` / `cost_terms:` blocks remain (they
-  serve `engine/agent` budget scaling, the needs roll granularity, and the gate-tag library). The
-  new `planner.tag_costs` is the planner's authoritative per-tag cost weight; it is distinct from
-  `cost_terms`×`tag_levels` (which is the finer additive model the agent may later compose) — for
-  P1 the planner uses the flat `planner.tag_costs` sum specified above. If the richer `cost_terms`
-  model supersedes it, fold `tag_costs` into that and update this SPEC + the schema first.
-- **RNG default: no draw.** With lexicographic `ActionID` as the final tie-break, a well-formed
-  content set never needs `rng`. It is threaded in so a future configurable random tie-break (e.g.
-  to diversify identical agents) stays deterministic per seed (D12). For P1 the `*rng.RNG` argument
-  is accepted but, by default, not drawn from — keep it in the signature so the contract is stable.
-- **Why-trace (NFR-3):** the returned `Trace` carries the competing `Candidate`s (with cost + gate
-  verdict), the provisioned dimensions, and the relaxation flag so `engine/agent` can emit
-  `GoalSelected` / `PlanBuilt` with the selection rationale (data-contracts §4 `steps[],
-  total_cost, provisioned[]`). The planner computes the rationale; the agent emits it.
-- **`gates.AgentSnapshot` vs the planner `AgentSnapshot`:** these are two different structs. The
-  planner adapts its own snapshot into `gates.AgentSnapshot{SelfStats: <SelfModel.EstStats means>,
-  Known: agent.Known}` per candidate (gates read ToM[self] only, D8). Keep them distinct. Note the
-  adaptation projects each `tom.StatDist.Mean` from `SelfModel.EstStats` into the gate-side
-  `stats.Stats` (`map[StatID]float64`) shape.
-- **Intelligence `StatID` resolution:** resolve via `stats.Registry` (the glossary capability id),
-  never a string literal in logic (D7). The implementer obtains it once in `New` and stores the
-  resolved `StatID`, failing fast if the registry has no Intelligence capability.
+- **`planner:` block in `content/balance.yaml`** with `budget.*`, `base_horizon_ticks`,
+  `tag_costs.*`, `urgency_threshold`; `intelligence.lookahead_threshold` lives in the
+  `intelligence:` block.
+- **Blocker 3 is two content/execution edits + one contract clarification, not a planner-algorithm
+  change.** (1) `engine/agent` `replan` appends `owned_by_other` to `SatisfiedFacts` when a nearby
+  agent holds items; (2) `content/actions.yaml` adds `has_Safety` to `Attack.produces`; (3) this
+  SPEC documents that `owned_by_other` is a world-state fact and `has_Safety` makes `Attack` a Safety
+  producer. The planner's existing `SatisfiedFacts` short-circuit and `Producers(has_Safety)`
+  enumeration already do the rest.
+- **RNG default: no draw.** Lexicographic `ActionID` final tie-break; `*rng.RNG` threaded for a
+  future configurable random tie-break, deterministic per seed (D12).
+- **Why-trace (NFR-3):** the returned `Trace` carries the competing `Candidate`s, provisioned
+  dimensions, and relaxation flag so `engine/agent` emits `GoalSelected`/`PlanBuilt`.
+- **`gates.AgentSnapshot` vs the planner `AgentSnapshot`** are two different structs; the planner
+  adapts its snapshot into `gates.AgentSnapshot{SelfStats: <SelfModel means>, Known: agent.Known}`.
+- **Intelligence `StatID` resolution** via `stats.Registry` (glossary capability id), never a literal.
+</content>
