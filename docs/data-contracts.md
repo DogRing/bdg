@@ -11,24 +11,33 @@
 ## 1. Simulation snapshot (engine → persist)
 The complete deterministic state for one tick. Same snapshot + same seed → same next tick.
 ```
-Snapshot {
+Snapshot {                        // persist.Snapshot — JSON, snake_case keys (Go field tags)
   schema_version, run_id, tick
-  rng_state                       // for deterministic resume
-  world {
-    objects[]  { id, kind, pos, contents }   // pre-placed resources
-    animals[]  { id, species, pos, state }    // spawned
-  }
-  agents[] {
-    id, pos
-    real_stats  { StatID: float }             // god view (backup only; live exposure policy in §4)
-    body        { inventory, stamina, mood, adrenaline }
-    goal, plan_summary
-    tom_digest    // see §3 — full ToM is large
-    known_digest  // value-map summary
+  world {                          // engine world.WorldState
+    tick, rng_state               // rng_state: for deterministic resume
+    agents[] {
+      id, pos
+      real_stats   { StatID: float }            // god view (live exposure policy in §4)
+      stamina, mood, adrenaline
+      need_intensities { Dimension: float }
+      inventory { Tag: int }, goal
+      plan_actions[], plan_horizon, plan_idx, elapsed, coping, latent[]
+      self_est_stats { StatID: { mean, variance } }   // ToM[self] (D8 self-channel)
+      agent_cfg
+    }
+    objects[] { ... }
+    known[]   { agent_id, objects[] }            // per-agent known-object set
+    emerged_roles[] { function, holder }         // P6 (D2-derived)
+    tom_digest {                                 // cross-agent ToM, god-view projection (D6/D8)
+      <observerID>: { <subjectID>: { est_stats: { StatID: { mean, variance } }, rely_on: { Function: float } } }
+    }
   }
 }
 ```
-**ToM / Known are O(N²) and large** → the snapshot stores a *digest* (top-K relationships, strong values only); the full set is a Postgres-only option.
+- `tom_digest` is **capture-only** (NOT consumed by resume; the running sim rebuilds beliefs). It is the
+  source for the god-view "others" channel: `real` (real_stats) ≠ `self` (self_est_stats) ≠ `others`
+  (mean over `tom_digest[X][subject].est_stats`) are kept SEPARATE (D6/D8) — never a single reputation scalar.
+- All keys are snake_case so the read API (`platform/api`) parses the live snapshot blob directly.
 
 ## 2. Redis — live state
 Keyspace (`{run}` = RunID):

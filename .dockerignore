@@ -1,0 +1,42 @@
+# Keep the build context small and secret-free. Both images build from the repo
+# root: Dockerfile.api needs backend/ + content/; Dockerfile.sse needs only backend/.
+
+.git/
+.github/
+.claude/
+docs/
+testdata/
+tools/
+
+# committed/prebuilt binaries (rebuilt inside the image)
+backend/bdg
+backend/tuner
+backend/tools/
+
+# secrets & env (never ship into an image layer)
+deploy/.env
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# local / runtime / editor noise
+/bin/
+/out/
+/.data/
+*.log
+*.tmp
+*.out
+*.test
+*.exe
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# frontend (added later)
+frontend/node_modules/
+frontend/dist/
+node_modules/

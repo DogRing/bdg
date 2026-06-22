@@ -469,6 +469,12 @@ D12 is guaranteed by these eight, each independently checkable:
 8. **Byte-identical from the seed**: same seed + same content (`config_hash`) → byte-identical
    simulation state and event sequence from tick 0; resuming from a tick-T snapshot is
    byte-identical to running 0→T+k (testing.md §1 resume invariant; the root `rng_state` round-trips).
+9. **Snapshot serialization contract (`WorldState` JSON)**: field names are the snake_case
+   data-contracts §1 shape (`agents`/`id`/`real_stats`/`self_est_stats`/`emerged_roles`) so the read
+   API parses the live blob directly. `State()` additionally emits `tom_digest`
+   (observer→subject→{`est_stats`,`rely_on`}) — the **capture-only** cross-agent ToM projection for the
+   god-view (D6/D8). `RestoreState` ignores `tom_digest` (the running sim rebuilds beliefs), so it does
+   not affect the resume invariant.
 
 Plus:
 

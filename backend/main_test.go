@@ -22,7 +22,7 @@ func TestAgentConfigFromBalance_AllPoliticsFieldsWired(t *testing.T) {
 		t.Fatalf("config.Load: %v", err)
 	}
 
-	agentCfg := cfg.Balance.AgentConfig(cfg.NeedsRegistry)
+	agentCfg := cfg.Balance.AgentConfig(cfg.NeedsRegistry, cfg.StatsRegistry)
 
 	// Check that all 6 politics fields are non-zero.
 	// If a field is zero, the balance.yaml value failed to wire through.

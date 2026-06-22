@@ -31,7 +31,11 @@ The engine does not import platform. Platform serializes and transports engine s
 | `config` | Load `content/` data → registries (stats, needs, actions, gates, object/item catalog); validate vs `content/schema/` + referential integrity | core, stats, actions, gates, needs |
 | `events` | why-trace + event stream (implements the engine's events interface) | core |
 | `persist` | Snapshot serialization, Redis live, Postgres backup | core, world (state types), data-contracts |
-| `api` (later) | SSE endpoint | events, persist |
+| `api` | health/SSE/snapshot/agent + god-view HTTP. `New` = full server; `NewSSE` = read-only (health+SSE) | events, persist, core |
+
+### Entrypoints (two binaries, one module)
+- `backend/main.go` → **bdg-backend** (`gapi.dogring.kr`): simulation writer + full `api.New` server. Single writer (replicas: 1).
+- `backend/cmd/sse` → **bdg-sse** (`sse.dogring.kr`): read-only `api.NewSSE` server tailing the valkey event stream with a read-only user. Stateless, scalable. Built/shipped separately (`backend/Dockerfile.sse`, `.github/workflows/sse.yaml`). See `docs/deployment.md`.
 
 ## 4. Dependency DAG
 ```
@@ -56,7 +60,8 @@ No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `t
 6) agent
 7) world
 8) config, events, persist
-9) (later) api/sse, frontend
+9) api (full + NewSSE), main.go (bdg-backend), cmd/sse (bdg-sse)
+10) (later) frontend
 ```
 Each stage depends only on the **public interfaces (SPECs)** of earlier stages. The implementer never reads a sibling's implementation.
 

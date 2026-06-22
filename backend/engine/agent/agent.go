@@ -136,8 +136,14 @@ type Config struct {
 	// P6 BLOCKER-1: threat perception tags and Safety-dimension config
 	ThreatTags          []core.Tag      // balance.yaml threats.hostile_tags — tags that trigger defensive Safety goal insertion
 	SafetyDim           core.Dimension  // content/needs.yaml Safety dimension id, resolved by platform/config
-	ThreatPerThreatGain float64         // balance.yaml threats.per_threat_intensity — Safety intensity added per perceived threat
-	ThreatSafetyDecay   float64         // balance.yaml threats.safety_decay — Safety intensity removed per tick with no threat
+	RestDim             core.Dimension // content/needs.yaml Rest dimension id, resolved by platform/config; replaces hardcoded "Rest" literal (D10)
+	ThreatPerThreatGain float64        // balance.yaml threats.per_threat_intensity — Safety intensity added per perceived threat
+	ThreatSafetyDecay   float64        // balance.yaml threats.safety_decay — Safety intensity removed per tick with no threat
+
+	// D10: stat IDs resolved from the stats registry (no hardcoded glossary literals in engine code).
+	IntelligenceStatID    core.StatID // capability stat for Intelligence lookups
+	VindictivenessStatID  core.StatID // disposition stat for Vindictiveness lookups
+	AggressionStatID      core.StatID // disposition stat for Aggression lookups
 
 	// P6: reliance + vote policy thresholds
 	RelyCostThreshold    float64 // balance.yaml politics.rely_cost_threshold — plan cost above which a Function counts self-unsolvable
@@ -234,6 +240,15 @@ func DefaultConfig() Config {
 
 		// P6: influence weighting for incoming signals
 		InfluenceWeight: 0.5,
+
+		// D10: glossary-canonical IDs — defaults used when config is not loaded from
+		// content (tests). When content IS loaded, platform/config resolves these from
+		// the registries (engine/agent code never hardcodes ID literals).
+		SafetyDim:            "Safety",
+		RestDim:              "Rest",
+		IntelligenceStatID:   "Intelligence",
+		VindictivenessStatID: "Vindictiveness",
+		AggressionStatID:     "Aggression",
 	}
 }
 

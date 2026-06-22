@@ -229,10 +229,8 @@ func (a *Agent) resolveEffortLevel(tags []core.Tag) float64 {
 // on the Rest dimension. P3: data-driven — no action-id literal (D7/D10).
 // The caller must verify zero effort level separately via resolveEffortLevel.
 func (a *Agent) hasRestEffectPerMinute(def actions.ActionDef) bool {
-	// Rest dimension is a canonical content key (content/actions.yaml, content/needs.yaml).
-	// Resolved as a const glossary id, consistent with codebase pattern (D7).
-	const restDim = "Rest"
-	_, hasRest := def.EffectPerMinute[restDim]
+	// D10: Rest dimension resolved from agent config, injected by platform/config (no hardcoded literal).
+	_, hasRest := def.EffectPerMinute[a.Cfg.RestDim]
 	return hasRest
 }
 
@@ -240,7 +238,7 @@ func (a *Agent) hasRestEffectPerMinute(def actions.ActionDef) bool {
 // Distinguishes Rest vs Sleep by the magnitude of Rest effect_per_minute
 // (Sleep > Rest). P3: data-driven, no action-id literal.
 func (a *Agent) resolveRegenRate(def actions.ActionDef) float64 {
-	restRate, ok := def.EffectPerMinute["Rest"]
+	restRate, ok := def.EffectPerMinute[a.Cfg.RestDim]
 	if !ok {
 		return 0
 	}

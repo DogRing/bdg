@@ -19,46 +19,59 @@ import (
 // tick. Captures tick counter, root RNG state, every agent's full public state
 // (incl. ToM[self] means), every object, per-agent known-object sets, and the
 // P6 emerged-roles set.
+// JSON field names are the snake_case data-contracts (§1) shape consumed by the
+// read API / god-view; the engine's resume path uses the same struct in-memory.
 type WorldState struct {
-	Tick         core.Tick
-	RNGState     rng.RNGState
-	Agents       []agentDigest
-	Objects      []objectRecord
-	Known        []knownDigest // sorted by AgentID (D12)
-	EmergedRoles []emergedRoleEntry // sorted by Function (D12)
+	Tick         core.Tick          `json:"tick"`
+	RNGState     rng.RNGState       `json:"rng_state"`
+	Agents       []agentDigest      `json:"agents"`
+	Objects      []objectRecord     `json:"objects"`
+	Known        []knownDigest      `json:"known"`         // sorted by AgentID (D12)
+	EmergedRoles []emergedRoleEntry `json:"emerged_roles"` // sorted by Function (D12)
+	// TomDigest is the cross-agent ToM projection for the god-view (D6/D8): per
+	// observer, per subject, the believed per-stat distribution + reliance edges.
+	// Capture-only — NOT consumed by RestoreState (the running sim rebuilds beliefs);
+	// it exists so /api/god/* can expose real≠self≠others without a single scalar (D6).
+	TomDigest map[core.AgentID]map[core.AgentID]tomDigestEntry `json:"tom_digest,omitempty"`
 }
 
 // emergedRoleEntry is a single (function → holder) record for serialization.
 type emergedRoleEntry struct {
-	Function core.Function
-	Holder   core.AgentID
+	Function core.Function `json:"function"`
+	Holder   core.AgentID  `json:"holder"`
+}
+
+// tomDigestEntry is one observer's belief about one subject (god-view projection).
+type tomDigestEntry struct {
+	EstStats map[core.StatID]tom.StatDist `json:"est_stats,omitempty"`
+	RelyOn   map[core.Function]float64    `json:"rely_on,omitempty"`
 }
 
 // agentDigest is one agent's full public state for capture/restore.
 type agentDigest struct {
-	ID              core.AgentID
-	Pos             core.Vec2
-	RealStats       stats.Stats
-	Stamina         float64
-	Mood            float64
-	Adrenaline      float64
-	NeedIntensities map[core.Dimension]float64
-	Inventory       map[core.Tag]int
-	Goal            core.Dimension
-	PlanActions     []string            // ActionIDs in plan (serialized)
-	PlanHorizon     int
-	PlanIdx         int
-	Elapsed         core.GameMinutes
-	Coping          agent.CopingState
-	Latent          []agent.LatentGoal
-	SelfEstStats    map[core.StatID]tom.StatDist
-	AgentCfg        agent.Config
+	ID              core.AgentID               `json:"id"`
+	Pos             core.Vec2                  `json:"pos"`
+	RealStats       stats.Stats                `json:"real_stats"`
+	Stamina         float64                    `json:"stamina"`
+	Mood            float64                    `json:"mood"`
+	Adrenaline      float64                    `json:"adrenaline"`
+	NeedIntensities map[core.Dimension]float64 `json:"need_intensities"`
+	Inventory       map[core.Tag]int           `json:"inventory"`
+	Goal            core.Dimension             `json:"goal"`
+	PlanActions     []string                   `json:"plan_actions"` // ActionIDs in plan (serialized)
+	PlanHorizon     int                        `json:"plan_horizon"`
+	PlanIdx         int                        `json:"plan_idx"`
+	Elapsed         core.GameMinutes           `json:"elapsed"`
+	Coping          agent.CopingState          `json:"coping"`
+	Latent          []agent.LatentGoal         `json:"latent"`
+	SelfEstStats    map[core.StatID]tom.StatDist `json:"self_est_stats"`
+	AgentCfg        agent.Config               `json:"agent_cfg"`
 }
 
 // knownDigest carries one agent's known-object set.
 type knownDigest struct {
-	AgentID core.AgentID
-	Objects []agent.KnownObject // sorted by ObjectID (D12)
+	AgentID core.AgentID        `json:"agent_id"`
+	Objects []agent.KnownObject `json:"objects"` // sorted by ObjectID (D12)
 }
 
 // ── State() — capture ──────────────────────────────────────────────────────────
@@ -120,6 +133,32 @@ func (w *World) State() WorldState {
 			Function: fn,
 			Holder:   w.emergedRoles[fn],
 		})
+	}
+
+	// Cross-agent ToM projection for the god-view (capture-only; see WorldState.TomDigest).
+	// Iterate agents in fixed ID order (D12); each agent's ToM is its beliefs about every
+	// known subject (incl. self). JSON map-key sort makes the encoded blob deterministic.
+	td := make(map[core.AgentID]map[core.AgentID]tomDigestEntry, len(w.agentIDs))
+	for _, observerID := range w.agentIDs {
+		obs := w.agents[observerID]
+		subjects := obs.ToM.Subjects()
+		inner := make(map[core.AgentID]tomDigestEntry, len(subjects))
+		for _, subj := range subjects {
+			belief, ok := obs.ToM.Self(subj)
+			if !ok {
+				continue
+			}
+			inner[subj] = tomDigestEntry{
+				EstStats: cloneSDists(belief.EstStats),
+				RelyOn:   cloneRelyOn(belief.RelyOn),
+			}
+		}
+		if len(inner) > 0 {
+			td[observerID] = inner
+		}
+	}
+	if len(td) > 0 {
+		ws.TomDigest = td
 	}
 
 	return ws
@@ -241,6 +280,17 @@ func cloneSDists(src map[core.StatID]tom.StatDist) map[core.StatID]tom.StatDist 
 		return nil
 	}
 	out := make(map[core.StatID]tom.StatDist, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneRelyOn(src map[core.Function]float64) map[core.Function]float64 {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[core.Function]float64, len(src))
 	for k, v := range src {
 		out[k] = v
 	}

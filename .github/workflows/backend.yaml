@@ -1,25 +1,25 @@
-name: Build and Push bdg-sse
+name: Build and Push bdg-backend
 
-# Standalone read-only SSE server (sse.dogring.kr), built from backend/Dockerfile.sse.
-# Shares the backend module (cmd/sse + platform/api + engine), so it rebuilds on any
-# backend change; it does not use content/.
+# Simulation writer + read/write API (gapi.dogring.kr), built from backend/Dockerfile.api.
 on:
   push:
     branches: [ "main" ]
     paths:
       - "backend/**"
-      - "backend/Dockerfile.sse"
-      - ".github/workflows/sse.yaml"
+      - "content/**"
+      - "backend/Dockerfile.api"
+      - ".github/workflows/backend.yaml"
   pull_request:
     branches: [ "main" ]
     paths:
       - "backend/**"
-      - "backend/Dockerfile.sse"
-      - ".github/workflows/sse.yaml"
+      - "content/**"
+      - "backend/Dockerfile.api"
+      - ".github/workflows/backend.yaml"
 
 env:
   REGISTRY: registry.dogring.kr
-  IMAGE_NAME: bdg-sse
+  IMAGE_NAME: bdg-backend
   IMAGE_TAG: 0.1.0
 
 jobs:
@@ -58,7 +58,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./backend/Dockerfile.sse
+          file: ./backend/Dockerfile.api
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

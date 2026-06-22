@@ -102,6 +102,13 @@ type StreamEntry struct {
 // touched). The probe/SSE/snapshot/agent routes do not use gv.
 func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *Server
 
+// NewSSE wires a READ-ONLY Server exposing only GET /healthz, /readyz, /sse — no
+// snapshot/agent/god routes, no LiveStore, no Postgres. It backs the standalone bdg-sse
+// deployment (sse.dogring.kr, backend/cmd/sse), which connects to valkey with a read-only
+// user and never touches the write path. The three handlers read only rds + keyer, so the
+// nil live/gv are never dereferenced. Shares ListenAndServe/Handler with New.
+func NewSSE(cfg Config, rds RedisReader) *Server
+
 // ListenAndServe binds cfg.Addr and serves until ctx is cancelled (graceful shutdown:
 // http.Server.Shutdown is called, in-flight SSE connections are closed) or a fatal listen error
 // occurs. Returns nil on clean ctx-cancel shutdown, the error otherwise.

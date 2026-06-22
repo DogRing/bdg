@@ -24,7 +24,7 @@ func (a *Agent) handleRelianceTrigger(world WorldView, planCost float64, planErr
 	}
 
 	// Resolve the Function for the current goal.
-	fn := goalToFunction(a.Goal)
+	fn := goalToFunction(a.Goal, a.Cfg.SafetyDim)
 	if fn == "" {
 		return
 	}
@@ -67,7 +67,7 @@ func (a *Agent) handleRelianceTrigger(world WorldView, planCost float64, planErr
 // distributed urgency both exceed their thresholds. If so, it returns an IntentSignal
 // with the Vote payload. Returns IntentNone if conditions are not met.
 func (a *Agent) emitVoteIfEligible(now core.Tick, world WorldView) Intent {
-	fn := core.FuncSafety
+	fn := goalToFunction(a.Cfg.SafetyDim, a.Cfg.SafetyDim)
 
 	// Condition 1: find the agent we rely on most for Safety, and check its strength.
 	relyTarget, relyStrength := a.bestRelyOnFor(fn)
@@ -76,7 +76,7 @@ func (a *Agent) emitVoteIfEligible(now core.Tick, world WorldView) Intent {
 	}
 
 	// Condition 2: distributed urgency above threshold.
-	urgency := distributedUrgency(world)
+	urgency := distributedUrgency(world, a.Cfg.SafetyDim)
 	if urgency <= a.Cfg.VoteUrgencyThreshold {
 		return Intent{Kind: IntentNone, Agent: a.ID, Tick: now}
 	}
@@ -182,7 +182,7 @@ func (a *Agent) bestRelyOnFor(fn core.Function) (core.AgentID, float64) {
 // distributedUrgency computes the urgency derived from collective need state.
 // Higher when collective Safety is low (many agents suffering). Returns the
 // urgency in [0,1] where 1 = maximum distress.
-func distributedUrgency(world WorldView) float64 {
+func distributedUrgency(world WorldView, safetyDim core.Dimension) float64 {
 	members := world.MemberNeedIntensities()
 	if len(members) == 0 {
 		return 0
@@ -192,7 +192,7 @@ func distributedUrgency(world WorldView) float64 {
 	var count int
 	for _, aid := range sortedAgentIDs(members) {
 		intensities := members[aid]
-		if v, ok := intensities["Safety"]; ok {
+		if v, ok := intensities[safetyDim]; ok {
 			safetySum += v
 			count++
 		}
@@ -201,23 +201,18 @@ func distributedUrgency(world WorldView) float64 {
 		return 0
 	}
 	mean := safetySum / float64(count)
-	// Low safety (high intensity) → high urgency.
 	return clamp01(mean)
 }
 
-// goalToFunction maps a goal Dimension to a canonical Function. For now, Safety
-// maps to FuncSafety; all others map to FuncKnowledge (generic problem-solving).
-// This is a simple heuristic — "what Function does this goal serve?"
-func goalToFunction(dim core.Dimension) core.Function {
-	switch dim {
-	case "Safety":
+// goalToFunction maps a goal Dimension to a canonical Function using the injected
+// SafetyDim (D10: no hardcoded Dimension literal). Safety → FuncSafety; all others
+// → FuncKnowledge (generic problem-solving). A finer mapping would come from an
+// injected FunctionSpec table (future work).
+func goalToFunction(dim core.Dimension, safetyDim core.Dimension) core.Function {
+	if dim == safetyDim {
 		return core.FuncSafety
-	default:
-		// All non-Safety goals default to Knowledge (the agent needs know-how to
-		// satisfy them). A finer mapping (e.g. Satiety→Knowledge) is content-driven
-		// and would come from an injected FunctionSpec table (future work).
-		return core.FuncKnowledge
 	}
+	return core.FuncKnowledge
 }
 
 // allBeliefs returns all beliefs held in the agent's ToM (excluding self) as a

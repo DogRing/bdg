@@ -82,6 +82,26 @@ func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *
 	return s
 }
 
+// NewSSE wires a READ-ONLY server that exposes only the liveness/readiness probes
+// and the SSE event stream — no snapshot/agent/god routes, no LiveStore, no Postgres.
+// It backs the standalone SSE deployment (sse.dogring.kr), which connects to valkey
+// with a read-only user and never touches the write path. The three registered
+// handlers (handleHealthz/handleReadyz/handleSSE) read only s.rds + s.keyer, so the
+// nil live/gv fields are never dereferenced.
+func NewSSE(cfg Config, rds RedisReader) *Server {
+	s := &Server{
+		rds:   rds,
+		keyer: persist.Keyer{Run: cfg.RunID},
+		runID: cfg.RunID,
+		mux:   http.NewServeMux(),
+		addr:  cfg.Addr,
+	}
+	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
+	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
+	s.mux.HandleFunc("GET /sse", s.handleSSE)
+	return s
+}
+
 // ListenAndServe binds s.addr and serves until ctx is cancelled (graceful shutdown)
 // or a fatal listen error occurs.
 func (s *Server) ListenAndServe(ctx context.Context) error {

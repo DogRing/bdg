@@ -526,7 +526,7 @@ func TestLoadValidContent(t *testing.T) {
 	}
 
 	// Verify AgentConfig accessor.
-	ac := out.Balance.AgentConfig(out.NeedsRegistry)
+	ac := out.Balance.AgentConfig(out.NeedsRegistry, out.StatsRegistry)
 	if ac.Lambda != 0.25 {
 		t.Errorf("Agent Lambda = %f, want 0.25", ac.Lambda)
 	}
@@ -778,7 +778,7 @@ func TestLoadWithRealContent(t *testing.T) {
 	}
 
 	// Try the accessor methods.
-	_ = out.Balance.AgentConfig(out.NeedsRegistry)
+	_ = out.Balance.AgentConfig(out.NeedsRegistry, out.StatsRegistry)
 	_ = out.Balance.PlannerConfig()
 	_ = out.Balance.WorldConfig()
 	_ = out.Balance.ClockConfig()
@@ -911,7 +911,7 @@ func TestBalanceAgentConfig(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	ac := out.Balance.AgentConfig(out.NeedsRegistry)
+	ac := out.Balance.AgentConfig(out.NeedsRegistry, out.StatsRegistry)
 
 	// Mood
 	if ac.Lambda != 0.25 {

@@ -9,15 +9,17 @@ internal traffic over `*.svc.cluster.local`.
 The simulation is **deterministic and stateful with one authoritative timeline** (D12). You **cannot run
 N replicas of the tick loop** — each replica would advance its own divergent world.
 
-- **`sim` (writer): exactly one instance.** Runs the tick loop, writes live state to Redis, backs up to Postgres.
-  - Deployment `replicas: 1` with **`strategy: Recreate`** (NOT RollingUpdate — a rolling update briefly runs
-    two pods = two sims writing the same Redis keyspace). Or a leader-elected setup if you want failover later.
-- **Readers (API queries + SSE fan-out): scale freely.** They only *read* Redis (and tail the events stream),
-  so they are stateless and horizontally scalable.
+The backend ships as **two binaries / two images** (one Go module, `backend/`):
 
-> First cut: one binary, `replicas: 1`, does sim + HTTP. Split readers out only when SSE connection load grows.
-> When you split, add `backend/cmd/api` (read-mode) alongside `backend/cmd/sim`; both share the image, read the
-> same Redis. The sim stays singleton; the readers become a separate scalable Deployment.
+| Binary | Source | Image / Dockerfile | Role | Replicas |
+|--------|--------|--------------------|------|----------|
+| **bdg-backend** (writer + API) | `backend/` (root `main.go`) | `bdg-backend` / `backend/Dockerfile.api` | tick loop, writes live state to valkey, backs up to postgres, serves `/api/*` (`gapi.dogring.kr`) | **1** (`strategy: Recreate`) |
+| **bdg-sse** (read-only SSE) | `backend/cmd/sse` | `bdg-sse` / `backend/Dockerfile.sse` | tails the valkey event stream with a **read-only** user, serves `/sse` (`sse.dogring.kr`) | N (`RollingUpdate`) |
+
+- **bdg-backend is the single writer:** `replicas: 1`, **`strategy: Recreate`** (NOT RollingUpdate — a rolling
+  update briefly runs two pods = two sims writing the same `RUN_ID` keyspace).
+- **bdg-sse only reads** (XREAD on the events stream): stateless, no postgres, no `content/`, no write grants —
+  scale it horizontally with the SSE connection load. It gets ONLY the read-only valkey credentials.
 
 ## 2. Internal traffic (`cluster.local`)
 Already handled by env (see `.env.example`, `docs/dev-setup.md`). On k8s, set via ConfigMap/Secret:
@@ -25,16 +27,15 @@ Already handled by env (see `.env.example`, `docs/dev-setup.md`). On k8s, set vi
 - `POSTGRES_DSN = postgres://…@postgres.<ns>.svc.cluster.local:5432/bdg?sslmode=…` (Secret)
 The backend opens plain in-cluster connections; no public exposure for Redis/Postgres.
 
-## 3. External routing (two hostnames, one backend)
-Both hostnames target the same backend Service; the gateway routes by **hostname** (and/or path).
+## 3. External routing (two hostnames, two services)
+Each hostname targets its own Service; the ingress routes by **hostname**.
 ```
-sse.dogring.kr   ──HTTPRoute──┐
-                              ├──> Service: bdg  (HTTP_ADDR :8080)
-gapi.dogring.kr  ──HTTPRoute──┘
+gapi.dogring.kr  ──Ingress──> Service: bdg-backend  (writer+API,  :8080)
+sse.dogring.kr   ──Ingress──> Service: bdg-sse      (read-only SSE, :8080)
 ```
-- `gapi.dogring.kr` → backend API paths (e.g. `/api/…`, `/healthz`).
-- `sse.dogring.kr` → backend SSE path (`/sse`) — long-lived `text/event-stream`.
-- CORS: the backend allows the frontend origin (`CORS_ORIGINS`) for both hosts.
+- `gapi.dogring.kr` → `bdg-backend`: API paths (`/api/…`, `/healthz`, `/readyz`).
+- `sse.dogring.kr` → `bdg-sse`: SSE path (`/sse`) — long-lived `text/event-stream`.
+- Manifests: `deploy/k8s/{deployment-backend,deployment-sse,service,ingress}.yaml`.
 
 ## 4. SSE through the gateway (verify — common breakage)
 Envoy Gateway (and most ingress) **buffer responses and apply idle timeouts that kill SSE.** For the
@@ -53,11 +54,15 @@ On Envoy Gateway this is a `BackendTrafficPolicy` / `ClientTrafficPolicy` (timeo
   Set a generous `terminationGracePeriodSeconds`.
 
 ## 6. Image & CI
-- **Dockerfile only** (per your setup) — the GitHub workflow builds and pushes. Image is multi-stage →
-  `distroless/static-debian12:nonroot`, `content/` baked in (`CONTENT_DIR=/app/content`). Static CGO-off binary.
-- Optional later: mount `content/` from a ConfigMap so balance tuning redeploys without a rebuild.
+Two multi-stage Dockerfiles, both built from the **repo root** and pushed to `registry.dogring.kr` by
+GitHub Actions (`.github/workflows/{backend,sse}.yaml`, Zot login via `ZOT_USERNAME/PASSWORD`):
+- `backend/Dockerfile.api` → `bdg-backend`: ships `content/` (`CONTENT_DIR=/app/content`).
+- `backend/Dockerfile.sse` → `bdg-sse`: no content (read-only stream tailer).
+Both: static CGO-off binary on `distroless/static-debian12:nonroot`. Health via k8s httpGet probes
+(`/healthz`, `/readyz`) — no in-image HEALTHCHECK (distroless has no shell).
 
 ## 7. Status note
-The HTTP/SSE/API server itself is **not implemented yet** — current `backend/cmd/sim/main.go` is a CLI scaffold.
-The serving layer lands as platform modules (`platform/events` → Redis events stream; `platform/api` → health/API/SSE),
-built via the spec-first flow. This doc fixes the *topology and contract* those modules implement against.
+The HTTP/SSE/API serving layer is **implemented**: `platform/events` (valkey events stream),
+`platform/persist` (live store + postgres backup), and `platform/api` (health/API/SSE + god-view). The
+writer entrypoint is `backend/main.go`; the read-only SSE entrypoint is `backend/cmd/sse` (via
+`api.NewSSE`). See `deploy/README.md` for the end-to-end local/docker/k8s runbook.

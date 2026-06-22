@@ -13,7 +13,12 @@
 // Deployment knobs (data-contracts §2/§3) read from the environment:
 //
 //	REDIS_ADDR          live store + event stream + SSE source (empty = disabled)
-//	POSTGRES_DSN        periodic backup + why-trace (empty = disabled)
+//	REDIS_USERNAME      valkey/redis ACL user for the read+write path (empty = no auth)
+//	REDIS_PASSWORD      password for REDIS_USERNAME
+//	REDIS_DB            valkey/redis logical DB number (default 0)
+//	REDIS_RO_USERNAME   read-only valkey user for the api/SSE read path (default: REDIS_USERNAME)
+//	REDIS_RO_PASSWORD   password for REDIS_RO_USERNAME (default: REDIS_PASSWORD)
+//	POSTGRES_DSN        periodic backup + why-trace (empty = disabled); carries its own user:pass
 //	HTTP_ADDR           api listen address (default :8080; api needs REDIS_ADDR)
 //	BACKUP_EVERY_TICKS  snapshot/backup cadence (default from content/balance.yaml)
 //	GOD_MODE            "true" enables the gated /api/god/* + real_stats merge
@@ -66,6 +71,11 @@ func main() {
 	// Deployment knobs. An empty REDIS_ADDR/POSTGRES_DSN disables that tier; the
 	// process then behaves as the original batch runner (no IO beyond stderr/stdout).
 	redisAddr := envStr("REDIS_ADDR", "")
+	redisUser := envStr("REDIS_USERNAME", "")
+	redisPass := envStr("REDIS_PASSWORD", "")
+	redisDB := envInt("REDIS_DB", 0)
+	redisROUser := envStr("REDIS_RO_USERNAME", redisUser)
+	redisROPass := envStr("REDIS_RO_PASSWORD", redisPass)
 	pgDSN := envStr("POSTGRES_DSN", "")
 	httpAddr := envStr("HTTP_ADDR", ":8080")
 	godMode := envStr("GOD_MODE", "") == "true"
@@ -90,7 +100,7 @@ func main() {
 	sensor := perception.NewSensor(dummyHash, cfg.PerceptionConfig)
 
 	// ── 4. Build agent config ────────────────────────────────────────────────
-	agentCfg := cfg.Balance.AgentConfig(cfg.NeedsRegistry)
+	agentCfg := cfg.Balance.AgentConfig(cfg.NeedsRegistry, cfg.StatsRegistry)
 
 	// ── 5. Build world config & clock ────────────────────────────────────────
 	clock, err := worldtime.NewClock(cfg.Balance.ClockConfig())
@@ -123,7 +133,12 @@ func main() {
 	)
 
 	if redisAddr != "" {
-		rc := redis.NewClient(&redis.Options{Addr: redisAddr})
+		rc := redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Username: redisUser,
+			Password: redisPass,
+			DB:       redisDB,
+		})
 		defer func() { _ = rc.Close() }()
 		if err := rc.Ping(sigCtx); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: redis ping %s failed: %v (ops will retry per call)\n", redisAddr, err)
@@ -134,7 +149,22 @@ func main() {
 		eventsEmitter = em
 		sinks = append(sinks, em)
 		liveStore = persist.NewRedisLiveStore(wa, 0) // ttl 0: keep live keys for the active run
-		redisReader = redisReadAdapter{c: rc}
+
+		// Read path (api + SSE) uses a separate, optionally read-only, valkey user
+		// (REDIS_RO_*). When those are unset they fall back to the primary credentials,
+		// in which case we reuse the single write client instead of opening a second
+		// connection. The public SSE/api boundary thus needs only read-only grants.
+		rcRead := rc
+		if redisROUser != redisUser || redisROPass != redisPass {
+			rcRead = redis.NewClient(&redis.Options{
+				Addr:     redisAddr,
+				Username: redisROUser,
+				Password: redisROPass,
+				DB:       redisDB,
+			})
+			defer func() { _ = rcRead.Close() }()
+		}
+		redisReader = redisReadAdapter{c: rcRead}
 	}
 
 	if pgDSN != "" {

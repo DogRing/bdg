@@ -8,6 +8,7 @@ import (
 	"github.com/dogring/bdg/engine/core"
 	"github.com/dogring/bdg/engine/needs"
 	"github.com/dogring/bdg/engine/planner"
+	"github.com/dogring/bdg/engine/stats"
 	"github.com/dogring/bdg/engine/tom"
 	"github.com/dogring/bdg/engine/world"
 	"github.com/dogring/bdg/engine/worldtime"
@@ -16,7 +17,7 @@ import (
 // AgentConfig builds agent.Config from the Balance fields.
 // It resolves SafetyDim, threat tags, effort levels, and tom.Rates
 // exactly as main.go's agentConfigFromBalance.
-func (b *Balance) AgentConfig(needReg *needs.Registry) agent.Config {
+func (b *Balance) AgentConfig(needReg *needs.Registry, statReg *stats.Registry) agent.Config {
 	// Resolve SafetyDim: the single Conditional PreventBelow dimension.
 	var safetyDim core.Dimension
 	for _, id := range needReg.Kinds(needs.Conditional) {
@@ -25,6 +26,17 @@ func (b *Balance) AgentConfig(needReg *needs.Registry) agent.Config {
 			break
 		}
 	}
+
+	// Resolve RestDim: the consumable Rest dimension (canonical glossary id).
+	restDim := core.Dimension("Rest")
+	if !needReg.Has(needs.NeedID(restDim)) {
+		restDim = ""
+	}
+
+	// Resolve stat IDs from the stats registry (D10: no hardcoded StatID literals in engine code).
+	intelSID := resolveStatByKind(statReg, stats.Capability)
+	vindSID := resolveStatByKind(statReg, stats.Disposition) // first disposition
+	aggrSID := resolveSecondStatByKind(statReg, stats.Disposition) // second disposition
 
 	// Resolve ThreatTags from hostile_tags strings.
 	threatTags := make([]core.Tag, len(b.Threats.HostileTags))
@@ -109,6 +121,10 @@ func (b *Balance) AgentConfig(needReg *needs.Registry) agent.Config {
 		SafetyThreatThreshold: b.Threats.SafetyThreatThreshold,
 		ThreatTags:            threatTags,
 		SafetyDim:             safetyDim,
+		RestDim:               restDim,
+		IntelligenceStatID:    intelSID,
+		VindictivenessStatID:  vindSID,
+		AggressionStatID:      aggrSID,
 		ThreatPerThreatGain:   b.Threats.PerThreatIntensity,
 		ThreatSafetyDecay:     b.Threats.SafetyDecay,
 
@@ -172,3 +188,34 @@ func tagToFloatMap(raw map[string]float64) map[core.Tag]float64 {
 // stringToTagMap is a semantic alias for tagToFloatMap; used where the input is
 // explicitly planner tag_costs (same map shape, distinct conceptual source).
 func stringToTagMap(raw map[string]float64) map[core.Tag]float64 { return tagToFloatMap(raw) }
+
+// resolveStatByKind returns the first stat ID of the given kind from the registry
+// (D10: resolves by metadata, no hardcoded StatID literal).
+func resolveStatByKind(statReg *stats.Registry, kind stats.Kind) core.StatID {
+	ids := statReg.Kinds(kind)
+	if len(ids) > 0 {
+		return ids[0]
+	}
+	// Fallback: first registered stat.
+	all := statReg.IDs()
+	if len(all) > 0 {
+		return all[0]
+	}
+	return ""
+}
+
+// resolveSecondStatByKind returns the second stat ID of the given kind from the
+// registry (D10: metadata-iterated). Used when two distinct stats of the same kind
+// are needed (e.g., Vindictiveness + Aggression are both disposition).
+func resolveSecondStatByKind(statReg *stats.Registry, kind stats.Kind) core.StatID {
+	ids := statReg.Kinds(kind)
+	if len(ids) > 1 {
+		return ids[1]
+	}
+	// Fallback: last registered stat of any kind.
+	all := statReg.IDs()
+	if len(all) > 1 {
+		return all[len(all)-1]
+	}
+	return ""
+}

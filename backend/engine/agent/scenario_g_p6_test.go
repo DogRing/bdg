@@ -273,7 +273,7 @@ func TestVoteEmission_BothThresholdsMet(t *testing.T) {
 	}
 	mockWV.agentIDList = []core.AgentID{"guardian"}
 
-	urgency := distributedUrgency(mockWV)
+	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
 	t.Logf("Distributed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.VoteUrgencyThreshold)
 	if urgency <= agent.Cfg.VoteUrgencyThreshold {
 		t.Fatalf("urgency (%.3f) should exceed threshold (%.2f) for vote to emit", urgency, agent.Cfg.VoteUrgencyThreshold)
@@ -319,7 +319,7 @@ func TestVoteEmission_NoVote_LowRelyOn(t *testing.T) {
 		"villager_2": {"Safety": 0.85},
 	}
 
-	urgency := distributedUrgency(mockWV)
+	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
 	t.Logf("Distributed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.VoteUrgencyThreshold)
 	if urgency <= agent.Cfg.VoteUrgencyThreshold {
 		t.Fatal("urgency should exceed threshold for this test to be meaningful")
@@ -348,7 +348,7 @@ func TestVoteEmission_NoVote_LowUrgency(t *testing.T) {
 		"villager_2": {"Safety": 0.20},
 	}
 
-	urgency := distributedUrgency(mockWV)
+	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
 	t.Logf("Distributed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.VoteUrgencyThreshold)
 	if urgency >= agent.Cfg.VoteUrgencyThreshold {
 		t.Fatalf("urgency (%.3f) should be below threshold (%.2f) for this test", urgency, agent.Cfg.VoteUrgencyThreshold)
@@ -371,7 +371,7 @@ func TestDistributedUrgency_LowCollectiveSafety(t *testing.T) {
 		"villager_3": {"Safety": 0.90},
 	}
 
-	urgency := distributedUrgency(mockWV)
+	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
 	t.Logf("Distributed urgency with low Safety: %.3f", urgency)
 
 	if urgency <= 0.5 {
@@ -388,7 +388,7 @@ func TestDistributedUrgency_HighCollectiveSafety(t *testing.T) {
 		"villager_2": {"Safety": 0.15},
 	}
 
-	urgency := distributedUrgency(mockWV)
+	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
 	t.Logf("Distributed urgency with high Safety: %.3f", urgency)
 
 	if urgency > 0.3 {
@@ -401,7 +401,7 @@ func TestDistributedUrgency_NoMembers(t *testing.T) {
 	mockWV := newMockWorldViewForP6()
 	// No member intensities set.
 
-	urgency := distributedUrgency(mockWV)
+	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
 	if urgency != 0 {
 		t.Errorf("expected 0 urgency with no member data, got %.3f", urgency)
 	}
@@ -451,7 +451,7 @@ func TestGoalToFunction_MapsCorrectly(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		fn := goalToFunction(tc.dim)
+		fn := goalToFunction(tc.dim, core.Dimension("Safety"))
 		if fn != tc.expected {
 			t.Errorf("goalToFunction(%q) = %q, want %q", tc.dim, fn, tc.expected)
 		}

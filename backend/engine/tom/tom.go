@@ -27,8 +27,8 @@ type Function = core.Function
 // Variance >= 0 encodes uncertainty: high variance = low confidence (a fresh /
 // hearsay belief); it shrinks toward 0 as direct evidence accumulates.
 type StatDist struct {
-	Mean     float64
-	Variance float64
+	Mean     float64 `json:"mean"`
+	Variance float64 `json:"variance"`
 }
 
 // Belief is one subject-model (glossary: Belief = ToM[X]).

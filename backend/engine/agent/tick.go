@@ -576,17 +576,25 @@ func (a *Agent) clearGoal() {
 	a.Elapsed = 0
 }
 
-// resolveOtherMoodStatID resolves a Mood stat id from the registry for the
-// Other-referent low-intel branch (D7: no "Mood" literal in logic).
+// resolveOtherMoodStatID returns a disposition stat from the registry to serve as
+// the mood proxy for the Other-referent low-Intelligence branch. D10: no hardcoded
+// StatID literal — iterates registry metadata to find the first disposition stat.
 func resolveOtherMoodStatID(statsReg *stats.Registry) core.StatID {
 	if statsReg == nil {
 		return ""
 	}
-	const moodID core.StatID = "Mood"
-	if statsReg.Has(moodID) {
-		return moodID
-	}
+	// Iterate registry metadata: pick the first disposition stat as mood proxy.
 	ids := statsReg.IDs()
+	for _, id := range ids {
+		def, ok := statsReg.Def(id)
+		if !ok {
+			continue
+		}
+		if def.Kind == stats.Disposition {
+			return id
+		}
+	}
+	// Fallback: return the first registered stat.
 	if len(ids) > 0 {
 		return ids[0]
 	}

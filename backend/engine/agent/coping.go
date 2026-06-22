@@ -119,9 +119,11 @@ func (a *Agent) canRebind(statsReg *stats.Registry) bool {
 // to [0,1] by dividing by the stat's max range (D8: reads ToM[self]).
 func (a *Agent) normalizedIntelligence(statsReg *stats.Registry) float64 {
 	raw := a.perceivedIntelligence(statsReg)
-	const intelGlossaryID core.StatID = "Intelligence"
-	if def, ok := statsReg.Def(intelGlossaryID); ok && def.Max > 0 {
-		return raw / def.Max
+	sid := a.Cfg.IntelligenceStatID
+	if sid != "" {
+		if def, ok := statsReg.Def(sid); ok && def.Max > 0 {
+			return raw / def.Max
+		}
 	}
 	return raw
 }
@@ -191,7 +193,7 @@ func (a *Agent) accrueResentment(triggers []core.AgentID, statsReg *stats.Regist
 	}
 
 	// Resolve Vindictiveness stat ID from the registry (D7: no hardcoded literal).
-	vindictivenessStatID := resolveVindictivenessStatID(statsReg)
+	vindictivenessStatID := resolveVindictivenessStatID(a.Cfg)
 	vindictiveness := a.perceivedStat(vindictivenessStatID)
 
 	for _, triggerID := range triggers {
@@ -223,7 +225,7 @@ func (a *Agent) accrueResentment(triggers []core.AgentID, statsReg *stats.Regist
 	if a.Resentment > a.Cfg.ResentmentThreshold {
 		// Apply aggression_drift to ToM[self] Aggression.
 		selfID := a.ToM.SelfID()
-		aggStatID := resolveAggressionStatID(statsReg)
+		aggStatID := resolveAggressionStatID(a.Cfg)
 		a.ToM.Observe(selfID, tom.StatEvidence{
 			Stat:     aggStatID,
 			Observed: a.perceivedStat(aggStatID) + a.Cfg.AggressionDrift,
@@ -234,33 +236,15 @@ func (a *Agent) accrueResentment(triggers []core.AgentID, statsReg *stats.Regist
 }
 
 // resolveVindictivenessStatID resolves the Vindictiveness disposition StatID
-// from the stats registry (D7: no hardcoded literal).
-func resolveVindictivenessStatID(statsReg *stats.Registry) core.StatID {
-	const vindictivenessGlossaryID core.StatID = "Vindictiveness"
-	if statsReg.Has(vindictivenessGlossaryID) {
-		return vindictivenessGlossaryID
-	}
-	// Fallback: use the first disposition stat.
-	disps := statsReg.Kinds(stats.Disposition)
-	if len(disps) > 0 {
-		return disps[0]
-	}
-	return ""
+// from the injected agent config (D10: no hardcoded literal).
+func resolveVindictivenessStatID(cfg Config) core.StatID {
+	return cfg.VindictivenessStatID
 }
 
 // resolveAggressionStatID resolves the Aggression disposition StatID
-// from the stats registry (D7: no hardcoded literal).
-func resolveAggressionStatID(statsReg *stats.Registry) core.StatID {
-	const aggressionGlossaryID core.StatID = "Aggression"
-	if statsReg.Has(aggressionGlossaryID) {
-		return aggressionGlossaryID
-	}
-	// Fallback: use the first disposition stat.
-	disps := statsReg.Kinds(stats.Disposition)
-	if len(disps) > 0 {
-		return disps[0]
-	}
-	return ""
+// from the injected agent config (D10: no hardcoded literal).
+func resolveAggressionStatID(cfg Config) core.StatID {
+	return cfg.AggressionStatID
 }
 
 // ── Self-calibration (β, D8) ───────────────────────────────────────────────────
@@ -290,16 +274,18 @@ func (a *Agent) foldEvidence(outcome ActionOutcome) {
 // perceivedIntelligence returns the agent's self-perceived Intelligence stat value
 // from ToM[self] (D8: decisions read ToM[self], never Real Stats).
 func (a *Agent) perceivedIntelligence(statsReg *stats.Registry) float64 {
-	const intelGlossaryID core.StatID = "Intelligence"
-	if !statsReg.Has(intelGlossaryID) {
+	sid := a.Cfg.IntelligenceStatID
+	if sid == "" {
 		// Fallback: use the first capability stat.
 		caps := statsReg.Kinds(stats.Capability)
 		if len(caps) > 0 {
-			return a.perceivedStat(caps[0])
+			sid = caps[0]
 		}
+	}
+	if sid == "" {
 		return 0
 	}
-	return a.perceivedStat(intelGlossaryID)
+	return a.perceivedStat(sid)
 }
 
 // perceivedStat returns the agent's self-perceived value for a stat from ToM[self] (D8).

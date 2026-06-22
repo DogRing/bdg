@@ -242,7 +242,7 @@ func runOne(
 	bal.Gates.ConscienceUrgencyThreshold = conscienceUrgencyThreshold
 
 	// Build agent config from the modified balance.
-	agentCfg := bal.AgentConfig(cfg.NeedsRegistry)
+	agentCfg := bal.AgentConfig(cfg.NeedsRegistry, cfg.StatsRegistry)
 
 	// Build world config and clock.
 	worldCfg := bal.WorldConfig()
