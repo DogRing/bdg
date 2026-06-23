@@ -45,7 +45,7 @@ needs:
   Hydration: { decay_per_tick: 0.00110, satisfaction_threshold: 0.50 }  # thirst grows faster than hunger
   Rest:      { decay_per_tick: 0.00045, satisfaction_threshold: 0.45 }  # fatigue accrues over a waking day
   Social:    { decay_per_tick: 0.00020, satisfaction_threshold: 0.30 }  # slow social need; drives trade / signal
-  Comfort:   { decay_per_tick: 0.00120, satisfaction_threshold: 0.35 }  # comfort deficit; drives social care actions
+  Comfort:   { decay_per_tick: 0.00020, satisfaction_threshold: 0.35 }  # slow: social-care need, satisfied opportunistically when agents cluster (near_other has no planner path, so it must not dominate)
 
 # ── Value arbitration weights (read by engine/values; data-driven, D10) ──────────
 # Per-Dimension tunable weight used by Priority(d) = Salience(d) × weight(d). engine/values
