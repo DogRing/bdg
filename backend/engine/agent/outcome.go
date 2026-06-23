@@ -21,7 +21,7 @@ import (
 //
 // It runs in the world's serial, fixed-AgentID apply phase (D12), AFTER all Tick
 // intents are collected, so no two agents' updates interleave nondeterministically.
-func (a *Agent) ApplyOutcome(outcome ActionOutcome, rng *rng.RNG, cfg Config, reg *stats.Registry, emit core.EventEmitter) {
+func (a *Agent) ApplyOutcome(outcome ActionOutcome, now core.Tick, rng *rng.RNG, cfg Config, reg *stats.Registry, emit core.EventEmitter) {
 	_ = rng  // reserved for future disposition-perturbed responses
 	_ = reg  // reserved for stat range clamping during evidence fold
 
@@ -36,7 +36,7 @@ func (a *Agent) ApplyOutcome(outcome ActionOutcome, rng *rng.RNG, cfg Config, re
 		a.Elapsed = 0
 
 		// Emit ActionDone event.
-		emitActionDone(emit, 0, a.ID, outcome)
+		emitActionDone(emit, now, a.ID, outcome)
 	}
 
 	// ── 2. β self-calibration: fold evidence into ToM[self] (D8) ──────────
@@ -62,7 +62,7 @@ func (a *Agent) ApplyOutcome(outcome ActionOutcome, rng *rng.RNG, cfg Config, re
 			a.Coping = Idle
 			a.Mood += cfg.ApathyRecoverMood
 			if emit != nil {
-				emitCopingEntered(emit, 0, a.ID, Idle)
+				emitCopingEntered(emit, now, a.ID, Idle)
 			}
 		}
 	}

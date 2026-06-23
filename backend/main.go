@@ -205,9 +205,11 @@ func main() {
 		placeObjects(w, rootRNG)
 		for i := range *agentCount {
 			id := core.AgentID(fmt.Sprintf("agent_%02d", i))
+			// Spread agents across the same span as placeObjects (±20) so the
+			// initial god-view shows a populated village, not one clustered dot.
 			pos := core.Vec2{
-				X: (rootRNG.Float64() - 0.5) * 2,
-				Y: (rootRNG.Float64() - 0.5) * 2,
+				X: (rootRNG.Float64() - 0.5) * 40,
+				Y: (rootRNG.Float64() - 0.5) * 40,
 			}
 			w.Spawn(id, pos, agentCfg, rng.New(*seed+int64(i)+1))
 		}
@@ -308,8 +310,13 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 				fmt.Fprintf(os.Stderr, "warning: WriteTick(%d): %v\n", tick, err)
 			}
 		}
+		// Mirror live render state (snapshot + per-agent views) to Redis EVERY tick so
+		// the god-view sees agents move in near-real-time. The heavier Postgres backup
+		// (+ why-trace drain) still runs only every backupEvery ticks.
 		if backupEvery > 0 && int64(tick)%int64(backupEvery) == 0 {
 			flushSnapshot(sigCtx, w, runID, live, backup, buf)
+		} else {
+			flushLive(sigCtx, w, runID, live)
 		}
 		if tickSleep > 0 {
 			select {
@@ -337,22 +344,7 @@ func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID,
 	}
 	tick := w.CurrentTick()
 
-	if live != nil {
-		if err := live.WriteSnapshot(ctx, runID, blob); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: live WriteSnapshot: %v\n", err)
-		}
-		for _, id := range w.AgentIDs() {
-			a, ok := w.AgentOf(id)
-			if !ok {
-				continue
-			}
-			if err := live.WriteAgent(ctx, runID, persist.AgentView{
-				ID: a.ID, Pos: a.Pos, Goal: string(a.Goal), Action: currentAction(a), Mood: a.Mood,
-			}); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: live WriteAgent(%s): %v\n", id, err)
-			}
-		}
-	}
+	writeLive(ctx, w, runID, live, blob)
 
 	if backup != nil {
 		if err := backup.WriteSnapshot(ctx, runID, tick, blob); err != nil {
@@ -364,6 +356,43 @@ func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID,
 					fmt.Fprintf(os.Stderr, "warning: pg WriteEvents: %v\n", err)
 				}
 			}
+		}
+	}
+}
+
+// flushLive mirrors ONLY the live render state (snapshot blob + per-agent views) to
+// Redis. It is the per-tick fast path: no Postgres, no why-trace drain. It encodes the
+// snapshot itself (unlike flushSnapshot, which encodes once and shares the blob).
+func flushLive(ctx context.Context, w *world.World, runID core.RunID, live persist.LiveStore) {
+	if live == nil {
+		return
+	}
+	blob, err := persist.Encode(persist.CaptureSnapshot(runID, w))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: encode live snapshot: %v\n", err)
+		return
+	}
+	writeLive(ctx, w, runID, live, blob)
+}
+
+// writeLive writes the snapshot blob and each agent's render view to the live Redis
+// keyspace. Shared by flushSnapshot (backup ticks) and flushLive (every other tick).
+func writeLive(ctx context.Context, w *world.World, runID core.RunID, live persist.LiveStore, blob []byte) {
+	if live == nil {
+		return
+	}
+	if err := live.WriteSnapshot(ctx, runID, blob); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: live WriteSnapshot: %v\n", err)
+	}
+	for _, id := range w.AgentIDs() {
+		a, ok := w.AgentOf(id)
+		if !ok {
+			continue
+		}
+		if err := live.WriteAgent(ctx, runID, persist.AgentView{
+			ID: a.ID, Pos: a.Pos, Goal: string(a.Goal), Action: currentAction(a), Mood: a.Mood,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: live WriteAgent(%s): %v\n", id, err)
 		}
 	}
 }

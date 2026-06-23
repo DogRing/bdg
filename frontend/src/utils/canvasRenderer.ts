@@ -44,9 +44,12 @@ function buildTransform(agents: AgentState[], W: number, H: number) {
     minX = Math.min(minX, a.pos.x); maxX = Math.max(maxX, a.pos.x)
     minY = Math.min(minY, a.pos.y); maxY = Math.max(maxY, a.pos.y)
   }
+  // Minimum span guards the degenerate "all agents at one point" case (avoids
+  // div-by-zero / extreme zoom). Kept small so a compact village fills the canvas
+  // rather than being squeezed into the centre.
   const PAD = 60
-  const rangeX = Math.max(maxX - minX, 200)
-  const rangeY = Math.max(maxY - minY, 200)
+  const rangeX = Math.max(maxX - minX, 10)
+  const rangeY = Math.max(maxY - minY, 10)
   const sx = (W - PAD * 2) / rangeX
   const sy = (H - PAD * 2) / rangeY
   const scale = Math.min(sx, sy)

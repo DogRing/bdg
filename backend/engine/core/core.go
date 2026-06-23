@@ -43,7 +43,12 @@ type Pred string
 // ── Spatial ──────────────────────────────────────────────────────────────────
 
 // Vec2 is a free 2-D coordinate (D11: not tiled, unbounded float64).
-type Vec2 struct{ X, Y float64 }
+// JSON keys are lowercase x/y so the render snapshot matches the frontend
+// AgentPos contract (data-contracts §1 pos: {x, y}).
+type Vec2 struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
 
 func (v Vec2) Add(o Vec2) Vec2          { return Vec2{v.X + o.X, v.Y + o.Y} }
 func (v Vec2) Sub(o Vec2) Vec2          { return Vec2{v.X - o.X, v.Y - o.Y} }

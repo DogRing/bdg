@@ -115,16 +115,20 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
 function reducer(state: WorldState, action: WorldAction): WorldState {
   switch (action.type) {
     case 'SNAPSHOT_LOADED': {
-      const agents = new Map<string, AgentState>()
+      // Merge over existing agents so periodic snapshot polls refresh authoritative
+      // pos/goal/mood while preserving SSE-driven fields (cluster, copingMode, action)
+      // that the snapshot does not carry.
+      const agents = new Map(state.agents)
       for (const a of action.payload.agents) {
-        agents.set(a.id, a)
+        const prev = agents.get(a.id)
+        agents.set(a.id, prev ? { ...prev, pos: a.pos, goal: a.goal, mood: a.mood } : a)
       }
       return {
         ...state,
-        tick: action.payload.tick,
+        tick: Math.max(state.tick, action.payload.tick),
         agents,
-        food: action.payload.food ?? null,
-        wood: action.payload.wood ?? null,
+        food: action.payload.food ?? state.food,
+        wood: action.payload.wood ?? state.wood,
       }
     }
     case 'AGENT_UPDATED': {

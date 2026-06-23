@@ -14,10 +14,16 @@ export default function App() {
 
   const { state, dispatchEvent, setConnection, selectAgent, togglePause, loadSnapshot } = useWorld()
 
-  // Load initial snapshot on mount
+  // Load initial snapshot on mount, then poll for authoritative positions so the
+  // god-view shows agents move. (SSE carries the event log; positions come from the
+  // snapshot, which the backend mirrors to Redis every tick.)
   useEffect(() => {
     void loadSnapshot()
-  }, [loadSnapshot])
+    const id = setInterval(() => {
+      if (!state.paused) void loadSnapshot()
+    }, 2000)
+    return () => clearInterval(id)
+  }, [loadSnapshot, state.paused])
 
   // SSE connection
   useSSE(dispatchEvent, setConnection)

@@ -121,7 +121,7 @@ func (w *World) Tick() {
 		// Deliver outcome back to the agent.
 		a := w.agents[intent.Agent]
 		if a != nil {
-			a.ApplyOutcome(outcome, fork, a.Cfg, w.svc.Stats, w.emit)
+			a.ApplyOutcome(outcome, w.tick, fork, a.Cfg, w.svc.Stats, w.emit)
 		}
 	}
 

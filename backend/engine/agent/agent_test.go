@@ -826,7 +826,7 @@ func TestApplyOutcome_MoodUpdate(t *testing.T) {
 	}
 
 	emit := core.NoopEmitter{}
-	agent.ApplyOutcome(outcome, rng.New(0), cfg, regs.stats, emit)
+	agent.ApplyOutcome(outcome, 0, rng.New(0), cfg, regs.stats, emit)
 
 	// Mood += Lambda × (Actual − Expected) = 0.25 × 0.2 = 0.05
 	expectedMood := 0.05
@@ -853,7 +853,7 @@ func TestApplyOutcome_NeedDeltaApplication(t *testing.T) {
 		}
 
 		emit := core.NoopEmitter{}
-		agent.ApplyOutcome(outcome, rng.New(0), cfg, regs.stats, emit)
+		agent.ApplyOutcome(outcome, 0, rng.New(0), cfg, regs.stats, emit)
 
 		if agent.NeedIntensities["Satiety"] >= 0.60 {
 			t.Errorf("NeedIntensity should decrease, got %v", agent.NeedIntensities["Satiety"])
