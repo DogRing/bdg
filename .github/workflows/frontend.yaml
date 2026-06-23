@@ -10,9 +10,10 @@ on:
     branches: [ "main" ]
     paths:
       - "frontend/**"
+      - ".github/workflows/frontend.yaml"
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -22,15 +23,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject environment variables
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Inject runtime env
         env:
-          AUTH_URL: https://gapi.dogring.kr
-          SSE_URL:  https://sse.dogring.kr
+          API_URL: https://gapi.dogring.kr
+          SSE_URL: https://sse.dogring.kr
         run: |
-          find frontend -name "*.html" -exec sed -i \
-            "s|</head>|<script>window.__ENV={AUTH_URL:'${AUTH_URL}',SSE_URL:'${SSE_URL}'}</script></head>|g" \
-            {} \;
- 
+          sed -i \
+            "s|</head>|<script>window.__ENV={API_URL:'${API_URL}',SSE_URL:'${SSE_URL}'}</script></head>|" \
+            frontend/dist/index.html
+
       - name: Deploy to Cloudflare Pages
         if: github.event_name != 'pull_request'
         uses: cloudflare/wrangler-action@v3
@@ -38,10 +54,10 @@ jobs:
           apiToken:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: >
-            pages deploy frontend
+            pages deploy frontend/dist
             --project-name=dogring-play
             --branch=main
-  
+
       - name: Slack message
         uses: 8398a7/action-slack@v3
         with:

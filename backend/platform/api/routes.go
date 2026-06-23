@@ -4,16 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"time"
 
 	"github.com/dogring/bdg/engine/core"
 )
 
 const (
-	xreadBlock    = 3 * time.Second // XRead BLOCK duration; bounds SSE drain on shutdown.
-	sseStartID    = "$"              // Start SSE tail from new events only.
 	agentNotFound = `{"error":"agent not found"}`
 	snapNotFound  = `{"error":"snapshot not found"}`
 )
@@ -38,54 +34,6 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
-}
-
-// ── GET /sse ─────────────────────────────────────────────────────────────────
-
-func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, `{"error":"streaming not supported"}`, http.StatusInternalServerError)
-		return
-	}
-
-	// SSE headers — set before any body write.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.Header().Set("Connection", "keep-alive")
-
-	ctx := r.Context()
-	evKey := s.keyer.Events()
-	lastID := sseStartID
-
-	// Each iteration: XRead BLOCK → forward every entry → Flush per entry.
-	for {
-		entries, newLastID, err := s.rds.XRead(ctx, evKey, lastID, xreadBlock)
-		if err != nil {
-			// If the client disconnected, ctx.Err() is propagated.
-			if ctx.Err() != nil {
-				return
-			}
-			// Transient Redis error: log and retry.
-			log.Printf("api: XRead error (lastID=%s): %v", lastID, err)
-			continue
-		}
-		lastID = newLastID
-		for _, entry := range entries {
-			payload := entry.Fields["payload"]
-			if payload == "" {
-				continue
-			}
-			_, err := w.Write([]byte("data: " + payload + "\n\n"))
-			if err != nil {
-				return
-			}
-			flusher.Flush()
-			// Advance lastID to the entry ID so reconnects can resume.
-			lastID = entry.ID
-		}
-	}
 }
 
 // ── GET /api/snapshot ─────────────────────────────────────────────────────────
