@@ -143,11 +143,11 @@ func stripRealStats(raw []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// The Payload field may be nil or may not be a map — handle gracefully.
-	if payload, ok := envelope["Payload"]; ok && payload != nil {
+	// The payload field may be nil or may not be a map — handle gracefully.
+	if payload, ok := envelope["payload"]; ok && payload != nil {
 		if payloadMap, ok := payload.(map[string]any); ok {
 			delete(payloadMap, "real_stats")
-			envelope["Payload"] = payloadMap
+			envelope["payload"] = payloadMap
 		}
 	}
 

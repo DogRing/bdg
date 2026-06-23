@@ -96,13 +96,14 @@ type Value struct {
 // platform/events provides the concrete implementation (SSE + why-trace).
 
 // Event carries one engine observation (data-contracts §4).
+// JSON field names are snake_case to match the frontend SimEvent contract.
 type Event struct {
-	SchemaVersion int
-	Tick          Tick
-	Seq           int64   // monotonically increasing within a run
-	AgentID       AgentID // empty when not agent-scoped
-	Type          string  // e.g. "GoalSelected", "ActionStarted"
-	Payload       any     // type-specific struct; serialized by platform/events
+	SchemaVersion int     `json:"schema_version"`
+	Tick          Tick    `json:"tick"`
+	Seq           int64   `json:"seq"`
+	AgentID       AgentID `json:"agent_id"`
+	Type          string  `json:"type"`
+	Payload       any     `json:"payload"`
 }
 
 // EventEmitter is accepted by engine/world (and any future module that emits).

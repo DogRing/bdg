@@ -110,13 +110,13 @@ func TestSeqIsMonotone(t *testing.T) {
 	for i, call := range calls {
 		m := parsePayload(t, call)
 		// JSON numbers unmarshal to float64 by default.
-		seqRaw, ok := m["Seq"]
+		seqRaw, ok := m["seq"]
 		if !ok {
-			t.Fatalf("call %d: payload missing 'Seq' field", i)
+			t.Fatalf("call %d: payload missing 'seq' field", i)
 		}
 		seq, ok := seqRaw.(float64)
 		if !ok {
-			t.Fatalf("call %d: Seq field not a number, got %T", i, seqRaw)
+			t.Fatalf("call %d: seq field not a number, got %T", i, seqRaw)
 		}
 		if int(seq) != i {
 			t.Errorf("call %d: want Seq=%d, got %v", i, i, seq)
@@ -148,14 +148,14 @@ func TestRealStatsStripped(t *testing.T) {
 
 	m := parsePayload(t, calls[0])
 
-	// Payload is nested in the envelope under "Payload".
-	payloadRaw, ok := m["Payload"]
+	// payload is nested in the envelope under "payload".
+	payloadRaw, ok := m["payload"]
 	if !ok {
-		t.Fatal("envelope missing 'Payload' field")
+		t.Fatal("envelope missing 'payload' field")
 	}
 	payload, ok := payloadRaw.(map[string]any)
 	if !ok {
-		t.Fatalf("Payload not a map, got %T", payloadRaw)
+		t.Fatalf("payload not a map, got %T", payloadRaw)
 	}
 
 	if _, found := payload["real_stats"]; found {
@@ -188,24 +188,24 @@ func TestPayloadRoundTrips(t *testing.T) {
 
 	m := parsePayload(t, calls[0])
 
-	// Check top-level event fields.
-	if got := m["Type"]; got != events.TypeActionDone {
-		t.Errorf("Type: want %q, got %v", events.TypeActionDone, got)
+	// Check top-level event fields (snake_case per data-contracts §4).
+	if got := m["type"]; got != events.TypeActionDone {
+		t.Errorf("type: want %q, got %v", events.TypeActionDone, got)
 	}
-	if got, ok := m["Tick"].(float64); !ok || int(got) != 42 {
-		t.Errorf("Tick: want 42, got %v", m["Tick"])
+	if got, ok := m["tick"].(float64); !ok || int(got) != 42 {
+		t.Errorf("tick: want 42, got %v", m["tick"])
 	}
-	if got := m["AgentID"]; got != "agent-7" {
-		t.Errorf("AgentID: want 'agent-7', got %v", got)
+	if got := m["agent_id"]; got != "agent-7" {
+		t.Errorf("agent_id: want 'agent-7', got %v", got)
 	}
-	// Seq should be 0 (first call).
-	if got, ok := m["Seq"].(float64); !ok || int(got) != 0 {
-		t.Errorf("Seq: want 0, got %v", m["Seq"])
+	// seq should be 0 (first call).
+	if got, ok := m["seq"].(float64); !ok || int(got) != 0 {
+		t.Errorf("seq: want 0, got %v", m["seq"])
 	}
-	// Payload sub-fields should be intact.
-	payloadRaw, ok := m["Payload"].(map[string]any)
+	// payload sub-fields should be intact.
+	payloadRaw, ok := m["payload"].(map[string]any)
 	if !ok {
-		t.Fatalf("Payload not a map, got %T", m["Payload"])
+		t.Fatalf("payload not a map, got %T", m["payload"])
 	}
 	if payloadRaw["action"] != "Gather" {
 		t.Errorf("payload.action: want 'Gather', got %v", payloadRaw["action"])
