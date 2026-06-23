@@ -37,7 +37,7 @@ export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
 
       const c = canvasRef.current
       if (!c) return
-      const ctx = c.getContext('2d')
+      const ctx = c.getContext('2d', { willReadFrequently: true })
       if (!ctx) return
 
       const W = c.width
@@ -69,7 +69,7 @@ export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
         const dpr = window.devicePixelRatio || 1
         canvas.width = Math.round(width * dpr)
         canvas.height = Math.round(height * dpr)
-        const ctx = canvas.getContext('2d')
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
         if (ctx) ctx.scale(dpr, dpr)
         // Invalidate terrain cache on resize
         terrainCacheRef.current = null

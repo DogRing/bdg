@@ -6,8 +6,7 @@ export function formatEvent(ev: SimEvent): LogEntry | null {
   const id = _nextId++
   const tick = ev.tick
   const agentId = ev.agent_id
-  const p = ev.payload
-
+  const p = ev.payload ?? {}
   const base = { id, tick, agentId }
 
   switch (ev.type) {

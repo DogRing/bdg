@@ -5,7 +5,7 @@ export interface SimEvent {
   seq: number
   agent_id: string | null
   type: string
-  payload: Record<string, unknown>
+  payload?: Record<string, unknown> // optional — some event types (SnapshotReady etc.) omit it
 }
 
 // Mirrors persist.AgentView (Redis hash shape)

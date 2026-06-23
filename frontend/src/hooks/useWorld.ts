@@ -38,6 +38,8 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
   let food = state.food
   let wood = state.wood
 
+  const p = ev.payload ?? {}
+
   // Update tick
   if (ev.tick > tick) tick = ev.tick
 
@@ -56,30 +58,30 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
 
     switch (ev.type) {
       case 'GoalSelected': {
-        const dim = String(ev.payload.dimension ?? '')
+        const dim = String(p.dimension ?? '')
         agents.set(ev.agent_id, { ...base, goal: dim })
         break
       }
       case 'ActionStarted': {
-        const action = String(ev.payload.action ?? '')
-        const pos = ev.payload.pos ? parsePos(ev.payload.pos) : base.pos
+        const action = String(p.action ?? '')
+        const pos = p.pos ? parsePos(p.pos) : base.pos
         agents.set(ev.agent_id, { ...base, action, pos })
         break
       }
       case 'ActionDone': {
-        const action = String(ev.payload.action ?? '')
+        const action = String(p.action ?? '')
         agents.set(ev.agent_id, { ...base, action: `✓ ${action}` })
         break
       }
       case 'CopingEntered': {
-        const mode = String(ev.payload.mode ?? '')
+        const mode = String(p.mode ?? '')
         agents.set(ev.agent_id, { ...base, copingMode: mode })
         break
       }
       case 'BeliefUpdated': {
         // mood drift on negative belief delta
-        const delta = typeof ev.payload['new'] === 'number' && typeof ev.payload['old'] === 'number'
-          ? (ev.payload['new'] as number) - (ev.payload['old'] as number) : 0
+        const delta = typeof p['new'] === 'number' && typeof p['old'] === 'number'
+          ? (p['new'] as number) - (p['old'] as number) : 0
         const mood = Math.max(0, Math.min(1, base.mood + delta * 0.1))
         agents.set(ev.agent_id, { ...base, mood })
         break
@@ -88,9 +90,9 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
   }
 
   if (ev.type === 'RoleEmerged') {
-    const fn = String(ev.payload.function ?? '')
-    const holder = String(ev.payload.holder ?? '')
-    const share = Number(ev.payload.reliance_share ?? 0)
+    const fn = String(p.function ?? '')
+    const holder = String(p.holder ?? '')
+    const share = Number(p.reliance_share ?? 0)
     // Assign cluster to holder
     const holder_agent = agents.get(holder)
     if (holder_agent) {
