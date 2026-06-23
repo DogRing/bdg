@@ -102,12 +102,27 @@ func NewSSE(cfg Config, rds RedisReader) *Server {
 	return s
 }
 
+// cors wraps h and adds Access-Control-Allow-Origin: * to every response so that
+// browser clients (e.g., Cloudflare Pages) can reach gapi/sse cross-origin.
+func cors(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // ListenAndServe binds s.addr and serves until ctx is cancelled (graceful shutdown)
 // or a fatal listen error occurs.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	hs := &http.Server{
 		Addr:    s.addr,
-		Handler: s.mux,
+		Handler: cors(s.mux),
 	}
 	done := make(chan error, 1)
 	go func() {

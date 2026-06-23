@@ -79,10 +79,11 @@ func main() {
 	pgDSN := envStr("POSTGRES_DSN", "")
 	httpAddr := envStr("HTTP_ADDR", ":8080")
 	godMode := envStr("GOD_MODE", "") == "true"
+	tickSleepMs := envInt("TICK_SLEEP_MS", 0) // 0 = batch speed; set e.g. 5000 for 12× real-time
 	runIDc := core.RunID(*runID)
 
-	fmt.Fprintf(os.Stderr, "medieval-sim seed=%d ticks=%d run=%s agents=%d redis=%q pg=%v http=%q god=%v\n",
-		*seed, *ticks, *runID, *agentCount, redisAddr, pgDSN != "", httpAddr, godMode)
+	fmt.Fprintf(os.Stderr, "medieval-sim seed=%d ticks=%d run=%s agents=%d redis=%q pg=%v http=%q god=%v tick_sleep_ms=%d\n",
+		*seed, *ticks, *runID, *agentCount, redisAddr, pgDSN != "", httpAddr, godMode, tickSleepMs)
 
 	// ── 1. Load content (single call — schema-validated, registries + balance) ──
 	cfg, err := config.Load(*contentDir)
@@ -140,7 +141,7 @@ func main() {
 			DB:       redisDB,
 		})
 		defer func() { _ = rc.Close() }()
-		if err := rc.Ping(sigCtx); err != nil {
+		if err := rc.Ping(sigCtx).Err(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: redis ping %s failed: %v (ops will retry per call)\n", redisAddr, err)
 		}
 		wa := redisWriteAdapter{c: rc}
@@ -259,7 +260,8 @@ func main() {
 
 	// ── 13. Tick loop (stops on -ticks exhaustion or SIGTERM) ─────────────────
 	fmt.Fprintf(os.Stderr, "running (ticks=%d backup_every=%d)...\n", *ticks, backupEvery)
-	runLoop(sigCtx, w, *ticks, runIDc, backupEvery, liveStore, backupStore, pgEventBuf)
+	runLoop(sigCtx, w, *ticks, runIDc, backupEvery, liveStore, backupStore, pgEventBuf,
+		time.Duration(tickSleepMs)*time.Millisecond)
 
 	// ── 14. Final snapshot flush (fresh ctx — sigCtx is already cancelled on SIGTERM) ─
 	fmt.Fprintln(os.Stderr, "tick loop stopped; flushing final snapshot...")
@@ -290,7 +292,8 @@ func main() {
 // SIGTERM) or sigCtx is cancelled. Each tick mirrors the live tick counter to Redis;
 // every backupEvery ticks it flushes a full snapshot to Redis + Postgres.
 func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.RunID,
-	backupEvery int, live persist.LiveStore, backup persist.BackupStore, buf *eventBuffer) {
+	backupEvery int, live persist.LiveStore, backup persist.BackupStore, buf *eventBuffer,
+	tickSleep time.Duration) {
 	infinite := limit <= 0
 	for i := int64(0); infinite || i < limit; i++ {
 		select {
@@ -307,6 +310,13 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 		}
 		if backupEvery > 0 && int64(tick)%int64(backupEvery) == 0 {
 			flushSnapshot(sigCtx, w, runID, live, backup, buf)
+		}
+		if tickSleep > 0 {
+			select {
+			case <-sigCtx.Done():
+				return
+			case <-time.After(tickSleep):
+			}
 		}
 	}
 }

@@ -58,7 +58,7 @@ func main() {
 		DB:       redisDB,
 	})
 	defer func() { _ = rc.Close() }()
-	if err := rc.Ping(sigCtx); err != nil {
+	if err := rc.Ping(sigCtx).Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: valkey ping %s failed: %v (will retry per request)\n", redisAddr, err)
 	}
 

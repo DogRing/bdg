@@ -6,5 +6,6 @@ declare global {
   }
 }
 
-export const SSE_URL = window.__ENV?.SSE_URL ?? '/sse'
+// SSE_URL is the base origin (e.g. "https://sse.dogring.kr"); append the path here.
+export const SSE_URL = (window.__ENV?.SSE_URL ?? '') + '/sse'
 export const API_BASE = window.__ENV?.API_URL ?? ''
