@@ -59,10 +59,7 @@ func New(
 	intelStat := resolveIntelligenceStatID(statReg)
 	sortedKeys := sortedTagCostKeys(cfg.TagCosts)
 
-	baseHorizon := cfg.BaseHorizonTicks
-	if baseHorizon < 1 {
-		baseHorizon = 1
-	}
+	baseHorizon := max(cfg.BaseHorizonTicks, 1)
 
 	lookaheadThreshold := cfg.LookaheadThreshold
 	if lookaheadThreshold < 0 {
@@ -142,6 +139,13 @@ func (p *Planner) Plan(
 	}
 
 	// ── 4. GOAP + HTN search for the goal ─────────────────────────────────────
+	// Per-call budget override: when the agent is in Apathy, it supplies a reduced
+	// ApathyBudget; otherwise nil and we use the configured PlannerConfig.Budget.
+	effBudget := p.cfg.Budget
+	if agent.ApathyBudget != nil {
+		effBudget = *agent.ApathyBudget
+	}
+
 	ss := &searchState{
 		actionsReg:       p.actionsReg,
 		gatesReg:         p.gatesReg,
@@ -151,9 +155,9 @@ func (p *Planner) Plan(
 		sortedTagKeys:    p.sortedTagCostKeys,
 		tagCosts:         p.cfg.TagCosts,
 		nodesExpanded:    0,
-		maxNodes:         p.cfg.Budget.MaxNodes,
-		maxDepth:         p.cfg.Budget.MaxDepth,
-		maxActions:       p.cfg.Budget.MaxActions,
+		maxNodes:         effBudget.MaxNodes,
+		maxDepth:         effBudget.MaxDepth,
+		maxActions:       effBudget.MaxActions,
 	}
 
 	goalPred := dimensionToProducerPredicate(goalDim)

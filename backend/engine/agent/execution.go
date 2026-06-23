@@ -2,6 +2,7 @@ package agent
 
 import (
 	"math"
+	"slices"
 
 	"github.com/dogring/bdg/engine/actions"
 	"github.com/dogring/bdg/engine/core"
@@ -88,6 +89,10 @@ func (a *Agent) replan(world WorldView, now core.Tick, rng *rng.RNG, svc Service
 		satisfiedFacts = append(satisfiedFacts, "tradeOffered")
 	}
 
+	// Compute per-agent budget from Intelligence and coping state (§A-budget).
+	perceivedIntel := a.normalizedIntelligence(svc.Stats)
+	effectiveNodes := a.Cfg.BudgetBase + int(perceivedIntel*float64(a.Cfg.BudgetPerIntelligence))
+
 	// Build the planner's AgentSnapshot with live body scalars (P3).
 	snapshot := planner.AgentSnapshot{
 		ID:              core.ObjectID(a.ID),
@@ -103,6 +108,22 @@ func (a *Agent) replan(world WorldView, now core.Tick, rng *rng.RNG, svc Service
 		Mood:       a.Mood,
 		Adrenaline: a.Adrenaline,
 	}
+
+	// Apathy-reduced budget (gap-closure §A-budget): only when the agent is apathetic.
+	if a.Coping == Apathy && a.Cfg.ApathyBudgetPenalty > 0 {
+		factor := 1.0 - a.Cfg.ApathyBudgetPenalty
+		reducedNodes := effectiveNodes
+		reducedNodes = max(int(float64(reducedNodes)*factor), 1)
+		reducedActions := max(int(float64(a.Cfg.BudgetBase)*factor), 1)
+		reducedDepth := max(int(float64(a.Cfg.BudgetBase/4)*factor), 1)
+		budget := planner.Budget{
+			MaxNodes:   reducedNodes,
+			MaxActions: reducedActions,
+			MaxDepth:   reducedDepth,
+		}
+		snapshot.ApathyBudget = &budget
+	}
+	// else: ApathyBudget remains nil → planner uses its configured PlannerConfig.Budget.
 
 	// Promote a.Goal to index 0 so the planner targets the mediated goal.
 	goalPriorities := promoteGoal(a.Goal, priorities)
@@ -331,10 +352,8 @@ func (a *Agent) nearestOtherAgentID(world WorldView) core.AgentID {
 		if e.ID == core.ObjectID(a.ID) {
 			continue
 		}
-		for _, tag := range e.Tags {
-			if tag == "agent" {
-				return core.AgentID(e.ID)
-			}
+		if slices.Contains(e.Tags, core.Tag("agent")) {
+			return core.AgentID(e.ID)
 		}
 	}
 	return ""

@@ -55,6 +55,12 @@ stats:
     default: 30
     gen: { dist: normal, mean: 30, sd: 10 }
     inherit: 0.3
+  - id: Vindictiveness
+    kind: disposition
+    range: [0, 100]
+    default: 50
+    gen: { dist: normal, mean: 50, sd: 10 }
+    inherit: 0.3
 `
 
 type testFixture struct {
@@ -218,16 +224,16 @@ func spawnTwoAgents(t *testing.T, fx *testFixture, seed int64) {
 func worldDigest(w *World) string {
 	ws := w.State()
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("tick=%d\n", int64(ws.Tick)))
+	fmt.Fprintf(&b, "tick=%d\n", int64(ws.Tick))
 
 	for _, d := range ws.Agents {
 		b.WriteString("agent ")
 		b.WriteString(string(d.ID))
-		b.WriteString(fmt.Sprintf(" pos=%.4f,%.4f", d.Pos.X, d.Pos.Y))
-		b.WriteString(fmt.Sprintf(" stamina=%.6f mood=%.6f adr=%.6f",
-			d.Stamina, d.Mood, d.Adrenaline))
-		b.WriteString(fmt.Sprintf(" goal=%s coping=%d plan=[",
-			string(d.Goal), int(d.Coping)))
+		fmt.Fprintf(&b, " pos=%.4f,%.4f", d.Pos.X, d.Pos.Y)
+		fmt.Fprintf(&b, " stamina=%.6f mood=%.6f adr=%.6f",
+			d.Stamina, d.Mood, d.Adrenaline)
+		fmt.Fprintf(&b, " goal=%s coping=%d plan=[",
+			string(d.Goal), int(d.Coping))
 		for i, a := range d.PlanActions {
 			if i > 0 {
 				b.WriteByte(',')
@@ -242,7 +248,7 @@ func worldDigest(w *World) string {
 				b.WriteByte(',')
 			}
 			first = false
-			b.WriteString(string(sid) + "=" + fmt.Sprintf("%.6f", d.RealStats.Get(sid)))
+			fmt.Fprintf(&b, "%s=%.6f", string(sid), d.RealStats.Get(sid))
 		}
 		b.WriteString("}")
 		b.WriteString(" needs={")
@@ -252,7 +258,7 @@ func worldDigest(w *World) string {
 				b.WriteByte(',')
 			}
 			first = false
-			b.WriteString(string(dim) + "=" + fmt.Sprintf("%.6f", d.NeedIntensities[dim]))
+			fmt.Fprintf(&b, "%s=%.6f", string(dim), d.NeedIntensities[dim])
 		}
 		b.WriteString("}")
 		if d.SelfEstStats != nil {
@@ -264,7 +270,7 @@ func worldDigest(w *World) string {
 					b.WriteByte(',')
 				}
 				first = false
-				b.WriteString(string(sid) + "=" + fmt.Sprintf("%.6f", sd.Mean))
+				fmt.Fprintf(&b, "%s=%.6f", string(sid), sd.Mean)
 			}
 			b.WriteString("}")
 		}
@@ -272,8 +278,8 @@ func worldDigest(w *World) string {
 	}
 
 	for _, obj := range ws.Objects {
-		b.WriteString(fmt.Sprintf("object %s pos=%.4f,%.4f\n",
-			string(obj.ID), obj.Pos.X, obj.Pos.Y))
+		fmt.Fprintf(&b, "object %s pos=%.4f,%.4f\n",
+			string(obj.ID), obj.Pos.X, obj.Pos.Y)
 	}
 
 	b.WriteString("rng=")
@@ -485,14 +491,14 @@ func TestDeterminismGolden_Seed1_10Ticks(t *testing.T) {
 
 	fxA := newFixtureSeeded(t, seed)
 	spawnTwoAgents(t, fxA, seed)
-	for i := 0; i < ticks; i++ {
+	for range ticks {
 		fxA.world.Tick()
 	}
 	digestA := worldDigest(fxA.world)
 
 	fxB := newFixtureSeeded(t, seed)
 	spawnTwoAgents(t, fxB, seed)
-	for i := 0; i < ticks; i++ {
+	for range ticks {
 		fxB.world.Tick()
 	}
 	digestB := worldDigest(fxB.world)
@@ -520,7 +526,7 @@ func TestResumeInvariant_Tick5Snapshot_Tick10Matches(t *testing.T) {
 	// Path A: run 10 ticks continuously.
 	fxA := newFixtureSeeded(t, seed)
 	spawnTwoAgents(t, fxA, seed)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		fxA.world.Tick()
 	}
 	digestA := worldDigest(fxA.world)
@@ -528,7 +534,7 @@ func TestResumeInvariant_Tick5Snapshot_Tick10Matches(t *testing.T) {
 	// Path B: run 5 ticks, capture state, resume, run 5 more.
 	fxB := newFixtureSeeded(t, seed)
 	spawnTwoAgents(t, fxB, seed)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		fxB.world.Tick()
 	}
 	stateAt5 := fxB.world.State()
@@ -542,7 +548,7 @@ func TestResumeInvariant_Tick5Snapshot_Tick10Matches(t *testing.T) {
 		t.Fatalf("after RestoreState: expected tick 5, got %v", got)
 	}
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		fxC.world.Tick()
 	}
 

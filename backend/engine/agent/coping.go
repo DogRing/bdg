@@ -4,7 +4,6 @@ import (
 	"github.com/dogring/bdg/engine/core"
 	"github.com/dogring/bdg/engine/planner"
 	"github.com/dogring/bdg/engine/stats"
-	"github.com/dogring/bdg/engine/tom"
 )
 
 // ── Coping cascade (design §3 — "막다른 목표 = 드라마의 엔진") ────────────────
@@ -221,19 +220,9 @@ func (a *Agent) accrueResentment(triggers []core.AgentID, statsReg *stats.Regist
 		}
 	}
 
-	// Check resentment threshold for Aggression drift.
-	if a.Resentment > a.Cfg.ResentmentThreshold {
-		// Apply aggression_drift to ToM[self] Aggression.
-		selfID := a.ToM.SelfID()
-		aggStatID := resolveAggressionStatID(a.Cfg)
-		a.ToM.Observe(selfID, tom.StatEvidence{
-			Stat:     aggStatID,
-			Observed: a.perceivedStat(aggStatID) + a.Cfg.AggressionDrift,
-			Weight:   0.5,
-			Tick:     0,
-		})
-	}
 }
+// Note: the Aggression-Drift threshold check was moved to updateResentment (§B-drift
+// gap-closure) so it fires every tick, not only on trigger ticks.
 
 // resolveVindictivenessStatID resolves the Vindictiveness disposition StatID
 // from the injected agent config (D10: no hardcoded literal).

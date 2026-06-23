@@ -3,6 +3,7 @@ package agent
 import (
 	"github.com/dogring/bdg/engine/core"
 	"github.com/dogring/bdg/engine/planner"
+	"github.com/dogring/bdg/engine/tom"
 )
 
 // ── Phase 8: dynamics ──────────────────────────────────────────────────────────
@@ -40,11 +41,12 @@ func (a *Agent) updateDynamics(priorities []planner.DimensionPriority) {
 
 // ── Resentment drift ───────────────────────────────────────────────────────────
 
-// updateResentment applies the slow Aggression drift and Affinity erosion from
-// any latent (unmet) goals. This is emergent, not hardcoded (D2).
-// P3: the actual persisted Affinity writes now route through accrueResentment
-// which calls tom.AdjustAffinity. This function handles the per-tick latent
-// intensity-based drift.
+// updateResentment runs every tick from updateDynamics and applies the
+// per-tick Aggression-Drift threshold check (§B-drift gap-closure). When
+// Resentment exceeds the threshold, fold AggressionDrift × latentFactor into
+// ToM[self] Aggression — even on ticks with NO new trigger events. The drift
+// magnitude scales by the latent intensity so a fully-resolved agent (no latent
+// goals) never drifts even if Resentment hasn't decayed yet.
 func (a *Agent) updateResentment() {
 	if len(a.Latent) == 0 {
 		return
@@ -57,10 +59,19 @@ func (a *Agent) updateResentment() {
 	}
 	latentFactor := clamp01(totalLatentIntensity)
 
-	// Slow aggression drift (D2: resentment is emergent, no "grudge" type).
-	// The drift is applied within accrueResentment when trigger events occur.
-	// Here we apply the baseline passive drift from latent goals alone.
-	_ = latentFactor // reserved for future passive drift expansion
+	// Per-tick Aggression-Drift threshold check (gap-closure §B-drift).
+	// Runs regardless of whether trigger events arrived this tick.
+	if a.Resentment > a.Cfg.ResentmentThreshold {
+		aggStatID := resolveAggressionStatID(a.Cfg)
+		selfID := a.ToM.SelfID()
+		currentAgg := a.perceivedStat(aggStatID)
+		a.ToM.Observe(selfID, tom.StatEvidence{
+			Stat:     aggStatID,
+			Observed: currentAgg + a.Cfg.AggressionDrift*latentFactor,
+			Weight:   0.5,
+			Tick:     0,
+		})
+	}
 }
 
 // ── Event emission helpers ─────────────────────────────────────────────────────

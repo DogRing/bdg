@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/dogring/bdg/engine/core"
@@ -100,8 +101,8 @@ func (a *Agent) Tick(world WorldView, now core.Tick, rng *rng.RNG, svc Services,
 		plan, trace, err := a.replan(world, now, rng, svc, priorities, combinedPriority)
 		if err != nil {
 			a.enterCopingCascade(err, now, priorities, svc.Stats, emit)
-			// P6: reliance trigger on plan failure
-			a.handleRelianceTrigger(world, 0, err)
+			// P6: reliance trigger on plan failure (gap-closure §G-emit: pass emit)
+			a.handleRelianceTrigger(world, 0, err, emit)
 		} else {
 			a.Plan = plan
 			a.PlanIdx = 0
@@ -110,8 +111,8 @@ func (a *Agent) Tick(world WorldView, now core.Tick, rng *rng.RNG, svc Services,
 			a.FailStreak = 0
 			emitGoalSelected(emit, now, a.ID, trace)
 			emitPlanBuilt(emit, now, a.ID, trace)
-			// P6: reliance trigger on high plan cost
-			a.handleRelianceTrigger(world, trace.TotalCost, nil)
+			// P6: reliance trigger on high plan cost (gap-closure §G-emit: pass emit)
+			a.handleRelianceTrigger(world, trace.TotalCost, nil, emit)
 		}
 	}
 
@@ -127,7 +128,8 @@ func (a *Agent) Tick(world WorldView, now core.Tick, rng *rng.RNG, svc Services,
 		intents = append(intents, sigIntent)
 	}
 	// P6: emit Vote signal if reliance + urgency thresholds are met.
-	voteIntent := a.emitVoteIfEligible(now, world)
+	// Pass the already-computed combinedPriority (gap-closure §H: no recompute).
+	voteIntent := a.emitVoteIfEligible(now, world, combinedPriority)
 	if voteIntent.Kind != IntentNone {
 		intents = append(intents, voteIntent)
 	}
@@ -212,10 +214,8 @@ func hasTag(tags []core.Tag, prefix string) bool {
 // tagsIntersect reports whether any tag in `tags` matches any tag in `needles`.
 func tagsIntersect(tags []core.Tag, needles []core.Tag) bool {
 	for _, t := range tags {
-		for _, n := range needles {
-			if t == n {
-				return true
-			}
+		if slices.Contains(needles, t) {
+			return true
 		}
 	}
 	return false

@@ -21,7 +21,7 @@ import (
 //   G3: emitVoteIfEligible fires when both RelyOn + urgency thresholds exceeded
 //   G4: emitVoteIfEligible does NOT fire when RelyOn below threshold
 //   G5: emitVoteIfEligible does NOT fire when urgency below threshold
-//   G6: distributedUrgency returns high value when collective Safety is low
+//   G6: functionForGoal resolves Function from Config.Functions table
 //   G7: Influence-weighting through processVoteSignal
 //   G8: bestRelyOnFor finds correct target
 
@@ -64,9 +64,10 @@ values:
 	cfg.RelyCostThreshold = 1.2
 	cfg.RelyOnDelta = 0.15
 	cfg.VoteRelyThreshold = 0.4
-	cfg.VoteUrgencyThreshold = 0.65
+	cfg.UrgencyThreshold = 0.65 // gap-closure: UrgencyThreshold (was VoteUrgencyThreshold)
 	cfg.VoteRelyOnDelta = 0.10
 	cfg.InfluenceWeight = 0.5
+	// Config.Functions already set by DefaultConfig() with Safety→FuncSafety.
 
 	realStats := statReg.Defaults()
 	realStats["Intelligence"] = 50.0
@@ -76,7 +77,7 @@ values:
 	selfToM := tom.NewToM("test_agent", realStats, 0.5, rng.New(42), statReg, cfg.Rates)
 
 	// Add a provider agent to ToM with high Trust and competence.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		selfToM.Observe("guardian", tom.StatEvidence{
 			Stat: "Strength", Observed: 90, Weight: 1.0, Tick: 1,
 		})
@@ -88,12 +89,12 @@ values:
 		})
 	}
 	// Build trust in guardian.
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		selfToM.RecordTradeSuccess("guardian", core.Tick(i))
 	}
 
 	// Add a second peer with medium stats for comparison.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		selfToM.Observe("peer", tom.StatEvidence{
 			Stat: "Strength", Observed: 40, Weight: 1.0, Tick: 1,
 		})
@@ -142,6 +143,11 @@ func newMockWorldViewForP6() *mockWorldViewForP6 {
 	}
 }
 
+// noopEmit is a simple EventEmitter for tests.
+type noopEmit struct{}
+
+func (noopEmit) Emit(core.Event) {}
+
 // TestRelianceTrigger_ErrUnreachable verifies that when the planner returns
 // ErrUnreachable, handleRelianceTrigger fires and AdjustRelyOn is called on the
 // BestProvider (the guardian).
@@ -178,8 +184,8 @@ func TestRelianceTrigger_ErrUnreachable(t *testing.T) {
 	}
 	t.Logf("Guardian RelyOn[FuncSafety] before trigger: %.3f", relyBefore)
 
-	// Trigger reliance with ErrUnreachable.
-	agent.handleRelianceTrigger(mockWV, 0, planner.ErrUnreachable)
+	// Trigger reliance with ErrUnreachable (gap-closure §G-emit: pass emit).
+	agent.handleRelianceTrigger(mockWV, 0, planner.ErrUnreachable, noopEmit{})
 
 	// After trigger, RelyOn should have increased by RelyOnDelta (0.15).
 	guardianBeliefAfter, _ := agent.ToM.Self("guardian")
@@ -214,7 +220,7 @@ func TestRelianceTrigger_NoFire_SolvablePlan(t *testing.T) {
 	t.Logf("Guardian RelyOn[FuncSafety] before trigger: %.3f", relyBefore)
 
 	// Trigger with cost below threshold (1.0 < 1.2).
-	agent.handleRelianceTrigger(mockWV, 1.0, nil)
+	agent.handleRelianceTrigger(mockWV, 1.0, nil, noopEmit{})
 
 	guardianRelyAfter, _ := agent.ToM.Self("guardian")
 	relyAfter := guardianRelyAfter.RelyOn[core.FuncSafety]
@@ -243,7 +249,7 @@ func TestRelianceTrigger_HighCostFires(t *testing.T) {
 	t.Logf("Guardian RelyOn[FuncSafety] before high-cost trigger: %.3f", relyBefore)
 
 	// Trigger with cost above threshold (2.0 > 1.2) — should fire.
-	agent.handleRelianceTrigger(mockWV, 2.0, nil)
+	agent.handleRelianceTrigger(mockWV, 2.0, nil, noopEmit{})
 
 	guardianRelyAfter, _ := agent.ToM.Self("guardian")
 	relyAfter := guardianRelyAfter.RelyOn[core.FuncSafety]
@@ -256,7 +262,8 @@ func TestRelianceTrigger_HighCostFires(t *testing.T) {
 }
 
 // TestVoteEmission_BothThresholdsMet verifies that when RelyOn > VoteRelyThreshold
-// AND distributed urgency > VoteUrgencyThreshold, a Vote intent is emitted.
+// AND combinedPriority exceeds UrgencyThreshold, a Vote intent is emitted.
+// (gap-closure §H: emitVoteIfEligible now takes combinedPriority)
 func TestVoteEmission_BothThresholdsMet(t *testing.T) {
 	agent, _ := setupP6Agent(t)
 
@@ -264,23 +271,22 @@ func TestVoteEmission_BothThresholdsMet(t *testing.T) {
 	agent.ToM.AdjustRelyOn("guardian", core.FuncSafety, 0.6)
 	t.Logf("Guardian RelyOn[FuncSafety] = 0.6 (threshold=%.2f)", agent.Cfg.VoteRelyThreshold)
 
-	// Create world with high collective urgency (low Safety).
+	// Create world with high collective urgency.
 	mockWV := newMockWorldViewForP6()
-	mockWV.memberIntensities = map[core.AgentID]map[core.Dimension]float64{
-		"villager_1": {"Safety": 0.80},
-		"villager_2": {"Safety": 0.70},
-		"villager_3": {"Safety": 0.90},
-	}
 	mockWV.agentIDList = []core.AgentID{"guardian"}
 
-	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
-	t.Logf("Distributed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.VoteUrgencyThreshold)
-	if urgency <= agent.Cfg.VoteUrgencyThreshold {
-		t.Fatalf("urgency (%.3f) should exceed threshold (%.2f) for vote to emit", urgency, agent.Cfg.VoteUrgencyThreshold)
+	// Use a combinedPriority that results in urgency > UrgencyThreshold (0.65).
+	// urgency = clamp01(combinedPriority / MaxPossiblePriority)
+	// For urgency=0.80: combinedPriority = 0.80 * 2.5 = 2.0
+	combinedPriority := 2.0
+	urgency := clamp01(combinedPriority / agent.Cfg.MaxPossiblePriority)
+	t.Logf("Computed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.UrgencyThreshold)
+	if urgency <= agent.Cfg.UrgencyThreshold {
+		t.Fatalf("urgency (%.3f) should exceed threshold (%.2f) for vote to emit", urgency, agent.Cfg.UrgencyThreshold)
 	}
 
-	// Emit vote.
-	intent := agent.emitVoteIfEligible(1, mockWV)
+	// Emit vote (gap-closure §H: pass combinedPriority).
+	intent := agent.emitVoteIfEligible(1, mockWV, combinedPriority)
 
 	if intent.Kind == IntentNone {
 		t.Fatal("expected Vote IntentSignal when both thresholds met, got IntentNone")
@@ -312,20 +318,16 @@ func TestVoteEmission_NoVote_LowRelyOn(t *testing.T) {
 
 	// No RelyOn seeded — default is 0.
 
-	// High urgency.
+	// High combined priority → high urgency.
 	mockWV := newMockWorldViewForP6()
-	mockWV.memberIntensities = map[core.AgentID]map[core.Dimension]float64{
-		"villager_1": {"Safety": 0.90},
-		"villager_2": {"Safety": 0.85},
-	}
-
-	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
-	t.Logf("Distributed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.VoteUrgencyThreshold)
-	if urgency <= agent.Cfg.VoteUrgencyThreshold {
+	combinedPriority := 2.0
+	urgency := clamp01(combinedPriority / agent.Cfg.MaxPossiblePriority)
+	t.Logf("Computed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.UrgencyThreshold)
+	if urgency <= agent.Cfg.UrgencyThreshold {
 		t.Fatal("urgency should exceed threshold for this test to be meaningful")
 	}
 
-	intent := agent.emitVoteIfEligible(1, mockWV)
+	intent := agent.emitVoteIfEligible(1, mockWV, combinedPriority)
 	if intent.Kind != IntentNone {
 		t.Errorf("expected IntentNone when RelyOn=0 (below threshold %.2f), got %v",
 			agent.Cfg.VoteRelyThreshold, intent.Kind)
@@ -341,69 +343,117 @@ func TestVoteEmission_NoVote_LowUrgency(t *testing.T) {
 	agent.ToM.AdjustRelyOn("guardian", core.FuncSafety, 0.8)
 	t.Logf("Guardian RelyOn[FuncSafety] = 0.8 (threshold=%.2f)", agent.Cfg.VoteRelyThreshold)
 
-	// Low urgency — all members have low Safety need intensity.
+	// Low combined priority → low urgency.
+	// urgency = clamp01(0.1 / 2.5) = 0.04, well below 0.65.
+	combinedPriority := 0.1
+	urgency := clamp01(combinedPriority / agent.Cfg.MaxPossiblePriority)
+	t.Logf("Computed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.UrgencyThreshold)
+	if urgency >= agent.Cfg.UrgencyThreshold {
+		t.Fatalf("urgency (%.3f) should be below threshold (%.2f) for this test", urgency, agent.Cfg.UrgencyThreshold)
+	}
+
 	mockWV := newMockWorldViewForP6()
-	mockWV.memberIntensities = map[core.AgentID]map[core.Dimension]float64{
-		"villager_1": {"Safety": 0.10},
-		"villager_2": {"Safety": 0.20},
-	}
-
-	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
-	t.Logf("Distributed urgency: %.3f (threshold=%.2f)", urgency, agent.Cfg.VoteUrgencyThreshold)
-	if urgency >= agent.Cfg.VoteUrgencyThreshold {
-		t.Fatalf("urgency (%.3f) should be below threshold (%.2f) for this test", urgency, agent.Cfg.VoteUrgencyThreshold)
-	}
-
-	intent := agent.emitVoteIfEligible(1, mockWV)
+	intent := agent.emitVoteIfEligible(1, mockWV, combinedPriority)
 	if intent.Kind != IntentNone {
 		t.Errorf("expected IntentNone when urgency=%.3f (below threshold %.2f), got %v",
-			urgency, agent.Cfg.VoteUrgencyThreshold, intent.Kind)
+			urgency, agent.Cfg.UrgencyThreshold, intent.Kind)
 	}
 }
 
-// TestDistributedUrgency_LowCollectiveSafety verifies that distributedUrgency
-// returns a high value when collective Safety is low.
-func TestDistributedUrgency_LowCollectiveSafety(t *testing.T) {
-	mockWV := newMockWorldViewForP6()
-	mockWV.memberIntensities = map[core.AgentID]map[core.Dimension]float64{
-		"villager_1": {"Safety": 0.80},
-		"villager_2": {"Safety": 0.75},
-		"villager_3": {"Safety": 0.90},
+// TestFunctionForGoal_MapsCorrectly verifies functionForGoal mapping from Config.Functions
+// (gap-closure §G: replaces goalToFunction).
+func TestFunctionForGoal_MapsCorrectly(t *testing.T) {
+	agent, _ := setupP6Agent(t)
+	// DefaultConfig has:
+	//   {ID: FuncSafety,    Dim: "Safety",    Stats: ["Strength"]}
+	//   {ID: FuncKnowledge, Dim: "Knowledge", Stats: ["Intelligence"]}
+
+	tests := []struct {
+		dim      core.Dimension
+		wantID   core.Function
+		wantOK   bool
+	}{
+		{"Safety", core.FuncSafety, true},
+		{"Knowledge", core.FuncKnowledge, true},
+		{"Satiety", "", false},  // not in Functions table
+		{"", "", false},
 	}
 
-	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
-	t.Logf("Distributed urgency with low Safety: %.3f", urgency)
-
-	if urgency <= 0.5 {
-		t.Errorf("expected high urgency (>0.5) when collective Safety is low (mean=~0.82), got %.3f", urgency)
-	}
-}
-
-// TestDistributedUrgency_HighCollectiveSafety verifies that distributedUrgency
-// returns a low value when collective Safety is high.
-func TestDistributedUrgency_HighCollectiveSafety(t *testing.T) {
-	mockWV := newMockWorldViewForP6()
-	mockWV.memberIntensities = map[core.AgentID]map[core.Dimension]float64{
-		"villager_1": {"Safety": 0.10},
-		"villager_2": {"Safety": 0.15},
-	}
-
-	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
-	t.Logf("Distributed urgency with high Safety: %.3f", urgency)
-
-	if urgency > 0.3 {
-		t.Errorf("expected low urgency (<=0.3) when collective Safety is high (mean=~0.125), got %.3f", urgency)
+	for _, tc := range tests {
+		fn, ok := agent.functionForGoal(tc.dim)
+		if ok != tc.wantOK {
+			t.Errorf("functionForGoal(%q) ok=%v, want %v", tc.dim, ok, tc.wantOK)
+			continue
+		}
+		if ok && fn.ID != tc.wantID {
+			t.Errorf("functionForGoal(%q) ID=%q, want %q", tc.dim, fn.ID, tc.wantID)
+		}
 	}
 }
 
-// TestDistributedUrgency_NoMembers verifies that without member data, urgency is 0.
-func TestDistributedUrgency_NoMembers(t *testing.T) {
-	mockWV := newMockWorldViewForP6()
-	// No member intensities set.
+// TestFunctionForGoal_UnknownDimNoReliance verifies that pursuing a Dimension absent
+// from Config.Functions forms NO reliance (the hardcoded fallback is gone).
+func TestFunctionForGoal_UnknownDimNoReliance(t *testing.T) {
+	agent, _ := setupP6Agent(t)
+	agent.Goal = "Satiety" // not in Config.Functions
 
-	urgency := distributedUrgency(mockWV, core.Dimension("Safety"))
-	if urgency != 0 {
-		t.Errorf("expected 0 urgency with no member data, got %.3f", urgency)
+	mockWV := newMockWorldViewForP6()
+	mockWV.agentIDList = []core.AgentID{"guardian"}
+
+	// Read RelyOn before.
+	guardianBefore, _ := agent.ToM.Self("guardian")
+	relyBefore := guardianBefore.RelyOn[core.FuncKnowledge] // would have been the fallback
+
+	// Trigger on unreachable plan.
+	agent.handleRelianceTrigger(mockWV, 0, planner.ErrUnreachable, noopEmit{})
+
+	// No reliance should have formed.
+	guardianAfter, _ := agent.ToM.Self("guardian")
+	relyAfter := guardianAfter.RelyOn[core.FuncKnowledge]
+	if relyAfter != relyBefore {
+		t.Errorf("RelyOn[FuncKnowledge] should NOT change for dimension 'Satiety' (not in Functions table): before=%.3f after=%.3f", relyBefore, relyAfter)
+	}
+}
+
+// TestProcessVoteSignal_NoopOnNonVote verifies that non-Vote signals are ignored.
+func TestProcessVoteSignal_NoopOnNonVote(t *testing.T) {
+	agent, _ := setupP6Agent(t)
+
+	// Send a non-Vote signal (e.g. SignalGreet).
+	sig := core.Signal{
+		Kind:    core.SignalGreet,
+		Valence: 0.5,
+	}
+
+	// Should not panic.
+	agent.processVoteSignal(sig)
+}
+
+// TestP6ConfigDefaults verifies the P6 config fields have the expected defaults.
+func TestP6ConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.RelyCostThreshold != 1.2 {
+		t.Errorf("RelyCostThreshold = %.2f, want 1.2", cfg.RelyCostThreshold)
+	}
+	if cfg.RelyOnDelta != 0.15 {
+		t.Errorf("RelyOnDelta = %.2f, want 0.15", cfg.RelyOnDelta)
+	}
+	if cfg.VoteRelyThreshold != 0.4 {
+		t.Errorf("VoteRelyThreshold = %.2f, want 0.4", cfg.VoteRelyThreshold)
+	}
+	if cfg.UrgencyThreshold != 0.65 {
+		t.Errorf("UrgencyThreshold = %.2f, want 0.65", cfg.UrgencyThreshold)
+	}
+	if cfg.VoteRelyOnDelta != 0.10 {
+		t.Errorf("VoteRelyOnDelta = %.2f, want 0.10", cfg.VoteRelyOnDelta)
+	}
+	if cfg.InfluenceWeight != 0.5 {
+		t.Errorf("InfluenceWeight = %.2f, want 0.5", cfg.InfluenceWeight)
+	}
+	// Verify Functions table has the two default entries.
+	if len(cfg.Functions) != 2 {
+		t.Errorf("Functions len = %d, want 2", len(cfg.Functions))
 	}
 }
 
@@ -437,65 +487,6 @@ func TestBestRelyOnFor_NoRelyOn(t *testing.T) {
 	}
 }
 
-// TestGoalToFunction_MapsCorrectly verifies goalToFunction mapping.
-func TestGoalToFunction_MapsCorrectly(t *testing.T) {
-	tests := []struct {
-		dim      core.Dimension
-		expected core.Function
-	}{
-		{"Safety", core.FuncSafety},
-		{"Satiety", core.FuncKnowledge},
-		{"Hydration", core.FuncKnowledge},
-		{"Rest", core.FuncKnowledge},
-		{"", core.FuncKnowledge},
-	}
-
-	for _, tc := range tests {
-		fn := goalToFunction(tc.dim, core.Dimension("Safety"))
-		if fn != tc.expected {
-			t.Errorf("goalToFunction(%q) = %q, want %q", tc.dim, fn, tc.expected)
-		}
-	}
-}
-
-// TestProcessVoteSignal_NoopOnNonVote verifies that non-Vote signals are ignored.
-func TestProcessVoteSignal_NoopOnNonVote(t *testing.T) {
-	agent, _ := setupP6Agent(t)
-
-	// Send a non-Vote signal (e.g. SignalGreet).
-	sig := core.Signal{
-		Kind:    core.SignalGreet,
-		Valence: 0.5,
-	}
-
-	// Should not panic.
-	agent.processVoteSignal(sig)
-}
-
-// TestP6ConfigDefaults verifies the P6 config fields have the expected defaults.
-func TestP6ConfigDefaults(t *testing.T) {
-	cfg := DefaultConfig()
-
-	if cfg.RelyCostThreshold != 1.2 {
-		t.Errorf("RelyCostThreshold = %.2f, want 1.2", cfg.RelyCostThreshold)
-	}
-	if cfg.RelyOnDelta != 0.15 {
-		t.Errorf("RelyOnDelta = %.2f, want 0.15", cfg.RelyOnDelta)
-	}
-	if cfg.VoteRelyThreshold != 0.4 {
-		t.Errorf("VoteRelyThreshold = %.2f, want 0.4", cfg.VoteRelyThreshold)
-	}
-	if cfg.VoteUrgencyThreshold != 0.65 {
-		t.Errorf("VoteUrgencyThreshold = %.2f, want 0.65", cfg.VoteUrgencyThreshold)
-	}
-	if cfg.VoteRelyOnDelta != 0.10 {
-		t.Errorf("VoteRelyOnDelta = %.2f, want 0.10", cfg.VoteRelyOnDelta)
-	}
-	if cfg.InfluenceWeight != 0.5 {
-		t.Errorf("InfluenceWeight = %.2f, want 0.5", cfg.InfluenceWeight)
-	}
-}
-
 // TestEmitVoteIfEligible_AgentIDsRequired verifies that vote emission works
 // even when world AgentIDs is empty.
 func TestEmitVoteIfEligible_AgentIDsRequired(t *testing.T) {
@@ -505,12 +496,11 @@ func TestEmitVoteIfEligible_AgentIDsRequired(t *testing.T) {
 	agent.ToM.AdjustRelyOn("guardian", core.FuncSafety, 0.6)
 
 	mockWV := newMockWorldViewForP6()
-	mockWV.memberIntensities = map[core.AgentID]map[core.Dimension]float64{
-		"villager_1": {"Safety": 0.90},
-	}
 	// No AgentIDs set — bestRelyOnFor still works since it reads ToM directly.
 
-	intent := agent.emitVoteIfEligible(1, mockWV)
+	// High combined priority.
+	combinedPriority := 2.0
+	intent := agent.emitVoteIfEligible(1, mockWV, combinedPriority)
 	// Should still emit because bestRelyOnFor doesn't need AgentIDs.
 	if intent.Kind != IntentSignal {
 		t.Log("Note: vote not emitted (checking if this is expected)")

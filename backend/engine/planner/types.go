@@ -67,6 +67,16 @@ type AgentSnapshot struct {
 	Stamina    float64 // [0, StaminaMax]
 	Mood       float64 // signed
 	Adrenaline float64 // [0, AdrMax]
+
+	// ApathyBudget is an OPTIONAL per-call budget override (engine/agent P3 coping cascade).
+	// When NON-NIL, Plan uses *ApathyBudget instead of the planner's configured
+	// PlannerConfig.Budget for THIS Plan call only — it does NOT mutate PlannerConfig.
+	// The caller (engine/agent's replan) computes the per-agent budget each tick from
+	// BudgetBase + perceivedIntelligence × BudgetPerIntelligence and, while the agent is
+	// in CopingState Apathy, shrinks it by (1 − ApathyBudgetPenalty). When NIL, the
+	// configured Budget is used unchanged. The pointer is caller-owned and never retained.
+	// Determinism (D12): the override changes only search caps, not ordering.
+	ApathyBudget *Budget
 }
 
 // DimensionPriority is one row of the Priority-ordered goal list produced by

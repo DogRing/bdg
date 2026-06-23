@@ -33,7 +33,7 @@ func TestAgentConfigFromBalance_AllPoliticsFieldsWired(t *testing.T) {
 		{"RelyCostThreshold", agentCfg.RelyCostThreshold},
 		{"RelyOnDelta", agentCfg.RelyOnDelta},
 		{"VoteRelyThreshold", agentCfg.VoteRelyThreshold},
-		{"VoteUrgencyThreshold", agentCfg.VoteUrgencyThreshold},
+		{"UrgencyThreshold", agentCfg.UrgencyThreshold},
 		{"VoteRelyOnDelta", agentCfg.VoteRelyOnDelta},
 		{"InfluenceWeight", agentCfg.InfluenceWeight},
 	}
@@ -100,7 +100,7 @@ func yamlKeyForField(field string) string {
 		"RelyCostThreshold":    "rely_cost_threshold",
 		"RelyOnDelta":          "relyon_delta",
 		"VoteRelyThreshold":    "vote_rely_threshold",
-		"VoteUrgencyThreshold": "vote_urgency_threshold",
+		"UrgencyThreshold":     "vote_urgency_threshold",
 		"VoteRelyOnDelta":      "vote_relyon_delta",
 		"InfluenceWeight":      "influence_weight",
 	}

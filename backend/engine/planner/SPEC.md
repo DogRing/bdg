@@ -7,6 +7,9 @@
 > injected into `AgentSnapshot.SatisfiedFacts` by the execution layer, NOT an action producer
 > [so `Take` becomes reachable], and that `Attack` must produce a **goal-satisfying** predicate
 > [`has_Safety`] so a Safety goal can reach it. See "World-state facts" and the new ACs.)
+> (P6 coping coupling: `AgentSnapshot` gains an optional `ApathyBudget *Budget` per-call override —
+> when non-nil, `Plan` uses it instead of the configured `PlannerConfig.Budget` for that call only.
+> See `AgentSnapshot.ApathyBudget` + "Per-call budget override".)
 
 ## Purpose
 
@@ -85,6 +88,18 @@ type AgentSnapshot struct {
     // and `owned_by_other` (a nearby agent holds items the agent could Take). See "World-state
     // facts" below. The slice is caller-owned and never mutated/retained by the planner.
     SatisfiedFacts []core.Pred
+
+    // ApathyBudget is an OPTIONAL per-call budget override (engine/agent P3 coping cascade). When
+    // NON-NIL, Plan uses *ApathyBudget instead of the planner's configured PlannerConfig.Budget for
+    // THIS Plan call only — it does NOT mutate PlannerConfig (the override is read-only and scoped
+    // to the single call). The caller (engine/agent's replan) computes the per-agent budget each
+    // tick from BudgetBase + perceivedIntelligence × BudgetPerIntelligence and, while the agent is
+    // in CopingState Apathy, shrinks it by (1 − ApathyBudgetPenalty) so an apathetic agent
+    // deliberates less (shallower depth / fewer actions / fewer expanded nodes). When NIL, the
+    // configured Budget is used unchanged. The pointer is caller-owned and never retained by the
+    // planner. Determinism (D12): the override changes only the search caps, not the ordering —
+    // identical (snapshot incl. ApathyBudget, values, rng) reproduce the same Plan/Trace.
+    ApathyBudget *Budget
 }
 
 // DimensionPriority is one row of the Priority-ordered goal list produced by engine/values.
@@ -145,6 +160,8 @@ func New(
 // identical rng seed/state → identical Plan and Trace (D12). `rng` is used ONLY for tie-breaking
 // AFTER deterministic (Priority → cost → ActionID) comparisons, and only when an explicit
 // random tie-break is configured (default: lexicographic ActionID, no rng draw — see Notes).
+// The search caps come from PlannerConfig.Budget UNLESS agent.ApathyBudget != nil, in which case
+// *agent.ApathyBudget is used for this call only (see "Per-call budget override").
 // Returns ErrBudgetExceeded if any Budget cap is reached; ErrNoGoal if `values` is empty;
 // ErrUnreachable if the highest-Priority goal has no visible producer within budget.
 func (p *Planner) Plan(
@@ -165,6 +182,24 @@ var (
 > `= ToM[X]`, with `EstStats map[core.StatID]tom.StatDist`). The planner reads ONLY the
 > per-stat estimate means from `SelfModel` (the agent's self-belief, `ToM[self]`) for gate
 > evaluation and the horizon calc; it never mutates it.
+
+### Per-call budget override (`AgentSnapshot.ApathyBudget`)
+
+At the top of `Plan`, the effective budget for the call is selected once:
+
+```
+effBudget := p.cfg.Budget          // the configured, planner-lifetime budget
+if agent.ApathyBudget != nil {
+    effBudget = *agent.ApathyBudget // per-call override (engine/agent coping cascade)
+}
+```
+
+All three caps (`MaxDepth`, `MaxActions`, `MaxNodes`) used by the GOAP/HTN search and the
+`ErrBudgetExceeded` check come from `effBudget`. The override is a read-only copy — `PlannerConfig`
+is never mutated, so the next Plan call with a nil `ApathyBudget` is back to the configured budget.
+The caller (`engine/agent`) is responsible for keeping the override within sane bounds (e.g. never
+exceeding the configured `MaxNodes`); the planner applies whatever caps it is handed. This is the
+ONLY way a per-tick, per-agent budget reaches the planner — there is no other override mechanism.
 
 ## Dependencies
 
@@ -193,7 +228,8 @@ var (
   `DimensionPriority` value types and all search logic.
 - The `Planner` holds **borrowed** read-only registry pointers and a **copied** config (with a
   precomputed sorted `[]core.Tag` of the `TagCosts` keys for D12 iteration). `AgentSnapshot`
-  (incl. `SatisfiedFacts`), `values`, and `rng` are caller-owned; `Plan` never retains them.
+  (incl. `SatisfiedFacts` and `ApathyBudget`), `values`, and `rng` are caller-owned; `Plan` never
+  retains them.
 
 ## Planning model
 
@@ -226,7 +262,8 @@ The planner combines three mechanisms in one `Plan` call. The order is: select t
   are **prepended** before the goal action, yielding `[…prereqs…, goalAction]`.
 - Decomposition is an **emergent ordered sequence**, NOT a hand-defined task network (D3).
 - Recursion is bounded by `Budget.MaxDepth`; expanded GOAP nodes by `Budget.MaxNodes`; final plan
-  length by `Budget.MaxActions`.
+  length by `Budget.MaxActions` — where `Budget` is the per-call effective budget (the configured
+  one, or `*AgentSnapshot.ApathyBudget` when non-nil; see "Per-call budget override").
 
 ### World-state facts (`SatisfiedFacts`, incl. `owned_by_other`) — Blocker 3
 
@@ -319,13 +356,16 @@ reflex.)
   `tradeOffered` are read from `AgentSnapshot.SatisfiedFacts` (caller-injected from the world
   snapshot); the planner never invents them and no action `produces` them. They short-circuit the
   precondition check only — they do not add actions to the plan.
+- **Per-call budget override is read-only (D12)**: `AgentSnapshot.ApathyBudget`, when non-nil,
+  replaces the configured `Budget` for that call only and never mutates `PlannerConfig`; the
+  override changes only the search caps, not comparison ordering, so determinism is preserved.
 - **Decisions read `ToM[self]` (D8)**: gate evaluation + horizon read `SelfModel` means, never Real
   Stats. A low perceived Intelligence yields a short horizon / hard skip, preserved (self-sealing).
 - **Determinism (D12)**: `Plan` is pure over `(AgentSnapshot, values, registries, rng)`; all
   iteration uses sorted keys/slices, incl. iterating `SatisfiedFacts` membership via a set/sorted
   check (never relying on slice order for logic). Same inputs → byte-identical `Plan` + `Trace`.
-- **Budget always terminates**; **read-only inputs** (incl. `SatisfiedFacts` never mutated);
-  **no hardcoded ids (D7/D10)**; **no IO**.
+- **Budget always terminates**; **read-only inputs** (incl. `SatisfiedFacts` never mutated, and
+  `ApathyBudget` never mutated/retained); **no hardcoded ids (D7/D10)**; **no IO**.
 
 ## Acceptance Criteria (testable)
 
@@ -339,6 +379,11 @@ reflex.)
   `near_other` is reachable with NO prepended producer when `AgentSnapshot.SatisfiedFacts` contains
   `near_other`, and unreachable (or requiring a producer that does not exist → `ErrUnreachable`)
   when it does not. Table-driven over `{present, absent}`.
+- [ ] **Per-call `ApathyBudget` override (coping coupling)**: a `Plan` call whose
+  `AgentSnapshot.ApathyBudget` is `&Budget{MaxDepth:1, MaxActions:1, MaxNodes:1}` on a goal that
+  needs a 2-action plan returns `ErrBudgetExceeded`, while the SAME snapshot with `ApathyBudget ==
+  nil` (configured budget large enough) returns the full plan. Asserts the override is honored for
+  that call only and `PlannerConfig.Budget` is unchanged on the following nil-override call.
 - [ ] **`owned_by_other` injection makes `Take` reachable (Blocker 3, scenario)**: with the shipped
   `content/actions.yaml`, a `Take` candidate (requires `[at_target, owned_by_other]`) is
   **unreachable** when `SatisfiedFacts` lacks `owned_by_other` (no action produces it →
@@ -385,6 +430,9 @@ reflex.)
 - **Constructing `AgentSnapshot.SatisfiedFacts`** (reading the world snapshot for `near_other`/
   `tradeOffered`/`owned_by_other`) → `engine/agent`'s `replan` (execution layer). The planner only
   consumes the slice it is given; it never queries the world.
+- **Computing the per-agent / per-tick `ApathyBudget`** (from `BudgetBase`/`BudgetPerIntelligence`
+  and the Apathy penalty) → `engine/agent`'s `replan`. The planner only consumes the optional
+  override pointer it is handed.
 - **`ToM[self]` construction, β self-calibration, gossip** → `engine/tom`.
 - **Executing the plan, durative progress, interruption, coping, emitting events** → `engine/agent`.
 - **Outcome resolution** (does `Attack`/`Hunt` succeed, scaled by Real Stats; what `struck` does to
@@ -406,6 +454,10 @@ reflex.)
   planner-side requirement is that `SatisfiedFacts` membership short-circuits the precondition check
   (already required for the existing two). Confirm with the agent SPEC author that `replan` adds the
   Inventory check (it already builds `near_other`/`tradeOffered` there).
+- **`ApathyBudget` override (RESOLVED for the coping coupling).** The per-agent, per-tick budget is
+  communicated solely through the optional `AgentSnapshot.ApathyBudget *Budget` field; `engine/agent`
+  computes it and the planner consumes it for the single call. No `PlannerConfig` mutation, no
+  second override channel.
 - **`Stickiness`/`goal_deadband` ownership (NOT blocking).** Placed in `engine/agent`'s cross-tick
   loop, not single-call `Plan`.
 
@@ -427,4 +479,3 @@ reflex.)
 - **`gates.AgentSnapshot` vs the planner `AgentSnapshot`** are two different structs; the planner
   adapts its snapshot into `gates.AgentSnapshot{SelfStats: <SelfModel means>, Known: agent.Known}`.
 - **Intelligence `StatID` resolution** via `stats.Registry` (glossary capability id), never a literal.
-</content>

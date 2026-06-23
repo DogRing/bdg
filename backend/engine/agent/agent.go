@@ -145,11 +145,15 @@ type Config struct {
 	VindictivenessStatID  core.StatID // disposition stat for Vindictiveness lookups
 	AggressionStatID      core.StatID // disposition stat for Aggression lookups
 
+	// P6: function→dimension→stat-set table (injected, D7/D10).
+	// Replaces the hardcoded goalToFunction mapping.
+	Functions []FunctionSpec // content: function id → (goal Dimension, capability stat-set)
+
 	// P6: reliance + vote policy thresholds
 	RelyCostThreshold    float64 // balance.yaml politics.rely_cost_threshold — plan cost above which a Function counts self-unsolvable
 	RelyOnDelta          float64 // balance.yaml politics.relyon_delta — δ added to RelyOn on self-failure
 	VoteRelyThreshold    float64 // balance.yaml politics.vote_rely_threshold — private reliance strength that licenses a Vote
-	VoteUrgencyThreshold float64 // balance.yaml politics.vote_urgency_threshold — distributed urgency above which an agent emits a Vote
+	UrgencyThreshold     float64 // balance.yaml politics.urgency_threshold — combined-urgency proxy above which a Vote is cast (§H)
 	VoteRelyOnDelta      float64 // balance.yaml politics.vote_relyon_delta — δ a heard Vote folds into RelyOn
 
 	// P6: influence weighting for incoming signals
@@ -231,12 +235,18 @@ func DefaultConfig() Config {
 		// P5: collective-safety defensive trigger (BLOCKER-2)
 		SafetyThreatThreshold: 0.30,
 
+		// P6: function→dimension→stat-set table (injected defaults for tests; D7/D10).
+		Functions: []FunctionSpec{
+			{ID: core.FuncSafety, Dim: "Safety", Stats: []core.StatID{"Strength"}},
+			{ID: core.FuncKnowledge, Dim: "Knowledge", Stats: []core.StatID{"Intelligence"}},
+		},
+
 		// P6: reliance + vote policy thresholds
-		RelyCostThreshold:    1.2,
-		RelyOnDelta:          0.15,
-		VoteRelyThreshold:    0.4,
-		VoteUrgencyThreshold: 0.65,
-		VoteRelyOnDelta:      0.10,
+		RelyCostThreshold: 1.2,
+		RelyOnDelta:       0.15,
+		VoteRelyThreshold: 0.4,
+		UrgencyThreshold:  0.65,
+		VoteRelyOnDelta:   0.10,
 
 		// P6: influence weighting for incoming signals
 		InfluenceWeight: 0.5,

@@ -99,6 +99,18 @@ type ActionOutcome struct {
 	Evidence  []tom.StatEvidence       // direct-observation evidence to fold into ToM[self] (D8)
 }
 
+// ── FunctionSpec (P6 — injected Function→Dimension→Stats mapping, D7/D10) ────────
+
+// FunctionSpec maps a Function id to the goal Dimension it serves and the
+// capability stat-set required to provide it. Injected via Config.Functions (D7/D10):
+// it replaces the hardcoded goalToFunction mapping — the agent resolves a goal
+// Dimension to its Function + capability Stats by scanning this table, never a literal.
+type FunctionSpec struct {
+	ID    core.Function  // e.g. core.FuncSafety
+	Dim   core.Dimension // goal dimension this function covers (e.g. "Safety")
+	Stats []core.StatID  // capability stats required to provide this function (passed to BestProviderFor)
+}
+
 // ── Latent goal ─────────────────────────────────────────────────────────────────
 
 // LatentGoal is an unmet goal pushed below the conscious threshold (Longing/Latent).

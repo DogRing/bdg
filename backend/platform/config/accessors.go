@@ -132,7 +132,7 @@ func (b *Balance) AgentConfig(needReg *needs.Registry, statReg *stats.Registry) 
 		RelyCostThreshold:    b.Politics.RelyCostThreshold,
 		RelyOnDelta:          b.Politics.RelyOnDelta,
 		VoteRelyThreshold:    b.Politics.VoteRelyThreshold,
-		VoteUrgencyThreshold: b.Politics.VoteUrgencyThreshold,
+		UrgencyThreshold:     b.Politics.VoteUrgencyThreshold,
 		VoteRelyOnDelta:      b.Politics.VoteRelyOnDelta,
 		InfluenceWeight:      b.Politics.InfluenceWeight,
 	}
