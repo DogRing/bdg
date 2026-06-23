@@ -599,6 +599,28 @@ func (w *World) emitTradeEvent(sender, receiver core.AgentID, eventType string, 
 // ── Event emission ─────────────────────────────────────────────────────────────
 
 func (w *World) emitTickDone() {
+	// TickDone is the per-tick render frame for the god-view: it carries every
+	// agent's current pos/goal/mood/action so the frontend animates movement from
+	// the SSE stream (no snapshot polling). Iterated in sorted agent-ID order (D12).
+	// This event is dropped from the Postgres why-trace and stderr log (operational).
+	agents := make([]map[string]any, 0, len(w.agentIDs))
+	for _, id := range w.agentIDs {
+		a := w.agents[id]
+		if a == nil {
+			continue
+		}
+		action := ""
+		if a.PlanIdx >= 0 && a.PlanIdx < len(a.Plan.Actions) {
+			action = string(a.Plan.Actions[a.PlanIdx])
+		}
+		agents = append(agents, map[string]any{
+			"id":     string(a.ID),
+			"pos":    a.Pos, // core.Vec2 → {"x","y"}
+			"goal":   string(a.Goal),
+			"mood":   a.Mood,
+			"action": action,
+		})
+	}
 	w.emit.Emit(core.Event{
 		SchemaVersion: 1,
 		Tick:          w.tick,
@@ -608,6 +630,7 @@ func (w *World) emitTickDone() {
 			"tick":         int64(w.tick),
 			"agent_count":  len(w.agents),
 			"intent_count": 0, // filled by caller
+			"agents":       agents,
 		},
 	})
 }

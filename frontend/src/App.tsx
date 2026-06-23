@@ -14,16 +14,11 @@ export default function App() {
 
   const { state, dispatchEvent, setConnection, selectAgent, togglePause, loadSnapshot } = useWorld()
 
-  // Load initial snapshot on mount, then poll for authoritative positions so the
-  // god-view shows agents move. (SSE carries the event log; positions come from the
-  // snapshot, which the backend mirrors to Redis every tick.)
+  // Bootstrap the agent roster once on mount; after that, live positions and the
+  // event log both stream over SSE (TickDone carries the per-tick render frame).
   useEffect(() => {
     void loadSnapshot()
-    const id = setInterval(() => {
-      if (!state.paused) void loadSnapshot()
-    }, 2000)
-    return () => clearInterval(id)
-  }, [loadSnapshot, state.paused])
+  }, [loadSnapshot])
 
   // SSE connection
   useSSE(dispatchEvent, setConnection)

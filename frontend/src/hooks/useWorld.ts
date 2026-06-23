@@ -43,6 +43,24 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
   // Update tick
   if (ev.tick > tick) tick = ev.tick
 
+  // TickDone is the per-tick render frame: it carries every agent's pos/goal/mood/
+  // action. This is how movement reaches the god-view (streamed over SSE, no polling).
+  if (ev.type === 'TickDone' && Array.isArray(p.agents)) {
+    for (const raw of p.agents as Array<Record<string, unknown>>) {
+      const id = String(raw.id ?? '')
+      if (!id) continue
+      const prev = agents.get(id)
+      const pos = parsePos(raw.pos)
+      const goal = String(raw.goal ?? '')
+      const action = String(raw.action ?? '')
+      const mood = Number(raw.mood ?? prev?.mood ?? 0.5)
+      agents.set(id, prev
+        ? { ...prev, pos, goal, mood, action: action || prev.action }
+        : { id, pos, goal, action, mood, cluster: null, copingMode: null })
+    }
+    return { ...state, tick, agents, roles, log: state.log, food, wood }
+  }
+
   // Update agent state from event payload
   if (ev.agent_id) {
     const existing = agents.get(ev.agent_id)

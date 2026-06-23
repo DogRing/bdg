@@ -310,13 +310,10 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 				fmt.Fprintf(os.Stderr, "warning: WriteTick(%d): %v\n", tick, err)
 			}
 		}
-		// Mirror live render state (snapshot + per-agent views) to Redis EVERY tick so
-		// the god-view sees agents move in near-real-time. The heavier Postgres backup
-		// (+ why-trace drain) still runs only every backupEvery ticks.
+		// Live movement streams to the god-view via the per-tick TickDone event (SSE),
+		// so the full snapshot + Postgres backup only need to run on the backup cadence.
 		if backupEvery > 0 && int64(tick)%int64(backupEvery) == 0 {
 			flushSnapshot(sigCtx, w, runID, live, backup, buf)
-		} else {
-			flushLive(sigCtx, w, runID, live)
 		}
 		if tickSleep > 0 {
 			select {
@@ -360,23 +357,8 @@ func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID,
 	}
 }
 
-// flushLive mirrors ONLY the live render state (snapshot blob + per-agent views) to
-// Redis. It is the per-tick fast path: no Postgres, no why-trace drain. It encodes the
-// snapshot itself (unlike flushSnapshot, which encodes once and shares the blob).
-func flushLive(ctx context.Context, w *world.World, runID core.RunID, live persist.LiveStore) {
-	if live == nil {
-		return
-	}
-	blob, err := persist.Encode(persist.CaptureSnapshot(runID, w))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: encode live snapshot: %v\n", err)
-		return
-	}
-	writeLive(ctx, w, runID, live, blob)
-}
-
 // writeLive writes the snapshot blob and each agent's render view to the live Redis
-// keyspace. Shared by flushSnapshot (backup ticks) and flushLive (every other tick).
+// keyspace. Called from flushSnapshot on the backup cadence.
 func writeLive(ctx context.Context, w *world.World, runID core.RunID, live persist.LiveStore, blob []byte) {
 	if live == nil {
 		return
@@ -475,12 +457,22 @@ func (b *eventBuffer) drain() []core.Event {
 // shapes the interfaces expect, mapping redis.Nil (missing key) to a zero value + nil err.
 type redisWriteAdapter struct{ c *redis.Client }
 
+// eventStreamMaxLen caps the events STREAM length (approximate trim). TickDone now
+// carries a per-agent render frame every tick, so the stream would otherwise grow
+// unbounded; ~10k entries is ample backlog for SSE (which tails from "$").
+const eventStreamMaxLen = 10_000
+
 func (a redisWriteAdapter) XAdd(ctx context.Context, stream string, values map[string]string) error {
 	m := make(map[string]any, len(values))
 	for k, v := range values {
 		m[k] = v
 	}
-	return a.c.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: m}).Err()
+	return a.c.XAdd(ctx, &redis.XAddArgs{
+		Stream: stream,
+		MaxLen: eventStreamMaxLen,
+		Approx: true, // MAXLEN ~ N: cheap radix-tree-node-boundary trim
+		Values: m,
+	}).Err()
 }
 
 func (a redisWriteAdapter) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
