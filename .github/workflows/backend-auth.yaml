@@ -60,7 +60,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # ignore-error: a transient 503 from the GHA cache service must not fail an
+          # otherwise-successful image build/push (cache export is best-effort).
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Verify Push
         if: github.event_name != 'pull_request'
