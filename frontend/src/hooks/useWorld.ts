@@ -1,5 +1,5 @@
 import { useReducer, useCallback } from 'react'
-import type { WorldState, WorldAction, SimEvent, AgentState, LogEntry } from '../types'
+import type { WorldState, WorldAction, SimEvent, AgentState, LogEntry, WorldObject } from '../types'
 import { formatEvent } from '../utils/eventFormatter'
 import { API_BASE } from '../config'
 
@@ -9,6 +9,7 @@ const TRIM_TO = 400
 const initial: WorldState = {
   tick: 0,
   agents: new Map(),
+  objects: [],
   roles: [],
   log: [],
   connectionStatus: 'connecting',
@@ -145,6 +146,9 @@ function reducer(state: WorldState, action: WorldAction): WorldState {
         ...state,
         tick: Math.max(state.tick, action.payload.tick),
         agents,
+        objects: action.payload.objects && action.payload.objects.length > 0
+          ? action.payload.objects
+          : state.objects,
         food: action.payload.food ?? state.food,
         wood: action.payload.wood ?? state.wood,
       }
@@ -214,7 +218,21 @@ export function useWorld() {
           copingMode: null,
         })
       }
-      dispatch({ type: 'SNAPSHOT_LOADED', payload: { agents: rawAgents, tick } })
+
+      // Parse placed objects (resources) — {id, kind, pos}. Static, so loaded once.
+      const rawObjects: WorldObject[] = []
+      const objArr = (world.objects ?? world.Objects ?? []) as Array<Record<string, unknown>>
+      for (const o of objArr) {
+        const id = String(o.id ?? o.ID ?? '')
+        if (!id) continue
+        rawObjects.push({
+          id,
+          kind: String(o.kind ?? o.Kind ?? ''),
+          pos: parsePos(o.pos ?? o.Pos),
+        })
+      }
+
+      dispatch({ type: 'SNAPSHOT_LOADED', payload: { agents: rawAgents, objects: rawObjects, tick } })
     } catch {
       // snapshot not available yet — that's OK
     }

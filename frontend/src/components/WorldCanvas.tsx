@@ -1,35 +1,27 @@
 import { useRef, useEffect, useCallback } from 'react'
-import type { AgentState } from '../types'
+import type { AgentState, WorldObject } from '../types'
 import type { ThemeTokens } from '../theme'
-import { drawTerrain, drawAgents, hitTestAgent } from '../utils/canvasRenderer'
+import { drawTerrain, drawObjects, drawAgents, hitTestAgent, buildTransform } from '../utils/canvasRenderer'
 
 interface Props {
   agents: AgentState[]
+  objects: WorldObject[]
   selectedId: string | null
   t: ThemeTokens
   onSelectAgent: (id: string | null) => void
 }
 
-export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
+export function WorldCanvas({ agents, objects, selectedId, t, onSelectAgent }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef<number>(0)
-  const dirtyRef = useRef(true) // terrain needs redraw on theme change
-  const terrainCacheRef = useRef<ImageData | null>(null)
+  const dirtyRef = useRef(true)
 
-  // Invalidate terrain cache whenever theme changes (t reference changes)
+  // Redraw on next RAF whenever any input changes.
+  useEffect(() => { dirtyRef.current = true }, [agents, objects, selectedId, t])
+
+  // RAF render loop: background terrain → real resource objects → agents, all on
+  // ONE world transform (anchored on objects + agents so they align).
   useEffect(() => {
-    dirtyRef.current = true
-    terrainCacheRef.current = null
-  }, [t])
-
-  // Mark agents dirty whenever inputs change (will draw on next RAF)
-  useEffect(() => { dirtyRef.current = true }, [agents, selectedId, t])
-
-  // RAF render loop
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
     function render() {
       rafRef.current = requestAnimationFrame(render)
       if (!dirtyRef.current) return
@@ -37,42 +29,35 @@ export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
 
       const c = canvasRef.current
       if (!c) return
-      const ctx = c.getContext('2d', { willReadFrequently: true })
+      const ctx = c.getContext('2d')
       if (!ctx) return
 
-      const W = c.width
-      const H = c.height
+      const dpr = window.devicePixelRatio || 1
+      const W = c.width / dpr   // logical (CSS) px
+      const H = c.height / dpr
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0) // map logical → device each frame
 
-      // Restore cached terrain or redraw
-      if (terrainCacheRef.current) {
-        ctx.putImageData(terrainCacheRef.current, 0, 0)
-      } else {
-        drawTerrain(ctx, W, H, t)
-        terrainCacheRef.current = ctx.getImageData(0, 0, W, H)
-      }
-
-      drawAgents(ctx, W, H, agents, selectedId, t)
+      drawTerrain(ctx, W, H, t)
+      const tr = buildTransform([...objects, ...agents], W, H)
+      drawObjects(ctx, objects, tr, t)
+      drawAgents(ctx, agents, selectedId, t, tr)
     }
 
     rafRef.current = requestAnimationFrame(render)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [agents, selectedId, t])
+  }, [agents, objects, selectedId, t])
 
-  // Resize observer: keep canvas resolution in sync with display size
+  // Resize observer: keep the backing store in sync with display size (DPR-aware).
+  // The render loop applies the DPR transform itself, so we only size here.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-
     const ro = new ResizeObserver(entries => {
       for (const e of entries) {
         const { width, height } = e.contentRect
         const dpr = window.devicePixelRatio || 1
         canvas.width = Math.round(width * dpr)
         canvas.height = Math.round(height * dpr)
-        const ctx = canvas.getContext('2d', { willReadFrequently: true })
-        if (ctx) ctx.scale(dpr, dpr)
-        // Invalidate terrain cache on resize
-        terrainCacheRef.current = null
         dirtyRef.current = true
       }
     })
@@ -85,11 +70,11 @@ export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const dpr = window.devicePixelRatio || 1
-    const x = (e.clientX - rect.left) * dpr
-    const y = (e.clientY - rect.top) * dpr
-    const hit = hitTestAgent(agents, x / dpr, y / dpr, canvas.width / dpr, canvas.height / dpr)
-    onSelectAgent(hit)
-  }, [agents, onSelectAgent])
+    const x = e.clientX - rect.left  // CSS px == logical px used by the transform
+    const y = e.clientY - rect.top
+    const tr = buildTransform([...objects, ...agents], canvas.width / dpr, canvas.height / dpr)
+    onSelectAgent(hitTestAgent(agents, x, y, tr))
+  }, [agents, objects, onSelectAgent])
 
   return (
     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -99,7 +84,7 @@ export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
         style={{ width: '100%', height: '100%', display: 'block', cursor: 'crosshair' }}
       />
 
-      {/* Legend overlay */}
+      {/* Resource legend */}
       <div style={{
         position: 'absolute', bottom: 14, left: 14,
         background: t.glow ? 'rgba(20,18,16,0.88)' : 'rgba(240,227,192,0.88)',
@@ -111,22 +96,22 @@ export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
         color: t.textMuted,
         fontFamily: t.fontUi,
       }}>
-        <div style={{ fontFamily: t.fontSerif, fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 4 }}>Legend</div>
-        {(['Farmer', 'Merchant', 'Guard', 'Artisan'] as const).map((role, i) => (
-          <div key={role} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ fontFamily: t.fontSerif, fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 4 }}>Resources</div>
+        {([['berry', '#4a9030'], ['water', '#3a86d0'], ['shelter', '#9a6a3a']] as const).map(([label, col]) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{
               width: 7, height: 7,
-              background: t.roleColours[i],
-              borderRadius: '50%',
+              background: col,
+              borderRadius: label === 'shelter' ? 1 : '50%',
               display: 'inline-block',
-              boxShadow: t.glow ? `0 0 4px ${t.roleColours[i]}` : undefined,
+              boxShadow: t.glow ? `0 0 4px ${col}` : undefined,
             }} />
-            {role}
+            {label}
           </div>
         ))}
       </div>
 
-      {/* Coords overlay */}
+      {/* Counts overlay */}
       <div style={{
         position: 'absolute', top: 10, right: 12,
         fontFamily: t.fontMono, fontSize: 10,
@@ -136,7 +121,7 @@ export function WorldCanvas({ agents, selectedId, t, onSelectAgent }: Props) {
         border: t.glow ? `1px solid ${t.panelBorder}` : undefined,
         borderRadius: t.glow ? 0 : 2,
       }}>
-        {`${agents.length} agents`}
+        {`${agents.length} agents · ${objects.length} resources`}
       </div>
     </div>
   )

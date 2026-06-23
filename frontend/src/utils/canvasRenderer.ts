@@ -1,5 +1,14 @@
-import type { AgentState } from '../types'
+import type { AgentState, WorldObject } from '../types'
 import type { ThemeTokens } from '../theme'
+
+export interface Transform { sx: number; sy: number; ox: number; oy: number }
+
+// Visual style per object kind (matches content/objects.yaml kinds).
+const OBJ_STYLE: Record<string, { color: string; label: string; shape: 'circle' | 'square' }> = {
+  berry_bush:   { color: '#4a9030', label: 'berry',   shape: 'circle' },
+  water_source: { color: '#3a86d0', label: 'water',   shape: 'circle' },
+  shelter:      { color: '#9a6a3a', label: 'shelter', shape: 'square' },
+}
 
 // Fixed village terrain layout (matches the design's static map)
 const FORESTS = [
@@ -33,14 +42,15 @@ function roleIndex(agent: AgentState): number {
   return 0
 }
 
-// World-to-canvas coordinate transform. World: 0–1000, canvas: 0–W×H.
-// Auto-fit to bounding box of known agent positions.
-function buildTransform(agents: AgentState[], W: number, H: number) {
-  if (agents.length === 0) {
+// World-to-canvas coordinate transform. Auto-fits the bounding box of the given
+// points (objects + agents share ONE transform so they align). Anchoring on the
+// static objects keeps the view stable as agents move.
+export function buildTransform(pts: Array<{ pos: { x: number; y: number } }>, W: number, H: number): Transform {
+  if (pts.length === 0) {
     return { sx: W / 1000, sy: H / 1000, ox: 0, oy: 0 }
   }
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const a of agents) {
+  for (const a of pts) {
     minX = Math.min(minX, a.pos.x); maxX = Math.max(maxX, a.pos.x)
     minY = Math.min(minY, a.pos.y); maxY = Math.max(maxY, a.pos.y)
   }
@@ -209,15 +219,49 @@ function drawDarkTerrain(ctx: CanvasRenderingContext2D, W: number, H: number, t:
   ctx.textAlign = 'right'; ctx.fillText('(1000, 1000)', W - 8, H - 6)
 }
 
+// drawObjects renders placed resources (berry/water/shelter) at their world
+// positions using the shared transform, with a colour + label per kind.
+export function drawObjects(
+  ctx: CanvasRenderingContext2D,
+  objects: WorldObject[],
+  tr: Transform,
+  t: ThemeTokens,
+) {
+  for (const o of objects) {
+    const cx = wx(o.pos.x, tr)
+    const cy = wy(o.pos.y, tr)
+    const style = OBJ_STYLE[o.kind] ?? { color: t.textMuted, label: o.kind, shape: 'circle' as const }
+
+    ctx.save()
+    if (t.glow) { ctx.shadowColor = style.color; ctx.shadowBlur = 8 }
+    ctx.fillStyle = style.color
+    if (style.shape === 'square') {
+      ctx.fillRect(cx - 7, cy - 7, 14, 14)
+      ctx.restore()
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1
+      ctx.strokeRect(cx - 7, cy - 7, 14, 14)
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke()
+    }
+
+    ctx.fillStyle = t.textMuted
+    ctx.font = `9px ${t.fontMono}`
+    ctx.textAlign = 'center'
+    ctx.fillText(style.label, cx, cy + 19)
+  }
+}
+
 export function drawAgents(
   ctx: CanvasRenderingContext2D,
-  W: number, H: number,
   agents: AgentState[],
   selectedId: string | null,
   t: ThemeTokens,
+  tr: Transform,
 ) {
   if (agents.length === 0) return
-  const tr = buildTransform(agents, W, H)
 
   for (const agent of agents) {
     const cx = wx(agent.pos.x, tr)
@@ -260,11 +304,10 @@ export function drawAgents(
 export function hitTestAgent(
   agents: AgentState[],
   canvasX: number, canvasY: number,
-  W: number, H: number,
+  tr: Transform,
   radius = 15,
 ): string | null {
   if (agents.length === 0) return null
-  const tr = buildTransform(agents, W, H)
   let best: string | null = null
   let bestDist = radius * radius
   for (const a of agents) {

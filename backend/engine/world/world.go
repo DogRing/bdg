@@ -55,11 +55,12 @@ type Services = agent.Services
 // ── Object record ──────────────────────────────────────────────────────────────
 
 // objectRecord is one placed object in the world. Carries supply only (D9).
+// JSON keys are snake_case so the render snapshot matches the frontend / data-contracts §1.
 type objectRecord struct {
-	ID     core.ObjectID
-	Kind   core.Tag
-	Pos    core.Vec2
-	Supply map[core.Dimension]float64
+	ID     core.ObjectID              `json:"id"`
+	Kind   core.Tag                   `json:"kind"`
+	Pos    core.Vec2                  `json:"pos"`
+	Supply map[core.Dimension]float64 `json:"supply"`
 }
 
 // ── World ──────────────────────────────────────────────────────────────────────

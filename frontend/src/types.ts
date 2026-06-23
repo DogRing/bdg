@@ -32,6 +32,14 @@ export interface RoleHolder {
   reliance_share: number
 }
 
+// A placed resource object (berry_bush / water_source / shelter). Positions are
+// static, so the frontend reads them once from the snapshot.
+export interface WorldObject {
+  id: string
+  kind: string
+  pos: AgentPos
+}
+
 export interface LogEntry {
   id: number
   tick: number
@@ -44,6 +52,7 @@ export interface LogEntry {
 export interface WorldState {
   tick: number
   agents: Map<string, AgentState>
+  objects: WorldObject[]
   roles: RoleHolder[]
   log: LogEntry[]
   connectionStatus: 'connecting' | 'live' | 'reconnecting'
@@ -56,7 +65,7 @@ export interface WorldState {
 export type Theme = 'light' | 'dark'
 
 export type WorldAction =
-  | { type: 'SNAPSHOT_LOADED'; payload: { agents: AgentState[]; tick: number; food?: number; wood?: number } }
+  | { type: 'SNAPSHOT_LOADED'; payload: { agents: AgentState[]; objects?: WorldObject[]; tick: number; food?: number; wood?: number } }
   | { type: 'AGENT_UPDATED'; payload: Partial<AgentState> & { id: string } }
   | { type: 'EVENT'; payload: SimEvent }
   | { type: 'SET_CONNECTION'; payload: WorldState['connectionStatus'] }

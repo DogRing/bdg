@@ -45,6 +45,7 @@ export default function App() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <WorldCanvas
           agents={agentList}
+          objects={state.objects}
           selectedId={state.selectedAgentId}
           t={t}
           onSelectAgent={selectAgent}
