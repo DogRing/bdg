@@ -8,7 +8,7 @@ import { LIGHT, DARK } from './theme'
 import type { Theme } from './types'
 
 export default function App() {
-  const [theme, setTheme] = useState<Theme>('dark')
+  const [theme, setTheme] = useState<Theme>('light')
   const t = theme === 'dark' ? DARK : LIGHT
   const isLight = theme === 'light'
 
