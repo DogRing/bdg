@@ -505,8 +505,17 @@ func TestNeedsReplan(t *testing.T) {
 
 	// Mid-durative → no replan.
 	agent.Plan = planner.Plan{Actions: []actions.ActionID{"Forage"}}
+	agent.PlanIdx = 0
 	if agent.needsReplan(false) {
 		t.Error("should NOT replan mid-action")
+	}
+
+	// Exhausted plan (final step interrupted: PlanIdx advanced past the end but the
+	// goal was not cleared) → MUST replan, else the agent freezes forever.
+	agent.Plan = planner.Plan{Actions: []actions.ActionID{"Drink"}}
+	agent.PlanIdx = 1 // past the end
+	if !agent.needsReplan(false) {
+		t.Error("should replan when the plan is exhausted (PlanIdx >= len)")
 	}
 }
 

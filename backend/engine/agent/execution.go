@@ -19,8 +19,13 @@ func (a *Agent) needsReplan(goalChanged bool) bool {
 	if goalChanged {
 		return true
 	}
-	// No current plan — need one.
-	if len(a.Plan.Actions) == 0 {
+	// No current plan, OR the plan is exhausted (every step consumed) — need a new
+	// one. The exhausted case matters when the FINAL step was Interrupted (e.g. a
+	// resource-conflict loser): ApplyOutcome advances PlanIdx past the end but does
+	// NOT clearGoal (the goal is still wanted), leaving a non-empty-but-spent plan.
+	// Without this check the agent would never replan and would freeze in place with
+	// an empty action — exactly the village-wide stasis seen under resource contention.
+	if a.PlanIdx >= len(a.Plan.Actions) {
 		return true
 	}
 	// Currently mid-durative-action — don't re-plan.
