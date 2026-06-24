@@ -17,7 +17,7 @@ The `(KR: …)` hints cross-reference the Korean input docs (`PRD.md`, `design.m
 - **Capability**: Strength, Agility, Intelligence. Read by capability gates, outcomes, prediction.
 - **Disposition** (value weights): Aggression, Impulsivity, Honesty, Greed, Sociability, Vindictiveness, RiskAversion. Raises goals.
 - **`Intelligence`**: abstraction-ladder reach + ToM modeling depth + prediction (lookahead). A separate axis from Impulsivity.
-- **No individual skills.** Action competence = composition of base attributes via a per-action **data formula** (`Formula`, `design.md §6`), recomputed each time. The stat set is open content (D10); a new `kind` is a deliberate schema+engine extension.
+- **No individual skills.** Action competence = composition of base attributes via a per-action **data formula** (`Formula`, `design.md §6`), recomputed each time. The stat set is open content (D10); a new `kind` is a deliberate schema+engine extension. Base attributes are **mutable** (train with use = general conditioning, not a skill; drift with age, §7) — still no per-activity stored skills.
 
 ## Values & goals
 | Concept | Canonical | Notes |
@@ -89,7 +89,7 @@ The `(KR: …)` hints cross-reference the Korean input docs (`PRD.md`, `design.m
 | Time | `GameMinutes` / `Tick` | 24 game-h = 2 real-h (12×). Default tick = 1 game-minute. |
 | Sense | `Sense` | `Sight(LoS) | Smell(gradient) | Hearing` |
 | Terrain | `Terrain` | Data-defined type: base cost + traversal tags + **state** (`Moisture`…). Dynamic (transitions). `design.md §5`. |
-| Moisture | `Moisture` | Terrain cell/region wetness; climate drives it; threshold → terrain **transition** (swamp dries, forest→swamp). |
+| Moisture | `Moisture` | Terrain wetness attribute; climate drives it; threshold → terrain **transition** (dry soil ⇄ wet ⇄ submerged). Vegetation is flora objects, not terrain. |
 | Desire-path wear | `wear` | Sparse per-cell trail field; traffic↑→cost↓, decay→소멸. `cost = base × f(wear)`. |
 
 ## Economy & ownership

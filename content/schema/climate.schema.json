@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/climate.schema.json",
+  "title": "content/climate.yaml — terrain transition table + climate tuning rates (D4/D10)",
+  "description": "The single owner of climate DATA (docs/climate.md RESOLVED #4). Two blocks: `transitions` (from-type × condition-Formula → to-type, the §6-DSL-driven dynamic-terrain rules consumed by engine/climate.Rules) and `balance` (rate-only tuning constants, D9 spirit). The 10-day-expected / 30-day-forced / 2-12h-duration SHAPE is fixed design and lives in engine code, NOT here — only the rates below are tunable. platform/config compiles this into climate.Rules + climate.Config and cross-checks every `from`/`to` against content/terrain.yaml (an undefined terrain id is a load-time failure, D10).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "grid", "transitions", "balance"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "grid": {
+      "type": "object",
+      "description": "Coarse climate-grid geometry (RESOLVED #1: one climate cell spans many navmap cells). Injected into climate.Config.GridCols/GridRows.",
+      "additionalProperties": false,
+      "required": ["cols", "rows"],
+      "properties": {
+        "cols": { "type": "integer", "minimum": 1, "description": "Coarse-grid columns." },
+        "rows": { "type": "integer", "minimum": 1, "description": "Coarse-grid rows." },
+        "initial_moisture":    { "type": "number", "minimum": 0, "maximum": 1, "description": "Optional default starting Moisture for every cell; defaults to 0.5 when absent." },
+        "initial_temperature": { "type": "number", "minimum": 0, "maximum": 1, "description": "Optional default starting Temperature for every cell; defaults to 0.5 when absent." }
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "description": "The from-type × condition → to-type transition table (D4/D10). Order is SIGNIFICANT: for a given `from`, the FIRST rule whose `when` Formula is true wins (deterministic, D12). An empty array = climate-off (outcome-neutral introduction phase, RESOLVED #10). Every `from`/`to` MUST be a terrain id defined in content/terrain.yaml (platform/config validates).",
+      "items": { "$ref": "#/$defs/transition" }
+    },
+    "balance": {
+      "type": "object",
+      "description": "Rate-only tuning injected into climate.Config (D9 spirit: rates are content, the SHAPE is fixed design). The fixed-design hard values (hard-cap 720h, duration 2-12h) are carried here ONLY so engine code stays literal-free (D10); they are not free design knobs.",
+      "additionalProperties": false,
+      "required": [
+        "rain_prob_per_hour", "rain_hard_cap_hours", "rain_dur_min_hours", "rain_dur_max_hours",
+        "moisture_rain_rate", "evap_base_rate", "evap_temp_scale",
+        "temp_day_peak", "temp_night_low", "temp_rain_drop"
+      ],
+      "properties": {
+        "rain_prob_per_hour":  { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Per-game-hour increment to PRain, calibrated so E[first rain] ≈ 10 days = 240 game-hours (1a)." },
+        "rain_hard_cap_hours": { "type": "integer", "minimum": 1, "description": "Forced rain after this many dry game-hours. FIXED DESIGN = 720 (30 days); injected to keep engine literal-free (D10)." },
+        "rain_dur_min_hours":  { "type": "integer", "minimum": 1, "description": "Rain duration lower bound in game-hours. FIXED DESIGN = 2 (1a)." },
+        "rain_dur_max_hours":  { "type": "integer", "minimum": 1, "description": "Rain duration upper bound in game-hours. FIXED DESIGN = 12 (1a); must be ≥ rain_dur_min_hours." },
+        "moisture_rain_rate":  { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Moisture gained per game-hour while raining (1a)." },
+        "evap_base_rate":      { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Base Moisture lost per dry game-hour (1a)." },
+        "evap_temp_scale":     { "type": "number", "minimum": 0, "maximum": 1, "description": "Extra Moisture lost per dry game-hour per unit Temperature — the Temperature→Moisture feedback (1a)." },
+        "temp_day_peak":       { "type": "number", "minimum": 0, "maximum": 1, "description": "Temperature at the daily peak (midday), normalized (1b)." },
+        "temp_night_low":      { "type": "number", "minimum": 0, "maximum": 1, "description": "Temperature at the daily trough (night), normalized; must be ≤ temp_day_peak (1b)." },
+        "temp_rain_drop":      { "type": "number", "minimum": 0, "maximum": 1, "description": "Temperature reduction applied while raining (1b)." }
+      }
+    }
+  },
+  "$defs": {
+    "terrainId": {
+      "type": "string",
+      "description": "A terrain type id; must exist in content/terrain.yaml (cross-checked by platform/config, D10).",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "when"],
+      "properties": {
+        "from": { "$ref": "#/$defs/terrainId" },
+        "to":   { "$ref": "#/$defs/terrainId" },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A §6 Formula boolean condition over CellState operands `moisture` and `temperature` (both in [0,1]), e.g. \"moisture > 0.7\" or \"moisture < 0.2 & temperature > 0.6\". Compiled + validated by platform/config via the shared engine/core Formula evaluator; an undefined operand is a load-time failure (D10/design.md §6). No RNG inside a condition (deterministic, D12)."
+        }
+      }
+    }
+  }
+}

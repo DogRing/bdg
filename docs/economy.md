@@ -22,6 +22,7 @@ Concept & rationale: `docs/design.md §9` (+ §5 문/길목, §7 상속). 이 �
 - **integrity 모델:** HP 단일값 vs 부위별? `lockStrength`↔`integrity` 관계, 파괴 임계?
 - **수리·재건:** `Build`로 복구 가능? build↔destroy 군비경쟁의 비용 균형?
 - **파괴의 사회적 귀결:** 소유주 원한·보복·평판(D6) 전파 — 기존 deed/gossip 경로 재사용?
+- **투자량 자동 결정(문 lockStrength·집 크기) = planner frontier [PARKED → 플래너 설계 때]:** "안전을 채울 만큼만 / Standing 위해 더" 투자하는 *양*은 author 금지(D8: 마을 평균은 god 지식 / D9·D2: 답을 author 금지). **stat 임계를 향한 D9 forward-provisioning**으로 창발해야 함 — 인지 위협 `ToM[남].Strength` 분포 × RiskAversion + 지불 역량. author하는 건 공급식 `lockStrength=g(cost)`뿐. **map-plan §6 Degree-2와 동일한 planner 확장**(현재-plan만 보는 GOAP를 지연·간접 보상으로 확장)이라 함께 푼다.
 
 ## 2. Phases — (Open questions 해소 후 작성)
 > map-plan.md 양식: 각 phase 독립 shippable + 테스트 + 결정성 골든.

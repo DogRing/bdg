@@ -42,7 +42,7 @@ intent/completion/cap machinery stays.
   a re-baselined golden).
 
 ### M2 — Terrain (river / mountain): cost + capability gates
-- `content/terrain.yaml` (types: `BaseCost`, `Passable`, `RequiredTags`) + per-run layout (`map.yaml`
+- `content/terrain.yaml` (**바탕재료=속성 프리셋** `{grainSize·moisture·temperature·depth·slope·salinity}`; cost·passability·gates는 per-type 상수가 아니라 **속성 위 §6 수식**, `design.md §5`) + per-run layout (`map.yaml`
   region polygons → a `terrainAt(Vec2)` sampler). `platform/config` loads + validates (schema).
 - `navmap.New` consumes the sampler/types. `pathfind` honours `Caps` (agent's traversal tags).
 - `content/actions.yaml`: add `Swim` (tag `terrain:water`, gated by Strength/Agility) so a river is
