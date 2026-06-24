@@ -16,7 +16,7 @@ schema_version: 1
 #   label   — human-readable display name for UI / why-trace ONLY (optional; defaults to id).
 #             NOT read by engine/platform logic today — cosmetic, non-load-bearing metadata.
 #   kind:
-#     capability  — read by capability gates / outcomes / prediction (Strength, Agility, Intelligence)
+#     capability  — read by capability gates / outcomes / prediction (Strength, Agility, Intelligence, Dexterity)
 #     disposition — value weights that raise goals (the dispositional axes)
 #   range   — [min, max] clamp for both Real Stats and ToM beliefs (min <= max).
 #   gen     — agent-GENERATION distribution sampled at spawn with the injected seeded RNG (D12).
@@ -50,6 +50,18 @@ stats:
     range: [0.0, 1.0]
     default: 0.5
     gen: { dist: normal, mean: 0.5, sd: 0.18 }
+    inherit: 0.5
+
+  - id: Dexterity
+    label: Dexterity
+    kind: capability        # 손재주 — read by flora yield rolls (chance = §6(Dexterity), flora 1e) and
+                            # later by any fine-manipulation action. D7: no per-action skill; competence
+                            # is this base capability composed via §6. Base attributes are MUTABLE
+                            # (train with use = general conditioning), but the TRAINING mechanism is a
+                            # cross-cutting stats/lifecycle concern owned elsewhere — NOT in engine/flora.
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.15 }
     inherit: 0.5
 
   # ── Disposition (value weighting) ───────────────────────────────────────────

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/objects.schema.json",
-  "title": "content/objects.yaml — object & item kinds carrying supply Effect (D9/D10)",
+  "title": "content/objects.yaml — object & item kinds carrying supply Effect (D9/D10), incl. flora",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version"],
@@ -32,6 +32,101 @@
       "additionalProperties": { "type": "number" },
       "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
     },
+    "formula": {
+      "description": "A §6 Formula string (design.md §6), compiled by platform/config via engine/expr. Operands: terrain attrs, climate (moisture/temperature), `growth`, capability StatIDs (e.g. Dexterity). An unknown operand is a load-time failure (D10). Structural check here is non-empty string; semantic validation is platform/config's.",
+      "type": "string",
+      "minLength": 1
+    },
+    "scalarOrFormula": {
+      "description": "Either a numeric constant or a §6 Formula string (engine/expr).",
+      "anyOf": [
+        { "type": "number" },
+        { "$ref": "#/$defs/formula" }
+      ]
+    },
+    "qtyRange": {
+      "description": "[min, max] inclusive integer quantity for a yield-table roll (seeded RNG). 0 <= min <= max (cross-field, enforced by platform/config beyond JSON Schema).",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "yieldEntry": {
+      "description": "One yield-table row (flora 1e). `chance` is a §6 Formula (typically `§6(Dexterity)`) → [0,1] success probability for a SEEDED roll; `qty` is the [min,max] amount on success. D7: chance composes a capability stat, NOT a per-action skill. D9: regen is this table refilling via growth, never a future-quantity field.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "chance", "qty"],
+      "properties": {
+        "item": { "$ref": "#/$defs/identifier" },
+        "chance": { "$ref": "#/$defs/scalarOrFormula" },
+        "qty": { "$ref": "#/$defs/qtyRange" }
+      }
+    },
+    "yieldTable": {
+      "description": "The yield table: an array of {item, chance, qty} rolled by a generic harvest action (Forage/Fell) with the seeded RNG (flora 1e, D12).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/yieldEntry" }
+    },
+    "shade": {
+      "description": "flora shade PARAMETER formulas (flora 1d). radius/opacity = §6(growth, species). perception composes overlapping shade multiplicatively into LoS (no tiling, D11). engine/flora emits the parameter; perception computes the occlusion.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["radius", "opacity"],
+      "properties": {
+        "radius": { "$ref": "#/$defs/scalarOrFormula" },
+        "opacity": { "$ref": "#/$defs/scalarOrFormula" }
+      }
+    },
+    "propagation": {
+      "description": "Seed-dispersal propagation (flora 1a option a): children spawn within `radius` of the parent Pos with probability `chance` · child_suitability · density_weight(neighbor_count). Environmental — NOT scaled by an actor stat.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["radius", "chance"],
+      "properties": {
+        "radius": { "$ref": "#/$defs/scalarOrFormula" },
+        "chance": { "$ref": "#/$defs/scalarOrFormula" }
+      }
+    },
+    "flora": {
+      "description": "Marks an object_kind as a flora SPECIES (engine/flora; docs/flora.md). All behavior is §6 data (D4/D10); succession/forests emerge (D2/D3). Continuous `growth`; stages DERIVED via `stages` thresholds (D9: no stored stage, no future field).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["suitability", "growth_rate", "stages", "shade", "propagation", "death_threshold", "death_hysteresis"],
+      "properties": {
+        "suitability": { "$ref": "#/$defs/formula" },
+        "growth_rate": { "$ref": "#/$defs/scalarOrFormula" },
+        "stages": {
+          "description": "Ascending Growth thresholds in (0,1) → derived discrete stage index (count+1 stages). platform/config enforces strictly ascending, in-range (beyond JSON Schema).",
+          "type": "array",
+          "items": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+          "minItems": 1
+        },
+        "yield_stage": {
+          "description": "Minimum derived stage index at which harvest.yields apply (e.g. only mature plants bear fruit). Optional; default 0.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "propagate_stage": {
+          "description": "Minimum derived stage index at which the plant disperses seed (propagation). Optional; default 0.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "shade": { "$ref": "#/$defs/shade" },
+        "propagation": { "$ref": "#/$defs/propagation" },
+        "death_threshold": {
+          "description": "θ: suitability below this counts toward death (1b). [0,1].",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "death_hysteresis": {
+          "description": "Consecutive sub-θ flora steps before object-mortality removal (1b option a; no flicker). >= 1.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "objectKind": {
       "type": "object",
       "additionalProperties": false,
@@ -39,13 +134,20 @@
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
         "mobile": { "type": "boolean" },
+        "flora": { "$ref": "#/$defs/flora" },
         "harvest": {
           "type": "object",
           "additionalProperties": false,
           "required": ["action", "provides"],
           "properties": {
             "action": { "$ref": "#/$defs/identifier" },
-            "yields": { "$ref": "#/$defs/identifier" },
+            "yields": {
+              "description": "Either the LEGACY single item id (non-flora object_kinds: a fixed item placed into inventory) OR the flora YIELD TABLE [{item, chance, qty}] rolled with the seeded RNG (flora 1e). platform/config picks the form by shape.",
+              "anyOf": [
+                { "$ref": "#/$defs/identifier" },
+                { "$ref": "#/$defs/yieldTable" }
+              ]
+            },
             "provides": { "$ref": "#/$defs/predList" },
             "depletes": { "type": "boolean" }
           }

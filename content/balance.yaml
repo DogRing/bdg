@@ -28,6 +28,10 @@ perception:
   sight_radius: 18.0              # line-of-sight range (world units); engine/perception Sight
   smell_radius: 10.0              # scent-gradient falloff range; engine/perception Smell
   hearing_radius: 14.0            # base hearing range; scaled by an action's noise:* tag
+  shade_sight_tau: 0.35           # flora-shade LoS cutoff (engine/perception, flora 1d): a target is
+                                  # occluded iff composed light transmission ∏(1−opacity) along the
+                                  # sight segment < this. 1.0 ⇒ any shade blocks; 0 ⇒ shade never
+                                  # blocks. Shade-OFF (no flora) leaves Sight unchanged (empty product=1).
 
 # ── Need rates (AUTHORITATIVE source for engine/needs; data-driven, D9 / D10) ────
 # Per-need (per glossary Dimension) decay + setpoint. The engine/needs loader reads THIS
@@ -227,9 +231,15 @@ trade:
   claim_inflate_max: 0.90         # claim ceiling: a fully-dishonest agent (perceived Honesty=0) inflates to this
 
 # ── Resource regrowth (game-minutes) ────────────────────────────────────────────
+# ⚠ FLORA MIGRATION (docs/flora.md 1e, objects.yaml header): a FLORA species' "regen" is its
+#   yield table refilling via Growth, LOCAL to the object (D9) — NOT a timer here. These timer
+#   entries are LEGACY for the non-flora object_kinds (berry_bush, prey) and stay through the
+#   flora-OFF phases. At flora activation (P_f4), `berry_bush` → `berry_shrub` (flora) and
+#   `regen.berry_bush` is REMOVED (the deliberate re-baseline). `prey` regen stays (prey is not
+#   flora). Do NOT add a regen.* entry for any flora species (D9 locality).
 regen:
-  berry_bush: 480                 # a depleted bush regrows in ~8 game-hours
-  prey_respawn: 720               # a hunted prey instance respawns elsewhere after ~12h
+  berry_bush: 480                 # LEGACY: a depleted bush regrows in ~8 game-hours (removed at flora activation)
+  prey_respawn: 720               # a hunted prey instance respawns elsewhere after ~12h (NOT flora)
 
 # ── Value weights (per-Dimension arbitration, engine/values) ────────────────────
 # Population-default dimension weights used by the planner's Priority arbitration.

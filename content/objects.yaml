@@ -14,6 +14,37 @@
 # `supply` keys are need ids from content/needs.yaml; values are the amount delivered
 # (clamped into the need range). `provides` keys are predicates (core.Pred) used by the
 # GOAP reverse index. Schema: content/schema/objects.schema.json
+#
+# ── FLORA (engine/flora; docs/flora.md, design.md §5/§7) ─────────────────────────
+# A flora species is an object_kind carrying a `flora:` block: the §6 formulas + thresholds
+# that drive growth, suitability, propagation, shade, and death (object-mortality). flora
+# objects are PLANTS (trees/bushes/grass) on continuous coords (D11) — NOT terrain, NOT a
+# forest terrain type ("forest"/"dark forest" emerge from plant clusters + shade overlap, D2).
+# All per-species behavior is §6 data here (no bespoke Go per-species function, D4/D10).
+#   flora.suitability  — §6 numeric formula over terrain attrs + climate (moisture/temperature)
+#                        → [0,1]. Drives growth rate and (below death_threshold) death hysteresis.
+#   flora.growth_rate  — §6/scalar: Growth += growth_rate · suitability per flora step (1b).
+#   flora.stages       — ascending Growth thresholds → DERIVED discrete stage index (1b; D9: no
+#                        stored stage). yield_stage / propagate_stage gate which stages act.
+#   flora.shade        — §6 formulas radius=f(growth,species) + opacity=f(growth,species) (1d).
+#                        perception composes overlapping shade ∏(1−opacity) into LoS (no tiling).
+#   flora.propagation  — radius + chance (§6, may read Dexterity? NO — propagation is environmental):
+#                        seed dispersal near the parent (1a); child spawns at p = chance ·
+#                        child_suitability · density_weight(neighbor_count) within radius.
+#   flora.death_threshold (θ) + flora.death_hysteresis — sustained suitability<θ for hysteresis
+#                        steps → object-mortality removal (1b option a; no flicker).
+#   harvest.yields     — the YIELD TABLE (1e): [{item, chance, qty:[min,max]}]. A generic action
+#                        (Forage/Fell) rolls it with the seeded RNG; `chance = §6(Dexterity)` scales
+#                        the per-entry success (D7: capability, not a per-action skill). Regen is the
+#                        yield refilling via growth — there is NO future "amount ripening" field (D9),
+#                        and NO balance.regen.* timer for a flora species (regen is LOCAL to the
+#                        object via its growth + yield table).
+#
+# ⚠ MIGRATION (see SPEC Open Questions): the legacy `berry_bush` below stays a plain non-flora
+#   object_kind (with balance.regen.berry_bush) through the flora-OFF phases so the live hunger-loop
+#   goldens are untouched. The flora species `berry_shrub` is the generalized replacement; it is
+#   DORMANT until flora is activated (no placement until activation). At activation (flora P_f4)
+#   the deliberate re-baseline converts berry_bush → berry_shrub and drops balance.regen.berry_bush.
 
 schema_version: 1
 
@@ -24,7 +55,63 @@ object_kinds:
       action: Forage          # the atomic action that operates on this kind (actions.yaml)
       yields: berries         # item placed into inventory
       provides: [ has_food ]   # predicate made true for the GOAP planner
-      depletes: true          # finite; regrows on a timer (balance.regen.berry_bush)
+      depletes: true          # LEGACY finite + timer regrow (balance.regen.berry_bush). Superseded by
+                              # the flora yield table on berry_shrub at activation (SPEC migration).
+
+  # ── FLORA species (engine/flora) — DORMANT until activation; generalizes berry_bush ──
+  # A bush that GROWS (continuous Growth), casts light shade, propagates by seed dispersal, and
+  # dies under sustained unsuitability. Its berry "regen" is the yield table refilling via growth,
+  # local to the object (D9) — NOT a balance.regen timer. The §6 formula STRINGS below are compiled
+  # by platform/config via engine/expr (design.md §6); operands are terrain attrs + climate +
+  # `growth`/`Dexterity`. Values are illustrative placeholders (untuned; balance is an auto-tuning
+  # target — see balance.yaml header).
+  - id: berry_shrub
+    mobile: false
+    flora:
+      suitability: "moisture*0.6 + (1 - temperature)*0.2 + (1 - slope)*0.2"  # §6 → [0,1]
+      growth_rate: 0.02                                                       # Growth += rate·suitability /step (1b)
+      stages: [0.33, 0.66]            # ascending Growth thresholds → stage 0/1/2 (seedling/young/mature)
+      yield_stage: 2                  # only mature (stage ≥ 2) bears berries
+      propagate_stage: 2              # only mature shrubs disperse seed
+      shade:
+        radius:  "growth * 2.0"       # §6 → world units; bigger when grown (1d)
+        opacity: "growth * 0.35"      # §6 → [0,1]; light shrub shade (1d)
+      propagation:
+        radius: 6.0                   # seed-dispersal radius around the parent Pos (1a)
+        chance: 0.15                  # base spawn probability · child_suitability · density_weight
+      death_threshold: 0.20           # θ: suitability below this counts toward death (1b)
+      death_hysteresis: 4             # consecutive sub-θ flora steps before removal (no flicker, 1b)
+    harvest:
+      action: Forage                  # non-destructive harvest (does NOT kill the plant)
+      provides: [ has_food ]
+      yields:                         # YIELD TABLE (1e): seeded roll; chance = §6(Dexterity)
+        - { item: berries, chance: "0.5 + Dexterity*0.5", qty: [1, 3] }
+
+  # A tree: heavy shade (the "dark forest" driver via overlap), yields wood when FELLED
+  # (destructive = object-mortality, §7) — Fell is the action that triggers removal; a
+  # non-destructive Forage (e.g. fallen branches) could yield less without killing it. (The
+  # Fell/Plant actions are not yet defined — SPEC Open Questions, human decision before P_f4.)
+  - id: oak
+    mobile: false
+    flora:
+      suitability: "moisture*0.4 + (1 - salinity)*0.3 + (1 - slope)*0.3"
+      growth_rate: 0.006              # trees grow slowly
+      stages: [0.25, 0.6]
+      yield_stage: 1                  # young+ trees can be felled for wood
+      propagate_stage: 2              # only mature trees seed
+      shade:
+        radius:  "growth * 8.0"       # large canopy when grown (dark-forest overlap, 1d)
+        opacity: "growth * 0.7"       # dense shade (1d)
+      propagation:
+        radius: 12.0
+        chance: 0.08
+      death_threshold: 0.15
+      death_hysteresis: 8             # trees are hardy — long hysteresis
+    harvest:
+      action: Fell                    # DESTRUCTIVE: removes the tree (object-mortality) on completion
+      provides: [ has_materials ]     # wood feeds the craft/build chain (GOAP reverse index)
+      yields:
+        - { item: wood, chance: "0.7 + Dexterity*0.3", qty: [2, 5] }
 
   - id: prey
     mobile: true              # wanders; perception + pursuit handled by engine
@@ -74,6 +161,14 @@ item_kinds:
     stackable: true
     perishable: false
     supply: { Hydration: 0.45 }
+
+  - id: wood
+    stackable: true
+    perishable: false
+    # Felled-tree yield (flora). Instrumental material (feeds craft/build); like crafted_tool its
+    # supply is a tiny Standing contribution (D9 requires a supply Effect; wood is not consumed for
+    # need-satisfaction). Its real value is enabling Craft/Build via has_materials.
+    supply: { Standing: 0.02 }
 
   - id: crafted_tool
     stackable: false
