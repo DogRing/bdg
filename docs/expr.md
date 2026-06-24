@@ -1,9 +1,10 @@
 # Formula Evaluator (§6 DSL) — Subsystem Plan
 
 Concept & rationale: `docs/design.md §6` (수식 DSL — stat 계산식은 데이터다; 특히 line 89 **평가기 위치**
-+ line 90 **평가 모델 / Context 채널**, 둘 다 binding). The module SPEC does NOT yet exist:
-this Tier-2 plan opens the build decisions for the NEW foundational module `backend/engine/expr/SPEC.md`
-(L0 leaf, `core`-only). It sits between `design.md §6` and every module that evaluates a `Formula`.
++ line 90 **평가 모델 / Context 채널**, 둘 다 binding). The module SPEC NOW EXISTS:
+`backend/engine/expr/SPEC.md` (L0 leaf, `core`-only). It sits between `design.md §6` and every module
+that evaluates a `Formula`. This Tier-2 plan keeps the locked decisions (§0), the resolved build
+decisions (§1, all RESOLVED), and the shippable phases (§2).
 
 관련 모듈: **신규** `engine/expr`(한 공유 평가기 — `Program` 컴파일·`Context` 평가),
 `engine/gates`(기존 boolean `GateExpr` 술어트리 평가기 — §6 boolean 부분집합으로 **통합 대상**),
@@ -27,7 +28,7 @@ this Tier-2 plan opens the build decisions for the NEW foundational module `back
   **로드 시 검증 실패**(D10). eval 안에 RNG 없음; **고정 연산자 우선순위**(D12). 형식만 고정, 변수명은 자유.
 
 ## 1. Decisions — **ALL RESOLVED** (추천대로 채택)
-> 사람이 7개 전부 각 줄의 `rec`로 확정(`[RESOLVED→rec]` = 그 줄 rec). #4 gates 통합 = **단계적**(expr 독립 → 동일성 검증 → 스왑, 기존 gates golden 보호). ⇒ module SPEC 작성 가능.
+> 사람이 7개 전부 각 줄의 `rec`로 확정(`[RESOLVED→rec]` = 그 줄 rec). #4 gates 통합 = **단계적**(expr 독립 → 동일성 검증 → 스왑, 기존 gates golden 보호). ⇒ module SPEC 작성 완료(`backend/engine/expr/SPEC.md`).
 
 - [RESOLVED→rec] **`Context` 인터페이스 형태** — 피연산자/술어가 어떻게 해석되는가(메서드 셋, 호출자별 누가 구현하나)? —
   options: (a) 단일 메서드 `Lookup(ident string) (Value, bool)` (operand·predicate 모두 한 lookup으로,
@@ -85,13 +86,63 @@ this Tier-2 plan opens the build decisions for the NEW foundational module `back
   Q5 정적검사가 강제); why: (a) float-as-bool는 design §6의 "출력 타입=문맥"과 충돌하고 미묘한 버그(0.0이 false?)를
   부르며, 명시 합 타입이 D12 골든 직렬화·타입검사에 가장 안전.
 
-## 2. Phases — placeholder
-> **§1이 전부 `OPEN`인 동안 채우지 않는다.** 각 Open question이 `RESOLVED`로 닫힌 뒤에야
-> `engine/expr` module SPEC을 작성하고, 그 다음 이 절을 (climate.md §2 / map-plan M1~M5 양식으로)
-> shippable + 테스트 + 결정성 골든 단위로 채운다.
+## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `climate.md §2 / map-plan M1~M5` 양식)
+> 빌드순서: expr은 build stage 1(`core`·`rng`와 동급 L0, architecture §5)이므로 그 소비자 climate/flora(stage 2)·
+> gates(L2)·platform/config 보다 **먼저** 존재해야 한다. 모듈 SPEC = `backend/engine/expr/SPEC.md`.
 >
-> 예상 골격(미확정, 참고용): Pxa expr 코어(Program/Context/eval, 산술+비교+논리, 컴파일 타입검사) →
-> Pxb gates 통합(Q4 단계적, golden 동일성 검증 → 스왑) → Pxc climate/flora 소비(이미 SPEC이 `expr.Program`+
-> `expr.Context` 가정 — 컴파일 경로를 `platform/config`에 연결) → Pxd 술어 함수(`has`/`isOwner`/`paid`,
-> economy/portal seam). 빌드순서: expr은 stage 1(core·rng와 동급 L0)이므로 climate/flora(stage 2)보다
-> 먼저 존재해야 한다(architecture §5 caveat).
+> **핵심 안전 레버:** Pxa(코어)·Pxb(통합 준비)는 **gates·climate·flora 골든을 일절 건드리지 않는다** —
+> expr는 독립 패키지로 출하되고, 기존 gates `p3_gates.json`/schema_version 3은 불변. gates 실제 스왑(Pxb 후반)·
+> climate/flora 활성화(Pxc)에서만 의도적 재기준(climate M4 동형).
+
+### Pxa — `engine/expr` 코어 (Program/Context/eval, 산술+비교+논리, 컴파일 타입검사)  ← 이 SPEC
+- **출하물:** `engine/expr` 단독 패키지 — `Value`{Kind:Num|Bool}(#7), `Context`{Stat/Attr/Pred}(#1),
+  불변 AST `Program`(#2) + `ResultKind()`/`Reads()`/`ReadsAttrs()`/`ReadsPreds()` introspection,
+  `Parse(text, want, knownStats, knownPreds) (*Program, error)`(컴파일+정적 타입추론+식별자/타입검증, #2/#3/#5/#6),
+  런타임 진입점 `EvalNumber`/`EvalBool`(#5), `BasePreds()`(`has`/`isOwner`/`paid`, #3).
+- **불변:** 순수·결정성(D12) — RNG 0, wall-clock 0, map-iteration 0. 식별자/타입 오류 = **로드 실패**(D10),
+  런타임 산술 엣지(0나눗셈·NaN) = **고정 정책 0**(#6) → eval은 error 분기 없는 `float64`/`bool` 반환. 도메인
+  클램프는 호출자(#6). num↔bool 암묵 coercion 금지(#7). 고정 연산자 우선순위(D12).
+- **테스트:** 산술/비교/논리 table-driven + §6 예제(`STR*0.5+AGI*0.3`, `(…>0.5)|(AGI>terrain.depth)`),
+  술어 호출(`has(key)|STR>door.lockStrength|paid(toll)|isOwner`), 미정의 식별자/술어/arity → 로드 실패,
+  타입 clash → 로드 실패, `want` 불일치 → 로드 실패, div-0/NaN→0, no-clamp, introspection 3종 정렬·중복제거,
+  결정성 골든(formula+Context-stub 시퀀스 → 바이트동일 digest, 재-Parse 재현), read-only, `-race` 동시 eval,
+  no-IO/no-rng/no-stats/no-gates import grep guard.
+- **블로커:** 없음 — `core`만 의존, stage 1. (gates/climate/flora/config 무접촉.)
+
+### Pxb — gates 통합 준비 → 단계적 스왑 (#4 단계적; golden 동일성 검증 후에만 스왑)
+- **Pxb-1 (동일성 검증, gates 무수정):** expr leaf/composite/comparison semantics가 `gates.evalExpr`+`cmpOp`
+  (`backend/engine/gates/eval.go`)와 **바이트동일**함을 증명하는 parallel 테스트 — 각 shipped gate predicate
+  (`capability_floor`/`knowledge`/base `conscience`/`stamina`/`apathy`/`adrenaline`)를 `expr.Program`로 재표현,
+  battery of `AgentSnapshot`에서 `EvalBool` == `gates.evalExpr`. **expr는 gates를 import하지 않고, gates는
+  수정하지 않는다**(테스트는 패키지 경계 밖). ⇒ 스왑이 golden-중립임을 보장.
+- **Pxb-2 (실제 스왑, 의도적 재기준):** gates가 expr를 import → 중복 `GateExpr`/`Op`/`cmpOp` 제거, boolean
+  부분집합만 사용(glossary "one shared evaluator" 충족). **결정 필요(Open Q, gates owner/human):** gates가
+  자기 on-disk YAML leaf 형태를 유지(eval 엔진만 스왑, golden-중립)하느냐, expr 텍스트 수식 문법으로 이주
+  (content+schema 마이그레이션, `gates.schema.json` 3→4 가능)하느냐. 권장: **엔진만 스왑 먼저**(golden-중립),
+  문법 이주는 후속. 이 phase에서만 `p3_gates.json`/스키마 재기준 가능.
+- **블로커:** Pxb-2는 gates owner 결정 대기(엔진-스왑 vs 문법-이주). Pxb-1·Pxa는 무블로커.
+
+### Pxc — climate/flora 소비 (`platform/config`에 컴파일 경로 연결)
+- **출하물:** `platform/config`가 `content/climate.yaml` `when:` 조건과 `content/objects.yaml` `flora:` 수식
+  (suitability/length-rate/width-rate/shade(width)/yield-chance)을 `expr.Parse`로 컴파일 → 각 모듈의 compiled
+  `Rules`(`climate.Rules`/`flora.Rules`)에 `expr.Program`로 저장. climate/flora는 자기 `Context` 어댑터
+  (`CellState` / `SiteInput`+`Plant`)를 구현해 `EvalBool`/`EvalNumber` 호출.
+- **불변:** climate/flora SPEC이 이미 가정한 `expr.Program`+`expr.Context` 형태 충족(SPEC 재작성 불필요).
+  Attr-name 교차검증은 **각 소비자의 config 단계**가 `ReadsAttrs()`를 자기 operand 어휘에 대조(전역 attr
+  레지스트리 없음, D10). 도입은 climate-off/flora-off(빈 `Rules`) → 기존 world/navmap/perception 골든 불변;
+  활성화·재기준은 climate M4 / flora 활성화 phase 소관(여기 아님).
+- **테스트:** config 컴파일 path(수식 문자열 → `Program`, 미정의 operand/술어 → 로드 실패), climate
+  `Rules.Eval`(bool)·flora `Suitability`/rates(number)가 expr 통해 동작, 교차검증 골든. (climate/flora 단위
+  골든 자체는 그 모듈 SPEC AC.)
+- **블로커:** Pxa 완료. (climate/flora 모듈 골든 활성화는 별도 phase.)
+
+### Pxd — 술어 구현 (`has`/`isOwner`/`paid`) + economy/portal seam
+- **출하물:** §9 portal access 수식(`has(key) | STR > door.lockStrength | paid(toll) | isOwner`)을 평가하는
+  실 술어 — 호출자(actions/economy/portal)가 자기 `Context.Pred` 어댑터를 실제 inventory/ownership/toll
+  view 위에 구현 + 자기 `knownPreds`로 등록(코어·expr 무수정, D10). expr는 테이블 형태 + `BasePreds()`만 제공.
+- **불변:** 새 술어 = 호출자 구현 + 테이블 등록(엔진 무수정, D10/D2 — 제도 하드코딩 금지). 술어는 boolean,
+  비교/논리에서만 사용(#7). arity-1-Tag 시그니처 유지(§9 portal 충분).
+- **테스트:** portal 수식이 inventory/ownership/toll 변화에 따라 가부 변화(soft lock = stat 경합 → 강제 침입
+  창발, D2), 미등록 술어 = 로드 실패.
+- **블로커:** Pxa 완료 + economy/portal `Context` view. (predicate-arg richness — 다중/타입 인자는 향후 별도
+  결정, §1 #3 비차단 Open.)
