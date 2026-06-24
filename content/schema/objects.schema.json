@@ -33,7 +33,7 @@
       "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
     },
     "formula": {
-      "description": "A §6 Formula string (design.md §6), compiled by platform/config via engine/expr. Operands: terrain attrs, climate (moisture/temperature), `growth`, capability StatIDs (e.g. Dexterity). An unknown operand is a load-time failure (D10). Structural check here is non-empty string; semantic validation is platform/config's.",
+      "description": "A §6 Formula string (design.md §6), compiled by platform/config via engine/expr. Operands: terrain attrs, climate (moisture/temperature), the two morphology axes `length`/`width`, capability StatIDs (e.g. Dexterity). An unknown operand is a load-time failure (D10). Structural check here is non-empty string; semantic validation is platform/config's.",
       "type": "string",
       "minLength": 1
     },
@@ -45,14 +45,14 @@
       ]
     },
     "qtyRange": {
-      "description": "[min, max] inclusive integer quantity for a yield-table roll (seeded RNG). 0 <= min <= max (cross-field, enforced by platform/config beyond JSON Schema).",
+      "description": "[min, max] inclusive integer quantity for a yield-table roll (seeded RNG). 0 <= min <= max (cross-field, enforced by platform/config beyond JSON Schema). The rolled qty is further scaled by the plant's `length` (taller ⇒ more wood; flora §1 refinement) — this is the base [min,max] before the length scaling.",
       "type": "array",
       "items": { "type": "integer", "minimum": 0 },
       "minItems": 2,
       "maxItems": 2
     },
     "yieldEntry": {
-      "description": "One yield-table row (flora 1e). `chance` is a §6 Formula (typically `§6(Dexterity)`) → [0,1] success probability for a SEEDED roll; `qty` is the [min,max] amount on success. D7: chance composes a capability stat, NOT a per-action skill. D9: regen is this table refilling via growth, never a future-quantity field.",
+      "description": "One yield-table row (flora 1e). `chance` is a §6 Formula (typically `§6(Dexterity)`) → [0,1] success probability for a SEEDED roll; `qty` is the base [min,max] amount on success, scaled by the plant's `length` (yield ∝ length, flora §1 refinement). D7: chance composes a capability stat, NOT a per-action skill. D9: regen is this table refilling as `length` grows, never a future-quantity field.",
       "type": "object",
       "additionalProperties": false,
       "required": ["item", "chance", "qty"],
@@ -63,13 +63,13 @@
       }
     },
     "yieldTable": {
-      "description": "The yield table: an array of {item, chance, qty} rolled by a generic harvest action (Forage/Fell) with the seeded RNG (flora 1e, D12).",
+      "description": "The yield table: an array of {item, chance, qty} rolled by a generic harvest action (Forage/Fell) with the seeded RNG (flora 1e, D12). Yield scales with the plant's `length` (flora §1 refinement).",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/yieldEntry" }
     },
     "shade": {
-      "description": "flora shade PARAMETER formulas (flora 1d). radius/opacity = §6(growth, species). perception composes overlapping shade multiplicatively into LoS (no tiling, D11). engine/flora emits the parameter; perception computes the occlusion.",
+      "description": "flora shade PARAMETER formulas (flora 1d + §1 refinement). radius/opacity = §6(width, species) — shade scales with CANOPY SPREAD (the `width` axis), NOT height. perception composes overlapping shade multiplicatively into LoS (no tiling, D11). engine/flora emits the parameter; perception computes the occlusion.",
       "type": "object",
       "additionalProperties": false,
       "required": ["radius", "opacity"],
@@ -89,17 +89,24 @@
       }
     },
     "flora": {
-      "description": "Marks an object_kind as a flora SPECIES (engine/flora; docs/flora.md). All behavior is §6 data (D4/D10); succession/forests emerge (D2/D3). Continuous `growth`; stages DERIVED via `stages` thresholds (D9: no stored stage, no future field).",
+      "description": "Marks an object_kind as a flora SPECIES (engine/flora; docs/flora.md). All behavior is §6 data (D4/D10); succession/forests emerge (D2/D3). TWO continuous morphology axes (§1 refinement, replacing the single `growth` scalar): `length` (height; maturity proxy → stages; yield ∝ length) and `width` (canopy spread → shade), each with its OWN growth rate so a species can grow tall faster than wide. Stages DERIVED from `length` via `stages` thresholds (D9: no stored stage, no future field).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["suitability", "growth_rate", "stages", "shade", "propagation", "death_threshold", "death_hysteresis"],
+      "required": ["suitability", "length_rate", "width_rate", "stages", "shade", "propagation", "death_threshold", "death_hysteresis"],
       "properties": {
         "suitability": { "$ref": "#/$defs/formula" },
-        "growth_rate": { "$ref": "#/$defs/scalarOrFormula" },
+        "length_rate": {
+          "description": "§6/scalar HEIGHT growth rate: Length += length_rate · suitability per flora step (§1 refinement, 1b). Independent of width_rate (tall-vs-wide shape).",
+          "$ref": "#/$defs/scalarOrFormula"
+        },
+        "width_rate": {
+          "description": "§6/scalar GIRTH/CANOPY growth rate: Width += width_rate · suitability per flora step (§1 refinement, 1b). Independent of length_rate.",
+          "$ref": "#/$defs/scalarOrFormula"
+        },
         "stages": {
-          "description": "Ascending Growth thresholds in (0,1) → derived discrete stage index (count+1 stages). platform/config enforces strictly ascending, in-range (beyond JSON Schema).",
+          "description": "Ascending Length thresholds (world units, > 0) → derived discrete stage index (count+1 stages). Stage is over HEIGHT (`length`), NOT width (§1 refinement). platform/config enforces strictly ascending (beyond JSON Schema).",
           "type": "array",
-          "items": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+          "items": { "type": "number", "exclusiveMinimum": 0 },
           "minItems": 1
         },
         "yield_stage": {
@@ -142,7 +149,7 @@
           "properties": {
             "action": { "$ref": "#/$defs/identifier" },
             "yields": {
-              "description": "Either the LEGACY single item id (non-flora object_kinds: a fixed item placed into inventory) OR the flora YIELD TABLE [{item, chance, qty}] rolled with the seeded RNG (flora 1e). platform/config picks the form by shape.",
+              "description": "Either the LEGACY single item id (non-flora object_kinds: a fixed item placed into inventory) OR the flora YIELD TABLE [{item, chance, qty}] rolled with the seeded RNG (flora 1e; qty ∝ length, §1 refinement). platform/config picks the form by shape.",
               "anyOf": [
                 { "$ref": "#/$defs/identifier" },
                 { "$ref": "#/$defs/yieldTable" }

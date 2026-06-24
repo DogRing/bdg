@@ -6,14 +6,17 @@ Concept & rationale: `docs/design.md §9` (+ §5 문/길목, §7 상속). 이 �
 
 ## 0. Decisions locked (design.md §9)
 - **돈 = `currency` item_kind**(데이터). 창발 상품화 안 함(가독성). 이동은 기존 trade 재사용.
-- **소유 = object→`owner` 관계.** `Build`가 set. **양도·상속 가능.** 상속은 §7 사망과 결합.
+- **소유 = object→`owner` 관계**(`owner`=집합 가능=**공동소유**). `Build`가 set. **양도·공동소유는 trade로.** **상속 없음** — 사망 시 이전은 §7 임종 가치 전이로 *창발*(거래 없이 죽으면 무주물→공유지). 무주물 소유 *주장* 분쟁 → 접근 cost↑ → §3 코핑(폭력/거래).
 - 길은 `wear`(object 아님) 유지. 소유·과금되는 건 길목의 **문(포털 구조물)** — 잠긴 집 문 = 통행료 문(같은 primitive).
 - 문 개폐/통과 = **§6 수식**: `has(key) | STR > door.lockStrength | paid(toll) | isOwner`. soft lock → 강제 침입·미지불 우회가 창발(D2). M2 Caps 위에 얹힘.
 - 문/구조물은 `integrity`(HP)를 갖고 **파괴 가능**: force/attack = **§7 위험-outcome 행동**이 per-tick integrity를 깎음 → 0이면 제거 + footprint un-stamp(M3) → navmap 영구 리루트. 강제 침입·재산 파괴는 D2 창발 범죄. ("구조물판 사망", `lifecycle.md` 참조.)
-- **공동소유 = parked frontier**(공유자산 거버넌스는 별도 창발 영역).
+- **공동소유 = 채택**(trade로 owner 집합에 추가). 단 **공유자산 거버넌스**(누가 toll/policy 정하나)는 open.
 
 ## 1. Open questions (사람이 결정 — 컨트롤 표면)
-- **상속 대상:** 죽으면 소유물이 → 자식(번식 heir)? 무주물(재획득 경쟁)? RelyOn/근접자? (드라마 분기)
+- **[RESOLVED] 사망 시 이전:** 상속 **없음**. 죽음-근접 가치 전이(§7)로 죽어가는 자가 양도/공동소유 trade를 자발적으로; 거래 없이 죽으면 **무주물→공유지**.
+- **[NEW] 공동소유 거버넌스:** 공동 소유 자산의 policy/toll을 누가 정하나(만장일치·과반·지분)?
+- **[NEW] 죽음-근접 인지 + '물질' dimension:** agent가 자기 임종을 어떻게 아나(나이·vital·`ToM[self]`)? value가 빠지는 '물질' dimension 집합은?
+- **[NEW] 소유 '주장(claim)' 행동:** 무주물 주장 = 행동? 주장이 상대 plan cost↑로 가는 경로(접근 게이트화)?
 - **양도 메커닉:** ownership 이전을 trade에 어떻게 얹나 — 아이템 거래와 같은 경로 vs 별도 deed?
 - **§6 DSL 술어 확장:** `has(item)`·`isOwner`·`paid(toll)` 외 무엇까지? 평가기 구현 위치(gates와 공유).
 - **접근정책 데이터 모양:** 문 object_kind에 `{owner, policy expr, toll price}` → objects.yaml/스키마 + `data-contracts`(`object.owner` 필드) 확장.

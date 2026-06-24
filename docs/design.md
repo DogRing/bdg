@@ -86,13 +86,15 @@ forward-sim 정밀도/주기; 항 라이브러리·rate·α·β·λ 구체값 + 
 - **출력 타입 = 문맥:** 게이트/시도 임계 = 불리언, 능력 합성·비용·"건널 수 있는 폭" = 수치.
 - 예: 능력 `STR*0.5 + AGI*0.3`; 시도 `(STR*0.5 + AGI*0.3 > 0.5) | (AGI > terrain.depth)`.
 - **결정론(D12):** 고정 연산자 우선순위, RNG 미포함(필요시 주입), 미정의 식별자는 **로드 시 검증 실패**(D10). 형식만 고정이고 변수명은 자유.
-- **평가기 위치:** 한 평가기를 **`engine/expr`(L0 leaf, core 타입만 의존)**가 제공하고 gates·climate·actions·economy가 추상 `Context`(stat 값·소지·소유·문맥 변수 조회)를 넘겨 공유한다 — DSL 드리프트 방지(glossary "one shared evaluator"). gates의 boolean tree는 이 평가기의 boolean 부분집합.
+- **평가기 위치:** 한 평가기를 **`engine/expr`(L0 leaf, core 타입만 의존)**가 제공하고 gates·climate·flora·actions·economy가 추상 `Context`를 넘겨 공유한다 — DSL 드리프트 방지(glossary "one shared evaluator"). gates의 boolean tree는 이 평가기의 boolean 부분집합.
+- **평가 모델 (순수 + Context 채널):** `eval(Program, Context) → 숫자 | 불리언`. expr은 plan/apply·ToM/real·RNG를 *모른다*(멍청한 순수 평가기). **호출자가 Context를 갈아끼운다:** 계획=주체 `ToM[self]` + 인지된 대상 속성 → 불리언 '시도 가부'(D8); Action=실제 스탯 + 실제 속성 → 숫자(chance·qty). **chance→성공 roll은 호출자가 주입 RNG로** 수행(expr은 chance 숫자만 반환 → 결정성 유지, D12). Context 피연산자 = 주체 스탯 · 대상 속성(`terrain.depth`·`door.lockStrength`·`plant.length`) · 술어(`has`/`isOwner`/`paid`, 불리언) · 환경(`moisture`).
 
 ## 7. 생애주기 — 사망 × 번식은 하나의 사이클
 - **행동 = 결정적 공급만이 아니라 위험·단계적 outcome을 가질 수 있다:** 실제 스탯 + (인지/실제) 지형을 **§6 수식**으로 평가, **durative 중 per-tick 재평가** → 진행 / 중단(회항) / 실패. 강을 건너다 자원이 바닥나고 회항할 여력도 없으면 **사망**.
 - **시도(인지) vs 판정(실제) 2단계 (D8):** *시도*는 인지 능력(`ToM[self]`)·인지 지형(강 폭이 지능·자신감으로 다르게 *보임*)으로 결정; *판정*은 실제값으로. 과신→시도→사망, 과소→비시도(self-sealing). 이미 plan(신념 읽기)/apply(실제 적용) 2단계 위에 그대로 얹힌다(새 기계 최소).
 - **Stamina = need 아님 (이미 존재):** `Body.Stamina`(Mood/Adrenaline류 동적 상태, sleep/rest로 회복 — glossary 기존 항목). 새 스탯도 새 need도 아니다. 추가되는 건 **결합 규칙뿐**: Stamina↓ → Rest/Sleep need 강도↑(기존 Rest 재사용).
-- **사이클:** 사망과 **번식**이 함께 인구 생애주기를 이룬다. 자식·세대는 §1.3의 가치 대상(예: '아이 행복')으로 이미 모델에 있음 — D1과 충돌 없음. 노화 곡선·세대 상속률 등 *계수*는 §4.
+- **사이클:** 사망과 **번식**이 함께 인구 생애주기를 이룬다. 자식·세대는 §1.3의 가치 대상(예: '아이 행복')으로 이미 모델에 있음 — D1과 충돌 없음. 노화 곡선·세대(스탯) 상속률 등 *계수*는 §4.
+- **임종 가치 전이 (deathbed value shift):** 죽음이 가까울수록 **물질 dimension value↓ · Standing/Social↑** → 죽어가는 자가 소유권 양도/공동소유 trade를 자발적으로 함(§9 — *재산 상속 규칙을 대체*하는 창발 기제). open: 어느 dimension이 '물질'인지, 죽음-근접을 agent가 어떻게 인지하는지(나이·vital·`ToM[self]`).
 
 ## 8. LLM 경계 — 런타임 0, author-time만
 - **런타임(시뮬 틱):** LLM 0, 완전 결정론(D12/NFR). 틱은 어떤 외부 호출도 기다리지 않는다.
@@ -101,7 +103,9 @@ forward-sim 정밀도/주기; 항 라이브러리·rate·α·β·λ 구체값 + 
 ## 9. 사유자산 · 소유 · 돈 — 경제 primitive (창발 경제의 최소 토대)
 제도("통행료/시장")는 코딩하지 않는다(D2). 아래 *primitive*만 두고, 행동은 가치·평판·코핑에서 창발한다.
 - **돈 = `currency` item_kind (데이터, D10):** 창발 상품화는 가독성↓이라 포기. 돈은 인벤토리의 특수 아이템일 뿐 — 이동은 기존 **trade**(Signal/ClaimedValue) 재사용. "널리 받아들여짐"은 행동으로 창발.
-- **소유 = object→`owner` 관계 (신규 primitive):** `Build`가 builder를 owner로 set. **양도(판매)·상속 가능** — 양도는 ownership을 옮기는 trade. **상속은 §7 사망과 결합**(죽으면 소유물이 상속/무주물/분쟁으로 — 드라마 훅). *공동소유는 frontier로 park*(공유자산 거버넌스 = 그 자체로 창발 영역; 단일소유+양도+상속으로 toll·사유 드라마는 충분).
+- **소유 = object→`owner` 관계 (신규 primitive):** `Build`가 builder를 owner로 set. `owner`는 단일이 아니라 *집합*일 수 있다(**공동소유**). **양도·공동소유는 trade로** — trade가 누군가를 owner 집합에 넣거나 단독 owner를 옮긴다. **상속 규칙은 없다(삭제).**
+- **사망 시 이전 = 창발(D1, 상속 규칙 아님):** 죽음이 가까울수록 **물질 dimension value↓ · 주변 긍정(Standing) 욕구↑**(§7 임종 가치 전이) → 죽어가는 자가 *승인을 얻으려* 소유권을 넘기거나 공동소유하는 **trade를 자발적으로** 한다. 거래 없이 죽으면 소유물 = **무주물 → 공유지(아무나 사용)**.
+- **무주물 분쟁 = 창발:** 내가 쓰려던 무주물을 남이 소유를 *주장*하면 그 객체 접근 cost↑ → §3 코핑으로 행동(우회/거래/폭력). 소유 '주장'도 하나의 행동.
 - **접근 통제 = '소유된 포털'(문):** 길은 여전히 창발 `wear`(object 아님). 소유·과금되는 건 길목의 **문(구조물, map-plan M3 포털)** 이다. 잠긴 집 문(사생활)과 통행료 문(상업)은 **같은 primitive** — 주인이 통제하는 포털.
 - **개폐/통과 = §6 수식 (soft lock):** "열 수 있나/지날 수 있나"를 §6 DSL로 — `has(key) | STR > door.lockStrength | paid(toll) | isOwner`. ⇒ 자물쇠는 **절대벽이 아니라 stat 경합** → 힘센 자의 **강제 침입이 창발**(D2 범죄), 통행료 미지불 시 우회/항의. M2의 agent별 Caps 게이트 위에 그대로 얹힌다.
 - **구조물 파괴 = '사망의 객체판':** 문/벽/집은 `integrity`(HP) 상태를 갖는다(지형 `moisture`처럼). 강제 개방/공격은 `STR > lockStrength`형 **§7 위험·durative 행동**으로 per-tick `integrity`를 깎고, 0이면 **파괴 = world 제거 + footprint un-stamp**(map-plan M3 `RemoveObject`) → navmap이 길목을 **영구 개방**으로 리루트. 진짜 새 기계는 `integrity` 필드뿐 — 제거·리루트·소유주 원한(Vindictiveness)·창발 범죄(D2)는 §7/M3/가치·ToM에서 합성된다.

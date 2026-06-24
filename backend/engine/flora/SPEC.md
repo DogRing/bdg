@@ -35,16 +35,23 @@ import (
 type SpeciesID = core.Tag
 
 // Plant is one live flora object's flora-owned dynamic state. Pos is the continuous world
-// coordinate (D11 — never snapped to a cell). Growth is the CONTINUOUS maturity scalar in
-// [0,1] (RESOLVED 1b option c): discrete stages are DERIVED from it via the species' stage
-// thresholds, never stored. DeathStreak is the hysteresis counter for sustained-unsuitability
-// death (RESOLVED 1b option a). Owner is empty for wild flora; set only for PLANTED flora
-// (RESOLVED 1f option a — economy seam, inert until economy ships).
+// coordinate (D11 — never snapped to a cell). Morphology is TWO continuous axes (RESOLVED §1
+// refinement, replacing the single Growth scalar):
+//   Length — plant HEIGHT in world units ≥ 0. Maturity proxy: discrete Stage is DERIVED from
+//            it via the species' stage thresholds, never stored. Drives resource yield (taller
+//            ⇒ more wood). Integrates with its OWN per-species §6 length-rate.
+//   Width  — plant girth / canopy spread in world units ≥ 0. Drives shade Radius/Opacity (wider
+//            ⇒ larger/denser shade). Integrates with its OWN per-species §6 width-rate,
+//            independent of Length (a pine grows tall faster than wide; an oak the reverse).
+// DeathStreak is the hysteresis counter for sustained-unsuitability death (RESOLVED 1b option a).
+// Owner is empty for wild flora; set only for PLANTED flora (RESOLVED 1f option a — economy seam,
+// inert until economy ships).
 type Plant struct {
     ID          core.ObjectID
     Species     SpeciesID
     Pos         core.Vec2
-    Growth      float64       // continuous maturity ∈ [0,1]; stages derived (D9: no future field)
+    Length      float64       // continuous height ≥ 0; stages derived from it (D9: no future field)
+    Width       float64       // continuous girth/canopy ≥ 0; shade derived from it (D9: no future field)
     DeathStreak int           // consecutive flora-steps with suitability < θ (hysteresis, 1b)
     Owner       core.AgentID  // zero/empty ⇒ wild (unowned); set by Plant action (1f), inert in P1
 }
@@ -82,12 +89,13 @@ func New(plants []Plant) *State
 // Step advances the whole flora field ONE flora step (= N ticks; world owns the cadence and
 // only calls Step when tick % N == 0, RESOLVED 1g — N parked equal-to-or-offset-from climate
 // N). It is a PURE function of (prev, inputs, rules, idAlloc, rng): it does NOT mutate prev,
-// and returns the deltas world applies in the apply phase. Growth integration, sustained-
-// unsuitability death (hysteresis), and seeded seed-dispersal propagation all happen here, in
-// sorted ObjectID order (D12). rng is the per-step seeded fork world supplies (RESOLVED 1a
-// option a — world per-step fork, like climate.Step). idAlloc mints ObjectIDs for new plants
-// deterministically (world owns the id space — flora must not invent global ids); it is called
-// in sorted parent-ObjectID then deterministic-draw order so the id assignment is reproducible.
+// and returns the deltas world applies in the apply phase. Two-axis morphology integration
+// (Length and Width each advance by their own §6 rate × suitability), sustained-unsuitability
+// death (hysteresis), and seeded seed-dispersal propagation all happen here, in sorted ObjectID
+// order (D12). rng is the per-step seeded fork world supplies (RESOLVED 1a option a — world
+// per-step fork, like climate.Step). idAlloc mints ObjectIDs for new plants deterministically
+// (world owns the id space — flora must not invent global ids); it is called in sorted parent-
+// ObjectID then deterministic-draw order so the id assignment is reproducible.
 //
 // inputs[p.ID] is the SiteInput for plant p; a missing entry is a world-contract bug (panic,
 // like navmap unknown-id) — every live plant must have its environment sampled.
@@ -101,18 +109,19 @@ func Step(
 
 // StepDeltas is the world-applied result of one flora step. world is the sole object mutator:
 // it adds Spawned to objects[]/spatial, removes Died from objects[]/spatial, and updates the
-// Growth/DeathStreak of survivors (Grown). All three slices are in sorted ObjectID order (D12).
+// Length/Width/DeathStreak of survivors (Grown). All three slices are in sorted ObjectID order (D12).
 type StepDeltas struct {
     Spawned []Plant         // new plants (propagation); world adds them to objects[] + spatial
     Died    []core.ObjectID // removed plants (object-mortality, §7); world removes them
-    Grown   []GrowthDelta   // survivors whose Growth/DeathStreak changed this step
+    Grown   []GrowthDelta   // survivors whose Length/Width/DeathStreak changed this step
 }
 
-// GrowthDelta carries a survivor's new maturity state (the new absolute values, not increments,
-// so apply is idempotent and order-free across survivors).
+// GrowthDelta carries a survivor's new morphology state (the new absolute Length+Width values,
+// not increments, so apply is idempotent and order-free across survivors).
 type GrowthDelta struct {
     ID          core.ObjectID
-    Growth      float64
+    Length      float64
+    Width       float64
     DeathStreak int
 }
 
@@ -120,22 +129,23 @@ type GrowthDelta struct {
 
 // Shade is the per-plant occlusion PARAMETER perception reads to attenuate line-of-sight.
 // flora exposes the parameter ONLY (RESOLVED 1h: shade is perception's concern; flora emits
-// the parameter, not the LoS effect). Radius/Opacity are DERIVED from Growth + species via §6
-// (RESOLVED 1d option b — `radius = f(growth, species)`, no stored constant, no cell marking
-// → D11). Opacity ∈ [0,1] is the per-plant light-blocking fraction; perception composes
-// overlapping shades MULTIPLICATIVELY (transmission ∏(1 − opacity), RESOLVED 1d option c) —
-// flora does NOT pre-sum or rasterize shade (no tile field, D11).
+// the parameter, not the LoS effect). Radius/Opacity are DERIVED from Width + species via §6
+// (RESOLVED 1d option b — `radius = f(width, species)`, no stored constant, no cell marking
+// → D11; shade scales with canopy spread = Width, the §1-refinement axis). Opacity ∈ [0,1] is
+// the per-plant light-blocking fraction; perception composes overlapping shades
+// MULTIPLICATIVELY (transmission ∏(1 − opacity), RESOLVED 1d option c) — flora does NOT pre-sum
+// or rasterize shade (no tile field, D11).
 type Shade struct {
     ID      core.ObjectID
     Pos     core.Vec2
-    Radius  float64 // shade radius in world units, = §6(growth, species)
-    Opacity float64 // light-blocking fraction ∈ [0,1], = §6(growth, species)
+    Radius  float64 // shade radius in world units, = §6(width, species)
+    Opacity float64 // light-blocking fraction ∈ [0,1], = §6(width, species)
 }
 
 // ShadeOf returns the Shade parameter for one plant (lazy — RESOLVED 1g: shade is computed on
 // demand, not in the bulk Step). perception calls it for occluder candidates the spatial hash
 // returns; world adapts flora.State to perception's occluder view (Out of Scope below). Pure;
-// reads only the plant's Growth + the species shade formula. Returns ok=false if id is unknown.
+// reads only the plant's Width + the species shade formula. Returns ok=false if id is unknown.
 func (s *State) ShadeOf(id core.ObjectID) (Shade, bool)
 
 // ── Snapshot / serialization (data-contracts §6) ──────────────────────────────────
@@ -143,42 +153,54 @@ func (s *State) ShadeOf(id core.ObjectID) (Shade, bool)
 // Plants returns the live Plant set in D12-sorted (ascending ObjectID) order, for the
 // periodic-full serialization channel (data-contracts §6: periodic full + spawn/grow/die
 // deltas). Shade is NOT serialized (RESOLVED 1i option a — derived; perception recomputes
-// from Pos+Growth).
+// from Pos+Width).
 func (s *State) Plants() []Plant
 
 // ── Rules (the data-defined flora table, RESOLVED §0 — content + §6) ────────────────
 
 // Rules is the compiled, immutable per-species flora table from content/objects.yaml `flora:`
-// blocks: for each species, the §6 formulas for suitability, growth rate, shade radius/opacity,
-// stage thresholds, propagation radius/chance, death threshold θ + hysteresis span, and yield
-// table (the seeded-roll yields, RESOLVED 1e). Built once by platform/config (parse the §6
-// formulas via engine/expr, validate species/item ids). engine/flora evaluates it read-only;
-// it never parses YAML (D10). The §6 formulas are compiled expr.Program values evaluated against
-// an expr.Context flora builds from SiteInput + Plant (so the DSL stays one shared evaluator,
-// glossary; no bespoke per-species Go function — D4).
+// blocks: for each species, the §6 formulas for suitability, the TWO growth rates
+// (length-rate + width-rate), shade radius/opacity (= §6(width)), stage thresholds (over
+// length), propagation radius/chance, death threshold θ + hysteresis span, and yield table (the
+// seeded-roll yields whose qty scales with length, RESOLVED 1e). Built once by platform/config
+// (parse the §6 formulas via engine/expr, validate species/item ids). engine/flora evaluates it
+// read-only; it never parses YAML (D10). The §6 formulas are compiled expr.Program values
+// evaluated against an expr.Context flora builds from SiteInput + Plant (so the DSL stays one
+// shared evaluator, glossary; no bespoke per-species Go function — D4).
 type Rules struct{ /* opaque; per-SpeciesID compiled §6 programs + thresholds + yield table. */ }
 
 // Suitability evaluates the species' §6 suitability formula over the site (terrain attrs +
 // climate moisture/temperature) → a scalar ∈ [0,1]. Pure, deterministic, no RNG (a §6 numeric
-// expression; design.md §6). Below the species' death threshold θ it counts toward DeathStreak.
+// expression; design.md §6). It is the common driver of BOTH growth axes (Length and Width each
+// advance by their own rate × this scalar). Below the species' death threshold θ it counts
+// toward DeathStreak.
 func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64
 
-// Stage maps a continuous Growth to the species' DERIVED discrete stage index (0 = seedling …)
-// via the species' stage thresholds (RESOLVED 1b option c — stages are a data threshold over
-// the continuous value, not stored). Used for render + gating which yields/shade apply.
-func (r *Rules) Stage(sp SpeciesID, growth float64) int
+// LengthRate / WidthRate evaluate the species' two §6 growth-rate formulas (scalars or §6
+// programs). Step integrates Length += LengthRate·Suitability and Width += WidthRate·Suitability
+// per flora step, so a species can grow tall faster than wide (RESOLVED §1 refinement). Pure,
+// no RNG. (These may be plain constants in content; flora reads them via the same expr path.)
+func (r *Rules) LengthRate(sp SpeciesID, in SiteInput) float64
+func (r *Rules) WidthRate(sp SpeciesID, in SiteInput) float64
 
-// Yield rolls the species' yield table for a harvest of one plant at the given maturity, using
-// the seeded rng and the actor's Dexterity (RESOLVED 1e: `chance = §6(Dexterity)`; generic
-// action reads the target's table). Returns the items produced this harvest (each {item, qty}).
-// Pure given the same rng draw sequence (D12). It does NOT decide whether the plant dies — that
-// is the caller's action (Forage = non-destructive; Fell = destructive, see Open Questions /
+// Stage maps a continuous Length (HEIGHT = maturity proxy) to the species' DERIVED discrete
+// stage index (0 = seedling …) via the species' stage thresholds over length (RESOLVED 1b
+// option c + §1 refinement — stages are a data threshold over the height axis, not stored, and
+// NOT over width). Used for render + gating which yields/shade/propagation apply.
+func (r *Rules) Stage(sp SpeciesID, length float64) int
+
+// Yield rolls the species' yield table for a harvest of one plant at the given LENGTH (height),
+// using the seeded rng and the actor's Dexterity (RESOLVED 1e + §1 refinement: `chance =
+// §6(Dexterity)`; `qty` scales with `length` — a taller tree yields more wood; generic action
+// reads the target's table). Returns the items produced this harvest (each {item, qty}). Pure
+// given the same rng draw sequence (D12). It does NOT decide whether the plant dies — that is
+// the caller's action (Forage = non-destructive; Fell = destructive, see Open Questions /
 // world). Dexterity is READ ONLY here (flora never trains it — stat training is out of scope,
 // owned elsewhere; see Out of Scope).
-func (r *Rules) Yield(sp SpeciesID, growth, dexterity float64, rng *rng.RNG) []YieldItem
+func (r *Rules) Yield(sp SpeciesID, length, dexterity float64, rng *rng.RNG) []YieldItem
 type YieldItem struct {
     Item core.Tag // item_kind id (objects.yaml), placed into Body.Inventory by world/actions
-    Qty  int      // rolled quantity ∈ [min,max] from the yield table entry
+    Qty  int      // rolled quantity ∈ [min,max] from the yield table entry, scaled by length
 }
 ```
 
@@ -200,7 +222,7 @@ type YieldItem struct {
   occlusion (its SPEC extension). flora must not import perception (would invert L1→L3).
 
 ## Owned Data
-- The **live `Plant` set** (`ID, Species, Pos, Growth, DeathStreak, Owner`) held in `State`,
+- The **live `Plant` set** (`ID, Species, Pos, Length, Width, DeathStreak, Owner`) held in `State`,
   snapshot-serialized (data-contracts §6). `State` is owned by `engine/world` (one per run);
   `flora.Step` returns a fresh `next` and never mutates `prev`.
 - The **`Rules`** table is owned by `platform/config` (built from `content/objects.yaml` `flora:`
@@ -215,86 +237,100 @@ type YieldItem struct {
 - **D12 no map-iteration for logic** — the `Plant` set is iterated in **sorted `ObjectID` order**
   for the Step sweep, propagation, and `Plants()`; the `inputs` map is read by sorted plant id, not
   by map-range. `Spawned`/`Died`/`Grown` are in sorted `ObjectID` order. Float accumulation order is
-  fixed.
+  fixed (Length integration then Width integration per plant in a fixed order).
 - **D11 / continuous space** — every `Plant.Pos` and `Shade.Pos`/`Radius` is continuous world units;
-  flora never snaps a plant to a cell, never rasterizes shade into a tile field, and never iterates
-  terrain by tile. Terrain/climate enter only as injected `SiteInput` values sampled at `Pos`.
-- **D9 no future field** — a `Plant` carries `Growth` (current maturity, continuous) and its supply
-  is the object_kind's `Effect`/`yields`; it carries **no** "amount about to ripen", "remaining
-  lifespan", or "future need" field. Regeneration is a rate (the yield table refills via growth),
-  never an authored future quantity (RESOLVED 1e).
+  `Length`/`Width` are continuous world-unit morphology axes; flora never snaps a plant to a cell,
+  never rasterizes shade into a tile field, and never iterates terrain by tile. Terrain/climate enter
+  only as injected `SiteInput` values sampled at `Pos`.
+- **D9 no future field** — a `Plant` carries `Length` + `Width` (current morphology, continuous) and
+  its supply is the object_kind's `Effect`/`yields`; it carries **no** "amount about to ripen",
+  "remaining lifespan", or "future need" field. Stage is DERIVED from `Length`, shade from `Width`,
+  yield from `Length` — none is stored. Regeneration is a rate (the yield table refills as `Length`
+  grows), never an authored future quantity (RESOLVED 1e).
 - **D2/D3 no hardcoded ecosystem** — forests, succession, food-chains, and "dark forest" are
   EMERGENT from base mechanics (clusters of plant objects; shade × suitability feedback). There is
   **no** `from-species → to-species` succession table, **no** forest terrain type, **no** bespoke
-  per-species Go growth/death function — all per-species behavior is `content/objects.yaml` `flora:`
-  §6 data evaluated via `engine/expr` (D4/D10).
-- **D4/D10 data-defined** — suitability, growth rate, shade radius/opacity, stage thresholds,
-  propagation radius/chance, death θ, and yields are all `content/objects.yaml` data; an unknown
-  species/item id is caught at load (`platform/config`), never in `Step`.
+  per-species Go growth/death function — all per-species behavior (incl. the two growth rates) is
+  `content/objects.yaml` `flora:` §6 data evaluated via `engine/expr` (D4/D10).
+- **D4/D10 data-defined** — suitability, the TWO growth rates (length-rate + width-rate), shade
+  radius/opacity (= §6(width)), stage thresholds (over length), propagation radius/chance, death θ,
+  and yields (qty ∝ length) are all `content/objects.yaml` data; an unknown species/item id is caught
+  at load (`platform/config`), never in `Step`.
 - **Propagation model is fixed (1a option a)** — new plants are **seed dispersal near the parent**:
-  for each mature-enough parent (Stage ≥ the species propagate-stage), a seeded RNG draws candidate
-  child positions within the species' propagation radius of the parent `Pos`; a child spawns with
-  probability = propagation chance × child-site suitability × density weighting (NeighborCount). No
-  parent-independent spontaneous spawn in P1 (RESOLVED 1a). New plants start at `Growth ≈ 0`,
-  `DeathStreak = 0`, `Owner` empty (wild).
+  for each mature-enough parent (Stage ≥ the species propagate-stage, Stage derived from `Length`), a
+  seeded RNG draws candidate child positions within the species' propagation radius of the parent
+  `Pos`; a child spawns with probability = propagation chance × child-site suitability × density
+  weighting (NeighborCount). No parent-independent spontaneous spawn in P1 (RESOLVED 1a). New plants
+  start at `Length ≈ 0`, `Width ≈ 0`, `DeathStreak = 0`, `Owner` empty (wild).
 - **Death model is fixed (1b option a)** — a plant whose `Suitability < θ` increments `DeathStreak`;
   when `DeathStreak` reaches the species hysteresis span it is added to `Died` (object-mortality,
   §7). A step where `Suitability ≥ θ` resets `DeathStreak` to 0 (temporary bad weather does NOT
   flicker forests out). Immediate-threshold death is NOT used (hysteresis is required).
-- **Growth model is fixed (1b option c + 1b growth-driver a)** — `Growth += growthRate · Suitability`
-  per flora step (the §6 growth formula), clamped to `[0,1]`; discrete stages are DERIVED via
-  `Stage`. Density competition and seasonal modulation are parked (RESOLVED 1c / climate park).
+- **Two-axis growth model is fixed (§1 refinement; 1b option c + 1b growth-driver a)** — per flora
+  step `Length += LengthRate · Suitability` and `Width += WidthRate · Suitability` (the two §6 growth
+  formulas), each clamped to `≥ 0`; the two rates are INDEPENDENT per species (tall-vs-wide shapes).
+  Discrete stages are DERIVED from `Length` via `Stage`; shade is DERIVED from `Width`; yield qty
+  scales with `Length`. Density competition and seasonal modulation are parked (RESOLVED 1c / climate
+  park).
 - **Shade is a derived parameter, not stored / not LoS** — `ShadeOf` computes `Radius`/`Opacity`
-  from `Growth` + species §6 on demand (RESOLVED 1d/1g lazy); flora performs **no** LoS test, **no**
+  from `Width` + species §6 on demand (RESOLVED 1d/1g lazy); flora performs **no** LoS test, **no**
   shade summation, **no** tile field. Multiplicative composition of overlapping shades happens in
-  perception (RESOLVED 1d option c).
+  perception (RESOLVED 1d option c). Shade scales with canopy spread (`Width`), NOT with height.
 - **Ownership seam inert in P1 (1f)** — `Plant.Owner` exists for the planted-flora economy seam but
   is empty for all wild flora; flora reads it for nothing in P1 (no owner-gated behavior). It is
   populated only when the `Plant` action ships (economy phase) — until then flora behaves as if all
   flora are unowned (RESOLVED 1f: economy 미출하 동안 (b)로 동작).
 - **Outcome-neutral until activated** — the introduction phases ship with empty `Rules` / flora-off
-  so `Step` emits **no** spawns/deaths and `Growth` does not change, and `ShadeOf` returns
-  zero-radius shade so perception LoS is unaffected; existing world/perception goldens hold.
+  so `Step` emits **no** spawns/deaths and neither `Length` nor `Width` changes, and `ShadeOf`
+  returns zero-radius shade so perception LoS is unaffected; existing world/perception goldens hold.
   Activation is a deliberate later phase with its own re-baseline (RESOLVED 1g staging; `docs/flora.md`
   §2, mirroring climate M-staging).
 - **Read-only inputs** — `Step` never mutates `prev`, `inputs`, `Rules`, or `idAlloc`'s state beyond
-  calling it; `ShadeOf`/`Suitability`/`Stage`/`Yield` never mutate `State`/`Rules`.
+  calling it; `ShadeOf`/`Suitability`/`LengthRate`/`WidthRate`/`Stage`/`Yield` never mutate
+  `State`/`Rules`.
 - **No individual skills (D7)** — `Yield` READS `dexterity` (a capability stat value world passes
   from the actor's `ToM[self]`/Real Stat) to scale `chance`; it never stores a per-plant or
   per-actor skill, and never trains the stat (training is owned elsewhere — Out of Scope).
 
 ## Acceptance Criteria (testable)
-- [ ] **Growth integrates with suitability (1b)** — over N steps a plant in a high-suitability site
-  reaches a higher `Growth` than an identical plant in a low-suitability site; `Growth` is clamped
-  to `[0,1]`; a survivor's `GrowthDelta` carries the new absolute `Growth`. Table-driven.
-- [ ] **Stage is derived from Growth (1b/D9)** — `Stage` returns the species stage index for a given
-  `Growth` per the species thresholds; crossing a threshold changes the stage with no stored stage
-  field on `Plant`. Table-driven over below/at/above each threshold.
+- [ ] **Both axes integrate with suitability, independently (§1 refinement)** — over N steps a plant
+  in a high-suitability site reaches a higher `Length` AND `Width` than an identical plant in a
+  low-suitability site; with a species whose `length_rate ≠ width_rate`, after N steps `Length` and
+  `Width` diverge in the rate ratio (a tall-narrow species ends with `Length > Width`, a low-wide
+  species the reverse); both are clamped to `≥ 0`; a survivor's `GrowthDelta` carries the new
+  absolute `Length` + `Width`. Table-driven.
+- [ ] **Stage is derived from Length (1b/D9/§1)** — `Stage` returns the species stage index for a
+  given `Length` per the species thresholds (over height, NOT width); crossing a threshold changes
+  the stage with no stored stage field on `Plant`; two plants with equal `Length` but different
+  `Width` share the same Stage. Table-driven over below/at/above each threshold.
 - [ ] **Suitability = §6 over terrain+climate (locked §0)** — with a species suitability formula
   `f(moisture, temperature, slope)`, two sites differing only in `Moisture` yield the formula's
   values to float tolerance; the formula is loaded from a test fixture `flora:` block via
   `engine/expr`, NOT hardcoded.
-- [ ] **Propagation = seed dispersal near parent (1a)** — a mature parent spawns children only
-  within its propagation radius of its `Pos`; child sites with higher suitability and lower
-  `NeighborCount` spawn more often (density/suitability weighting); an immature parent (Stage below
-  propagate-stage) spawns nothing; `Spawned` plants start at `Growth ≈ 0`, `DeathStreak = 0`,
-  `Owner` empty. Seeded — a fixed seed reproduces the exact child set + positions.
+- [ ] **Propagation = seed dispersal near parent (1a)** — a mature parent (Stage ≥ propagate-stage,
+  Stage from `Length`) spawns children only within its propagation radius of its `Pos`; child sites
+  with higher suitability and lower `NeighborCount` spawn more often (density/suitability weighting);
+  an immature parent (Stage below propagate-stage) spawns nothing; `Spawned` plants start at
+  `Length ≈ 0`, `Width ≈ 0`, `DeathStreak = 0`, `Owner` empty. Seeded — a fixed seed reproduces the
+  exact child set + positions.
 - [ ] **Death needs sustained unsuitability (1b hysteresis)** — a plant at `Suitability < θ` for
   fewer than the hysteresis span is NOT in `Died` (its `DeathStreak` increments); reaching the span
   adds it to `Died`; a step at `Suitability ≥ θ` resets `DeathStreak` to 0 (no flicker). Table-driven.
-- [ ] **Shade radius/opacity from §6 (1d)** — `ShadeOf` returns `Radius`/`Opacity` = the species §6
-  of `Growth`; a more-grown plant casts a larger/denser shade; an unknown id returns `ok=false`.
-  flora performs no LoS test and returns no composed/summed shade (composition is perception's).
-- [ ] **Yield table seeded roll + Dexterity scaling (1e)** — `Yield` rolls each table entry's
-  `chance = §6(Dexterity)` and `qty ∈ [min,max]` from the seeded rng; a higher `dexterity` yields
-  more/more-often over many seeds; a fixed seed reproduces the exact items; an immature plant (below
-  the species yield stage) yields nothing. Items are valid item_kind ids.
+- [ ] **Shade radius/opacity from Width §6 (1d/§1)** — `ShadeOf` returns `Radius`/`Opacity` = the
+  species §6 of `Width`; a wider plant casts a larger/denser shade; two plants with equal `Width` but
+  different `Length` cast identical shade; an unknown id returns `ok=false`. flora performs no LoS
+  test and returns no composed/summed shade (composition is perception's).
+- [ ] **Yield scales with Length + seeded roll + Dexterity scaling (1e/§1)** — `Yield` rolls each
+  table entry's `chance = §6(Dexterity)` and a `qty` that scales with `length` (a taller plant yields
+  more wood over many seeds) within `[min,max]·f(length)`, from the seeded rng; a higher `dexterity`
+  yields more/more-often over many seeds; a fixed seed reproduces the exact items; an immature plant
+  (below the species yield stage, Stage from `Length`) yields nothing. Items are valid item_kind ids.
 - [ ] **Ownership seam inert (1f)** — with all `Owner` empty (wild), flora behavior is identical to a
   run where `Owner` is ignored; setting `Owner` on a plant changes nothing in P1 `Step`/`ShadeOf`
   (the field is reserved, not yet read). Regression guard for the economy seam.
 - [ ] **Flora-off neutrality** — with empty `Rules` (no species programs), a multi-step run emits
-  zero `Spawned`/`Died`, leaves `Growth`/`DeathStreak` unchanged, and `ShadeOf` returns zero-radius
-  shade (perception LoS unaffected); existing world/perception goldens hold (RESOLVED 1g).
+  zero `Spawned`/`Died`, leaves `Length`/`Width`/`DeathStreak` unchanged, and `ShadeOf` returns
+  zero-radius shade (perception LoS unaffected); existing world/perception goldens hold (RESOLVED 1g).
 - [ ] **Sorted-order determinism (D12)** — `Spawned`/`Died`/`Grown` and `Plants()` are in ascending
   `ObjectID` order; the `inputs` map is consumed by sorted plant id; shuffling the `inputs` map
   insertion order yields byte-identical deltas.
@@ -310,17 +346,18 @@ type YieldItem struct {
 - [ ] **No wall-clock / no global rand / no forbidden import (D12 guard)** — grep guard: no `time`
   import for logic, no global `rand`; the only randomness is the injected `*rng.RNG`. No
   `engine/navmap`, `engine/climate`, `engine/world`, `engine/perception`, or `engine/gates` import.
-- [ ] **No hardcoded constant / id (D10 guard)** — grep guard: no growth-rate / threshold / radius /
-  species-name / item-name string literal in logic; every constant/formula flows from `Rules`
-  (injected by `platform/config`).
+- [ ] **No hardcoded constant / id (D10 guard)** — grep guard: no length-rate / width-rate /
+  threshold / radius / species-name / item-name string literal in logic; every constant/formula flows
+  from `Rules` (injected by `platform/config`).
 
 ## Out of Scope
 - *When* to call `Step` (the `tick % N` cadence), the per-step RNG-fork derivation, the `idAlloc`
   ObjectID minting, sampling `navmap.TerrainAt` / terrain attrs / climate `Moisture`/`Temperature`
   at each plant `Pos` to build `SiteInput`, the spatial query that fills `NeighborCount`, and
-  APPLYING `StepDeltas` (adding `Spawned`/removing `Died`/updating `Grown` in `objects[]` + spatial)
-  → `engine/world` (`docs/flora.md` §0/§1, `backend/engine/world/SPEC-tick.md`). Flora is a pure
-  transform; world owns cadence + the navmap/climate sampling + the object mutation.
+  APPLYING `StepDeltas` (adding `Spawned`/removing `Died`/updating `Grown` Length+Width in
+  `objects[]` + spatial) → `engine/world` (`docs/flora.md` §0/§1,
+  `backend/engine/world/SPEC-tick.md`). Flora is a pure transform; world owns cadence + the
+  navmap/climate sampling + the object mutation.
 - The **LoS occlusion math** that consumes `Shade` (per-segment multiplicative attenuation, the
   occluder query) → `engine/perception` (`backend/engine/perception/SPEC.md`, the shade extension).
   flora emits the `Shade` parameter only.
@@ -332,8 +369,8 @@ type YieldItem struct {
   stats/lifecycle concern owned ELSEWHERE (RESOLVED in brief: out of flora scope). flora only READS
   `Dexterity` via §6; it must not train it. Flag to the stats/lifecycle owner.
 - Parsing/validating `content/objects.yaml` `flora:` blocks + the yield table, compiling the §6
-  formulas into `Rules`, and cross-checking species/item ids → `platform/config`
-  (`content/schema/objects.schema.json`).
+  formulas (suitability, length-rate, width-rate, shade(width), yield) into `Rules`, and
+  cross-checking species/item ids → `platform/config` (`content/schema/objects.schema.json`).
 - Serialization wire format / Redis / SSE streaming of the flora field → `platform/persist` +
   `docs/data-contracts.md §6` (this module exposes `Plants()` as the periodic-full source +
   `StepDeltas` as the spawn/grow/die delta source).
@@ -350,6 +387,17 @@ type YieldItem struct {
 > while writing the SPEC (per the human's request). Each needs a human decision BEFORE implementation
 > of the dependent phase; none re-opens a resolved §1 item.
 
+- **Do grass/flowers even have width-shade or yield? (P_f4 — content shape, raised by the two-axis
+  refinement).** The §1 refinement explicitly wants species spanning shapes (oak = large length+width,
+  grass = low length+low width, flower = low length + moderate/no width). But the schema currently
+  requires `shade` and a yield table on every `flora:` species. A grass tuft realistically casts ~no
+  occluding shade and yields ~nothing; a flower casts a little shade but no harvest. Options:
+  **(a)** keep `shade` required and let near-zero `width` + a `width→0` shade formula produce
+  effectively-zero shade (no schema change; grass/flower just author tiny coefficients);
+  **(b)** make `flora.shade` and `harvest` OPTIONAL on a species (a shade-less, yield-less ground
+  cover is a first-class kind). Recommendation: **(a)** for P_f1 (no schema churn; zero shade falls
+  out of `radius = width·k` with small `k`), revisit **(b)** if we want truly shade-exempt species
+  to skip the occluder query for perf. **Return to human before P_f4** (it is a content-shape call).
 - **Forage/Fell/Plant action additions (P_f4 blocker — actions/world boundary).** RESOLVED 1e chose
   `Forage` (non-destructive) vs `Fell` (destructive = object-mortality) vs `Plant` (owner-setting),
   but the *atomic action definitions* + *who triggers death on Fell* + *where Yield runs* are not yet
@@ -402,18 +450,23 @@ type YieldItem struct {
   applies" shape: it returns `(next, deltas)` and never writes objects[], exactly as `climate.Step`
   returns `(next, transitions)` and `pathfind` returns a path. This is what keeps `world` the single
   object mutator (D12 apply phase).
-- The continuous-`Growth` + derived-stage choice (RESOLVED 1b option c) matches climate's continuous
-  `Moisture` + threshold-transition shape: maturity integrates smoothly with suitability while stages
-  are a data threshold for render/gating. Keep all maturity in `Growth`; never store a stage.
+- The two-axis `Length`/`Width` + derived-stage choice (RESOLVED §1 refinement of 1b option c)
+  matches climate's continuous `Moisture` + threshold-transition shape: each morphology axis
+  integrates smoothly with suitability (via its OWN rate) while stages are a data threshold over the
+  height axis (`Length`) for render/gating. Keep maturity in `Length` (height = maturity proxy) and
+  canopy in `Width`; never store a stage. The two rates being independent is what gives species
+  distinct shapes (tall pine vs broad oak vs flat grass) from data alone (D2/D10).
 - Propagation, death, and yields are the three randomness sites — all on the injected fork (RESOLVED
   1a option a). Keep every draw on the per-step `*rng.RNG` world supplies so the field is byte-
-  deterministic from the seed.
+  deterministic from the seed. The two growth-axis integrations are NON-random (suitability × rate).
 - Tuning + behavior live in `content/objects.yaml` `flora:` §6 formulas (D10). Adding a species, a
-  yield, or changing succession behavior is a content + §6 data change, never a code change — the §6
-  DSL is the extension seam (D2/D3: succession/forests/food-chains must emerge, not be tabled).
+  yield, changing a shape (length-rate vs width-rate ratio), or changing succession behavior is a
+  content + §6 data change, never a code change — the §6 DSL is the extension seam (D2/D3:
+  succession/forests/food-chains must emerge, not be tabled).
 - The `Dexterity` read in `Yield` is the one capability-stat coupling; world passes the actor's stat
   value in. flora is otherwise stat-agnostic (it does not hold `Stats`). Stat *training* belongs to
   the stats/lifecycle owner — see Out of Scope + Open Questions.
-- Reference paths: `docs/flora.md` (binding resolutions), `docs/design.md §5/§6/§7`,
-  `docs/data-contracts.md §6` (periodic full + sparse deltas), `docs/glossary.md` (the coined
-  `suitability`/`growth`/`shade`/`Fell`/`Plant`/`Dexterity` are registered there this batch).
+- Reference paths: `docs/flora.md` (binding resolutions + §1 two-axis refinement),
+  `docs/design.md §5/§6/§7`, `docs/data-contracts.md §6` (periodic full + sparse deltas),
+  `docs/glossary.md` (the coined `suitability`/`Length`/`Width`/`shade`/`Fell`/`Plant`/`Dexterity`
+  are registered there; `Length`/`Width` replace the old single `Growth` axis this refinement).

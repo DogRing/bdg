@@ -28,6 +28,7 @@ object_kind에 `flora:` 블록으로 합류(1i 결정: flora가 objects[]에 합
 > - **1e 수율표** → `objects.yaml` object_kind에 `yields: [{item, chance, qty:[min,max]}]`, **seeded RNG 롤**(D12), 액션은 generic(대상 표를 읽음). 수율·`regen`은 balance에서 빼서 **객체에**(D9 locality); `balance.yaml`은 전역 상수만.
 > - **수율 스케일** → `chance = §6(Dexterity)`. 신규 capability 스탯 **`Dexterity`**(손재주). 스탯은 use로 단련(D7 명확화 — 행동별 스킬 없음).
 > - 신규 명칭(채택 → glossary/stats 등재 필요): `suitability`·`growth`·`shade`·`Fell`·`Plant`·`Dexterity`.
+> - **[정제] 형태 = `length`+`width`** (단일 `growth` 대신): 매 게임시간 적합도로 성장; **목재 yield ∝ `length`**, **그늘 ∝ `width`**(§6). 종 = 나무 여럿 + **풀·꽃**. ⇒ flora SPEC의 단일 `Growth`축을 `length`/`width` 2축으로 **개정 필요**(new Q: 성장률·`yield(length)`·`shade(width)` 수식 형태).
 
 ### 1a. 번식 / 확산 (propagation)
 - [RESOLVED→rec] **번식 모델** — 모식물이 어떻게 새 식물 객체를 낳나? options: (a) 씨앗 분산 = 부모 `Pos` 주변 seeded-RNG 반경에 확률적 spawn(밀도·적합도 가중) (b) 단순 적합도 기반 spontaneous spawn(부모 무관, 적합 셀에 확률 등장) (c) 둘 다(개척=spontaneous, 군집 확장=분산); rec: (a) — 군집/숲의 공간적 창발(D2)이 부모 근접 분산에서 자연히 나옴, climate 적합도와 곱해 천이도 창발.

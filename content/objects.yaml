@@ -21,30 +21,45 @@
 # objects are PLANTS (trees/bushes/grass) on continuous coords (D11) — NOT terrain, NOT a
 # forest terrain type ("forest"/"dark forest" emerge from plant clusters + shade overlap, D2).
 # All per-species behavior is §6 data here (no bespoke Go per-species function, D4/D10).
+#
+# MORPHOLOGY = TWO CONTINUOUS AXES (§1 refinement — replaced the single `growth` scalar):
+#   length — plant HEIGHT (world units). Maturity proxy → discrete stages DERIVED via `stages`.
+#            Wood/resource yield ∝ length (taller ⇒ more wood). Integrates with its OWN rate.
+#   width  — plant girth / CANOPY spread (world units). Shade radius/opacity ∝ width.
+#            Integrates with its OWN rate, INDEPENDENT of length — so a species can grow tall
+#            faster than wide (pine vs oak). A grass/flower has tiny length AND tiny/no width.
+#
 #   flora.suitability  — §6 numeric formula over terrain attrs + climate (moisture/temperature)
-#                        → [0,1]. Drives growth rate and (below death_threshold) death hysteresis.
-#   flora.growth_rate  — §6/scalar: Growth += growth_rate · suitability per flora step (1b).
-#   flora.stages       — ascending Growth thresholds → DERIVED discrete stage index (1b; D9: no
-#                        stored stage). yield_stage / propagate_stage gate which stages act.
-#   flora.shade        — §6 formulas radius=f(growth,species) + opacity=f(growth,species) (1d).
-#                        perception composes overlapping shade ∏(1−opacity) into LoS (no tiling).
-#   flora.propagation  — radius + chance (§6, may read Dexterity? NO — propagation is environmental):
-#                        seed dispersal near the parent (1a); child spawns at p = chance ·
-#                        child_suitability · density_weight(neighbor_count) within radius.
+#                        → [0,1]. Common driver of BOTH growth axes + (below death_threshold) death.
+#   flora.length_rate  — §6/scalar: Length += length_rate · suitability per flora step (§1, 1b).
+#   flora.width_rate   — §6/scalar: Width  += width_rate  · suitability per flora step (§1, 1b).
+#   flora.stages       — ascending LENGTH thresholds (world units) → DERIVED discrete stage index
+#                        (1b/§1; D9: no stored stage). yield_stage / propagate_stage gate stages.
+#   flora.shade        — §6 formulas radius=f(width,species) + opacity=f(width,species) (1d/§1):
+#                        shade scales with CANOPY (width), not height. perception composes
+#                        overlapping shade ∏(1−opacity) into LoS (no tiling, D11).
+#   flora.propagation  — radius + chance (§6; environmental, NOT a Dexterity stat): seed dispersal
+#                        near the parent (1a); child spawns at p = chance · child_suitability ·
+#                        density_weight(neighbor_count) within radius.
 #   flora.death_threshold (θ) + flora.death_hysteresis — sustained suitability<θ for hysteresis
 #                        steps → object-mortality removal (1b option a; no flicker).
 #   harvest.yields     — the YIELD TABLE (1e): [{item, chance, qty:[min,max]}]. A generic action
 #                        (Forage/Fell) rolls it with the seeded RNG; `chance = §6(Dexterity)` scales
-#                        the per-entry success (D7: capability, not a per-action skill). Regen is the
-#                        yield refilling via growth — there is NO future "amount ripening" field (D9),
-#                        and NO balance.regen.* timer for a flora species (regen is LOCAL to the
-#                        object via its growth + yield table).
+#                        the per-entry success (D7: capability, not a per-action skill); the rolled
+#                        qty further scales with `length` (§1). Regen is the yield refilling as length
+#                        grows — NO future "amount ripening" field (D9), NO balance.regen.* timer for
+#                        a flora species (regen is LOCAL to the object via its length + yield table).
 #
 # ⚠ MIGRATION (see SPEC Open Questions): the legacy `berry_bush` below stays a plain non-flora
 #   object_kind (with balance.regen.berry_bush) through the flora-OFF phases so the live hunger-loop
 #   goldens are untouched. The flora species `berry_shrub` is the generalized replacement; it is
 #   DORMANT until flora is activated (no placement until activation). At activation (flora P_f4)
 #   the deliberate re-baseline converts berry_bush → berry_shrub and drops balance.regen.berry_bush.
+#
+# ⚠ OPEN QUESTION (SPEC): whether shade-less / yield-less ground cover (grass) should be allowed to
+#   OMIT `flora.shade` / `harvest` rather than author near-zero coefficients. Current schema requires
+#   both, so `grass`/`wildflower` below author tiny/zero shade + (grass) no harvest table is modeled
+#   by a Forage with a near-zero yield. Resolve before P_f4.
 
 schema_version: 1
 
@@ -59,59 +74,112 @@ object_kinds:
                               # the flora yield table on berry_shrub at activation (SPEC migration).
 
   # ── FLORA species (engine/flora) — DORMANT until activation; generalizes berry_bush ──
-  # A bush that GROWS (continuous Growth), casts light shade, propagates by seed dispersal, and
-  # dies under sustained unsuitability. Its berry "regen" is the yield table refilling via growth,
-  # local to the object (D9) — NOT a balance.regen timer. The §6 formula STRINGS below are compiled
-  # by platform/config via engine/expr (design.md §6); operands are terrain attrs + climate +
-  # `growth`/`Dexterity`. Values are illustrative placeholders (untuned; balance is an auto-tuning
-  # target — see balance.yaml header).
+  # A bush that GROWS on two axes (continuous Length + Width), casts light shade (∝ width),
+  # propagates by seed dispersal, and dies under sustained unsuitability. Its berry "regen" is the
+  # yield table refilling as length grows, local to the object (D9) — NOT a balance.regen timer. The
+  # §6 formula STRINGS below are compiled by platform/config via engine/expr (design.md §6); operands
+  # are terrain attrs + climate + `length`/`width`/`Dexterity`. Values are illustrative placeholders
+  # (untuned; balance is an auto-tuning target — see balance.yaml header).
   - id: berry_shrub
     mobile: false
     flora:
       suitability: "moisture*0.6 + (1 - temperature)*0.2 + (1 - slope)*0.2"  # §6 → [0,1]
-      growth_rate: 0.02                                                       # Growth += rate·suitability /step (1b)
-      stages: [0.33, 0.66]            # ascending Growth thresholds → stage 0/1/2 (seedling/young/mature)
-      yield_stage: 2                  # only mature (stage ≥ 2) bears berries
-      propagate_stage: 2              # only mature shrubs disperse seed
+      length_rate: 0.02             # Length += rate·suitability /step — modest height (a shrub) (1b/§1)
+      width_rate:  0.025            # Width  += rate·suitability /step — slightly bushier than tall
+      stages: [0.4, 0.9]            # ascending LENGTH (world units) → stage 0/1/2 (seedling/young/mature)
+      yield_stage: 2                # only mature (stage ≥ 2) bears berries
+      propagate_stage: 2            # only mature shrubs disperse seed
       shade:
-        radius:  "growth * 2.0"       # §6 → world units; bigger when grown (1d)
-        opacity: "growth * 0.35"      # §6 → [0,1]; light shrub shade (1d)
+        radius:  "width * 1.6"      # §6 → world units; shade scales with canopy spread = width (1d/§1)
+        opacity: "width * 0.30"     # §6 → [0,1]; light shrub shade
       propagation:
-        radius: 6.0                   # seed-dispersal radius around the parent Pos (1a)
-        chance: 0.15                  # base spawn probability · child_suitability · density_weight
-      death_threshold: 0.20           # θ: suitability below this counts toward death (1b)
-      death_hysteresis: 4             # consecutive sub-θ flora steps before removal (no flicker, 1b)
+        radius: 6.0                 # seed-dispersal radius around the parent Pos (1a)
+        chance: 0.15                # base spawn probability · child_suitability · density_weight
+      death_threshold: 0.20         # θ: suitability below this counts toward death (1b)
+      death_hysteresis: 4           # consecutive sub-θ flora steps before removal (no flicker, 1b)
     harvest:
-      action: Forage                  # non-destructive harvest (does NOT kill the plant)
+      action: Forage                # non-destructive harvest (does NOT kill the plant)
       provides: [ has_food ]
-      yields:                         # YIELD TABLE (1e): seeded roll; chance = §6(Dexterity)
+      yields:                       # YIELD TABLE (1e): seeded roll; chance = §6(Dexterity); qty ∝ length
         - { item: berries, chance: "0.5 + Dexterity*0.5", qty: [1, 3] }
 
-  # A tree: heavy shade (the "dark forest" driver via overlap), yields wood when FELLED
-  # (destructive = object-mortality, §7) — Fell is the action that triggers removal; a
-  # non-destructive Forage (e.g. fallen branches) could yield less without killing it. (The
-  # Fell/Plant actions are not yet defined — SPEC Open Questions, human decision before P_f4.)
+  # A TREE: large on BOTH axes but TALLER than wide (length_rate > width_rate) — heavy shade (the
+  # "dark forest" driver via canopy overlap), yields lots of wood when FELLED (destructive =
+  # object-mortality, §7; qty ∝ length so a tall old oak gives more). Fell is the action that
+  # triggers removal; a non-destructive Forage (e.g. fallen branches) could yield less without
+  # killing it. (The Fell/Plant actions are not yet defined — SPEC Open Questions, human decision
+  # before P_f4.)
   - id: oak
     mobile: false
     flora:
       suitability: "moisture*0.4 + (1 - salinity)*0.3 + (1 - slope)*0.3"
-      growth_rate: 0.006              # trees grow slowly
-      stages: [0.25, 0.6]
-      yield_stage: 1                  # young+ trees can be felled for wood
-      propagate_stage: 2              # only mature trees seed
+      length_rate: 0.010            # grows TALL (the dominant axis) but slowly — trees are slow
+      width_rate:  0.006            # canopy widens more slowly than it rises → tall-but-broad oak
+      stages: [2.0, 6.0]            # LENGTH thresholds (world units): sapling / young / mature tree
+      yield_stage: 1                # young+ trees can be felled for wood
+      propagate_stage: 2            # only mature trees seed
       shade:
-        radius:  "growth * 8.0"       # large canopy when grown (dark-forest overlap, 1d)
-        opacity: "growth * 0.7"       # dense shade (1d)
+        radius:  "width * 1.5"      # large canopy when wide (dark-forest overlap, 1d/§1)
+        opacity: "width * 0.55"     # dense shade — clamped to [0,1] by the evaluator/perception
       propagation:
         radius: 12.0
         chance: 0.08
       death_threshold: 0.15
-      death_hysteresis: 8             # trees are hardy — long hysteresis
+      death_hysteresis: 8           # trees are hardy — long hysteresis
     harvest:
-      action: Fell                    # DESTRUCTIVE: removes the tree (object-mortality) on completion
-      provides: [ has_materials ]     # wood feeds the craft/build chain (GOAP reverse index)
+      action: Fell                  # DESTRUCTIVE: removes the tree (object-mortality) on completion
+      provides: [ has_materials ]   # wood feeds the craft/build chain (GOAP reverse index)
       yields:
         - { item: wood, chance: "0.7 + Dexterity*0.3", qty: [2, 5] }
+
+  # GRASS: a low ground-cover. LOW length AND LOW width → effectively NO shade (radius ≈ 0) and a
+  # tiny forage yield. Demonstrates the bottom-left of the shape space. (See the OPEN QUESTION in the
+  # header: a true shade-less/yield-less ground cover may eventually OMIT shade/harvest entirely; for
+  # now it authors near-zero coefficients so the required schema fields are satisfied.)
+  - id: grass
+    mobile: false
+    flora:
+      suitability: "moisture*0.5 + (1 - slope)*0.3 + (1 - salinity)*0.2"
+      length_rate: 0.05             # grows FAST but only a little (low ceiling reached quickly)
+      width_rate:  0.04             # spreads a bit too, but stays a low tuft
+      stages: [0.1, 0.3]            # LENGTH thresholds (world units): sprout / blade / tuft
+      yield_stage: 2
+      propagate_stage: 1            # grass spreads readily once established
+      shade:
+        radius:  "width * 0.05"     # negligible shade — a tuft does not occlude (1d/§1)
+        opacity: "width * 0.02"
+      propagation:
+        radius: 3.0                 # spreads in tight clumps
+        chance: 0.30                # but spreads readily (high base chance)
+      death_threshold: 0.10         # hardy / weedy — tolerates poor sites
+      death_hysteresis: 3
+    harvest:
+      action: Forage                # graze / gather; non-destructive
+      provides: [ has_food ]
+      yields:                       # tiny yield (mostly a ground-cover, qty ∝ length is small anyway)
+        - { item: berries, chance: "0.1 + Dexterity*0.2", qty: [0, 1] }
+
+  # WILDFLOWER: LOW length, MODERATE width (a spreading bloom wider than it is tall →
+  # width_rate > length_rate). Casts a little shade from its spread but yields no harvest material
+  # (no `harvest` block). The inverse shape of the oak: wide-but-short. Demonstrates a species whose
+  # width drives shade while its height stays small (shade ∝ width, NOT length — §1 refinement).
+  - id: wildflower
+    mobile: false
+    flora:
+      suitability: "moisture*0.4 + temperature*0.3 + (1 - slope)*0.3"
+      length_rate: 0.015            # stays short
+      width_rate:  0.035            # spreads WIDER than tall → low-but-broad bloom
+      stages: [0.15, 0.4]           # LENGTH thresholds (world units)
+      yield_stage: 99               # bears no harvest material (no harvest block) — high gate is moot
+      propagate_stage: 1
+      shade:
+        radius:  "width * 0.4"      # a little ground shade from the spread (1d/§1)
+        opacity: "width * 0.10"     # faint
+      propagation:
+        radius: 5.0
+        chance: 0.20
+      death_threshold: 0.18
+      death_hysteresis: 2           # flowers are short-lived / fragile
 
   - id: prey
     mobile: true              # wanders; perception + pursuit handled by engine
