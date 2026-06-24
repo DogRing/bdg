@@ -12,6 +12,12 @@ import (
 
 const interactionRadius = 5.0 // world units; range for near_other predicate
 
+// approachScanRadius bounds the search for the nearest agent an Approach action heads
+// toward. It is wide enough to span the village (which clusters near the origin) yet
+// small enough that the spatial-hash cell sweep stays cheap; it is a loop bound, not a
+// behavioural tunable, so it lives here rather than in balance.yaml.
+const approachScanRadius = 100.0
+
 // ── Phase 5: replan ────────────────────────────────────────────────────────────
 
 // needsReplan reports whether the agent should call the planner this tick.
@@ -157,32 +163,109 @@ func (a *Agent) execute(now core.Tick, actReg *actions.Registry, world WorldView
 	actionID := a.Plan.Actions[a.PlanIdx]
 	tickMinutes := core.GameMinutes(1)
 	target := a.bindTarget(actionID, actReg, world)
+	// Locomotion (MoveTo/Approach) carries an absolute destination in Intent.Move;
+	// the world steps the agent toward it and ends the action on arrival. Non-move
+	// actions leave Move at the zero value (the world ignores it for them).
+	move := a.moveDestination(actionID, actReg, world)
 
+	kind := IntentContinue
 	if a.Elapsed == 0 {
-		// First tick of this action — start it.
-		intent := Intent{
-			Kind:   IntentStart,
-			Agent:  a.ID,
-			Action: actionID,
-			Target: target,
-			Tick:   now,
-		}
-		a.Elapsed += tickMinutes
-		a.applyStaminaDelta(actionID, actReg, tickMinutes)
-		return intent
+		kind = IntentStart // first tick of this action
 	}
-
-	// Continuing a durative action.
 	intent := Intent{
-		Kind:   IntentContinue,
+		Kind:   kind,
 		Agent:  a.ID,
 		Action: actionID,
 		Target: target,
+		Move:   move,
 		Tick:   now,
 	}
 	a.Elapsed += tickMinutes
 	a.applyStaminaDelta(actionID, actReg, tickMinutes)
 	return intent
+}
+
+// moveDestination resolves where a locomotion action heads this tick, as an absolute
+// world position bound into Intent.Move (D3: the agent binds the concrete instance the
+// planner chose only abstractly). The world steps the agent toward it and ends the
+// action on arrival (engine/world resolveOutcome):
+//   - MoveTo (produces at_target → TargetLocation) heads to the position of the object
+//     the NEXT object-targeted plan step operates on (the step MoveTo is a prerequisite
+//     for), matching Forage→berry_bush binding.
+//   - Approach (produces near_other → TargetAgent) heads to the nearest OTHER agent.
+//
+// For non-locomotion actions, or when no destination can be resolved, it returns the
+// agent's own position — a zero-length move that completes immediately and never freezes.
+func (a *Agent) moveDestination(actionID actions.ActionID, actReg *actions.Registry, world WorldView) core.Vec2 {
+	if actReg == nil || world == nil {
+		return a.Pos
+	}
+	def, ok := actReg.Get(actionID)
+	if !ok || !isLocomotion(def.Produces) {
+		return a.Pos
+	}
+	// Approach-style: head to the nearest other agent.
+	if def.Target == actions.TargetAgent {
+		if pos, ok := a.nearestAgentPos(world); ok {
+			return pos
+		}
+		return a.Pos
+	}
+	// MoveTo-style: look ahead for the first object-targeted step and head to it.
+	for i := a.PlanIdx + 1; i < len(a.Plan.Actions); i++ {
+		if oid := a.bindTarget(a.Plan.Actions[i], actReg, world); oid != "" {
+			if pos, ok := a.objectPos(oid, world); ok {
+				return pos
+			}
+		}
+	}
+	return a.Pos
+}
+
+// isLocomotion reports whether an action is a travel action — one whose effect is a
+// positional predicate: MoveTo (produces at_target) or Approach (produces near_other).
+// This is the same signal the world uses to step the agent and to apply arrival-based
+// completion, keeping destination binding, movement, and completion in agreement.
+func isLocomotion(produces []core.Pred) bool {
+	for _, p := range produces {
+		if p == "at_target" || p == "near_other" {
+			return true
+		}
+	}
+	return false
+}
+
+// nearestAgentPos returns the position of the nearest OTHER agent within a wide scan
+// radius (the village is small). Deterministic: EntitiesInRadius is ObjectID-sorted and
+// the strict-less comparison keeps the lowest-ID agent on a distance tie (D12).
+func (a *Agent) nearestAgentPos(world WorldView) (core.Vec2, bool) {
+	var best core.Vec2
+	bestDist := math.MaxFloat64
+	found := false
+	for _, e := range world.EntitiesInRadius(a.Pos, approachScanRadius) {
+		if e.ID == core.ObjectID(a.ID) {
+			continue
+		}
+		if !slices.Contains(e.Tags, core.Tag("agent")) {
+			continue
+		}
+		if e.Distance < bestDist {
+			bestDist = e.Distance
+			best = e.Pos
+			found = true
+		}
+	}
+	return best, found
+}
+
+// objectPos returns the world position of a known object by ID.
+func (a *Agent) objectPos(id core.ObjectID, world WorldView) (core.Vec2, bool) {
+	for _, ko := range world.KnownObjects(a.ID) {
+		if ko.ID == id {
+			return ko.Pos, true
+		}
+	}
+	return core.Vec2{}, false
 }
 
 // bindTarget resolves the concrete object instance an action operates on, for

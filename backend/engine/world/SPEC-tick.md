@@ -125,7 +125,7 @@ Status:
    - Succeeded  → realLevel meets/clears the difficulty (cfg.OutcomeDifficultyBase, scaled by tags)
    - Failed     → realLevel below the difficulty (drives the agent's β overclaim correction, D8)
 Outcome fields populated for ApplyOutcome:
-   Action, Status, Completed (a.Elapsed reached the stat/distance-scaled Duration),
+   Action, Status, Completed (locomotion: within cfg.ArrivalEpsilon of Intent.Move; else: a.Elapsed reached the scaled Duration),
    StatsUsed (= statsUsed, drives which β-calibration runs),
    Expected (the agent's pre-action expected progress, carried on the Intent / read from agent),
    Actual   (the realized progress this tick, from realLevel — reflects Real Stats),
@@ -133,10 +133,16 @@ Outcome fields populated for ApplyOutcome:
    Evidence (per-stat direct-observation evidence the world attributes for ToM[self] folding, D8).
 ```
 
-- **Movement** (`IntentStart`/`IntentContinue` for a move action): the world advances the agent
-  toward `Intent.Move`, updates `Pos`, and `SpatialHash.Move`s it; `Completed` when it arrives.
-- **Durative scaling**: the base `ActionDef.Duration` (game-minutes) is scaled by stats/distance
-  at execution **here** (the planner uses the base only — see `engine/agent` §Durative). The
+- **Movement & locomotion completion**: a *locomotion* action is one whose effect is a positional
+  predicate — `MoveTo` (`produces: at_target`) or `Approach` (`produces: near_other`); identified by
+  `isLocomotion(Produces)`, the same signal `engine/agent` uses to bind `Intent.Move`. For these the
+  world steps `Pos` a `MoveSpeedPerTick` fraction toward `Intent.Move`, `SpatialHash.Move`s it, and
+  reports `Completed` on **arrival** — when the pre-move `Pos` is within `cfg.ArrivalEpsilon` of
+  `Intent.Move`. Travel time therefore scales with distance (D11). A distance-derived cap
+  (`⌈dist⌉ + Duration + 1` game-minutes) guarantees termination so a moving/unreachable target can
+  never freeze the agent. Non-locomotion actions ignore `Intent.Move`.
+- **Durative scaling** (non-locomotion): the base `ActionDef.Duration` (game-minutes) is scaled by
+  stats at execution **here** (the planner uses the base only — see `engine/agent` §Durative). The
   `worldtime.Clock.TicksForMinutes` converts the scaled duration to ticks.
 - `real_stats` are **never** placed on an emitted event payload (god-view; data-contracts §4).
 

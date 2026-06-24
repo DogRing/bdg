@@ -66,6 +66,7 @@ type Balance struct {
 		BackupEveryTicks      int     `yaml:"backup_every_ticks"`
 		PlanInterval          int     `yaml:"plan_interval"`
 		PruneThreshold        int     `yaml:"prune_threshold"`
+		ArrivalEpsilon        float64 `yaml:"arrival_epsilon"` // locomotion completes when within this distance of Intent.Move; 0 ⇒ default 1.0
 	} `yaml:"world"`
 
 	Mood struct {

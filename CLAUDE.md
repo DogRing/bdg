@@ -2,7 +2,7 @@
 
 Medieval village simulator. A **deterministic agent-based simulation runs in a Go backend**.
 Live state in **Redis**, periodic backup to **Postgres**, graphics later via **SSE → frontend**.
-**No LLM at runtime** (this is a simulation-design rule, not a statement about dev tooling).
+**No LLM at runtime** (deterministic tick; this is a simulation-design rule, not a statement about dev tooling). LLM is allowed only **author-time** for content generation (`design.md §8`): the sim emits content-gap events, an offline throttled worker generates + schema-validates + appends to content/DB, and the next run reads it deterministically.
 
 > `docs/PRD.md` and `docs/design.md` are **human-authored input** (Korean). Read them, but the
 > authoritative, agent-facing rules — including the invariants below — live in **this file (English)**.
@@ -27,6 +27,13 @@ Live state in **Redis**, periodic backup to **Postgres**, graphics later via **S
 7. Standard flow: decompose (architect) → implement leaf (implementer) → verify (reviewer) → `NEEDS_FIX` loop.
 8. The main session sees **only top-level SPECs and summaries.** Detailed work is delegated to subagents.
 
+## Subsystem plans & the Open-Question gate (the control surface)
+Cross-cutting subsystems (map/nav, climate, lifecycle, economy, …) each get a **Tier-2 plan** at `docs/<subsystem>.md` (template: `docs/map-plan.md`), sitting between `design.md` (concept) and the module `SPEC.md`s (interface). Every plan carries **Decisions locked** + **Open questions** + **Phases**. The gate is **mechanical, not "ask if unsure"**:
+1. **Enumerate, don't decide.** spec-architect's *first* deliverable for a subsystem/phase is to **populate that plan's Open questions** — list every mechanism choice (algorithm, update cadence, data/schema shape, granularity) with options + a recommendation — and **return without writing the SPEC**. (Agents reliably *enumerate* decisions; they do not reliably *notice they are unsure* mid-build — so we make enumeration the deliverable.)
+2. **Resolve = human only.** Each Open question is `OPEN` or `RESOLVED: <answer>`. Only the human flips it.
+3. **Hard stop before build.** spec-architect (SPEC) and implementer (code) **MUST refuse** to start a phase while any Open question tagged to it is `OPEN`; they return the OPEN list to the main session instead of guessing. **Inventing a mechanism is a defect, not initiative.**
+4. The main session surfaces OPEN lists to the human (AskUserQuestion) and re-dispatches only once they are RESOLVED.
+
 ## Invariants — "do NOT fix these even if they look like bugs"
 These are intentional. To change one, edit `docs/design.md` first and get human approval.
 - **D1** — Value is the end; objects are means. Goals are abstract values; an object is a path, not a goal.
@@ -35,11 +42,11 @@ These are intentional. To change one, edit `docs/design.md` first and get human 
 - **D4** — Cost and gates are **derived from action Tags**, not bespoke per-action functions.
 - **D5** — Keep "what is wanted" (value/goal) and "how to get it" (planning) in separate modules.
 - **D6** — **Never store reputation as a single value.** Reputation = the distribution of per-observer `ToM[C]`; the mean is derived.
-- **D7** — **No individual skills.** Competence = composition of base attributes (Strength/Agility/Intelligence).
+- **D7** — **No individual skills.** Competence = composition of base attributes via per-action **data formulas** (`design.md §6` expression DSL), recomputed each time — never a stored skill nor a per-action Go function. The stat set is open content (D10); a new stat `kind` is a deliberate schema+engine extension.
 - **D8** — Self-perception = `ToM[self]`, calibrated by action (per-stat). Underestimation is self-sealing; do not "correct" it away.
 - **D9** — **No "future need" field on objects.** Provisioning = need-rate × predicted time, forward-simulated by the planner. Objects only carry their satisfaction Effect (supply).
 - **D10** — Stats, actions, and gates are added as **`content/` data + schema**, not code.
-- **D11** — Free 2D coordinates + spatial hash (freedom + locality). The world is not tiled.
+- **D11** — Free 2D coordinates + spatial hash (freedom + locality). The world is not tiled. Grids are **indices, not the world**: agent positions are always continuous `float`; the spatial hash (proximity) and the navigation cost field (`engine/navmap`, pathfinding) are auxiliary indices that *compute over* continuous space. Snapping agents to cells, or driving agent logic by tile iteration, is still forbidden. See `docs/design.md §5` + `docs/map-plan.md`.
 - **D12** — Determinism: injected seeded RNG; no map-iteration for logic; fixed agent-ID apply order.
 
 ## Determinism rules (NFR-1; violating these makes regression tests meaningless)

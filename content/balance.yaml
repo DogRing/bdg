@@ -23,6 +23,7 @@ world:
   backup_every_ticks: 60          # emit SnapshotReady every N ticks (platform/persist handles the write)
   plan_interval: 1                # agents per planning slice; 1 = all agents plan every tick. Higher spreads planner load across ticks.
   prune_threshold: 0              # max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune
+  arrival_epsilon: 1.0            # locomotion (MoveTo/Approach) ends when within this distance of its destination; travel time then scales with distance
 perception:
   sight_radius: 18.0              # line-of-sight range (world units); engine/perception Sight
   smell_radius: 10.0              # scent-gradient falloff range; engine/perception Smell
@@ -45,7 +46,7 @@ needs:
   Hydration: { decay_per_tick: 0.00110, satisfaction_threshold: 0.50 }  # thirst grows faster than hunger
   Rest:      { decay_per_tick: 0.00045, satisfaction_threshold: 0.45 }  # fatigue accrues over a waking day
   Social:    { decay_per_tick: 0.00020, satisfaction_threshold: 0.30 }  # slow social need; drives trade / signal
-  Comfort:   { decay_per_tick: 0.00020, satisfaction_threshold: 0.35 }  # slow: social-care need, satisfied opportunistically when agents cluster (near_other has no planner path, so it must not dominate)
+  Comfort:   { decay_per_tick: 0.00060, satisfaction_threshold: 0.35 }  # social-care need; now PLANNABLE (Comfort action produces has_Comfort, reached via Approach→near_other), so it can drive real goal-seeking instead of being suppressed
 
 # ── Value arbitration weights (read by engine/values; data-driven, D10) ──────────
 # Per-Dimension tunable weight used by Priority(d) = Salience(d) × weight(d). engine/values

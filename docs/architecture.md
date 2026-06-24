@@ -15,15 +15,17 @@ The engine does not import platform. Platform serializes and transports engine s
 | `worldtime` | tick ↔ game-minute conversion, 12× scale | core | L1 |
 | `spatial` | Free coordinates + spatial hash, radius queries | core | L1 |
 | `stats` | `Stats` vector + `StatRegistry` | core | L1 |
+| `navmap` | Navigation cost field (terrain base cost + sparse `wear` trails + building footprints) over a grid **index**; continuous positions preserved (D11). `Cost`/`Passable`/`TerrainAt`/`Deposit`/`Decay` + snapshot | core | L1 |
+| `pathfind` | Deterministic A*/Theta\* over a `navmap` snapshot → waypoint path + total cost | core, navmap | L2 |
 | `gates` | `Gate` registry, eval (boolean visibility predicate trees; AND across matching gates) | core, stats | L2 |
 | `needs` | Need dimension catalog + rates (from balance.yaml), decay, forward-roll helpers | core, stats | L2 |
 | `tom` | `Belief` (incl. self), reputation distribution, gossip, initial estimates | core, stats, rng | L2 |
 | `actions` | Catalog, tags, effect, Duration, `Producers` | core, stats, gates | L3 |
 | `values` | Value map, Standing, Salience, appraisal | core, stats, needs, tom | L3 |
 | `perception` | Three senses (Sight LoS, Smell gradient, Hearing) | core, spatial | L3 |
-| `planner` | HTN + GOAP, forward-sim, budget, gate application, **tag-derived cost** | core, actions, gates, needs, values | L4 |
-| `agent` | Decision loop, durative execution, coping | core, stats, needs, values, tom, planner, perception | L5 |
-| `world` | Orchestrator: spawn, tick, intent collection, apply + conflict resolution | core, spatial, worldtime, rng, agent, actions, (events iface) | L6 |
+| `planner` | HTN + GOAP, forward-sim, budget, gate application, **tag-derived cost** (+ path-cost term for locomotion) | core, actions, gates, needs, values, (navmap/pathfind for cost) | L4 |
+| `agent` | Decision loop, durative execution, coping; path-cost `bindTarget` + waypoint-following MoveTo/Approach | core, stats, needs, values, tom, planner, perception, navmap, pathfind | L5 |
+| `world` | Orchestrator: spawn, tick, intent collection, apply + conflict resolution; **owns navmap** (wear deposit on traversal, decay per tick) | core, spatial, worldtime, rng, agent, actions, navmap, (events iface) | L6 |
 
 ## 3. Platform modules
 | Module | Purpose | Depends on |
@@ -41,20 +43,21 @@ The engine does not import platform. Platform serializes and transports engine s
 ```
 core ─┬─ worldtime ─┐
       ├─ spatial ───┼─ perception ─┐
-      ├─ stats ──┬── gates ──┐      │
+      ├─ navmap ──── pathfind ─────┼──────────┐
+      ├─ stats ──┬── gates ──┐      │          │
       │          ├── needs ──┼── planner ── agent ── world ── persist
       │          └── tom ────┤      │           │        │
       │              values ─┘──────┘           │        events(iface)
 rng ──────────────────────────────────────── world
 content ── config ── (stats/actions/gates/needs registries)
 ```
-No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `tom` does not know `values`. `perception` does not import `world`; it operates on a passed-in world view. `tom` also depends on `rng` (injected seeded generator for the calibrated self-belief at construction).
+No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `tom` does not know `values`. `perception` does not import `world`; it operates on a passed-in world view. `tom` also depends on `rng` (injected seeded generator for the calibrated self-belief at construction). `navmap → pathfind` is one-way; `pathfind` is a pure query over a navmap snapshot and never mutates it (wear deposit/decay is owned by `world`).
 
 ## 5. Leaf-first build order (topological)
 ```
 1) core, rng
-2) worldtime, spatial, stats
-3) gates, needs, tom
+2) worldtime, spatial, stats, navmap
+3) gates, needs, tom, pathfind
 4) actions, values, perception
 5) planner
 6) agent
@@ -79,7 +82,12 @@ spec-architect generates SPECs leaf-first along this DAG. A module exceeding ~40
   2). Gates are tag-matched (D4) visibility preconditions reading `ToM[self]` (D8); **cost derives
   from tags in the planner**, not from gates.
 - `objects.yaml` — object_kinds + item_kinds carrying their **supply** Effect (D9). Placement/counts
-  are per-run world-gen / fixtures, not content.
+  are per-run world-gen / fixtures, not content. Buildings (wall/house/door) are object_kinds whose
+  **footprint** the world stamps into `navmap` (walls block, doors are portals).
+- `terrain.yaml` *(planned, see `docs/map-plan.md`)* — terrain types: per-type **base cost** + the
+  **action/capability tags** required to traverse (`terrain:water`→Swim, `terrain:steep`→stat gate),
+  D4/D10. The per-run terrain **layout** (regions) is world-gen / `map.yaml`, not the type catalog.
+  Roads/trails are **NOT** content — they are emergent `navmap.wear` state (D2/D3).
 Engine code is **content-agnostic** — `config` loads these at startup to populate registries.
 Adding a stat / need / action / gate / object = **a data file + passing schema**, with no code change.
 `gates.yaml` is also the **contract** for the (unbuilt) `engine/gates` evaluator — see `content/README.md`.

@@ -1,0 +1,27 @@
+# Economy — 돈 · 소유 · 사유자산 · 통행료 — Subsystem Plan (DRAFT)
+
+Concept & rationale: `docs/design.md §9` (+ §5 문/길목, §7 상속). 이 문서는 **구현 로드맵/결정 표면**이고 SPEC은 아직 없다.
+관련 모듈: `content/objects.yaml`(`currency` item_kind, 문 object_kind+access policy), `engine/actions`(trade=양도·pay-to-pass),
+`engine/world`(`owner` 관계·상속 적용), `engine/agent`/`pathfind`(문 통과 = Caps+§6), `engine/tom`(수요 감지·평판).
+
+## 0. Decisions locked (design.md §9)
+- **돈 = `currency` item_kind**(데이터). 창발 상품화 안 함(가독성). 이동은 기존 trade 재사용.
+- **소유 = object→`owner` 관계.** `Build`가 set. **양도·상속 가능.** 상속은 §7 사망과 결합.
+- 길은 `wear`(object 아님) 유지. 소유·과금되는 건 길목의 **문(포털 구조물)** — 잠긴 집 문 = 통행료 문(같은 primitive).
+- 문 개폐/통과 = **§6 수식**: `has(key) | STR > door.lockStrength | paid(toll) | isOwner`. soft lock → 강제 침입·미지불 우회가 창발(D2). M2 Caps 위에 얹힘.
+- 문/구조물은 `integrity`(HP)를 갖고 **파괴 가능**: force/attack = **§7 위험-outcome 행동**이 per-tick integrity를 깎음 → 0이면 제거 + footprint un-stamp(M3) → navmap 영구 리루트. 강제 침입·재산 파괴는 D2 창발 범죄. ("구조물판 사망", `lifecycle.md` 참조.)
+- **공동소유 = parked frontier**(공유자산 거버넌스는 별도 창발 영역).
+
+## 1. Open questions (사람이 결정 — 컨트롤 표면)
+- **상속 대상:** 죽으면 소유물이 → 자식(번식 heir)? 무주물(재획득 경쟁)? RelyOn/근접자? (드라마 분기)
+- **양도 메커닉:** ownership 이전을 trade에 어떻게 얹나 — 아이템 거래와 같은 경로 vs 별도 deed?
+- **§6 DSL 술어 확장:** `has(item)`·`isOwner`·`paid(toll)` 외 무엇까지? 평가기 구현 위치(gates와 공유).
+- **접근정책 데이터 모양:** 문 object_kind에 `{owner, policy expr, toll price}` → objects.yaml/스키마 + `data-contracts`(`object.owner` 필드) 확장.
+- **수요 감지 깊이:** "남이 이 문/길을 필요로 함"을 ToM가 어디까지 추론(타인 plan/provisioning)? (지능 게이트)
+- **pay-to-pass 지점:** 문 도달 시 결정(지불/우회/항의)을 agent 실행 루프 어디에서?
+- **integrity 모델:** HP 단일값 vs 부위별? `lockStrength`↔`integrity` 관계, 파괴 임계?
+- **수리·재건:** `Build`로 복구 가능? build↔destroy 군비경쟁의 비용 균형?
+- **파괴의 사회적 귀결:** 소유주 원한·보복·평판(D6) 전파 — 기존 deed/gossip 경로 재사용?
+
+## 2. Phases — (Open questions 해소 후 작성)
+> map-plan.md 양식: 각 phase 독립 shippable + 테스트 + 결정성 골든.

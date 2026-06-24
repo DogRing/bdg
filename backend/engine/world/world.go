@@ -30,6 +30,7 @@ type Config struct {
 	OutcomeDifficultyBase      float64
 	BackupEveryTicks           int
 	MoveSpeedPerTick           float64 // fraction of remaining distance covered per tick (0,1]
+	ArrivalEpsilon             float64 // locomotion (MoveTo/Approach) completes when within this distance of Intent.Move
 	PlanInterval               int     // plan_interval: agents per planning slice; 1 = all agents plan every tick. Higher spreads planner load across ticks.
 	PruneThreshold             int     // prune_threshold: max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune.
 }
@@ -42,6 +43,7 @@ func DefaultConfig() Config {
 		OutcomeDifficultyBase:    50.0,
 		BackupEveryTicks:         60,
 		MoveSpeedPerTick:         0.5,
+		ArrivalEpsilon:           1.0,
 		PlanInterval:             1,
 		PruneThreshold:           0,
 	}

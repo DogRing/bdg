@@ -86,3 +86,8 @@ Representative `type`s (payload gist):
 ## 5. Determinism & versioning
 - Resuming from a snapshot must be **byte-identical** to running from the start (test: `docs/testing.md`).
 - On `schema_version` mismatch, persist refuses to load and demands a migration path.
+
+## 6. Navmap / terrain (map subsystem)
+- Navmap wire = **building footprints** + **sparse `wear`** + **terrain state**. Per `design.md §5`, terrain is **dynamic** (moisture/transition), so it streams like wear — **periodic full + sparse deltas**, NOT a one-time static layout.
+- Determinism (D12): the snapshot is copy-on-write; the running tick deposits `wear` and applies terrain transitions in the **serial apply** phase (sorted cell order), never during plan. Bulk terrain recompute is `tick`-triggered (`tick % N`), never wall-clock.
+- The exact navmap snapshot shape is finalized when `engine/navmap` serialization lands — see `docs/map-plan.md` M5 + `docs/climate.md`.

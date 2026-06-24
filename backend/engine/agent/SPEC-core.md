@@ -712,9 +712,20 @@ budget is rng-free; reducing the budget changes only the planner's search caps, 
 `func (a *Agent) execute(now core.Tick, actReg *actions.Registry, world WorldView) Intent` emits the
 intent for the current durative step. If no plan or the plan is exhausted, returns
 `Intent{Kind: IntentNone}`. Otherwise it binds the concrete target (`bindTarget` — nearest known
-object of the action's `TargetKindID`, ties by ObjectID, D12), emits `IntentStart` on the first tick
-(`Elapsed == 0`) or `IntentContinue` thereafter, advances `Elapsed += tickMinutes`, and calls
-`applyStaminaDelta`.
+object of the action's `TargetKindID`, ties by ObjectID, D12), binds the locomotion **destination**
+(`moveDestination` → `Intent.Move`), emits `IntentStart` on the first tick (`Elapsed == 0`) or
+`IntentContinue` thereafter, advances `Elapsed += tickMinutes`, and calls `applyStaminaDelta`.
+
+> **`moveDestination` (D3 parametric travel binding).** A *locomotion* action — one whose effect is a
+> positional predicate, `isLocomotion(Produces)` = produces `at_target` or `near_other` — carries an
+> absolute world destination in `Intent.Move`, which the world steps toward and ends on arrival
+> (SPEC-tick §Movement). `MoveTo` (TargetLocation) heads to the **object the next object-targeted plan
+> step operates on** (looked up via the same `bindTarget`, so MoveTo and its Forage/Drink/… consumer
+> agree on the instance). `Approach` (TargetAgent, produces `near_other`) heads to the **nearest other
+> agent** (`nearestAgentPos`, scanned within `approachScanRadius`; EntitiesInRadius is ObjectID-sorted
+> so distance ties pick the lowest-ID agent, D12). Non-locomotion actions, or an unresolvable
+> destination, leave `Intent.Move` at the agent's own position — a zero-length move that completes
+> immediately and never freezes the agent.
 
 > **The Stamina drain/regen logic** (`applyStaminaDelta`, `resolveEffortLevel`,
 > `hasRestEffectPerMinute`, `resolveRegenRate` — data-driven effort levels + Rest/Sleep regen) is

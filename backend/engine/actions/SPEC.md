@@ -242,8 +242,10 @@ func (reg *Registry) Tags() []core.Tag
 
 - **`TargetKind` derivation (no new schema field)**: at `Load`, `Target` is computed from the
   content shape — `target_kind` present → `TargetObject` (with `TargetKindID` = that id);
-  else `at_target` in `Produces` (the action *is* the move) → `TargetLocation`; else
-  `near_other` in `requires` → `TargetAgent`; else `TargetNone`. This keeps the on-disk YAML in
+  else `at_target` in `Produces` (the action *is* the move, e.g. `MoveTo`) → `TargetLocation`;
+  else `near_other` in `Produces` (the action *is* the approach toward an agent, e.g. `Approach`)
+  → `TargetAgent`; else `near_other` in `requires` (a social action acting on a nearby agent)
+  → `TargetAgent`; else `TargetNone`. This keeps the on-disk YAML in
   its existing, schema-valid form (the brief's `{kind, required_tags}` object is represented by
   the existing `target_kind` + predicate convention; see Open Questions).
 - **Tag grammar** is documented once in `content/README.md §Tags` and `content/gates.yaml`

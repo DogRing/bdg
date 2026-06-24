@@ -377,8 +377,10 @@ reflex.)
   [Forage, Eat]`.
 - [ ] **`SatisfiedFacts` short-circuits a precondition (Blocker 3)**: a candidate requiring
   `near_other` is reachable with NO prepended producer when `AgentSnapshot.SatisfiedFacts` contains
-  `near_other`, and unreachable (or requiring a producer that does not exist → `ErrUnreachable`)
-  when it does not. Table-driven over `{present, absent}`.
+  `near_other`. When it does NOT, `near_other` is reached by prepending its producer **`Approach`**
+  (the social counterpart to `MoveTo` for `at_target`; see `content/actions.yaml`) — so a social goal
+  is plannable even when the agent is alone, and `Approach` is omitted once already near. Table-driven
+  over `{present, absent}`. (See `approach_test.go`.)
 - [ ] **Per-call `ApathyBudget` override (coping coupling)**: a `Plan` call whose
   `AgentSnapshot.ApathyBudget` is `&Budget{MaxDepth:1, MaxActions:1, MaxNodes:1}` on a goal that
   needs a 2-action plan returns `ErrBudgetExceeded`, while the SAME snapshot with `ApathyBudget ==

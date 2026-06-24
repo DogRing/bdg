@@ -140,12 +140,19 @@ func (b *Balance) AgentConfig(needReg *needs.Registry, statReg *stats.Registry) 
 
 // WorldConfig builds world.Config from the Balance fields.
 func (b *Balance) WorldConfig() world.Config {
+	// Locomotion arrival tolerance: a missing/zero key falls back to the engine
+	// default so existing balance fixtures (and tests) keep working.
+	arrivalEpsilon := b.World.ArrivalEpsilon
+	if arrivalEpsilon <= 0 {
+		arrivalEpsilon = 1.0
+	}
 	return world.Config{
 		SpatialHashCell:          b.World.SpatialHashCell,
 		RoleConvergenceThreshold: b.Politics.RoleConvergenceThreshold,
 		OutcomeDifficultyBase:    b.World.OutcomeDifficultyBase,
 		BackupEveryTicks:         b.World.BackupEveryTicks,
 		MoveSpeedPerTick:         0.5,
+		ArrivalEpsilon:           arrivalEpsilon,
 		PlanInterval:             b.World.PlanInterval,
 		PruneThreshold:           b.World.PruneThreshold,
 	}

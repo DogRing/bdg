@@ -25,7 +25,8 @@
         "outcome_difficulty_base": { "type": "number",  "exclusiveMinimum": 0, "description": "The Real Stat level at which an action resolves as Succeeded under neutral (no effort/risk modifier) conditions." },
         "backup_every_ticks":      { "type": "integer", "minimum": 1, "description": "Emit SnapshotReady every N ticks; platform/persist handles the actual write." },
         "plan_interval":           { "type": "integer", "minimum": 1, "description": "Plan-interval: agents per planning slice; 1 = all agents plan every tick. Higher values spread planner load across ticks." },
-        "prune_threshold":         { "type": "integer", "minimum": 0, "description": "Max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune (current behavior)." }
+        "prune_threshold":         { "type": "integer", "minimum": 0, "description": "Max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune (current behavior)." },
+        "arrival_epsilon":         { "type": "number",  "exclusiveMinimum": 0, "description": "Locomotion (MoveTo/Approach) completes when the agent is within this distance of its destination; travel time then scales with distance (engine/world). Optional — defaults to 1.0 when absent." }
       }
     },
     "perception": { "$ref": "#/$defs/numberMap" },

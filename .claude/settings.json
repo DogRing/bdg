@@ -23,12 +23,12 @@
       "Bash(git diff:*)"
     ],
     "ask": [
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
-      "Bash(curl:*)",
-      "Bash(wget:*)",
       "Read(./secrets/**)",
       "Read(./.env*)",
       "Bash(docker:*)",

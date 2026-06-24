@@ -300,8 +300,9 @@ func (reg *Registry) Tags() []core.Tag {
 //
 //  1. target_kind present -> TargetObject (TargetKindID = that id)
 //  2. "at_target" in produces -> TargetLocation (the action IS the move)
-//  3. "near_other" in requires -> TargetAgent
-//  4. otherwise -> TargetNone
+//  3. "near_other" in produces -> TargetAgent (the action IS the approach toward an agent)
+//  4. "near_other" in requires -> TargetAgent
+//  5. otherwise -> TargetNone
 func deriveTargetKind(targetKind string, produces, requires []core.Pred) (TargetKind, core.Tag) {
 	if targetKind != "" {
 		return TargetObject, core.Tag(targetKind)
@@ -309,6 +310,9 @@ func deriveTargetKind(targetKind string, produces, requires []core.Pred) (Target
 	for _, p := range produces {
 		if p == "at_target" {
 			return TargetLocation, ""
+		}
+		if p == "near_other" {
+			return TargetAgent, ""
 		}
 	}
 	for _, r := range requires {

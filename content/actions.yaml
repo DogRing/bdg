@@ -40,7 +40,23 @@ actions:
   - id: MoveTo
     tags: [ "uses:Agility", "effort:low", "noise:low", "time:by_distance" ]
     produces: [ at_target ]            # parametric: the planner binds which target
-    duration: 1                        # per-step base; total scales with distance / Agility
+    duration: 1                        # per-step base; completion is ARRIVAL-based (engine/world): the
+                                       # agent steps toward Intent.Move each tick and the action ends
+                                       # when it is within ArrivalEpsilon of the destination, so travel
+                                       # time scales with distance. duration is only the safety cap.
+    interruptible: true
+
+  # Approach is the social counterpart to MoveTo. It produces `near_other` — the
+  # precondition EVERY social/cooperative action requires (Offer, Trade, Comfort,
+  # Feed, Vote, Report, …). Without it, `near_other` had NO producer, so it was only
+  # ever satisfied by chance proximity and the entire social / emergence layer could
+  # never be PLANNED, only stumbled into. With Approach the planner prepends a path to
+  # the nearest agent exactly the way it prepends MoveTo for `at_target`. D3: atomic
+  # locomotion; the agent binds the concrete target agent (nearest), not the YAML.
+  - id: Approach
+    tags: [ "uses:Agility", "effort:low", "noise:low", "time:by_distance" ]
+    produces: [ near_other ]           # the action IS the move toward another agent
+    duration: 1                        # per-step base; arrival-based completion (see MoveTo)
     interruptible: true
 
   # ── Subsistence (the P1 hunger loop) ─────────────────────────────────────────
@@ -215,8 +231,12 @@ actions:
   - id: Comfort
     tags: [ "social", "effort:low", "abstraction:med" ]
     requires: [ near_other ]
-    produces: [ comforted ]
+    produces: [ comforted, has_Comfort ]   # has_Comfort is the Comfort-dimension producer the planner
+                                           # resolves a Comfort goal to (dimensionToProducerPredicate);
+                                           # without it the Comfort need had NO satisfier and could only
+                                           # be suppressed (band-aid decay), never pursued.
     duration: 15
+    effect: { Comfort: 0.40 }              # a comforting interaction satisfies the Comfort need (D9 self-effect)
     interruptible: true
 
   - id: Feed

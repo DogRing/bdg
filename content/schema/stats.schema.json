@@ -32,7 +32,7 @@
           "minLength": 1
         },
         "kind": {
-          "description": "capability (Strength/Agility/Intelligence — read by gates/outcomes/prediction) or disposition (value-weighting axes).",
+          "description": "capability (Strength/Agility/Intelligence — read by gates/outcomes/prediction) or disposition (value-weighting axes). Stats themselves are freely addable (id is unconstrained, pure data); a NEW kind, however, carries engine semantics, so adding one is a deliberate schema+engine extension, not pure data (design.md D7).",
           "enum": ["capability", "disposition"]
         },
         "range": {

@@ -312,9 +312,20 @@ func (w *World) resolveOutcome(intent agent.Intent, status agent.OutcomeStatus, 
 		}
 	}
 
-	// Check durative completion: has the action run its full duration?
-	scaledDuration := w.scaleDuration(actDef.Duration, actDef.Tags, a)
-	completed := a.Elapsed >= scaledDuration
+	// Check durative completion.
+	var completed bool
+	if isLocomotion(actDef.Produces) {
+		// Locomotion (MoveTo/Approach) ends on ARRIVAL — when the agent is within
+		// ArrivalEpsilon of its destination (Intent.Move) — so travel time scales with
+		// distance (D11). a.Pos here is the PRE-move position for this tick (applyIntent
+		// runs after resolveOutcome). The distance-derived cap guarantees termination so
+		// a moving / unreachable target can never freeze the agent.
+		dist := a.Pos.Distance(intent.Move)
+		travelCap := core.GameMinutes(dist) + actDef.Duration + 1
+		completed = dist <= w.cfg.ArrivalEpsilon || a.Elapsed >= travelCap
+	} else {
+		completed = a.Elapsed >= w.scaleDuration(actDef.Duration, actDef.Tags, a)
+	}
 
 	// Compute expected progress (from the agent's perspective, ToM[self]).
 	expected := w.computeExpected(a, statIDs, difficulty)
@@ -431,20 +442,26 @@ func (w *World) applyIntent(intent agent.Intent, outcome agent.ActionOutcome, so
 		}
 	}
 
-	// Movement: update position in spatial hash.
-	isMove := false
-	for _, pred := range actDef.Produces {
-		if pred == "at_target" {
-			isMove = true
-			break
-		}
-	}
-	if isMove && (intent.Kind == agent.IntentStart || intent.Kind == agent.IntentContinue) {
-		// Move toward intent.Move.
+	// Movement: a locomotion action (MoveTo/Approach, tag time:by_distance) steps the
+	// agent a fraction of the remaining distance toward its destination (intent.Move).
+	if isLocomotion(actDef.Produces) && (intent.Kind == agent.IntentStart || intent.Kind == agent.IntentContinue) {
 		newPos := a.Pos.Add(intent.Move.Sub(a.Pos).Scale(w.cfg.MoveSpeedPerTick))
 		a.Pos = newPos
 		w.spatial.Move(core.ObjectID(intent.Agent), newPos)
 	}
+}
+
+// isLocomotion reports whether an action is a travel action — one whose effect is a
+// positional predicate: MoveTo (produces at_target) or Approach (produces near_other).
+// engine/agent keys Intent.Move binding on the same signal, so movement, arrival-based
+// completion, and destination binding stay in agreement.
+func isLocomotion(produces []core.Pred) bool {
+	for _, p := range produces {
+		if p == "at_target" || p == "near_other" {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Trade signal handling (P2) ────────────────────────────────────────────────

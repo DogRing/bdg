@@ -20,6 +20,7 @@ You are the **verifier**. You confirm a module's implementation conforms to its 
 7. **Vocabulary**: glossary canonical names. No synonyms or coinages.
 8. **Content boundary**: stats / actions / gates live in `content/` data, not hardcoded in code.
 9. **File size**: files over ~400 lines are flagged for decomposition.
+10. **Open-Question gate**: every non-obvious mechanism choice in the code (algorithm, cadence, schema shape, granularity) traces to a `RESOLVED` Open question in the subsystem plan or to an explicit SPEC line — **no silently-invented mechanism**.
 
 ## Running
 - Run `go build ./...`, `go test ./<module>/...`, and golden comparisons yourself (read-only Bash scope).
