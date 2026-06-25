@@ -12,13 +12,14 @@ The engine does not import platform. Platform serializes and transports engine s
 |--------|---------|--------------------|-----------|
 | `core` | Types: `StatID`, `Dimension`, `Tag`, `Pred`, `Referent`, `Vec2`, `GameMinutes`, cross-cutting interfaces. | — | **L0** |
 | `rng` | Deterministic seeded RNG wrapper | — | **L0** |
-| `expr` | The shared **§6 `Formula` evaluator** (`design.md §6`, line 89): arithmetic `+ - * /` + comparison + logical `& | !` over StatIDs / context vars; numeric OR boolean output. `gates`' `GateExpr` is its boolean subset (glossary "one shared evaluator"); `climate`/`flora`/`actions`/`economy` evaluate compiled `Program`s against an abstract `Context`. Depends only on `core` (no `stats`), so L1 leaves (`climate`/`flora`) can reuse it without a DAG break. | core | **L0** |
+| `expr` | The shared **§6 `Formula` evaluator** (`design.md §6`, line 89): arithmetic `+ - * /` + comparison + logical `& | !` over StatIDs / context vars; numeric OR boolean output. `gates`' `GateExpr` is its boolean subset (glossary "one shared evaluator"); `climate`/`flora`/`decay`/`actions`/`economy` evaluate compiled `Program`s against an abstract `Context`. Depends only on `core` (no `stats`), so L1 leaves (`climate`/`flora`/`decay`) can reuse it without a DAG break. | core | **L0** |
 | `worldtime` | tick ↔ game-minute conversion, 12× scale | core | L1 |
 | `spatial` | Free coordinates + spatial hash, radius queries | core | L1 |
 | `stats` | `Stats` vector + `StatRegistry` | core | L1 |
 | `navmap` | Navigation cost field (terrain base cost + sparse `wear` trails + building footprints) over a grid **index**; continuous positions preserved (D11). `Cost`/`Passable`/`TerrainAt`/`Deposit`/`Decay`/`StampFootprint` + **`SetTerrain` (climate-driven dynamic terrain, world-owned)** + snapshot | core | L1 |
 | `climate` | **Dynamic-terrain driver** (`docs/climate.md`): pure deterministic transform `(coarse Moisture/Temperature grid + time-derived forcing + transition rules) → (next state, terrain-transition cell list)`. Rain process (seeded), Temperature model, `content/climate.yaml` transition table (§6-DSL boolean condition). Does NOT import navmap/worldtime/gates — `world` performs the `navmap.SetTerrain` write + supplies forcing | core (+ rng, expr) | L1 |
 | `flora` | **Flora driver** (`docs/flora.md`): pure deterministic transform `(plant set + per-plant terrain/climate inputs + flora Rules, rng) → (growth/propagation/death deltas)` + per-plant `Shade` parameters. Continuous `Growth` (stages derived); `Suitability`/growth/shade/propagation/death/yields = §6 over `content/objects.yaml` `flora:` blocks. Seed-dispersal propagation, sustained-unsuitability death (hysteresis). Does NOT import navmap/climate/world/perception — `world` injects terrain/climate as VALUES and applies the deltas (sole object mutator); `perception` consumes the `Shade` parameter. Flora not owned unless planted. | core (+ rng, expr) | **L1** |
+| `decay` | **Decay driver** (`docs/materials.md`, P_m2): pure deterministic transform `(perishable item-LOT set + per-lot env {Temperature, Moisture, StorageRateMult} + decay Rules, elapsedTicks, rng) → (age/transition/transform/gone deltas)`. Discrete decay states fresh→stale→rotten→gone derived from a continuous effective-decay-time accumulator `decayAge` (Q1/Dm1(a)); multiplicative env-coupled acceleration `effectiveRate = baseRate · accel(temperature,moisture) · storageRateMult` via a §6 `accel` Program it OWNS + evaluates through `engine/expr` (Q2/Dm2(a)/Dm3(a), flora parity); transform-on-transition emits a product, not vanish (Q3, D9 locality); lot-granular + owner-agnostic (Dm5(a)/Dm4(a)). Does NOT import climate/world/flora/navmap — `world` injects climate as VALUES + the storage multiplier, enumerates the decayable-lot set (floor + every inventory + storage), and applies the deltas (sole object mutator). Mirrors flora's pure-Step shape. **Dm1–Dm5 RESOLVED (a) — leaf is READY (after `engine/expr`).** | core (+ rng, expr) | **L1** |
 | `pathfind` | Deterministic A*/Theta\* over a `navmap` snapshot → waypoint path + total cost | core, navmap | L2 |
 | `gates` | `Gate` registry, eval (boolean visibility predicate trees; AND across matching gates); evaluates the §6-DSL boolean subset via `expr` | core, stats, expr | L2 |
 | `needs` | Need dimension catalog + rates (from balance.yaml), decay, forward-roll helpers | core, stats | L2 |
@@ -28,12 +29,12 @@ The engine does not import platform. Platform serializes and transports engine s
 | `perception` | Three senses (Sight LoS, Smell gradient, Hearing) + **flora-shade LoS attenuation** (continuous `ShadeOccluder` composition ∏(1−opacity), "dark forest"; world adapts `flora.Shade` — perception does NOT import flora) | core, spatial | L3 |
 | `planner` | HTN + GOAP, forward-sim, budget, gate application, **tag-derived cost** (+ path-cost term for locomotion) | core, actions, gates, needs, values, (navmap/pathfind for cost) | L4 |
 | `agent` | Decision loop, durative execution, coping; path-cost `bindTarget` + waypoint-following MoveTo/Approach | core, stats, needs, values, tom, planner, perception, navmap, pathfind | L5 |
-| `world` | Orchestrator: spawn, tick, intent collection, apply + conflict resolution; **owns navmap** (wear deposit on traversal, decay per tick, `SetTerrain` on climate transitions), **climate** (drives `climate.Step` on the `tick % N` cadence, maps transition cells → navmap cells), and **flora** (drives `flora.Step` on the flora cadence, samples terrain/climate per plant, applies spawn/grow/die deltas to objects[]/spatial, adapts `flora.Shade` for perception) | core, spatial, worldtime, rng, agent, actions, navmap, climate, flora, (events iface) | L6 |
+| `world` | Orchestrator: spawn, tick, intent collection, apply + conflict resolution; **owns navmap** (wear deposit on traversal, decay per tick, `SetTerrain` on climate transitions), **climate** (drives `climate.Step` on the `tick % N` cadence, maps transition cells → navmap cells), **flora** (drives `flora.Step` on the flora cadence, samples terrain/climate per plant, applies spawn/grow/die deltas to objects[]/spatial, adapts `flora.Shade` for perception), and **decay** (drives `decay.Step` on the decay multi-rate cadence, enumerates the perishable-LOT set across floor/inventory/storage owner-agnostically, samples climate + computes the storage rate mult per lot, applies age/transition/transform/gone deltas to objects[]/inventory) | core, spatial, worldtime, rng, agent, actions, navmap, climate, flora, decay, (events iface) | L6 |
 
 ## 3. Platform modules
 | Module | Purpose | Depends on |
 |--------|---------|-----------|
-| `config` | Load `content/` data → registries (stats, needs, actions, gates, object/item/terrain catalog, **climate transition table + rates**, **flora `Rules` — §6 formulas compiled via `expr`, yield tables**); validate vs `content/schema/` + referential integrity (incl. climate `from`/`to`/`when`-operand cross-check + flora species/item/operand cross-check) | core, stats, actions, gates, needs, expr |
+| `config` | Load `content/` data → registries (stats, needs, actions, gates, object/item/terrain catalog, **climate transition table + rates**, **flora `Rules` — §6 formulas compiled via `expr`, yield tables**, **decay `Rules` — §6 `accel` compiled via `expr`, ordered states/thresholds/transforms**, **recipe registry — tag-query inputs/outputs/tool/station from `content/recipes.yaml`**, **material/tool/station `tags` on item/object kinds**); validate vs `content/schema/` + referential integrity (incl. climate `from`/`to`/`when`-operand cross-check, flora species/item/operand cross-check, decay kind/item/threshold-ordering cross-check, recipe output-item + input/tool/station-tag reachability cross-check) | core, stats, actions, gates, needs, expr |
 | `events` | why-trace + event stream (implements the engine's events interface) | core |
 | `persist` | Snapshot serialization, Redis live, Postgres backup | core, world (state types), data-contracts |
 | `api` | health/SSE/snapshot/agent + god-view HTTP. `New` = full server; `NewSSE` = read-only (health+SSE) | events, persist, core |
@@ -49,22 +50,24 @@ core ─┬─ worldtime ─┐
       ├─ navmap ──── pathfind ─────┼──────────┐
       ├─ climate ──────────────────┤          │
       ├─ flora ────────────────────┤          │
+      ├─ decay ────────────────────┤          │
       ├─ stats ──┬── gates ──┐      │          │
       │          ├── needs ──┼── planner ── agent ── world ── persist
       │          └── tom ────┤      │           │        │
       │              values ─┘──────┘           │        events(iface)
-      └─ expr ─── gates / climate / flora
+      └─ expr ─── gates / climate / flora / decay
 rng ──┬───────────────────────────────────── world
       ├─ climate                              world
-      └─ flora                                world
-content ── config ── (stats/actions/gates/needs/terrain/climate/flora registries)
+      ├─ flora                                world
+      └─ decay                                world
+content ── config ── (stats/actions/gates/needs/terrain/climate/flora/decay/recipe registries)
 ```
-No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `tom` does not know `values`. `perception` does not import `world`; it operates on a passed-in world view (`WorldSnapshot`) — and it does NOT import `flora`: the world adapts `flora.Shade`/`ShadeOf` into perception's `ShadeOccluder` view (dependency inversion, like `IsOpaque`). `tom` also depends on `rng`. `navmap → pathfind` is one-way; `pathfind` is a pure query over a navmap snapshot and never mutates it. **`climate` and `flora` (both `core`, `rng`, `expr`) are one-way too: each returns a delta (`climate` → terrain-transition cells; `flora` → spawn/grow/die plant deltas) and `world` performs the navmap/objects write — neither imports `navmap`, `worldtime`, `gates`, `world`, or each other. This keeps `world` the single navmap+object mutator (D12 apply phase).** The §6-DSL evaluator is now **`engine/expr` (L0, `design.md §6`)**, shared by `gates`/`climate`/`flora` — this resolves the prior climate escalation (it no longer needs lifting to `core`; `expr` is its own L0 leaf depending only on `core`).
+No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `tom` does not know `values`. `tom` also depends on `rng`. `perception` does not import `world`; it operates on a passed-in world view (`WorldSnapshot`) — and it does NOT import `flora`: the world adapts `flora.Shade`/`ShadeOf` into perception's `ShadeOccluder` view (dependency inversion, like `IsOpaque`). `navmap → pathfind` is one-way; `pathfind` is a pure query over a navmap snapshot and never mutates it. **`climate`, `flora`, and `decay` (all `core`, `rng`, `expr`) are one-way too: each returns a delta (`climate` → terrain-transition cells; `flora` → spawn/grow/die plant deltas; `decay` → age/transition/transform/gone lot deltas) and `world` performs the navmap/objects/inventory write — none imports `navmap`, `worldtime`, `gates`, `world`, or each other. This keeps `world` the single navmap+object+inventory mutator (D12 apply phase).** `decay` imports `engine/expr` to OWN + evaluate its `accel` §6 Program (Dm3(a), exactly like flora). The §6-DSL evaluator is **`engine/expr` (L0, `design.md §6`)**, shared by `gates`/`climate`/`flora`/`decay` — this resolves the prior climate escalation (it no longer needs lifting to `core`; `expr` is its own L0 leaf depending only on `core`).
 
 ## 5. Leaf-first build order (topological)
 ```
 1) core, rng, expr
-2) worldtime, spatial, stats, navmap, climate, flora
+2) worldtime, spatial, stats, navmap, climate, flora, decay
 3) gates, needs, tom, pathfind
 4) actions, values, perception
 5) planner
@@ -74,14 +77,14 @@ No cycles. Note: `values → tom` is one-way (for Other-referent evaluation); `t
 9) api (full + NewSSE), main.go (bdg-backend), cmd/sse (bdg-sse)
 10) (later) frontend
 ```
-Each stage depends only on the **public interfaces (SPECs)** of earlier stages. The implementer never reads a sibling's implementation. `navmap`, `climate`, and `flora` are independent L1 leaves in stage 2 (climate/flora depend on `core` + `rng` + `expr`); their integration (cadence + the navmap `SetTerrain` bridge / the flora objects[] apply + per-plant terrain/climate sampling) lands later in `world` (stage 7), and the flora-shade LoS extension lands in `perception` (stage 4). *Caveat:* climate's and flora's §6 condition/formula evaluation requires `engine/expr` (stage 1) to exist; the `expr` evaluator is the shared §6 home (`design.md §6`). The introduction phases ship **outcome-neutral** (climate `Rules` empty / flora off) so existing goldens hold; activation is a deliberate later phase with its own re-baseline (`docs/climate.md §2`, `docs/flora.md §2`).
+Each stage depends only on the **public interfaces (SPECs)** of earlier stages. The implementer never reads a sibling's implementation. `navmap`, `climate`, `flora`, and `decay` are independent L1 leaves in stage 2 (climate/flora/decay depend on `core` + `rng` + `expr`); their integration (cadence + the navmap `SetTerrain` bridge / the flora objects[] apply + per-plant terrain/climate sampling / the decay lot-set enumeration + per-lot climate sampling + storage-mult + inventory apply) lands later in `world` (stage 7), and the flora-shade LoS extension lands in `perception` (stage 4). *Caveat:* climate's, flora's, and decay's §6 condition/formula evaluation requires `engine/expr` (stage 1) to exist; the `expr` evaluator is the shared §6 home (`design.md §6`). The introduction phases ship **outcome-neutral** (climate `Rules` empty / flora off / decay off — no perishable lots placed) so existing goldens hold; activation is a deliberate later phase with its own re-baseline (`docs/climate.md §2`, `docs/flora.md §2`, `docs/materials.md §2`). **`engine/decay` (P_m2) is READY: `docs/materials.md §1` Dm1–Dm5 are RESOLVED (a)** (continuous `decayAge` accumulator, multiplicative §6 `accel` decay-owned, owner-agnostic lot granularity); it builds after `engine/expr` (stage 1).
 
 ## 6. Module SPEC location
 Each module gets `backend/engine/<m>/SPEC.md` or `backend/platform/<m>/SPEC.md`.
 spec-architect generates SPECs leaf-first along this DAG. A module exceeding ~400 lines is split into sub-folders, each with its own SPEC.
 
 ## 7. Content boundary (D10)
-`content/stats.yaml · needs.yaml · objects.yaml · actions.yaml · gates.yaml · balance.yaml`
+`content/stats.yaml · needs.yaml · objects.yaml · actions.yaml · gates.yaml · balance.yaml · recipes.yaml`
 (+ `content/schema/` + `content/README.md`).
 - `needs.yaml` — need/value Dimension **catalog** (kind, posture, setpoint, salience). Per-need
   **rate** (`decay_per_tick`, `satisfaction_threshold`) lives in `balance.yaml`'s `needs:` block —
@@ -96,7 +99,23 @@ spec-architect generates SPECs leaf-first along this DAG. A module exceeding ~40
   propagation/death + a **yield table** (`harvest.yields: [{item, chance, qty:[min,max]}]`, seeded
   roll, `chance=§6(Dexterity)`). A flora species' "regen" is its yield table refilling via `Growth`,
   **local to the object** (D9) — NOT a `balance.regen.*` timer (those are legacy, for non-flora kinds).
-  `platform/config` compiles the §6 formulas via `engine/expr` into `flora.Rules` (`docs/flora.md`).
+  **MATERIAL tags** — item_kinds carry `tags` (e.g. `shaft_stock`, `blade_stock`, `tool:cutting`);
+  object_kinds carry station tags (e.g. `station:bench`). A recipe input is a tag-query satisfied by
+  any kind whose `tags` is a superset, so substitutability EMERGES from tags (D4) and a new material is
+  eligible by carrying the tag — no recipe edit. **DECAY** — a perishable item_kind carries a `decay:`
+  block: ordered discrete `states` (fresh→stale→rotten→gone), per-state entry `threshold` (in
+  effective-decay-time units, Dm1(a)) + `transform` product (D9 locality — produces an item, not vanish)
+  + optional per-state `supply` override, a data `baseRate`, and an env-coupled `accel` §6 Formula over
+  the climate output operands `temperature`/`moisture` (Materials Q1–Q3; effective rate is
+  `baseRate · accel · storageRateMult`, Dm2(a)). The storage-structure rate multiplier (cold-storage
+  emerges) is world-injected, NOT authored on the item. `platform/config` compiles the §6 formulas via
+  `engine/expr` into `flora.Rules`/`decay.Rules` (`docs/flora.md`, `docs/materials.md`).
+- `recipes.yaml` *(new, see `docs/materials.md`, `content/schema/recipes.schema.json`)* — the **recipe
+  catalog** mediating the single `Craft` atomic action (D3). Each recipe: `inputs:[{tagQuery, qty}]`
+  (substitutable by tag, D4), `outputs:[{item, qty}]`, optional `tool` (durable tag) + `station`
+  (at-station object tag). Recipes are DATA; the gather→craft plan is assembled by the planner (D3).
+  Quality/yield (Dexterity → chance/qty) reuses the flora yield model in the `Craft` action, not a
+  per-recipe field. `platform/config` cross-checks output items + input/tool/station tag reachability.
 - `terrain.yaml` *(planned, see `docs/map-plan.md`)* — **바탕재료 = 속성 프리셋**(`grainSize·moisture·temperature·depth·slope·salinity`); cost·passability는 per-type 상수가 아니라 **속성 위 §6 수식**(`design.md §5`) + the
   **action/capability tags** required to traverse (`terrain:water`→Swim, `terrain:steep`→stat gate),
   D4/D10. The per-run terrain **layout** (regions) is world-gen / `map.yaml`, not the type catalog.
@@ -110,5 +129,5 @@ spec-architect generates SPECs leaf-first along this DAG. A module exceeding ~40
   (an undefined terrain id or operand is a load-time failure, D10). Climate state
   (`Moisture`/`Temperature`) is **runtime** state, not content (D2/D9-analogous).
 Engine code is **content-agnostic** — `config` loads these at startup to populate registries.
-Adding a stat / need / action / gate / object / flora-species / terrain / climate-rule = **a data file + passing schema**, with no code change.
+Adding a stat / need / action / gate / object / flora-species / decaying-item / recipe / material-tag / terrain / climate-rule = **a data file + passing schema**, with no code change.
 `gates.yaml` is also the **contract** for the (unbuilt) `engine/gates` evaluator — see `content/README.md`.

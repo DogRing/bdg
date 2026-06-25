@@ -1,0 +1,37 @@
+# content/recipes.yaml — craft recipes (data-driven, D3/D4/D10)
+#
+# Materials & Crafting plan §0 (locked). A recipe is DATA; Craft is ONE atomic action (D3)
+# parameterized by a recipe. The planner chains gather→craft itself (never authored, D3).
+#
+# SUBSTITUTABILITY EMERGES FROM TAGS (D4): an input is a TAG QUERY (a set of tags + a qty), NOT a
+# specific item id. Any item_kind whose `tags` (content/objects.yaml) is a SUPERSET of the queried
+# set satisfies the slot — so "a wooden shaft OR a bone shaft" both work iff both carry `shaft_stock`,
+# and a NEW item becomes a valid substitute by carrying the tag (no recipe edit).
+#
+#   inputs:  [{ tagQuery: [<tags...>], qty: <int> }]   # consumed; matched by tag superset
+#   outputs: [{ item: <item_kind id>,  qty: <int> }]   # produced (base qty; §6(Dexterity) scales actual)
+#   tool?:    <tag>     # REQUIRED held durable tool tag (non-consumed `wear`; §6 multiplier in Craft)
+#   station?: <tag>     # REQUIRED at-station object_kind tag (e.g. station:bench)
+#
+# Quality/yield (Dexterity → chance/qty) is NOT a recipe field — the Craft action reuses the flora
+# yield-roll model (plan §0). Tool `wear` decrement + the §6 capability multiplier reading the held
+# tool's tags also live in the Craft action, NOT here.
+#
+# Schema: content/schema/recipes.schema.json. platform/config cross-checks that every output `item`
+# is a known item_kind and every input/tool/station tag is carried by at least one kind (D10).
+#
+# ⚠ This file ships with an illustrative recipe so the schema + load test have a fixture. Craft is
+#   P_m3 (not this run); these recipes are inert until the Craft action ships.
+
+schema_version: 1
+
+recipes:
+  # A simple tool: any shaft-stock material + any blade-stock material → a crafted tool, at a bench.
+  # `shaft_stock` is carried by BOTH wood and bone (objects.yaml), so either substitutes (D4 emergence).
+  - id: craft_basic_tool
+    inputs:
+      - { tagQuery: [ shaft_stock ], qty: 1 }
+      - { tagQuery: [ blade_stock ], qty: 1 }
+    outputs:
+      - { item: crafted_tool, qty: 1 }
+    station: station:bench

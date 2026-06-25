@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/recipes.schema.json",
+  "title": "content/recipes.yaml — craft recipes mediating the single Craft atomic action (D3/D4/D10)",
+  "description": "The recipe catalog (Materials & Crafting plan §0 locked). A recipe is DATA, not a hand-drawn plan: Craft is ONE atomic action (D3) parameterized by a recipe; the planner chains gather→craft itself (never authored). Inputs are TAG QUERIES, not specific item ids — an input requires a tag SET (e.g. `shaft_stock`) at a quantity, so substitutability EMERGES from tags (D4): any item_kind carrying the queried tags is a valid input, and a new item becomes eligible by carrying the tag (no recipe edit). Tools are non-consumed durables matched by tag; the §6 capability multiplier reading the held tool's tags lives in the Craft action's Formula, NOT here (plan §0). platform/config compiles this into the recipe registry and cross-checks that every `outputs[].item` is a known item_kind and every input `tagQuery`/`tool` tag is referenced by at least one item_kind's `tags` (an unreachable recipe is a load-time WARNING/failure, D10). Quality/yield (Dexterity → chance/qty) reuses the flora yield model in the Craft action, NOT a per-recipe field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "recipes"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "recipes": {
+      "type": "array",
+      "description": "The recipe table. An empty array = no craftables (outcome-neutral introduction). Order is NOT significant (recipes are matched by tag-query availability, deterministically by sorted recipe id in the planner/Craft action).",
+      "items": { "$ref": "#/$defs/recipe" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+    "tag": {
+      "description": "A core.Tag identifier (material tag like `shaft_stock`, tool tag like `tool:cutting`, or station tag). Must match the glossary/tag vocabulary; cross-checked at load (D10).",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_:]*$"
+    },
+    "tagQuery": {
+      "description": "The set of tags an INPUT item_kind must ALL carry to satisfy this slot (AND over the set — substitutability emerges from tags, plan §0/D4). Any item_kind whose `tags` is a superset of this set is a valid input; the actor/planner picks among them. An empty set is a load failure (an input must constrain something).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/tag" },
+      "uniqueItems": true
+    },
+    "input": {
+      "description": "One required input slot: a tag-query that the consumed item must satisfy, at a quantity. NOT a specific item id (D4 — substitutability via tags).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tagQuery", "qty"],
+      "properties": {
+        "tagQuery": { "$ref": "#/$defs/tagQuery" },
+        "qty": {
+          "description": "Number of items satisfying tagQuery consumed by one craft. Integer >= 1.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "output": {
+      "description": "One produced item: a concrete item_kind id at a base quantity. The actual rolled qty/quality scales by §6(Dexterity) in the Craft action (flora yield model reuse, plan §0), NOT here — `qty` is the base amount before that scaling.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "qty"],
+      "properties": {
+        "item": { "$ref": "#/$defs/identifier" },
+        "qty": {
+          "description": "Base produced quantity per craft (integer >= 1). Dexterity-driven quality/qty scaling is applied by the Craft action via §6, reusing the flora yield roll.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "inputs", "outputs"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "inputs": {
+          "description": "Required input slots (tag-query + qty each). minItems 1 — a recipe consumes something.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/input" }
+        },
+        "outputs": {
+          "description": "Produced items (item + base qty each). minItems 1 — a recipe produces something.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/output" }
+        },
+        "tool": {
+          "description": "Optional REQUIRED tool tag: the actor must hold an item_kind carrying this tag for the craft to be visible/possible. The tool is a non-consumed durable (`wear`, plan §0) — its `wear` decrement + the §6 capability multiplier reading the held tool's tags live in the Craft action, NOT in the recipe.",
+          "$ref": "#/$defs/tag"
+        },
+        "station": {
+          "description": "Optional REQUIRED station tag: the actor must be at an object_kind carrying this tag (e.g. tool_bench → `station:bench`) for the craft. Like `tool`, the station is referenced by tag (D4); the at-station gate is enforced by the Craft action/planner.",
+          "$ref": "#/$defs/tag"
+        }
+      }
+    }
+  }
+}

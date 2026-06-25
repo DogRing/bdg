@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/objects.schema.json",
-  "title": "content/objects.yaml — object & item kinds carrying supply Effect (D9/D10), incl. flora",
+  "title": "content/objects.yaml — object & item kinds carrying supply Effect (D9/D10), incl. flora + material tags + decay",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version"],
@@ -25,6 +25,17 @@
     "predList": {
       "type": "array",
       "items": { "$ref": "#/$defs/identifier" }
+    },
+    "tag": {
+      "description": "A core.Tag identifier. May contain a `:` namespace (e.g. `tool:cutting`, `station:bench`). MATERIAL tags (e.g. `shaft_stock`) make an item eligible for a recipe input tag-query (Materials plan §0/D4); substitutability emerges from tags. Cross-checked against the glossary/tag vocabulary at load (D10).",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_:]*$"
+    },
+    "tagList": {
+      "description": "Material / tool / station tags carried by a kind (D4). A recipe input tag-query (content/recipes.yaml) is satisfied by any item_kind whose `tags` is a SUPERSET of the queried set — so a NEW item becomes a valid substitute purely by carrying the tag, no recipe edit (Materials plan §0). A tool item carries its tool tag here; a station object_kind carries its station tag here. De-duplicated; order not significant.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/tag" },
+      "uniqueItems": true
     },
     "supply": {
       "type": "object",
@@ -88,6 +99,65 @@
         "chance": { "$ref": "#/$defs/scalarOrFormula" }
       }
     },
+    "decayTransform": {
+      "description": "What a decay STATE TRANSITION produces (Materials Q3 RESOLVED: transform, NOT vanish — D9 locality, mirrors flora regen→object). On entering this state, the source LOT is REPLACED by these output item_kind(s); the produced quantity is `qty · sourceLot.Qty` (Dm5(a): a lot of n rotting yields n·qty of the product). The terminal `gone` state OMITS transform (produces nothing — the only place decay removes mass). engine/decay emits the produced items as StepDeltas.Transformed; world (sole mutator) applies it. NOTE: a produced item that itself carries a `decay` block keeps aging (chained decay is data, not special-cased).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item", "qty"],
+        "properties": {
+          "item": { "$ref": "#/$defs/identifier" },
+          "qty": {
+            "description": "Per-source-unit produced quantity; the actual emitted quantity is `qty · sourceLot.Qty` (Dm5(a)). Integer >= 1.",
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "decayState": {
+      "description": "One ordered discrete decay state (Materials Q1 RESOLVED: discrete states fresh→stale→rotten→gone). The states array order IS the transition order. `name` is a label (NOT a separate id namespace — the state is identified by its INDEX in the ordered array, DERIVED from the lot's continuous decayAge accumulator, mirroring flora's derived Stage; D9 — never stored). `threshold` is the EFFECTIVE-DECAY-TIME measure (Dm1(a): env-independent effective-time units, NOT wall ticks) at which the lot ENTERS this state. `transform` is the product on entering this state (D9 locality, Q3). `supply` optionally OVERRIDES the item_kind's base supply for this state (e.g. stale food supplies less Satiety) — absent = unchanged.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "threshold": {
+          "description": "Effective-decay-time measure (Dm1(a): EFFECTIVE-TIME units, env-independent — env/storage acceleration shows up as a faster decayAge advance, never a moving threshold) at which the lot ENTERS this state. The FIRST state (index 0, e.g. `fresh`) is the initial state and SHOULD omit threshold (or set 0). Strictly ascending across the array (enforced by platform/config beyond JSON Schema).",
+          "type": "number",
+          "minimum": 0
+        },
+        "transform": { "$ref": "#/$defs/decayTransform" },
+        "supply": {
+          "description": "Optional per-state supply OVERRIDE (the Effect this item delivers while in this state). Absent = use the item_kind base `supply`. Lets decay reduce nutritional value by state (D9: still a supply Effect on the object, no future field).",
+          "$ref": "#/$defs/supply"
+        }
+      }
+    },
+    "decay": {
+      "description": "Marks an item_kind as DECAYING (Materials & Crafting plan §0 locked; engine/decay; mirrors flora's data-driven §6 shape). Q1 RESOLVED discrete states; Q2 RESOLVED env-coupled acceleration; Q3 RESOLVED transform-on-transition; Dm1–Dm5 RESOLVED (a). The per-LOT runtime decay STATE (the continuous decayAge accumulator + derived state index) is NOT here (it is runtime state on the lot instance, like flora Length) — this block is the data RULES. Decay UNIT is a LOT `{kind, qty, decayAge}` (Dm5(a)); lots never auto-merge; a kind's inventory count is the SUM over its live lots.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseRate", "states"],
+      "properties": {
+        "baseRate": {
+          "description": "Base decay rate (data, Q2: 기본 rate는 데이터), in EFFECTIVE-DECAY-TIME units per tick at neutral env+storage. It is the FIRST multiplicative term of the effective rate (Dm2(a)): `effectiveRate = baseRate · accel(temperature,moisture) · storageRateMult`, and `decayAge += elapsedTicks · effectiveRate` per decay step (Dm1(a)).",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "accel": {
+          "description": "Env-coupled acceleration MULTIPLIER (Q2 + Dm2(a) RESOLVED): a single §6 Formula over the climate output operands `temperature`/`moisture` (the SAME Context operand names climate/flora use) → a scalar multiplier; cold+dry (low temp, low moisture) → < 1 (slows; cold-storage emerges, D2), warm+wet → > 1 (speeds). Composed MULTIPLICATIVELY: `effectiveRate = baseRate · accel · storageRateMult`. engine/decay OWNS + evaluates this Program via engine/expr (Dm3(a), flora parity). Optional (absent ⇒ accel = 1, env has no effect). Domain clamp (≥ 0) is engine/decay's (climate/flora clamp contract).",
+          "$ref": "#/$defs/formula"
+        },
+        "states": {
+          "description": "The ordered discrete decay states (Q1: fresh→stale→rotten→gone). Order IS the transition order; index 0 is the initial state (decayAge=0). minItems 2 (an item that decays has at least an initial + a decayed state). Strictly-ascending thresholds enforced by platform/config (beyond JSON Schema).",
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/decayState" }
+        }
+      }
+    },
     "flora": {
       "description": "Marks an object_kind as a flora SPECIES (engine/flora; docs/flora.md). All behavior is §6 data (D4/D10); succession/forests emerge (D2/D3). TWO continuous morphology axes (§1 refinement, replacing the single `growth` scalar): `length` (height; maturity proxy → stages; yield ∝ length) and `width` (canopy spread → shade), each with its OWN growth rate so a species can grow tall faster than wide. Stages DERIVED from `length` via `stages` thresholds (D9: no stored stage, no future field).",
       "type": "object",
@@ -141,6 +211,7 @@
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
         "mobile": { "type": "boolean" },
+        "tags": { "$ref": "#/$defs/tagList" },
         "flora": { "$ref": "#/$defs/flora" },
         "harvest": {
           "type": "object",
@@ -177,7 +248,12 @@
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
         "stackable": { "type": "boolean" },
-        "perishable": { "type": "boolean" },
+        "perishable": {
+          "description": "Whether this item decays. A `perishable: true` item SHOULD carry a `decay` block (the decay RULES); a `decay` block requires `perishable: true` (platform/config cross-checks). Materials plan §0: perishability is now data-driven via `decay`, generalizing the legacy boolean.",
+          "type": "boolean"
+        },
+        "tags": { "$ref": "#/$defs/tagList" },
+        "decay": { "$ref": "#/$defs/decay" },
         "supply": { "$ref": "#/$defs/supply" }
       }
     }

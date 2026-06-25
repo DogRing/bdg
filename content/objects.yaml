@@ -15,6 +15,28 @@
 # (clamped into the need range). `provides` keys are predicates (core.Pred) used by the
 # GOAP reverse index. Schema: content/schema/objects.schema.json
 #
+# ── MATERIAL TAGS & RECIPES (Materials & Crafting plan; content/recipes.yaml) ────────
+# A material is NOT a separate type — it is an item_kind carrying MATERIAL `tags` (D10 minimal
+# extension, plan §0). A recipe input is a TAG QUERY, not a specific item id: substitutability
+# EMERGES from tags (D4) — any item whose `tags` is a superset of the query satisfies the slot, and
+# a NEW item becomes a valid substitute purely by carrying the tag (no recipe edit). Tools carry a
+# `tool:*` tag; stations (object_kinds) carry a `station:*` tag, matched by the recipe.
+#
+# ── DECAY (Materials & Crafting plan; engine/decay; mirrors flora's data-driven §6 shape) ─────
+# A perishable item_kind carries a `decay` block: ordered discrete `states` (Q1: fresh→stale→
+# rotten→gone), a per-state `threshold` in EFFECTIVE-DECAY-TIME units (Dm1(a): the lot's continuous
+# `decayAge` accumulator crosses it; env-independent — acceleration shows up as a faster decayAge
+# advance, not a moving threshold), a per-state `transform` (Q3: produces an item — D9 locality, decay
+# does not vanish mass except at the terminal `gone` state), an optional per-state `supply` override
+# (decayed food feeds less), a data `baseRate` (Q2: 기본 rate는 데이터), and an env-coupled `accel` §6
+# Formula over the climate output operands `temperature`/`moisture` (Q2 환경결합). The effective rate
+# composes MULTIPLICATIVELY (Dm2(a)): `effectiveRate = baseRate · accel(temperature,moisture) ·
+# storageRateMult`, and `decayAge += elapsedTicks · effectiveRate` per decay step. The
+# storage-structure rate multiplier (cold-storage 창발) is world-computed + injected, NOT authored on
+# the item. engine/decay OWNS + evaluates the `accel` §6 Program via engine/expr (Dm3(a), flora parity).
+# The decay UNIT is a LOT `{kind, qty, decayAge}` (Dm5(a)); lots never auto-merge; a kind's `{Tag:int}`
+# inventory count is the SUM over its live lots. (Dm1–Dm5 are RESOLVED (a) — materials.md §1.)
+#
 # ── FLORA (engine/flora; docs/flora.md, design.md §5/§7) ─────────────────────────
 # A flora species is an object_kind carrying a `flora:` block: the §6 formulas + thresholds
 # that drive growth, suitability, propagation, shade, and death (object-mortality). flora
@@ -201,6 +223,9 @@ object_kinds:
     mobile: false
     # The workbench the P1 Craft action operates on. Yields a crafted tool; the gather→craft
     # chain (materials → has_tool) is assembled by the planner, never authored here (D3).
+    # `station:bench` is the STATION tag a recipe references (content/recipes.yaml, D4) — a recipe
+    # with `station: station:bench` requires the actor to be at an object_kind carrying this tag.
+    tags: [ station:bench ]
     harvest:
       action: Craft
       yields: crafted_tool
@@ -219,11 +244,46 @@ item_kinds:
     stackable: true
     perishable: true
     supply: { Satiety: 0.25 }   # the Effect Eat delivers when this item is consumed (D9)
+    # ── DECAY (Materials & Crafting; engine/decay) — Dm1–Dm5 RESOLVED (a) ──
+    # Berries rot: fresh → stale (less filling) → rotten (a transform product) → gone. `threshold` is
+    # in EFFECTIVE-DECAY-TIME units (Dm1(a)); the lot's `decayAge` accumulator crosses it. `accel` is a
+    # multiplicative §6 multiplier over the climate output operands `temperature`/`moisture` (Dm2(a)):
+    # warm+wet speeds rot, cold+dry slows it (cold-storage 창발). Numbers are illustrative placeholders
+    # (untuned; balance is an auto-tuning target).
+    decay:
+      baseRate: 1.0                                       # effective-decay-time / tick at neutral env (Q2/Dm1)
+      accel: "0.5 + temperature*1.0 + moisture*0.5"       # §6 multiplier over climate output (Q2/Dm2(a))
+      states:
+        - name: fresh                                     # index 0 = initial state (decayAge=0; omit threshold)
+        - name: stale
+          threshold: 0.4                                  # enters at decayAge ≥ 0.4 (effective-time, Dm1(a))
+          supply: { Satiety: 0.15 }                       # decayed food feeds less (per-state supply override)
+        - name: rotten
+          threshold: 0.8
+          supply: { Satiety: 0.0 }
+          transform: [ { item: rotten_matter, qty: 1 } ]  # Q3: produces qty·lot.Qty (D9 locality), does not vanish
+        - name: gone
+          threshold: 1.0                                  # terminal: no transform = the only mass removal
 
   - id: raw_meat
     stackable: true
     perishable: true
     supply: { Satiety: 0.55 }   # richer than berries -> the planner prefers it when available
+    # Meat spoils faster than berries (higher baseRate); same RESOLVED (a) semantics as berries.
+    decay:
+      baseRate: 1.6
+      accel: "0.5 + temperature*1.2 + moisture*0.6"
+      states:
+        - name: fresh
+        - name: stale
+          threshold: 0.3
+          supply: { Satiety: 0.35 }
+        - name: rotten
+          threshold: 0.6
+          supply: { Satiety: 0.0 }
+          transform: [ { item: rotten_matter, qty: 1 } ]
+        - name: gone
+          threshold: 1.0
 
   - id: water
     stackable: true
@@ -236,7 +296,35 @@ item_kinds:
     # Felled-tree yield (flora). Instrumental material (feeds craft/build); like crafted_tool its
     # supply is a tiny Standing contribution (D9 requires a supply Effect; wood is not consumed for
     # need-satisfaction). Its real value is enabling Craft/Build via has_materials.
+    # MATERIAL TAGS (Materials plan §0/D4): wood is BOTH shaft + (split) blade stock — so it satisfies
+    # either recipe slot, and any other item carrying these tags substitutes for it automatically.
+    tags: [ shaft_stock, blade_stock ]
     supply: { Standing: 0.02 }
+
+  - id: bone
+    stackable: true
+    perishable: false
+    # A substitutable material (Materials plan §0/D4 demonstration): bone ALSO carries `shaft_stock`,
+    # so `craft_basic_tool` accepts wood OR bone in the shaft slot with no recipe change — the
+    # substitutability emerges from the shared tag. (A felled-prey / butchery yield in a later phase.)
+    tags: [ shaft_stock ]
+    supply: { Standing: 0.01 }
+
+  - id: stone
+    stackable: true
+    perishable: false
+    # Another substitutable material: stone carries `blade_stock` (a sharp edge), so it substitutes
+    # for split wood in the blade slot (D4 emergence). (An extraction/mining yield in P_m4.)
+    tags: [ blade_stock ]
+    supply: { Standing: 0.01 }
+
+  - id: rotten_matter
+    stackable: true
+    perishable: false
+    # The DECAY TRANSFORM PRODUCT (Q3): rotten food becomes this (compost/refuse) rather than
+    # vanishing (D9 locality — decay produces an item, not nothing). Inert supply; its eventual use
+    # (fertilizer/compost) is a later-phase content concern. Not itself perishable (a terminal product).
+    supply: { Standing: 0.0 }
 
   - id: crafted_tool
     stackable: false
@@ -244,4 +332,7 @@ item_kinds:
     # A crafted tool's "supply" is a tiny Standing contribution (skilled output is socially
     # legible). Its real value is instrumental (it enables other actions) — but D9 requires a
     # supply Effect, and tools are not consumed for need-satisfaction, so the value is minimal.
+    # TOOL TAG (Materials plan §0/D4): `tool:cutting` is the durable-tool tag a recipe references
+    # (`tool: tool:cutting`); the §6 capability multiplier reading this tag lives in the Craft action.
+    tags: [ tool:cutting ]
     supply: { Standing: 0.05 }
