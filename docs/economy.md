@@ -1,8 +1,8 @@
 # Economy — 돈 · 소유 · 사유자산 · 통행료 — Subsystem Plan (DRAFT)
 
 Concept & rationale: `docs/design.md §9` (+ §5 문/길목, §7 상속). 이 문서는 **구현 로드맵/결정 표면**이고 SPEC은 아직 없다.
-관련 모듈: `content/objects.yaml`(`currency` item_kind, 문 object_kind+access policy), `engine/actions`(trade=양도·pay-to-pass),
-`engine/world`(`owner` 관계·상속 적용), `engine/agent`/`pathfind`(문 통과 = Caps+§6), `engine/tom`(수요 감지·평판).
+관련 모듈: `content/objects.yaml`(`currency` item_kind, 문 object_kind+access policy), `engine/mind/actions`(trade=양도·pay-to-pass),
+`engine/world`(`owner` 관계·상속 적용), `engine/agent`/`pathfind`(문 통과 = Caps+§6), `engine/mind/tom`(수요 감지·평판).
 
 ## 0. Decisions locked (design.md §9)
 - **돈 = `currency` item_kind**(데이터). 창발 상품화 안 함(가독성). 이동은 기존 trade 재사용.

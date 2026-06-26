@@ -18,12 +18,12 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/dogring/bdg/engine/actions"
-	"github.com/dogring/bdg/engine/gates"
-	"github.com/dogring/bdg/engine/needs"
-	"github.com/dogring/bdg/engine/perception"
-	"github.com/dogring/bdg/engine/stats"
-	"github.com/dogring/bdg/engine/values"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/mind/gates"
+	"github.com/dogring/bdg/engine/mind/needs"
+	"github.com/dogring/bdg/engine/mind/perception"
+	"github.com/dogring/bdg/engine/mind/stats"
+	"github.com/dogring/bdg/engine/mind/values"
 	"gopkg.in/yaml.v3"
 )
 

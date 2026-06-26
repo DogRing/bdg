@@ -3,11 +3,11 @@ package world
 import (
 	"testing"
 
-	"github.com/dogring/bdg/engine/actions"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/planner"
-	"github.com/dogring/bdg/engine/rng"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/planner"
+	"github.com/dogring/bdg/engine/kernel/rng"
 )
 
 // Scenario: resource-conflict resentment (P3 — BLOCKER-3 wiring).

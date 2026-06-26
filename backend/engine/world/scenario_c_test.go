@@ -19,9 +19,9 @@ import (
 	"testing"
 
 	"github.com/dogring/bdg/engine/agent"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/rng"
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/tom"
 )
 
 func TestScenarioC_DeceptiveTrade(t *testing.T) {

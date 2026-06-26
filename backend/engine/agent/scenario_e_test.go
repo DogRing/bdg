@@ -22,12 +22,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/needs"
-	"github.com/dogring/bdg/engine/rng"
-	"github.com/dogring/bdg/engine/stats"
-	"github.com/dogring/bdg/engine/tom"
-	"github.com/dogring/bdg/engine/values"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/needs"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/stats"
+	"github.com/dogring/bdg/engine/mind/tom"
+	"github.com/dogring/bdg/engine/mind/values"
 )
 
 // setupScenarioE creates Agent A with a Place referent value for Openness

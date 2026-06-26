@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/actions"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/planner"
-	"github.com/dogring/bdg/engine/rng"
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/planner"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/tom"
 )
 
 // targetActionsYAML defines an object-targeted action (Forage→berry_bush) and a

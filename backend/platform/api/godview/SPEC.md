@@ -26,7 +26,7 @@ the parent owns the route-table rows, the `GodViewStore` injection, and the gate
 ```go
 package api // (or a future package godview — see Notes)
 
-import "github.com/dogring/bdg/engine/core"
+import "github.com/dogring/bdg/engine/kernel/core"
 
 // ── GodViewResponse group (the four /api/god/* response shapes) ───────────────────
 
@@ -131,7 +131,7 @@ type PartialResponse struct {
 ```
 
 > godview DEFINES no simulation vocabulary. `core.StatID`/`Dimension`/`AgentID`/`ObjectID`/`Tick`
-> are `engine/core`'s; the reputation/Influence semantics are `engine/tom`'s (`ReputationDist`,
+> are `engine/kernel/core`'s; the reputation/Influence semantics are `engine/mind/tom`'s (`ReputationDist`,
 > `Belief`); `RealStats`/`SelfEstStats`/`EmergedRoles` live in `engine/world`'s `WorldState`.
 > `faction_id` is a *derived* label, not a type (D2). This module reads a digest and serializes it.
 
@@ -207,11 +207,11 @@ All four require startup `GodMode == true` AND request `?god=true`; otherwise th
 - `engine/world` — the `WorldState` shape inside the blob: `RealStats`, `SelfEstStats`,
   `EmergedRoles`, and the **prerequisite `TomDigest`** (an `engine/world` SPEC change, below). The
   reliance-cluster membership for `per_faction` is derived from `EmergedRoles` + per-agent `RelyOn`.
-- `engine/tom` — the reputation/Influence *semantics* this module mirrors: `ReputationDist`
+- `engine/mind/tom` — the reputation/Influence *semantics* this module mirrors: `ReputationDist`
   (D6 aggregate), `Belief{EstStats, Trust, Affinity, RelyOn}`, `StatDist{Mean, Variance}`. api
   derives the aggregate from the digest; it does not import tom for logic if the digest is
   pre-shaped, but the math MUST match tom's `ReputationDist` definition (across-observer mean/variance).
-- `engine/core` — `StatID`, `Dimension`, `AgentID`, `ObjectID`, `Tick`, `Event`, `RunID`.
+- `engine/kernel/core` — `StatID`, `Dimension`, `AgentID`, `ObjectID`, `Tick`, `Event`, `RunID`.
 - **Contract** — `data-contracts.md` §1 (snapshot digest + the new `TomDigest` field), §3 (Postgres
   `events` table — the `/why` source), §4 (event payloads — the new `GoalSelected.competing_candidates`).
 
@@ -290,7 +290,7 @@ All four require startup `GodMode == true` AND request `?god=true`; otherwise th
   (cluster A received the gossip update about the subject; cluster B did not), the response's
   per-stat `variance` is strictly `> 0` and `per_faction` lists two clusters with divergent `mean`
   values (e.g. `cluster_A.mean=0.80` vs `cluster_B.mean=0.30`). Threshold ties to the
-  `engine/tom` "Variance preserved across cluster boundary (P4)" AC — the contested signal is
+  `engine/mind/tom` "Variance preserved across cluster boundary (P4)" AC — the contested signal is
   measurable and not collapsed.
 - [ ] **`faction_id` derived (D2)**: each cluster's `faction_id == "cluster_<holder>"` matches a
   holder from the snapshot's `EmergedRoles`; a grep/struct guard confirms no `Faction`/`Role` type.
@@ -334,7 +334,7 @@ All four require startup `GodMode == true` AND request `?god=true`; otherwise th
 - **Implementing `BackupStore.QueryEvents`** → `platform/persist`
   (`backend/platform/persist/SPEC.md`). This module consumes it via the `GodViewStore` interface.
 - **Extending the `GoalSelected` event payload with `competing_candidates`** → `data-contracts.md`
-  §4 + the emitter (`platform/events`) + the producer (`engine/agent`/`engine/planner`). This
+  §4 + the emitter (`platform/events`) + the producer (`engine/agent`/`engine/mind/planner`). This
   module reads the field; it does not emit it. Flagged below (BLOCKER for `competing_candidates`).
 - **Authentication beyond the god-view gate** → future `platform/auth`.
 - **Graph layout / rendering** of `/api/god/relations` → the frontend; api returns raw edges only.
@@ -373,7 +373,7 @@ All four require startup `GodMode == true` AND request `?god=true`; otherwise th
   `"competing_candidates": [{"dimension":…, "target":…, "eff_value":…}]` to the `GoalSelected`
   payload. This is a **data-contracts §4 change requiring a `schema_version` bump** on the `events`
   table (old rows are read WITHOUT the field — the `/why` handler degrades to an empty slice; new
-  rows MUST include it). It also requires the producer (`engine/agent`/`engine/planner` mediation,
+  rows MUST include it). It also requires the producer (`engine/agent`/`engine/mind/planner` mediation,
   which already ranks candidates by EffValue) to emit the rejected candidates, and the emitter
   (`platform/events`) to serialize them. **Escalate to the architect** (contract change) before the
   `/why` endpoint can return the full `competing_candidates` block. Until then `/why` returns the
@@ -395,7 +395,7 @@ All four require startup `GodMode == true` AND request `?god=true`; otherwise th
 - **Within-observer variance (NOT blocking).** `StatReputation.Variance` is the *across-observer*
   spread (the D6-critical factional-disagreement signal), matching `tom.ReputationDist`. Whether to
   also fold each observer's own `EstStats[stat].Variance` (total = between + within) is the same
-  open question `engine/tom/SPEC.md` carries; the across-observer term is the specified default and
+  open question `engine/mind/tom/SPEC.md` carries; the across-observer term is the specified default and
   can be extended without changing the response type.
 
 ## Notes
@@ -409,7 +409,7 @@ All four require startup `GodMode == true` AND request `?god=true`; otherwise th
   folder split is documentary, to keep one Go file under ~400 lines). Promote to a real `godview`
   Go package only if the parent file grows further; the SPEC boundary already isolates the concern.
 - **`ReputationDist` parity.** The api-side reputation aggregation MUST compute the same
-  across-observer mean/variance as `engine/tom.ReputationDist` (`engine/tom/SPEC.md` — Mean = mean of
+  across-observer mean/variance as `engine/mind/tom.ReputationDist` (`engine/mind/tom/SPEC.md` — Mean = mean of
   observer means; Variance = variance of observer means). If the `TomDigest` is pre-shaped as a list
   of `Belief`s per subject, api can call the same arithmetic; do not invent a second formula.
 - **Faction labels mirror `RoleEmerged`.** `faction_id = "cluster_<holder>"` reuses the holder ids

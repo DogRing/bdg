@@ -3,7 +3,7 @@ package persist
 import (
 	"context"
 
-	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/engine/kernel/core"
 )
 
 // ── Redis live store (data-contracts §2) ───────────────────────────────────────

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/engine/kernel/core"
 )
 
 // pgxClient is the minimal subset of pgx operations PgBackupStore needs.

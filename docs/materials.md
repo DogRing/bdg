@@ -2,7 +2,7 @@
 
 Concept & rationale: `docs/design.md §9`(경제) + §5(자원) + §6(수식). 이 문서는 **결정 표면**이고 SPEC은 아직 없다.
 관련 모듈: `content/objects.yaml`(item_kind + 재료 tag), `content/recipes.yaml`(신규, 변환), `content/schema/*`,
-`engine/actions`(Craft·채굴), `engine/decay`(신규 L1, 부패 Step), `engine/world`(유일 mutator), `engine/expr`(§6 품질·도구배수·tag질의).
+`engine/mind/actions`(Craft·채굴), `engine/env/decay`(신규 L1, 부패 Step), `engine/world`(유일 mutator), `engine/kernel/expr`(§6 품질·도구배수·tag질의).
 
 **세계 완성 로드맵(사람 확정):** (지금) **물질사슬 → fauna → 불&빛**. 몸/needs는 **Agent 단계로 이연**. 모방(지식전수)은 추후.
 
@@ -41,14 +41,14 @@ Craft has **NO** tool/station action tag — the gate is purely "inputs present"
 
 ### [eng — locked]
 - 부패 적용범위: 바닥·인벤토리·저장 동일 틱, **저장 구조물이 rate 곱 감속**(cold-storage 창발).
-- 배치: 부패=`engine/decay`(L1, 순수 Step) / 추출=actions+world / 레시피=`content/recipes.yaml`+스키마 / 재료=objects.yaml tag.
+- 배치: 부패=`engine/env/decay`(L1, 순수 Step) / 추출=actions+world / 레시피=`content/recipes.yaml`+스키마 / 재료=objects.yaml tag.
 - 부패 틱 cadence(N틱)·상태전이 임계의 데이터 모양.
 
 ### [eng — RESOLVED] mechanism choices the P_m1/P_m2 SPECs FORCED — all `RESOLVED: (a)` (사람 확정)
-> Surfaced while writing `content/schema/*` + `backend/engine/decay/SPEC.md`. Each is now `RESOLVED: (a)`:
+> Surfaced while writing `content/schema/*` + `backend/engine/env/decay/SPEC.md`. Each is now `RESOLVED: (a)`:
 > **Dm1** continuous `decayAge` accumulator (thresholds in effective-time units). **Dm2** §6 `accel`
 > multiplicative: `effRate = baseRate · accel(temp,moist) · storageMult`. **Dm3** decay owns the §6
-> `Program` (imports `engine/expr`, flora parity). **Dm4** owner-agnostic flat decayable-item set
+> `Program` (imports `engine/kernel/expr`, flora parity). **Dm4** owner-agnostic flat decayable-item set
 > (floor + inventory + storage; dead-agent items keep decaying). **Dm5** decay unit = *lot*
 > `{kind, qty, decayAge}`, no auto-merge (inventory `{tag:int}` view = sum over lots). Detail + rejected
 > options retained below for the record.
@@ -61,7 +61,7 @@ Craft has **NO** tool/station action tag — the gate is purely "inputs present"
   `moisture` = a multiplier; `effectiveRate = baseRate · accel · storageRateMult`. (Rejected: additive
   terms; fixed engine shape with rates-only data.)
 - **Dm3 — Where the `accel` §6 Formula is evaluated.** `RESOLVED: (a)` decay owns the compiled `accel`
-  `Program` in its `Rules`, imports `engine/expr`, builds the `Context` from the env input (flora
+  `Program` in its `Rules`, imports `engine/kernel/expr`, builds the `Context` from the env input (flora
   parity). (Rejected: world evaluates + passes a scalar.)
 - **Dm4 — Decay of owner-less / dying-agent items.** `RESOLVED: (a)` owner-agnostic — `Step` takes a flat
   decayable-item set keyed by a stable instance id (floor + every inventory + storage); dead-agent items
@@ -133,15 +133,15 @@ Craft has **NO** tool/station action tag — the gate is purely "inputs present"
   the Xm mechanisms; a sequencing prerequisite.
 
 ## 2. Phases
-> map-plan.md 양식: 각 phase 독립 shippable + 테스트 + 결정성 골든. **공통 선행: `engine/expr` 구현**(§6 — Craft basis_stat·도구 durability·tag질의 가속식).
+> map-plan.md 양식: 각 phase 독립 shippable + 테스트 + 결정성 골든. **공통 선행: `engine/kernel/expr` 구현**(§6 — Craft basis_stat·도구 durability·tag질의 가속식).
 
 - **P_m1 — 재료·레시피·부패상태 데이터 + 스키마** *(content, 엔진 無 — 첫 leaf)* — **READY**
   objects.yaml: 재료 tag + 부패 state 필드(`states`/전이 임계/transform 산물) + `tool:{wear_max}` 내구재 + `source:{initial,depleted_terrain}`. `content/recipes.yaml`(FINAL): `inputs:[{any:[{tagQuery, amount, mode:wear|consume}]}]`, `ambient:[tags]`, `duration`, `basis_stat`, `outputs:[{item, base_qty}]`. `content/schema/*` + `data-contracts` 확장. 검증 = 스키마 + 결정성 로드 테스트. ✓ Dm1/Dm2/Dm5 + FINAL recipe model RESOLVED → buildable.
-- **P_m2 — `engine/decay` (부패 Step)** *(L1 leaf)* — **READY**
+- **P_m2 — `engine/env/decay` (부패 Step)** *(L1 leaf)* — **READY**
   순수 `Step(prev lots, env{temp,moisture}, rules, rng) → next + StepDeltas`. 이산 상태전이, 환경결합 가속, transform 산물 emit, 저장 rate 곱, multi-rate cadence. 골든 스냅샷. `world`가 유일 mutator로 wire. (env는 climate 출력 모양을 **입력으로** 받음 — climate 구현에 비의존, flora와 동형.) ✓ Dm1–Dm5 RESOLVED → buildable (expr 구현 선행).
-- **P_m3 — `Craft` 행위** *(actions, P_m1 + expr 의존)* — **SPEC READY** (`backend/engine/actions/SPEC.md`)
+- **P_m3 — `Craft` 행위** *(actions, P_m1 + expr 의존)* — **SPEC READY** (`backend/engine/mind/actions/SPEC.md`)
   레시피 매개 단일 원자행위(D3, `recipe_mediated`; action에 tool tag/target/duration 無 — §0 FINAL). World apply: slot마다 authored 순서 first-satisfiable alternative(D12), `consume`=most-decayed lot 제거(ties ObjectID)·`wear`=most-worn tool durability ↓ break@0, `ambient` in-range gate, `basis_stat` 롤(success/qty + 산출 durability=roll·wear_max), 부패 산출→fresh lot(Dm5), no partial run. ✓ Cm1–Cm7 RESOLVED + §0 FINAL → SPEC written, **NO remaining OPEN** (expr 구현 선행).
-- **P_m4 — 추출(채굴)** *(actions + world + navmap)* — **SPEC READY** (`backend/engine/actions/SPEC.md` + `ore_node`/`tool:digging`)
+- **P_m4 — 추출(채굴)** *(actions + world + navmap)* — **SPEC READY** (`backend/engine/mind/actions/SPEC.md` + `ore_node`/`tool:digging`)
   terrain 변형 추출 행위 `Mine`(navmap `SetTerrain` 재사용, Xm4 Fell-parallel), 광물 = 유한 노드 `ore_node`(`source.remaining`, Xm1), depletion(remaining→0) → 노드 제거 + 1회 SetTerrain → `bare_rock`(Xm2/Xm3), `tool:digging`(pickaxe) 액션-tag gate + 보유 도구 durability wear(Mine world rate) + §6 yield reuse(Xm5). water=infinite, flora=기존 regen. ✓ Xm1–Xm6 RESOLVED → SPEC written. ⚠ **선행: world+navmap(M3) + `content/terrain.yaml`의 `bare_rock` 타입(Xm6)**; SetTerrain reroute 골든은 terrain.yaml 선행 필요.
 
 의존: **P_m1 → (P_m2, P_m3)**. P_m3·P_m2(가속식)·Craft 산출은 **expr 구현 선행**. P_m4는 world+navmap(M3) + `terrain.yaml`(Xm6) 위.

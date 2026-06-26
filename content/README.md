@@ -27,7 +27,7 @@ schema's `const` together on any incompatible change. (`gates.yaml`/`gates.schem
 
 ## Need definitions split across two files
 
-A need / value **Dimension** is defined in two places (merged by `engine/needs.Load`, which
+A need / value **Dimension** is defined in two places (merged by `engine/mind/needs.Load`, which
 `platform/config` feeds both readers):
 
 - **`needs.yaml`** — the dimension *catalog*: `id`, `kind` (`consumable`|`conditional`), default
@@ -79,9 +79,9 @@ Numeric magnitudes for each level live in `balance.yaml.tag_levels`; cost-term w
 transgression**: hunting is `violent:low` but not `norm:transgressive`, so the conscience gate
 does not suppress it.
 
-## Gate-evaluator contract (gates.yaml → engine/gates), schema_version 2
+## Gate-evaluator contract (gates.yaml → engine/mind/gates), schema_version 2
 
-`engine/gates` is not yet implemented; `gates.yaml` is its **contract**. A gate is
+`engine/mind/gates` is not yet implemented; `gates.yaml` is its **contract**. A gate is
 `{ id, tags:[Tag…], expr }`. The gate is matched to a candidate action iff the action carries
 **any** tag in `tags` (empty/absent `tags` = matches all). For a matched action the gate's
 recursive boolean **`expr`** is evaluated against the agent snapshot; an action is **visible**
@@ -95,7 +95,7 @@ evaluated **at planning time** and are **never** stored on objects (D5).
   or `{ tag: <Tag> }` (true iff the candidate action carries that exact tag).
 - composite — `{ and: [expr…] }` / `{ or: [expr…] }` / `{ not: expr }`.
 
-When `engine/gates` lands, its `SPEC.md` must implement this grammar exactly; on any mismatch,
+When `engine/mind/gates` lands, its `SPEC.md` must implement this grammar exactly; on any mismatch,
 **fix the contract here first** (`CLAUDE.md` SPEC-first rule).
 
 > **Scope change (schema_version 1 → 2, human-approved).** Gates are now **boolean visibility
@@ -105,7 +105,7 @@ When `engine/gates` lands, its `SPEC.md` must implement this grammar exactly; on
 > comparisons read **stats (ToM[self]) only**; dynamic visibility that depended on body scalars /
 > Urgency / Adrenaline (the old `stamina` gate, the conscience loosening) moved to
 > planner/agent runtime checks outside this file. See the header note in `gates.yaml` and
-> `backend/engine/gates/SPEC.md` §Open Questions for the scope transfer to the planner.
+> `backend/engine/mind/gates/SPEC.md` §Open Questions for the scope transfer to the planner.
 
 ## Adding content (examples)
 

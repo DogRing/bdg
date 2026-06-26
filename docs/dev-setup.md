@@ -10,7 +10,7 @@ Physical setup that complements `docs/architecture.md` (logical module deps).
 ## Module layout
 - `go.mod` is at the **repo root**. Module path: `github.com/dogring/bdg`.
 - All Go code lives under `backend/`. Import paths are
-  `github.com/dogring/bdg/backend/engine/<module>` and `.../backend/platform/<module>`.
+  `github.com/dogring/bdg/engine/<module>` and `.../backend/platform/<module>`.
 - Entry point: `backend/cmd/sim/main.go` (scaffold; boots flags/config, no engine wired yet).
 - Engine/platform modules are implemented **leaf-first via the spec-first agent flow** — see
   `docs/architecture.md` (order) and each `backend/**/SPEC.md`.

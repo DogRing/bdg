@@ -128,7 +128,7 @@
 ---
 
 ## 의존 → 활성 순서 (재출발 로드맵과 정렬)
-1. `engine/expr` → W5·W7·W8·W12(§6 roll), W1(swim 식).
+1. `engine/kernel/expr` → W5·W7·W8·W12(§6 roll), W1(swim 식).
 2. climate → W2·W3·W9. flora(active)+perception → W4. decay → W9·W10.
 3. materials Craft/Mine → W5·W6·W7·W8·W11·W12.
 4. economy·lifecycle → W13·W14·W15. (+ W16은 world/navmap 현존분으로 선검증 가능.)

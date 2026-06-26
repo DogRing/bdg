@@ -86,7 +86,7 @@ forward-sim 정밀도/주기; 항 라이브러리·rate·α·β·λ 구체값 + 
 - **출력 타입 = 문맥:** 게이트/시도 임계 = 불리언, 능력 합성·비용·"건널 수 있는 폭" = 수치.
 - 예: 능력 `STR*0.5 + AGI*0.3`; 시도 `(STR*0.5 + AGI*0.3 > 0.5) | (AGI > terrain.depth)`.
 - **결정론(D12):** 고정 연산자 우선순위, RNG 미포함(필요시 주입), 미정의 식별자는 **로드 시 검증 실패**(D10). 형식만 고정이고 변수명은 자유.
-- **평가기 위치:** 한 평가기를 **`engine/expr`(L0 leaf, core 타입만 의존)**가 제공하고 gates·climate·flora·actions·economy가 추상 `Context`를 넘겨 공유한다 — DSL 드리프트 방지(glossary "one shared evaluator"). gates의 boolean tree는 이 평가기의 boolean 부분집합.
+- **평가기 위치:** 한 평가기를 **`engine/kernel/expr`(L0 leaf, core 타입만 의존)**가 제공하고 gates·climate·flora·actions·economy가 추상 `Context`를 넘겨 공유한다 — DSL 드리프트 방지(glossary "one shared evaluator"). gates의 boolean tree는 이 평가기의 boolean 부분집합.
 - **평가 모델 (순수 + Context 채널):** `eval(Program, Context) → 숫자 | 불리언`. expr은 plan/apply·ToM/real·RNG를 *모른다*(멍청한 순수 평가기). **호출자가 Context를 갈아끼운다:** 계획=주체 `ToM[self]` + 인지된 대상 속성 → 불리언 '시도 가부'(D8); Action=실제 스탯 + 실제 속성 → 숫자(chance·qty). **chance→성공 roll은 호출자가 주입 RNG로** 수행(expr은 chance 숫자만 반환 → 결정성 유지, D12). Context 피연산자 = 주체 스탯 · 대상 속성(`terrain.depth`·`door.lockStrength`·`plant.length`) · 술어(`has`/`isOwner`/`paid`, 불리언) · 환경(`moisture`).
 
 ## 7. 생애주기 — 사망 × 번식은 하나의 사이클

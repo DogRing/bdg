@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	"github.com/dogring/bdg/engine/agent"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/perception"
-	"github.com/dogring/bdg/engine/planner"
-	"github.com/dogring/bdg/engine/rng"
-	"github.com/dogring/bdg/engine/spatial"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/perception"
+	"github.com/dogring/bdg/engine/mind/planner"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/world"
-	"github.com/dogring/bdg/engine/worldtime"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
 	"github.com/dogring/bdg/platform/config"
 )
 

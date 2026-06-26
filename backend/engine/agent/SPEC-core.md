@@ -20,7 +20,7 @@ and the trade slice of phase 7, the §F threat-perception → Safety-intensity w
 referent-aware Urgency aggregation (`combinedPriority`), and the `replan`/`execute`/`ApplyOutcome`
 scaffolding. It additionally owns the live Body scalars (Stamina, Mood, Adrenaline, Urgency) it
 feeds into the gate/planner snapshot each tick so the P3 gates (`stamina`, `apathy`,
-`conscience`-relief, `adrenaline`-cost) can read them (`engine/gates/SPEC.md`).
+`conscience`-relief, `adrenaline`-cost) can read them (`engine/mind/gates/SPEC.md`).
 
 Three sibling domain SPECs own the slices this file delegates:
 - **`SPEC-dynamics.md`** — Stamina drain/regen (§D), Adrenaline surge/crash (§E), Mood update,
@@ -288,10 +288,10 @@ Borrowed read-only, passed per-Tick (verbatim from `agent.go`):
 
 ```go
 type Services struct {
-    Sensor  *perception.Sensor // the three senses (engine/perception)
-    Planner *planner.Planner   // HTN+GOAP deliberation (engine/planner)
-    Values  *values.Config     // per-Dimension arbitration weights (engine/values)
-    Needs   *needs.Registry    // need catalog + forward-roll helpers (engine/needs)
+    Sensor  *perception.Sensor // the three senses (engine/mind/perception)
+    Planner *planner.Planner   // HTN+GOAP deliberation (engine/mind/planner)
+    Values  *values.Config     // per-Dimension arbitration weights (engine/mind/values)
+    Needs   *needs.Registry    // need catalog + forward-roll helpers (engine/mind/needs)
     Stats   *stats.Registry    // stat metadata (capability set, ranges) — no hardcoded ids (D7)
     Actions *actions.Registry  // action catalog (tags, duration, producers) — for execution
 }
@@ -304,7 +304,7 @@ agent. Passing them per-Tick (rather than storing on `Agent`) keeps the `Agent` 
 
 ```go
 // New constructs an Agent with its generated Real Stats, seeded ToM (incl. ToM[self],
-// built by engine/tom with the injected rng), starting Body state from cfg, and an
+// built by engine/mind/tom with the injected rng), starting Body state from cfg, and an
 // empty plan/coping Idle. Initializes Resentment = 0, FailStreak = 0.
 func New(id core.AgentID, pos core.Vec2, realStats stats.Stats, selfToM tom.ToM, cfg Config) *Agent
 ```
@@ -551,7 +551,7 @@ func (a *Agent) driveConditionalSafety(threats []core.AgentID, needsReg *needs.R
 
 - When `len(threats) ≥ 1` the intensity RISES by `ThreatPerThreatGain × len(threats)`, clamped to
   `[0,1]`. When `threats` is empty it DECAYS toward 0 by `ThreatSafetyDecay` per tick (reaching 0
-  over `⌈cur/ThreatSafetyDecay⌉` ticks). The math is owned by `engine/needs` — see Out of Scope.
+  over `⌈cur/ThreatSafetyDecay⌉` ticks). The math is owned by `engine/mind/needs` — see Out of Scope.
 
 ### Forced-goal reflex (pre-empts the mediated goal)
 
@@ -599,7 +599,7 @@ MinCareThreshold`; for each cared-for Other and each need Dimension, derives the
 `values.DeriveReferentInput(Other, …)` → `ComputeStanding/Salience`, then applies the **per-agent
 bond multiplier** `1 + Affinity·BondAffinityGain` to the base weight before `ComputePriority`. Returns
 the max. The bond multiplication is the agent's job (values is referent-agnostic — see
-`engine/values/SPEC.md` Out of Scope). The low-Intelligence mood proxy stat is resolved via
+`engine/mind/values/SPEC.md` Out of Scope). The low-Intelligence mood proxy stat is resolved via
 `resolveOtherMoodStatID(statsReg)` (first Disposition stat, D7 — no literal).
 
 ### `appraisePlace()` — Place-referent max priority (Scenario E)
@@ -618,7 +618,7 @@ Returns the max across Place values (0 if none held).
 Iterates `a.Values` with `Ref.Kind == core.Collective`. Gathers `world.MemberNeedIntensities()`
 (returns nil → contributes 0); builds a `[]values.ReferentInput` over member intensities (iterating
 `sortedAgentIDs(members)`, D12), then `DeriveReferentInput(Collective, …, members, …)` →
-`ComputeStanding/Salience/Priority`. The aggregation mode (min/mean) lives in `engine/values`.
+`ComputeStanding/Salience/Priority`. The aggregation mode (min/mean) lives in `engine/mind/values`.
 Returns the max across Collective values (0 if none held or no member data).
 
 ### `defensiveCollectiveGoal()` — phase-4b Collective defensive override (BLOCKER-2)
@@ -699,7 +699,7 @@ Builds the planner `AgentSnapshot` and delegates to `svc.Planner.Plan`. Steps:
    planner is shared/immutable-after-New). The per-call `ApathyBudget` pointer scopes the override to
    one `Plan` call. See `SPEC-coping.md §A` for the cascade that puts the agent into `Apathy`, and
    `SPEC-dynamics.md §A-budget` for the budget formula rationale + the planner-side consumption
-   contract (`engine/planner/SPEC.md AgentSnapshot.ApathyBudget`).
+   contract (`engine/mind/planner/SPEC.md AgentSnapshot.ApathyBudget`).
 8. **Goal targeting:** `goalPriorities := promoteGoal(a.Goal, priorities)` moves `a.Goal` to index 0
    so the planner targets the mediated goal (fallback to original order if `a.Goal` not present).
 9. `return svc.Planner.Plan(snapshot, goalPriorities, rng)`.
@@ -898,29 +898,29 @@ glossary terms).
 
 ## 17. Dependencies (full list)
 
-- `engine/core` — ids, `Vec2`, `Tick`, `GameMinutes`, `Dimension`, `Tag`, `AgentID`, `ObjectID`,
+- `engine/kernel/core` — ids, `Vec2`, `Tick`, `GameMinutes`, `Dimension`, `Tag`, `AgentID`, `ObjectID`,
   `Referent`, `Value`, `Pred`, `Function` (`FuncSafety`/`FuncKnowledge`), `Signal`/`SignalVote`,
   `EventEmitter`, `Event`. Emits `GoalSelected`/`PlanBuilt`/`ActionStarted`/`ActionDone`/`Interacted`/
   `BeliefUpdated`/`CopingEntered`/`ReputationGossip`.
-- `engine/stats` — `*Registry` (capability set for Intelligence; **Vindictiveness**/**Aggression**
+- `engine/mind/stats` — `*Registry` (capability set for Intelligence; **Vindictiveness**/**Aggression**
   disposition ids resolved from `Config`, never a literal — D7); `Stats`; `Disposition`/`Capability`
   kinds.
-- `engine/needs` — `*Registry` (`Kinds(Consumable)`/`IDs()`, consumable forward-roll for decay + Mood
+- `engine/mind/needs` — `*Registry` (`Kinds(Consumable)`/`IDs()`, consumable forward-roll for decay + Mood
   expected; **`Def.UpdateConditionalNeeds` for the §F Safety-intensity drive**; Safety Dimension id in
   `Config.SafetyDim`, Rest in `Config.RestDim`, via platform/config — not a literal).
-- `engine/values` — appraisal helpers (`ComputeStanding`/`ComputeSalience`/`ComputePriority`,
+- `engine/mind/values` — appraisal helpers (`ComputeStanding`/`ComputeSalience`/`ComputePriority`,
   `DeriveReferentInput`, `ReferentInput`, `Priority`, `Config.Weight`); the agent applies the
   per-agent bond multiplier before `ComputePriority`.
-- `engine/tom` — `ToM`: `Self`/`Subjects`/`SelfID`, `Observe` (β fold), `AdjustAffinity` (Resentment
+- `engine/mind/tom` — `ToM`: `Self`/`Subjects`/`SelfID`, `Observe` (β fold), `AdjustAffinity` (Resentment
   Affinity drop — SPEC-coping), `AdjustRelyOn`/`BestProviderFor`/`Influence`/`GossipUpdate`
   (SPEC-politics). `Belief`/`StatEvidence`/`Rates`.
-- `engine/planner` — `*Planner`, `Plan`, `Trace`, `DimensionPriority`, `AgentSnapshot` (incl. the
+- `engine/mind/planner` — `*Planner`, `Plan`, `Trace`, `DimensionPriority`, `AgentSnapshot` (incl. the
   optional `ApathyBudget *Budget`), `Budget`, the sentinel errors.
-- `engine/perception` — the senses; `WorldView` embeds `WorldSnapshot`; `PerceivedEntity`/`SoundEvent`
+- `engine/mind/perception` — the senses; `WorldView` embeds `WorldSnapshot`; `PerceivedEntity`/`SoundEvent`
   (the §F threat scan reads perceived entities + their copied `Tags` from `Sensor.Sight`).
-- `engine/rng` — injected `*RNG` (D12); the coping branch, the §F threat override, and the
+- `engine/kernel/rng` — injected `*RNG` (D12); the coping branch, the §F threat override, and the
   budget-sizing are rng-free.
-- `engine/actions` — `*Registry`, `ActionID`, `ActionDef`, `TargetObject` (effort-tag resolution for
+- `engine/mind/actions` — `*Registry`, `ActionID`, `ActionDef`, `TargetObject` (effort-tag resolution for
   Stamina drain — SPEC-dynamics §D; target binding; Rest/Sleep detection).
 - **Contract — NOT imported:** `engine/world` implements `WorldView` (dependency inversion).
 - **Contract:** `content/balance.yaml` blocks (mood, adrenaline, stamina, urgency, self_calibration,
@@ -944,8 +944,8 @@ glossary terms).
 ## 19. Invariants — ALL GLOBAL invariants (D2, D5, D7, D8, D10, D12)
 
 - **Orchestrator only (D5)**: the loop sequences and threads state; the agent computes no
-  Standing/Priority of its own (it calls `engine/values`), assembles no action sequence (it calls
-  `engine/planner`), and **computes no need-intensity arithmetic of its own** — the §F Safety drive
+  Standing/Priority of its own (it calls `engine/mind/values`), assembles no action sequence (it calls
+  `engine/mind/planner`), and **computes no need-intensity arithmetic of its own** — the §F Safety drive
   delegates the math to `needs.Def.UpdateConditionalNeeds`. The per-call `ApathyBudget` is sized by
   the agent but the search itself is the planner's. The §F override forces the Safety **Dimension**
   only — it never decides how to satisfy it.
@@ -1074,19 +1074,19 @@ and SPEC-politics (reliance/Vote/Influence/gossip) live in those files. The foll
   `handleRelianceTrigger`, `emitVoteIfEligible`, `processIncomingSignals`/`processVoteSignal`/
   `processGossipSignal`, `bestRelyOnFor`, `allBeliefs`** → `SPEC-politics.md`.
 - **The four P3 gate predicates** + **applying the `CostMultiplier`** + **consuming the `ApathyBudget`
-  override in the search** → `engine/gates` / `engine/planner`.
+  override in the search** → `engine/mind/gates` / `engine/mind/planner`.
 - **Resource-conflict resolution and "rejection without Offer"** → `engine/world` (via
   `WorldView.ResentmentTriggers`).
-- **The persisted-Affinity write mechanism on `Belief`** → `engine/tom` (`AdjustAffinity`).
-- **The conditional Safety-intensity ARITHMETIC (rise/decay/clamp)** → `engine/needs`
+- **The persisted-Affinity write mechanism on `Belief`** → `engine/mind/tom` (`AdjustAffinity`).
+- **The conditional Safety-intensity ARITHMETIC (rise/decay/clamp)** → `engine/mind/needs`
   (`Def.UpdateConditionalNeeds`); this module only scans perception, supplies the two injected
   constants, and stores the result.
 - **The two `threats.*` scalars, the `politics.*` ratios, the Safety/Rest dimension-id resolution,
   the `Config.Functions` table population from file** → `platform/config` + `backend/main.go`
   (`agentConfigFromBalance`).
 - **The Other-referent input-derivation math + the Collective aggregation mode (min/mean)** →
-  `engine/values` (`DeriveReferentInput`).
-- **The Intelligence-gated lookahead hard-skip** → `engine/planner`.
+  `engine/mind/values` (`DeriveReferentInput`).
+- **The Intelligence-gated lookahead hard-skip** → `engine/mind/planner`.
 
 ## 22. Notes (the "why")
 

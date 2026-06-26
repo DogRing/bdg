@@ -6,10 +6,10 @@
 package agent
 
 import (
-	"github.com/dogring/bdg/engine/actions"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/perception"
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/perception"
+	"github.com/dogring/bdg/engine/mind/tom"
 )
 
 // ── Coping state (design §3: dead goals = the drama engine) ─────────────────────

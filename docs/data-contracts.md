@@ -107,7 +107,7 @@ Representative `type`s (payload gist):
 - Navmap wire = **building footprints** + **sparse `wear`** + **terrain state**. Per `design.md §5`, terrain is **dynamic** (moisture/transition), so it streams like wear — **periodic full + sparse deltas**, NOT a one-time static layout.
 - Determinism (D12): the snapshot is copy-on-write; the running tick deposits `wear` and applies terrain transitions in the **serial apply** phase (sorted cell order), never during plan. Bulk terrain recompute is `tick`-triggered (`tick % N`), never wall-clock.
 - An `ore_node` exhaustion (Xm2/Xm3) is one such terrain transition: on `remaining→0` the world fires ONE `navmap.SetTerrain` over the node's cells → `depleted_terrain` (e.g. `bare_rock`), streamed via `TerrainOverrides()` (the same sparse delta channel as climate transitions). NOT during plan; apply phase, sorted cells (D12).
-- The exact navmap snapshot shape is finalized when `engine/navmap` serialization lands — see `docs/map-plan.md` M5 + `docs/climate.md`.
+- The exact navmap snapshot shape is finalized when `engine/space/navmap` serialization lands — see `docs/map-plan.md` M5 + `docs/climate.md`.
 
 ## 7. Recipes (Materials & Crafting — content, `content/recipes.yaml`)
 > The recipe model is FINAL/LOCKED (`docs/materials.md §0 "Recipe model — FINAL"`): slot/alternative
@@ -173,8 +173,8 @@ Representative `type`s (payload gist):
   `tick % N` decay cadence (never wall-clock); the env (`Temperature`/`Moisture`) + the storage rate
   multiplier are world-sampled per lot and injected as values, and `decay_age += elapsedTicks ·
   baseRate · accel(temperature,moisture) · storageRateMult` (Dm2(a)).
-- The exact wire encoding is finalized when `engine/decay` serialization lands (P_m2) — the shape above
-  is fixed by Dm1–Dm5(a). See `docs/materials.md §1/§2`, `backend/engine/decay/SPEC.md`.
+- The exact wire encoding is finalized when `engine/env/decay` serialization lands (P_m2) — the shape above
+  is fixed by Dm1–Dm5(a). See `docs/materials.md §1/§2`, `backend/engine/env/decay/SPEC.md`.
 
 ## 9. Tool durability + finite sources (Materials & Crafting — FINAL/Xm1 → persist)
 > Finalized to the LOCKED recipe model (`docs/materials.md §0`). Tool durability + node `remaining` are
@@ -191,7 +191,7 @@ Representative `type`s (payload gist):
     reaching 0) and emits `ToolBroke` (§4). One scalar to snapshot ⇒ resume byte-identical.
   - The §6 tool-quality reads `durability / wear_max` via the world's `expr.Context` operand
     `tool:<family>.quality` (Cm3) — used by the Mine yield. The `expr` L0 interface is UNCHANGED (a
-    world-Context `Attr` operand, `engine/expr/SPEC.md` "callers adapt"), not a new method. (There is no
+    world-Context `Attr` operand, `engine/kernel/expr/SPEC.md` "callers adapt"), not a new method. (There is no
     per-item `tool.quality` formula any more — output quality comes from the crafting `basis_stat` roll.)
   - `location` discriminates which inventory/floor/storage the tool is in (parity with `decay_lots[]`).
 - **Finite source (`objects[].remaining` in §1, Xm1):** an `ore_node` carries `remaining` (starts at the
@@ -203,4 +203,4 @@ Representative `type`s (payload gist):
   takes most-decayed lots first (ties by `object_id`), `wear` takes the most-worn matching tool (ties by
   `object_id`). No wall-clock, no map-iteration for the apply order.
 - The exact wire encoding is finalized when the Craft/Mine apply lands (P_m3/P_m4); the shape above is
-  fixed by the LOCKED model. See `docs/materials.md §0/§1/§2`, `backend/engine/actions/SPEC.md`.
+  fixed by the LOCKED model. See `docs/materials.md §0/§1/§2`, `backend/engine/mind/actions/SPEC.md`.

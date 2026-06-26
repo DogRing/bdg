@@ -6,12 +6,12 @@
 ## Purpose
 
 This file owns the **politics / emergent-institutions** slice of the agent decision loop: the
-policy layer over `engine/tom`'s reliance / Influence primitives. The agent decides *when* to rely
+policy layer over `engine/mind/tom`'s reliance / Influence primitives. The agent decides *when* to rely
 on another (§G), casts delegation **Vote** signals (§H), and weights incoming social signals by the
 source's **Influence** (§I). The world then detects the resulting `RelyOn` cluster as a
 `RoleEmerged` statistic (no role type anywhere — D2). All thresholds / ratios are injected (D10).
 
-P6 makes the agent the **policy** layer over `engine/tom`'s reliance/Influence primitives: it
+P6 makes the agent the **policy** layer over `engine/mind/tom`'s reliance/Influence primitives: it
 decides *when* to rely on another, casts delegation **Vote** signals, and weights incoming social
 signals by the source's **Influence**. The world then detects the resulting `RelyOn` cluster as a
 `RoleEmerged` statistic (no role type anywhere — D2). All thresholds/ratios are injected (D10).
@@ -236,7 +236,7 @@ handles `SignalVote` and must now ALSO handle gossip/hearsay signals:
 `Config.InfluenceWeight` = `balance.yaml politics.influence_weight`. A heavily-relied-upon
 (high-Influence) source therefore shifts the agent's beliefs **more** for the same claim — the
 table AC. `GossipUpdate`'s signature is unchanged (Influence is folded into the weight the agent
-passes, per `engine/tom/SPEC.md` §P6).
+passes, per `engine/mind/tom/SPEC.md` §P6).
 
 ### Routing — `processIncomingSignals`
 
@@ -275,7 +275,7 @@ Folds a hearsay/gossip signal with Influence-weighted credibility:
   `subjectBelief = sourceBelief`; else `subjectBelief, _ = a.ToM.Self(subjectID)`.
 - `a.ToM.GossipUpdate(subjectID, subjectBelief, signalWeight)`.
 
-> **Verify the exact tom API before coding.** Confirmed against `engine/tom/SPEC.md` §P4/§P6:
+> **Verify the exact tom API before coding.** Confirmed against `engine/mind/tom/SPEC.md` §P4/§P6:
 > the fold method is `tom.ToM.GossipUpdate(subject core.AgentID, source Belief, trustWeight
 > float64) map[core.StatID]float64`, where `source` is the **source's Belief about the subject**
 > (not the raw signal), and `Influence` has signature
@@ -286,7 +286,7 @@ Folds a hearsay/gossip signal with Influence-weighted credibility:
 > a signal-shaped overload, update this section first.
 
 - `GossipUpdate` returns the per-stat mean delta; the agent emits one `ReputationGossip` event per
-  changed stat (the existing P4 contract, `engine/tom/SPEC.md` Out of Scope) when `emit` is
+  changed stat (the existing P4 contract, `engine/mind/tom/SPEC.md` Out of Scope) when `emit` is
   threaded — pass `emit` into `processIncomingSignals` if the gossip-event emission is wired this
   batch (Open Question below).
 
@@ -391,12 +391,12 @@ P6 politics hooks into the 8-phase loop at three points (see `SPEC-core.md` for 
 
 ## Dependencies (politics-relevant)
 
-- `engine/core` — `Function` (`FuncSafety`/`FuncKnowledge`), `Signal`/`SignalVote`, `AgentID`,
+- `engine/kernel/core` — `Function` (`FuncSafety`/`FuncKnowledge`), `Signal`/`SignalVote`, `AgentID`,
   `StatID`, `Dimension`, `EventEmitter`, `Event`. Emits `BeliefUpdated` (reliance) and
   `ReputationGossip` (Influence-weighted gossip).
-- `engine/tom` — `ToM`: `AdjustRelyOn`/`BestProviderFor`/`Influence`/`GossipUpdate` (P6 reliance +
+- `engine/mind/tom` — `ToM`: `AdjustRelyOn`/`BestProviderFor`/`Influence`/`GossipUpdate` (P6 reliance +
   Influence-weighted gossip), `Self`/`Subjects`/`SelfID`. `Belief`.
-- `engine/perception` — the senses; the candidate-gathering for `BestProviderFor` draws on perceived
+- `engine/mind/perception` — the senses; the candidate-gathering for `BestProviderFor` draws on perceived
   others (the agent set surfaced via `WorldView.AgentIDs()` / `IncomingSignals`).
 - **Contract — NOT imported**: `engine/world` implements `WorldView` (dependency inversion):
   `AgentIDs()` and `IncomingSignals(self)` (votes + hearsay/gossip) are the P6 additions politics

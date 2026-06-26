@@ -1,8 +1,8 @@
 # Lifecycle — 위험 행동 · 사망 · 번식 — Subsystem Plan (DRAFT)
 
 Concept & rationale: `docs/design.md §7`. 이 문서는 **구현 로드맵/결정 표면**이고 SPEC은 아직 없다.
-관련 모듈: `engine/actions`(위험·단계 outcome), `engine/agent`(durative 재평가), `engine/world`(사망/번식 적용),
-`engine/needs`(Stamina↔Rest 결합), `engine/perception`(주관적 magnitude), `content/actions.yaml`.
+관련 모듈: `engine/mind/actions`(위험·단계 outcome), `engine/agent`(durative 재평가), `engine/world`(사망/번식 적용),
+`engine/mind/needs`(Stamina↔Rest 결합), `engine/mind/perception`(주관적 magnitude), `content/actions.yaml`.
 
 ## 0. Decisions locked (design.md §7 에서 확정)
 - 행동은 결정적 공급만이 아니라 **위험·단계적 outcome**을 가질 수 있다: 실제 스탯 + (인지/실제) 지형을 **§6 수식**으로 **durative 중 per-tick 재평가** → 진행 / 중단(회항) / 실패(사망).

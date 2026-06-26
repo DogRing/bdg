@@ -18,8 +18,8 @@ After the apply phase, scan reliance edges across agents to detect emergent func
 
 ### Full scan (P6 — ACTIVATED)
 
-`engine/tom` formalizes `type Function string` and `Belief.RelyOn map[Function]float64` (see
-`engine/tom/SPEC.md` §P6 Reliance & Influence Contract), so the P1 no-op stub is **replaced** by
+`engine/mind/tom` formalizes `type Function string` and `Belief.RelyOn map[Function]float64` (see
+`engine/mind/tom/SPEC.md` §P6 Reliance & Influence Contract), so the P1 no-op stub is **replaced** by
 the scan below. The share threshold is the P6 key `politics.role_convergence_threshold`
 (`Config.RoleConvergenceThreshold`), which **supersedes** the P1 placeholder
 `world.reliance_threshold` (the old key/field is retired).
@@ -53,7 +53,7 @@ per Function f, in sorted Function order over the union of functions referenced 
   by lower `AgentID`; no rng.
 
 Activation checklist (P6 — all met):
-- [x] `engine/tom` formalizes `type Function string` and `Belief.RelyOn map[Function]float64` (§P6).
+- [x] `engine/mind/tom` formalizes `type Function string` and `Belief.RelyOn map[Function]float64` (§P6).
 - [x] `engine/agent` populates `RelyOn` edges during deliberation (see `engine/agent/SPEC.md` §P6
   VoteAction & reliance trigger).
 - [x] `content/balance.yaml politics.role_convergence_threshold` is present (Config source in
@@ -66,7 +66,7 @@ Activation checklist (P6 — all met):
 
 To keep per-agent ToM size bounded as the population and runtime grow, the world runs a periodic
 **prune pass** that drops stale subject beliefs. Each `tom.Belief` already tracks `LastSeen` (the
-tick of the last direct observation; see `engine/tom/SPEC.md`). The prune pass uses that gap.
+tick of the last direct observation; see `engine/mind/tom/SPEC.md`). The prune pass uses that gap.
 
 ```
 prune pass — runs after the reliance scan, ONLY on ticks where
@@ -87,8 +87,8 @@ for each agent a in AgentIDs() (sorted, D12):
   decayed-but-nonzero entries; for P1 the entry is always removed after decay.
 - **Re-encounter re-initializes (NOT a bug).** If a pruned subject is later perceived again (Sight
   returns them), the next observation calls the SAME first-encounter initialization path
-  (`engine/tom` initial-estimate seed via `Observe`/`GossipUpdate` on an unknown subject) — there
-  is **no** special "warm-start" branch. The re-seeded Belief uses the engine/tom defaults
+  (`engine/mind/tom` initial-estimate seed via `Observe`/`GossipUpdate` on an unknown subject) — there
+  is **no** special "warm-start" branch. The re-seeded Belief uses the engine/mind/tom defaults
   (LastSeen updated to the current tick; EstStats reset to the prior-from-perception seed). This is
   the intended behaviour: forgetting is real, and re-acquaintance starts fresh.
 - **Self is never pruned (D8).** `ToM[self]` is exempt — self-perception is calibrated only by
@@ -108,9 +108,9 @@ for each agent a in AgentIDs() (sorted, D12):
   in sorted `Function` / `AgentID` order; argmax-holder ties break by lower `AgentID`; no rng.
   The `emerged` set is serialized with the world (so resume is byte-identical even for
   convergence state).
-- **ToM prune re-init (engine/tom contract)**: a pruned ToM subject is decayed by
+- **ToM prune re-init (engine/mind/tom contract)**: a pruned ToM subject is decayed by
   `cfg.PruneDecayFactor` then removed from the ToM map; a later re-encounter calls the SAME
-  first-encounter initialization path (`engine/tom` unknown-subject seed) — there is no special
+  first-encounter initialization path (`engine/mind/tom` unknown-subject seed) — there is no special
   "warm-start" branch. `ToM[self]` is never pruned (D8). The prune pass iterates agents and
   subjects in sorted order (D12).
 
@@ -168,5 +168,5 @@ for each agent a in AgentIDs() (sorted, D12):
   is specified. For P1 the entry is always removed after the decay multiply.
 - **Re-encounter after prune is intentional forgetting.** Because the prune pass removes the subject
   entirely, a later Sight contact re-seeds the Belief through the same unknown-subject initialization
-  `engine/tom` uses on a first encounter. The agent "forgets" and then "re-learns" — this is the
+  `engine/mind/tom` uses on a first encounter. The agent "forgets" and then "re-learns" — this is the
   designed memory bound, not a regression. Tests assert the re-init path is taken (no warm-start).

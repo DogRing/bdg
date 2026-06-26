@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/engine/kernel/core"
 )
 
 // FakePg is an in-memory stub implementing BackupStore for unit tests.

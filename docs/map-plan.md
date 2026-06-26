@@ -1,7 +1,7 @@
 # Map / Navigation — Implementation Plan
 
-Concept & rationale: `docs/design.md §5`. New leaf SPECs: `backend/engine/navmap/SPEC.md`,
-`backend/engine/pathfind/SPEC.md`. This file is the **roadmap**: phasing, per-module integration
+Concept & rationale: `docs/design.md §5`. New leaf SPECs: `backend/engine/space/navmap/SPEC.md`,
+`backend/engine/space/pathfind/SPEC.md`. This file is the **roadmap**: phasing, per-module integration
 deltas, determinism/perf, serialization, frontend, and open questions. It does not restate the SPECs.
 
 ## 0. Decisions locked
@@ -32,7 +32,7 @@ intent/completion/cap machinery stays.
 ## 2. Phases (each independently shippable; tests + determinism golden per phase)
 
 ### M1 — Pathfinding plumbing (uniform cost, no terrain/walls/wear yet)
-- Build `engine/navmap` (uniform `BaseCost=1`, everywhere passable) + `engine/pathfind` (A* + string-pull).
+- Build `engine/space/navmap` (uniform `BaseCost=1`, everywhere passable) + `engine/space/pathfind` (A* + string-pull).
 - `world` constructs a `NavMap` at `New`, exposes a snapshot to the plan phase (alongside `currentSnap`).
 - `agent.execute`: for a locomotion step, call `pathfind.Path(start→destination)`; set `Intent.Move`
   to the **next waypoint** (not the final goal). Advance to the next waypoint on arrival; the action
@@ -73,8 +73,8 @@ intent/completion/cap machinery stays.
 - Add a **deed gossip topic** so "X paved/built" propagates as hearsay through the existing Signal
   path, amplifying reputation beyond eyewitnesses.
 - Result: Standing-valuing agents have an emergent, desire-driven reason to do public works. Reputation
-  is a *consequence others observe*, never the actor's stored goal (D1/D6). Touches `engine/tom`,
-  `engine/perception`/`agent`, and the Signal system — **verify/generalize before building**.
+  is a *consequence others observe*, never the actor's stored goal (D1/D6). Touches `engine/mind/tom`,
+  `engine/mind/perception`/`agent`, and the Signal system — **verify/generalize before building**.
 
 ### M5 — Serialization + frontend
 - `data-contracts.md`: navmap snapshot = terrain layout (**now dynamic** — terrain carries moisture/transition state per `design.md §5`, so it streams as periodic full + sparse **deltas like wear**, NOT static-once) + building footprints +

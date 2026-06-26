@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/engine/kernel/core"
 )
 
 // FakeRedis is an in-memory stub implementing LiveStore for unit tests.

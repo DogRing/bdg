@@ -4,10 +4,10 @@ import (
 	"math"
 	"slices"
 
-	"github.com/dogring/bdg/engine/actions"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/planner"
-	"github.com/dogring/bdg/engine/rng"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/planner"
+	"github.com/dogring/bdg/engine/kernel/rng"
 )
 
 const interactionRadius = 5.0 // world units; range for near_other predicate

@@ -3,7 +3,7 @@ package persist
 import (
 	"fmt"
 
-	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/engine/kernel/core"
 )
 
 // Keyer builds the exact §2 keyspace for a run. The ONLY source of key strings;

@@ -1,9 +1,9 @@
 # Climate & Dynamic Terrain — Subsystem Plan
 
 Concept & rationale: `docs/design.md §5` (동적 지형). SPECs now exist:
-`backend/engine/climate/SPEC.md` (신규 L1 leaf), `backend/engine/navmap/SPEC.md` (`SetTerrain` 추가).
-관련 모듈: `engine/navmap`(지형 *상태* 보유 + `SetTerrain` writer), **신규** `engine/climate`(기후 필드·전이),
-`engine/world`(소유·갱신 주기·navmap 브리지), `engine/worldtime`(밤/낮·시각), `content/terrain.yaml` + **신규** `content/climate.yaml`.
+`backend/engine/env/climate/SPEC.md` (신규 L1 leaf), `backend/engine/space/navmap/SPEC.md` (`SetTerrain` 추가).
+관련 모듈: `engine/space/navmap`(지형 *상태* 보유 + `SetTerrain` writer), **신규** `engine/env/climate`(기후 필드·전이),
+`engine/world`(소유·갱신 주기·navmap 브리지), `engine/kernel/worldtime`(밤/낮·시각), `content/terrain.yaml` + **신규** `content/climate.yaml`.
 
 ## 0. Decisions locked (design.md §5 에서 확정 — 여기서 다시 결정하지 않음)
 - 지형은 **상태(`Moisture` 등)를 가진다**. 기후(강우·기온)가 상태를 밀고, 임계 넘으면 **상태/타입 전이**(가뭄→젖은 흙 마름, 장마→흙이 젖음/물에 잠김). 초목(나무·풀)은 terrain이 아니라 **flora 객체**라 전이 대상이 아니고, 악조건이면 객체로서 고사.
@@ -18,8 +18,8 @@ Concept & rationale: `docs/design.md §5` (동적 지형). SPECs now exist:
 - [RESOLVED: 추천 오버라이드 — Rain + Day/Night + Temperature] P1 forcing 범위 — **세 가지**: ① 강우(`Rainfall`, 아래 모델), ② 밤/낮(신규 forcing 아님 — `worldtime` 시각에서 파생), ③ 기온(`Temperature` 상태 = f(시각, 강우); 비 오면 ↓). **park(나중):** 계절, 바람, 해/일조, 고도. 추가 forcing/상태는 §6 수식 피연산자로 데이터 추가(D10)해 확장.
 - [RESOLVED: (c) 틱 기반 함수 + fixture] forcing 생성 — 라이브는 `tick` 파생, 골든/시나리오는 fixture 주입(wall-clock 금지, D12). 단 **강우는 사인이 아니라 seeded 확률 과정**(아래 "강우 모델").
 - [RESOLVED: (b) `climate.yaml` 전이표] 전이 규칙 위치 — from-type × 조건 → to-type 전이표를 `content/climate.yaml`에. 로드 시 미정의 type 검출(D10), 기후 데이터의 단일 소유처.
-- [RESOLVED: (a) 신규 `engine/climate`] 모듈 경계 — forcing→상태→전이 결정 = 순수 함수 모듈. `navmap`은 cost field 책임만, `world`가 *언제* 돌릴지(주기) 소유(D5형 관심사 분리).
-- [RESOLVED: (a) `core`-only L1 leaf] DAG 위치 — `engine/climate`는 core(+rng)만 의존(입력: 상태+forcing+규칙 → 출력: 새 상태 + 전이 셀 목록). navmap 기록은 `world`가 apply 단계에서 수행(navmap "world가 유일 변이자" 불변식 보존).
+- [RESOLVED: (a) 신규 `engine/env/climate`] 모듈 경계 — forcing→상태→전이 결정 = 순수 함수 모듈. `navmap`은 cost field 책임만, `world`가 *언제* 돌릴지(주기) 소유(D5형 관심사 분리).
+- [RESOLVED: (a) `core`-only L1 leaf] DAG 위치 — `engine/env/climate`는 core(+rng)만 의존(입력: 상태+forcing+규칙 → 출력: 새 상태 + 전이 셀 목록). navmap 기록은 `world`가 apply 단계에서 수행(navmap "world가 유일 변이자" 불변식 보존).
 - [RESOLVED: (a) `SetTerrain` 추가 — **사람 승인**] navmap 기록 IF — navmap SPEC의 "지형 base-cost 레이어 immutable"을 **의도적으로 완화**, `StampFootprint`와 동형의 world-소유·직렬 `SetTerrain(cells, type)` 추가. ✅ **완료: navmap SPEC §Owned Data + §Public Interface 갱신, `SetTerrain` + `TerrainOverrides` 추가.**
 - [RESOLVED: (a) TerrainID 변경만] cost 합성 — 전이는 `TerrainID`만 바꾸고 base cost가 따라옴(D4 단순). Temperature는 P1에서 path cost에 직접 안 들어감(습도/전이, 이후 agent comfort 경로). 연속 moisture-cost 가산은 park.
 - [RESOLVED: (a) 고정 전역 N = 60틱(1게임시간)] bulk 주기 — 강우 확률이 매 게임시간 갱신이라 정합. 전역 동기 1패스(고정순서, D12). 부하 분산·dirty-set은 프로파일 후.
@@ -39,18 +39,18 @@ Concept & rationale: `docs/design.md §5` (동적 지형). SPECs now exist:
 - 용도: Moisture 증발률 변조(위). 이후 agent comfort/stamina로 확장 가능(§6 수식).
 
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `map-plan.md M1~M5` 양식)
-> 빌드순서: `engine/climate`는 L1 leaf(core+rng)라 `engine/navmap`과 같은 stage 2에서 독립적으로 만들 수 있다.
+> 빌드순서: `engine/env/climate`는 L1 leaf(core+rng)라 `engine/space/navmap`과 같은 stage 2에서 독립적으로 만들 수 있다.
 > 와이어링(주기·SetTerrain 브리지)은 `world`(stage 7)에서, 콘텐츠 로드는 `platform/config`(stage 8)에서 합류한다.
 > **핵심 안전 레버:** M1~M3는 outcome-중립(climate-off, `Rules` 비어있음 → 전이 0) → 기존 골든 불변. M4에서만 의도적 재기준.
 
 ### M1 — navmap `SetTerrain` + SPEC (outcome-중립)  ✅ SPEC 갱신 완료
-- `engine/navmap`: `SetTerrain(cells, TerrainID)` + `TerrainOverrides()` 구현(apply-phase, world-소유, 정렬셀, `StampFootprint` 동형). 미정의 type panic.
+- `engine/space/navmap`: `SetTerrain(cells, TerrainID)` + `TerrainOverrides()` 구현(apply-phase, world-소유, 정렬셀, `StampFootprint` 동형). 미정의 type panic.
 - **불변:** 누가 `SetTerrain`을 호출하기 전까지 base-cost 레이어 = `New` 레이아웃 → 기존 terrain/pathfind 골든 그대로. `TerrainOverrides()`는 빈 슬라이스.
 - 테스트: 전이 셀만 cost/Passable/RequiredTags 변경(이웃 불변), footprint 독립, `TerrainOverrides` sparse+D12정렬, pre-activation 바이트동일 회귀, unknown-id panic, 결정성 골든.
 - 출하 단위: navmap만. world/climate 와이어링 없음 → 시뮬 거동 불변.
 
-### M2 — `engine/climate` 순수 transform (강우→Moisture→Temperature, 전이표) — climate-off 기본
-- `engine/climate` 구현: `New` / `Step(prev, Forcing, Rules, rng) → (next, []Transition)` / `Rules.Eval` / `Cells()` / `Rain()`.
+### M2 — `engine/env/climate` 순수 transform (강우→Moisture→Temperature, 전이표) — climate-off 기본
+- `engine/env/climate` 구현: `New` / `Step(prev, Forcing, Rules, rng) → (next, []Transition)` / `Rules.Eval` / `Cells()` / `Rain()`.
 - 강우 모델(1a) 전체: `PRain` 누적, 10일 기대 보정, 30일 hard cap, 2~12h uniform 지속, `Moisture` 적분, 증발 = `EvapBase + EvapTempScale·Temperature`.
 - 기온 모델(1b): 일주기 곡선(`worldtime` `HourOfDay` 파생 forcing) − 우천 강하, [0,1] 클램프.
 - 전이표: `Rules.Eval`(from-type별 ordered, first-match, §6 Formula bool over `moisture`/`temperature`).

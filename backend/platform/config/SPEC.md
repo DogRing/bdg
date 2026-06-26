@@ -22,16 +22,16 @@ The result is an immutable `Registries` bundle plus a deterministic `ConfigHash(
 package config
 
 import (
-    "github.com/dogring/bdg/engine/actions"
+    "github.com/dogring/bdg/engine/mind/actions"
     "github.com/dogring/bdg/engine/agent"
-    "github.com/dogring/bdg/engine/gates"
-    "github.com/dogring/bdg/engine/needs"
-    "github.com/dogring/bdg/engine/perception"
-    "github.com/dogring/bdg/engine/planner"
-    "github.com/dogring/bdg/engine/stats"
-    "github.com/dogring/bdg/engine/values"
+    "github.com/dogring/bdg/engine/mind/gates"
+    "github.com/dogring/bdg/engine/mind/needs"
+    "github.com/dogring/bdg/engine/mind/perception"
+    "github.com/dogring/bdg/engine/mind/planner"
+    "github.com/dogring/bdg/engine/mind/stats"
+    "github.com/dogring/bdg/engine/mind/values"
     "github.com/dogring/bdg/engine/world"
-    "github.com/dogring/bdg/engine/worldtime"
+    "github.com/dogring/bdg/engine/kernel/worldtime"
 )
 
 // ── Environment parsing ─────────────────────────────────────────────────────────
@@ -135,17 +135,17 @@ func (b BalanceDoc) ClockConfig() worldtime.Config
 
 ## Dependencies
 
-- `engine/stats` — `stats.Load(io.Reader)`, `*stats.Registry` (built first; passed into gates.Load).
-- `engine/gates` — `gates.Load(io.Reader, *stats.Registry)`, `*gates.Registry`.
-- `engine/actions` — `actions.Load(io.Reader)`, `*actions.Registry`.
-- `engine/needs` — `needs.Load(needsDoc, balanceDoc io.Reader)`, `*needs.Registry` (merges needs.yaml + balance needs:).
+- `engine/mind/stats` — `stats.Load(io.Reader)`, `*stats.Registry` (built first; passed into gates.Load).
+- `engine/mind/gates` — `gates.Load(io.Reader, *stats.Registry)`, `*gates.Registry`.
+- `engine/mind/actions` — `actions.Load(io.Reader)`, `*actions.Registry`.
+- `engine/mind/needs` — `needs.Load(needsDoc, balanceDoc io.Reader)`, `*needs.Registry` (merges needs.yaml + balance needs:).
 - `engine/world` — `world.Config` type only (WorldConfig accessor return).
-- `engine/planner` — `planner.PlannerConfig`, `planner.Budget`, `core.Tag`-keyed `TagCosts` (PlannerConfig accessor).
+- `engine/mind/planner` — `planner.PlannerConfig`, `planner.Budget`, `core.Tag`-keyed `TagCosts` (PlannerConfig accessor).
 - `engine/agent` — `agent.Config` type only (AgentConfig accessor return).
-- `engine/values` — `values.Config` type (ValuesConfig accessor return).
-- `engine/perception` — `perception.PerceptionConfig` type (PerceptConfig accessor return).
-- `engine/worldtime` — `worldtime.Config` type (ClockConfig accessor return).
-- `engine/core` / `engine/tom` — `core.Tag` / `core.Dimension` / `tom.Rates` used when assembling the accessor structs.
+- `engine/mind/values` — `values.Config` type (ValuesConfig accessor return).
+- `engine/mind/perception` — `perception.PerceptionConfig` type (PerceptConfig accessor return).
+- `engine/kernel/worldtime` — `worldtime.Config` type (ClockConfig accessor return).
+- `engine/kernel/core` / `engine/mind/tom` — `core.Tag` / `core.Dimension` / `tom.Rates` used when assembling the accessor structs.
 - **Contracts**: `content/schema/{stats,needs,actions,gates,balance,objects}.schema.json` (structural shapes);
   `docs/data-contracts.md` §3 (`config_hash`, `backup_every_ticks`, `run_id`).
 - Standard library only: `os`, `crypto/sha256`, `encoding/json`, `io/fs`, `path/filepath`, `sort`, plus the
@@ -231,7 +231,7 @@ func (b BalanceDoc) ClockConfig() worldtime.Config
 
 ## Open Questions
 
-- **`ValuesConfig` pointer-vs-value (NOT blocking P1).** `engine/values.Load` returns `*values.Config`,
+- **`ValuesConfig` pointer-vs-value (NOT blocking P1).** `engine/mind/values.Load` returns `*values.Config`,
   but the brief's accessor signature is `func (b BalanceDoc) ValuesConfig() values.Config`. The implementer
   should return whichever matches what callers (`agent.Services.Values`) actually consume — if that field
   holds a `*values.Config`, change this accessor to return the pointer. Confirm the caller's field type
@@ -259,7 +259,7 @@ func (b BalanceDoc) ClockConfig() worldtime.Config
   by different engine modules — the balance validator must permit all of them, mirroring main.go's
   deliberately-non-strict `parseBalance` (it does NOT use KnownFields, so unrelated top-level keys are
   allowed). Do not regress that by over-strict whole-document rejection.
-- **`schema_version` cross-check:** `gates.yaml` is `schema_version: 3` (engine/gates SPEC, data-contracts §0).
+- **`schema_version` cross-check:** `gates.yaml` is `schema_version: 3` (engine/mind/gates SPEC, data-contracts §0).
   `LoadContent` must refuse a file whose `schema_version` does not equal the schema's `const`.
 - **Engine import path prefix is `github.com/dogring/bdg/engine/...`** (module `github.com/dogring/bdg`,
   go.mod), as used in `main.go` — not `.../backend/engine/...`.

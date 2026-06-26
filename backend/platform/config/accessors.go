@@ -5,13 +5,13 @@ package config
 
 import (
 	"github.com/dogring/bdg/engine/agent"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/needs"
-	"github.com/dogring/bdg/engine/planner"
-	"github.com/dogring/bdg/engine/stats"
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/needs"
+	"github.com/dogring/bdg/engine/mind/planner"
+	"github.com/dogring/bdg/engine/mind/stats"
+	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/world"
-	"github.com/dogring/bdg/engine/worldtime"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
 )
 
 // AgentConfig builds agent.Config from the Balance fields.

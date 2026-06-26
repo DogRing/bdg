@@ -3,8 +3,8 @@ package agent
 import (
 	"sort"
 
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/tom"
 )
 
 // ── P6: Emergent reliance, delegation Vote, and Influence weighting ──────────

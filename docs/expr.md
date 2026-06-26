@@ -2,18 +2,18 @@
 
 Concept & rationale: `docs/design.md §6` (수식 DSL — stat 계산식은 데이터다; 특히 line 89 **평가기 위치**
 + line 90 **평가 모델 / Context 채널**, 둘 다 binding). The module SPEC NOW EXISTS:
-`backend/engine/expr/SPEC.md` (L0 leaf, `core`-only). It sits between `design.md §6` and every module
+`backend/engine/kernel/expr/SPEC.md` (L0 leaf, `core`-only). It sits between `design.md §6` and every module
 that evaluates a `Formula`. This Tier-2 plan keeps the locked decisions (§0), the resolved build
 decisions (§1, all RESOLVED), and the shippable phases (§2).
 
-관련 모듈: **신규** `engine/expr`(한 공유 평가기 — `Program` 컴파일·`Context` 평가),
-`engine/gates`(기존 boolean `GateExpr` 술어트리 평가기 — §6 boolean 부분집합으로 **통합 대상**),
-`engine/climate`·`engine/flora`(이미 `expr.Program` + `expr.Context`를 SPEC에서 가정),
-`engine/actions`·`engine/economy`(미래 소비자), `platform/config`(로드 시 parse/compile + 미정의 식별자 검증).
+관련 모듈: **신규** `engine/kernel/expr`(한 공유 평가기 — `Program` 컴파일·`Context` 평가),
+`engine/mind/gates`(기존 boolean `GateExpr` 술어트리 평가기 — §6 boolean 부분집합으로 **통합 대상**),
+`engine/env/climate`·`engine/env/flora`(이미 `expr.Program` + `expr.Context`를 SPEC에서 가정),
+`engine/mind/actions`·`engine/economy`(미래 소비자), `platform/config`(로드 시 parse/compile + 미정의 식별자 검증).
 용어: `docs/glossary.md` `Formula`(데이터 수식 DSL, 출력 numeric|boolean) · `GateExpr`(그 boolean 부분집합).
 
 ## 0. Decisions locked (design.md §6 line 89–90 에서 확정 — 여기서 다시 결정하지 않음)
-- **한 공유 평가기.** `engine/expr` = 전 모듈이 공유하는 **단 하나의** §6 평가기(L0 leaf, **`core` 타입만 의존**,
+- **한 공유 평가기.** `engine/kernel/expr` = 전 모듈이 공유하는 **단 하나의** §6 평가기(L0 leaf, **`core` 타입만 의존**,
   `rng`도 안 의존). `gates`·`climate`·`flora`·`actions`·`economy`가 모두 이것을 쓴다 — **두 번째 평가기 금지**
   (glossary "one shared evaluator"). gates의 boolean `GateExpr`는 이 평가기의 boolean 부분집합.
 - **시그니처 형태:** `eval(Program, Context) → number | bool`. expr은 **순수** 평가기다 — plan/apply 단계도,
@@ -28,7 +28,7 @@ decisions (§1, all RESOLVED), and the shippable phases (§2).
   **로드 시 검증 실패**(D10). eval 안에 RNG 없음; **고정 연산자 우선순위**(D12). 형식만 고정, 변수명은 자유.
 
 ## 1. Decisions — **ALL RESOLVED** (추천대로 채택)
-> 사람이 7개 전부 각 줄의 `rec`로 확정(`[RESOLVED→rec]` = 그 줄 rec). #4 gates 통합 = **단계적**(expr 독립 → 동일성 검증 → 스왑, 기존 gates golden 보호). ⇒ module SPEC 작성 완료(`backend/engine/expr/SPEC.md`).
+> 사람이 7개 전부 각 줄의 `rec`로 확정(`[RESOLVED→rec]` = 그 줄 rec). #4 gates 통합 = **단계적**(expr 독립 → 동일성 검증 → 스왑, 기존 gates golden 보호). ⇒ module SPEC 작성 완료(`backend/engine/kernel/expr/SPEC.md`).
 
 - [RESOLVED→rec] **`Context` 인터페이스 형태** — 피연산자/술어가 어떻게 해석되는가(메서드 셋, 호출자별 누가 구현하나)? —
   options: (a) 단일 메서드 `Lookup(ident string) (Value, bool)` (operand·predicate 모두 한 lookup으로,
@@ -88,14 +88,14 @@ decisions (§1, all RESOLVED), and the shippable phases (§2).
 
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `climate.md §2 / map-plan M1~M5` 양식)
 > 빌드순서: expr은 build stage 1(`core`·`rng`와 동급 L0, architecture §5)이므로 그 소비자 climate/flora(stage 2)·
-> gates(L2)·platform/config 보다 **먼저** 존재해야 한다. 모듈 SPEC = `backend/engine/expr/SPEC.md`.
+> gates(L2)·platform/config 보다 **먼저** 존재해야 한다. 모듈 SPEC = `backend/engine/kernel/expr/SPEC.md`.
 >
 > **핵심 안전 레버:** Pxa(코어)·Pxb(통합 준비)는 **gates·climate·flora 골든을 일절 건드리지 않는다** —
 > expr는 독립 패키지로 출하되고, 기존 gates `p3_gates.json`/schema_version 3은 불변. gates 실제 스왑(Pxb 후반)·
 > climate/flora 활성화(Pxc)에서만 의도적 재기준(climate M4 동형).
 
-### Pxa — `engine/expr` 코어 (Program/Context/eval, 산술+비교+논리, 컴파일 타입검사)  ← 이 SPEC
-- **출하물:** `engine/expr` 단독 패키지 — `Value`{Kind:Num|Bool}(#7), `Context`{Stat/Attr/Pred}(#1),
+### Pxa — `engine/kernel/expr` 코어 (Program/Context/eval, 산술+비교+논리, 컴파일 타입검사)  ← 이 SPEC
+- **출하물:** `engine/kernel/expr` 단독 패키지 — `Value`{Kind:Num|Bool}(#7), `Context`{Stat/Attr/Pred}(#1),
   불변 AST `Program`(#2) + `ResultKind()`/`Reads()`/`ReadsAttrs()`/`ReadsPreds()` introspection,
   `Parse(text, want, knownStats, knownPreds) (*Program, error)`(컴파일+정적 타입추론+식별자/타입검증, #2/#3/#5/#6),
   런타임 진입점 `EvalNumber`/`EvalBool`(#5), `BasePreds()`(`has`/`isOwner`/`paid`, #3).
@@ -111,7 +111,7 @@ decisions (§1, all RESOLVED), and the shippable phases (§2).
 
 ### Pxb — gates 통합 준비 → 단계적 스왑 (#4 단계적; golden 동일성 검증 후에만 스왑)
 - **Pxb-1 (동일성 검증, gates 무수정):** expr leaf/composite/comparison semantics가 `gates.evalExpr`+`cmpOp`
-  (`backend/engine/gates/eval.go`)와 **바이트동일**함을 증명하는 parallel 테스트 — 각 shipped gate predicate
+  (`backend/engine/mind/gates/eval.go`)와 **바이트동일**함을 증명하는 parallel 테스트 — 각 shipped gate predicate
   (`capability_floor`/`knowledge`/base `conscience`/`stamina`/`apathy`/`adrenaline`)를 `expr.Program`로 재표현,
   battery of `AgentSnapshot`에서 `EvalBool` == `gates.evalExpr`. **expr는 gates를 import하지 않고, gates는
   수정하지 않는다**(테스트는 패키지 경계 밖). ⇒ 스왑이 golden-중립임을 보장.

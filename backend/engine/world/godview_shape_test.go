@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/mind/tom"
 )
 
 // TestStateJSON_GodViewContractShape guards the snake_case snapshot contract that

@@ -1,9 +1,9 @@
 package agent
 
 import (
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/planner"
-	"github.com/dogring/bdg/engine/stats"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/planner"
+	"github.com/dogring/bdg/engine/mind/stats"
 )
 
 // ── Coping cascade (design §3 — "막다른 목표 = 드라마의 엔진") ────────────────

@@ -22,7 +22,7 @@ HTTP_ADDR           listen address (default ":8080")
 Routes (via `api.NewSSE`): `GET /healthz`, `GET /readyz` (pings valkey), `GET /sse`. Nothing else.
 
 ## Dependencies
-`platform/api` (`NewSSE`, `Config`, `RedisReader`, `StreamEntry`, `ListenAndServe`), `engine/core`
+`platform/api` (`NewSSE`, `Config`, `RedisReader`, `StreamEntry`, `ListenAndServe`), `engine/kernel/core`
 (`RunID`), `github.com/redis/go-redis/v9`. It defines its own `redisReadAdapter` (the same shape as
 the writer's read adapter; the SSE handler uses only `Ping` + `XRead`).
 

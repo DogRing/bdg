@@ -37,18 +37,18 @@ plan against a frozen per-tick snapshot. It emits observability events through a
 package world
 
 import (
-    "github.com/dogring/bdg/backend/engine/actions"
-    "github.com/dogring/bdg/backend/engine/agent"
-    "github.com/dogring/bdg/backend/engine/core"
-    "github.com/dogring/bdg/backend/engine/needs"
-    "github.com/dogring/bdg/backend/engine/perception"
-    "github.com/dogring/bdg/backend/engine/planner"
-    "github.com/dogring/bdg/backend/engine/rng"
-    "github.com/dogring/bdg/backend/engine/spatial"
-    "github.com/dogring/bdg/backend/engine/stats"
-    "github.com/dogring/bdg/backend/engine/tom"
-    "github.com/dogring/bdg/backend/engine/values"
-    "github.com/dogring/bdg/backend/engine/worldtime"
+    "github.com/dogring/bdg/engine/mind/actions"
+    "github.com/dogring/bdg/engine/agent"
+    "github.com/dogring/bdg/engine/kernel/core"
+    "github.com/dogring/bdg/engine/mind/needs"
+    "github.com/dogring/bdg/engine/mind/perception"
+    "github.com/dogring/bdg/engine/mind/planner"
+    "github.com/dogring/bdg/engine/kernel/rng"
+    "github.com/dogring/bdg/engine/space/spatial"
+    "github.com/dogring/bdg/engine/mind/stats"
+    "github.com/dogring/bdg/engine/mind/tom"
+    "github.com/dogring/bdg/engine/mind/values"
+    "github.com/dogring/bdg/engine/kernel/worldtime"
 )
 
 // ── Config (every constant from content/balance.yaml world.*; none hardcoded, D10) ──
@@ -146,7 +146,7 @@ type World struct{ /* opaque: tick, agents map[AgentID]*agent.Agent + sorted ids
 // ── Generation (deterministic, fixed sorted-id order, D12) ───────────────────────
 
 // Spawn samples RealStats for id from the stat Registry's per-stat GenSpec using rng (iterating
-// stats in svc.Stats.IDs() order, D12), builds the calibrated ToM[self] via engine/tom (with the
+// stats in svc.Stats.IDs() order, D12), builds the calibrated ToM[self] via engine/mind/tom (with the
 // same injected rng), constructs the agent via agent.New(id, pos, realStats, selfToM, agentCfg),
 // inserts it into the SpatialHash at pos, and registers it. rng is the caller-chosen generator
 // (the world's root RNG or a generation fork) — passed in so world-gen ordering is explicit and
@@ -205,35 +205,35 @@ func (w *World) AgentOf(id core.AgentID) (*agent.Agent, bool)
 
 > The world DEFINES no new vocabulary. `agent.Agent`, `agent.Intent`, `agent.ActionOutcome`,
 > `agent.WorldView`, `agent.KnownObject`, `agent.Services`, `agent.Config` are
-> `engine/agent`'s contract; `spatial.SpatialHash`/`spatial.Entity` are `engine/spatial`'s;
-> `actions.Registry`/`actions.ActionDef` are `engine/actions`'; `worldtime.Clock` is
-> `engine/worldtime`'s; `rng.RNG` is `engine/rng`'s; `core.EventEmitter`/`core.Event` are
-> `engine/core`'s. This module composes them.
+> `engine/agent`'s contract; `spatial.SpatialHash`/`spatial.Entity` are `engine/space/spatial`'s;
+> `actions.Registry`/`actions.ActionDef` are `engine/mind/actions`'; `worldtime.Clock` is
+> `engine/kernel/worldtime`'s; `rng.RNG` is `engine/kernel/rng`'s; `core.EventEmitter`/`core.Event` are
+> `engine/kernel/core`'s. This module composes them.
 
 ---
 
 ## Dependencies
 
-- `engine/core` — `AgentID`, `ObjectID`, `ActionID`, `Tag`, `Dimension`, `StatID`, `Vec2`, `Tick`,
+- `engine/kernel/core` — `AgentID`, `ObjectID`, `ActionID`, `Tag`, `Dimension`, `StatID`, `Vec2`, `Tick`,
   `EventEmitter`, `Event`. Emits `TickDone`/`RoleEmerged`/`SnapshotReady` via the injected emitter.
-- `engine/spatial` — `*SpatialHash` (`New`, `Insert`/`Move`/`Remove`, `NearbyEntities`/`NearbyIDs`/
+- `engine/space/spatial` — `*SpatialHash` (`New`, `Insert`/`Move`/`Remove`, `NearbyEntities`/`NearbyIDs`/
   `PosOf`). The world OWNS one instance; it sizes the cell from `cfg.SpatialHashCell`.
-- `engine/worldtime` — `Clock` (`TicksForMinutes` for durative scaling; `At`/calendar for events).
+- `engine/kernel/worldtime` — `Clock` (`TicksForMinutes` for durative scaling; `At`/calendar for events).
   The world owns the authoritative `Tick`; worldtime only interprets it.
-- `engine/rng` — `*RNG` (the root seeded generator the world OWNS; per-agent forks derived from it).
+- `engine/kernel/rng` — `*RNG` (the root seeded generator the world OWNS; per-agent forks derived from it).
 - `engine/agent` — `Agent`, `New`, `Tick`, `ApplyOutcome`, `Intent`, `IntentKind`, `Signal`,
   `ActionOutcome`, `OutcomeStatus`, `WorldView`, `KnownObject`, `Config`, `Services`. The world
   CALLS `Tick`/`ApplyOutcome` and IMPLEMENTS `WorldView`. (`engine/agent` never imports `world` —
   the L5→L6 cycle is broken by `WorldView` living in `engine/agent`.)
-- `engine/actions` — `*Registry`, `ActionDef` (`Get`, `Tags`/`Producers` as needed). The world
+- `engine/mind/actions` — `*Registry`, `ActionDef` (`Get`, `Tags`/`Producers` as needed). The world
   reads `Tags` (D4) to derive the resolution stat and the action `Effect`/`Duration` to apply.
-- `engine/stats` — `*Registry` (via `Services.Stats`): `IDs()`/`Def` to sample `GenSpec` at Spawn
+- `engine/mind/stats` — `*Registry` (via `Services.Stats`): `IDs()`/`Def` to sample `GenSpec` at Spawn
   (D12 order), `Kinds(Capability)` to compose the resolution stat, `Clamp` for sampled values.
   No hardcoded stat name (D7/D10).
-- `engine/tom` — `ToM`, `Belief` (read `RelyOn` for the reliance scan; `NewToM` to seed `ToM[self]`
+- `engine/mind/tom` — `ToM`, `Belief` (read `RelyOn` for the reliance scan; `NewToM` to seed `ToM[self]`
   at Spawn with the injected rng; read `LastSeen`/`Subjects()` for the prune pass). The world reads
   `Belief.RelyOn`/`LastSeen`; it does not own the update math.
-- `engine/perception`, `engine/planner`, `engine/needs`, `engine/values` — **borrowed via
+- `engine/mind/perception`, `engine/mind/planner`, `engine/mind/needs`, `engine/mind/values` — **borrowed via
   `Services` only** (the world assembles `agent.Services` and threads it to `Tick`; it does not
   call these directly beyond building the snapshot's perception view).
 - **Contract — NOT imported**: `platform/events` (the concrete `EventEmitter`), `platform/persist`
@@ -251,7 +251,7 @@ func (w *World) AgentOf(id core.AgentID) (*agent.Agent, bool)
   iteration). The world mutates an agent ONLY through `agent.Tick`/`agent.ApplyOutcome` in the
   proper phase — it never reaches into an agent's `Body`/`ToM` fields directly (it MAY read
   `RealStats` for outcome resolution, `ToM.RelyOn` for the reliance scan, and `ToM` LastSeen for
-  the prune pass; the prune pass removes stale ToM subjects via the `engine/tom` API).
+  the prune pass; the prune pass removes stale ToM subjects via the `engine/mind/tom` API).
 - The **plan-slot schedule**: the round-robin replan assignment (agentID → slot) derived purely
   from the sorted `w.agentIDs` index mod `cfg.PlanInterval` (no separate stored map is required —
   it is recomputed from the sorted slice each tick; D12), and the **prune-pass scheduler** (the
@@ -259,7 +259,7 @@ func (w *World) AgentOf(id core.AgentID) (*agent.Agent, bool)
 - Every placed object: `{id, kind, pos, supply, contents/state}` (the world's own object record;
   data-contracts §1 `world.objects[]`). Objects carry **supply only** (D9 — no future-need field).
 - The single `spatial.SpatialHash` (derived state; rebuilt from positions on resume — never
-  serialized, per `engine/spatial` Notes).
+  serialized, per `engine/space/spatial` Notes).
 - The root `*rng.RNG` (owned; its state is the snapshot's `rng_state`, data-contracts §1).
 - The small `emerged map[Function]AgentID` (owned; serialized for resume byte-exactness; see
   [`SPEC-emergent.md`](SPEC-emergent.md) §Emergent reliance-cluster detection).
@@ -311,11 +311,11 @@ the entire module:
 - **The agent decision loop** (perceive → appraise → mediate → plan → execute → signal → dynamics,
   coping, β self-calibration, Mood/Adrenaline) → `engine/agent`. The world only calls
   `Tick`/`ApplyOutcome`.
-- **Appraisal / planning / need / ToM update math** → `engine/values` / `engine/planner` /
-  `engine/needs` / `engine/tom` (threaded via `Services`); the world composes contracts, it does
+- **Appraisal / planning / need / ToM update math** → `engine/mind/values` / `engine/mind/planner` /
+  `engine/mind/needs` / `engine/mind/tom` (threaded via `Services`); the world composes contracts, it does
   not reimplement them. The `RelyOn` **update** math is the agent's/values'; the world only
   **reads** the distribution for the cluster scan.
-- **Sense modeling** (LoS occlusion, smell gradient, hearing falloff) → `engine/perception`; the
+- **Sense modeling** (LoS occlusion, smell gradient, hearing falloff) → `engine/mind/perception`; the
   world supplies the proximity candidates (`SpatialHash`) + the object tags/opacity to the sensor.
 - **Frontend / API** → `platform/api` (later, architecture §3).
 - **SIMD vectorisation** of the plan/apply hot loops → not done (and not planned for P1); the
@@ -344,7 +344,7 @@ the entire module:
   existing content/runs are unaffected. The implementer adds the keys + (optional) schema entries
   with the type/min constraints noted in the `Config` block.
 - **`RelyOn` / `Function` type — RESOLVED (P6); stub REPLACED.** `tom.Belief.RelyOn` and
-  `tom.Function` are formalized (`engine/tom/SPEC.md` §P6), and `engine/agent` populates the edges
+  `tom.Function` are formalized (`engine/mind/tom/SPEC.md` §P6), and `engine/agent` populates the edges
   (`engine/agent/SPEC.md` §P6). The P1 no-op `relianceScan()` stub is therefore **replaced** by
   the live full scan (see [`SPEC-emergent.md`](SPEC-emergent.md)). Scenario G is no longer deferred.
 - **Role-detection threshold & succession (P6).** P6 uses a single share threshold
@@ -373,7 +373,7 @@ the entire module:
   `agents[]` ← each agent's public state (`id, pos, real_stats, body, goal, plan_summary,
   tom_digest, known_digest`). The world EXPOSES these via `AgentIDs`/`AgentOf`/`Snapshot` and the
   object accessor; `platform/persist` reads and serializes them. The SpatialHash is derived and
-  rebuilt from positions on resume — never serialized (`engine/spatial` Notes).
+  rebuilt from positions on resume — never serialized (`engine/space/spatial` Notes).
 - **`Services` re-export.** `type Services = agent.Services` (a type alias) keeps the caller from
   assembling the bundle twice; the world threads the exact same value to every `agent.Tick`.
 - **Object record shape.** Minimal P1 record: `{ID core.ObjectID, Kind core.Tag, Pos core.Vec2,

@@ -14,8 +14,8 @@ self-perceived Aggression once Resentment exceeds threshold, and per-stat **self
 D8) that folds world-given evidence into `ToM[self]`.
 
 It is part of the orchestrator (D5): the coping logic sequences and threads state, but it computes no
-Standing/Priority of its own (that is `engine/values`), assembles no plan (that is `engine/planner`),
-and persists belief drift through `engine/tom` primitives (`Observe`, `AdjustAffinity`). The coping
+Standing/Priority of its own (that is `engine/mind/values`), assembles no plan (that is `engine/mind/planner`),
+and persists belief drift through `engine/mind/tom` primitives (`Observe`, `AdjustAffinity`). The coping
 branch and all drift are **deterministic** (D12, rng-free) and **emergent** (D2): Resentment is a
 scalar drift feeding the ordinary value gradient, not a hardcoded "grudge" or "enemy" type. Every
 rate constant is injected from `content/balance.yaml` (D10); the package hardcodes none, and every
@@ -198,7 +198,7 @@ cascade transitions.
 
 - Each tick the agent injects its **live Mood** into the planner/gate `AgentSnapshot` (the
   `Mood`/`Stamina`/`Adrenaline`/`Urgency` body scalars on `gates.AgentSnapshot`,
-  `engine/gates/SPEC.md`). The Mood value itself is owned/computed in `SPEC-dynamics.md §Mood`; coping
+  `engine/mind/gates/SPEC.md`). The Mood value itself is owned/computed in `SPEC-dynamics.md §Mood`; coping
   is the consumer that drives it down via Apathy.
 - When `Mood ≤ gates.apathy_mood_threshold (−0.60)`, the `apathy` gate makes `abstraction:med+`
   actions **invisible** — so a deeply apathetic agent's planner sees a narrowed action set for free.
@@ -331,7 +331,7 @@ func (a *Agent) foldEvidence(outcome ActionOutcome):
 - The evidence is **pre-computed by the world** from the action outcome; the agent NEVER reads
   `RealStats` here — it only applies the evidence items it is handed (D8).
 - `Beta` (`balance.yaml self_calibration.beta`) is the calibration rate the `tom.Observe` fold uses;
-  it is threaded via `Config` and consumed inside `engine/tom` (the agent supplies the evidence, not
+  it is threaded via `Config` and consumed inside `engine/mind/tom` (the agent supplies the evidence, not
   the rate math).
 
 ### Accessors (D8 — read `ToM[self]`, never RealStats)
@@ -414,12 +414,12 @@ GoalDeadband float64 // don't switch goals until a rival beats current by this m
 
 ## 9. Dependencies (coping-relevant)
 
-- `engine/tom` — `ToM.Observe` (β self-calibration fold + the §B-drift Aggression fold);
+- `engine/mind/tom` — `ToM.Observe` (β self-calibration fold + the §B-drift Aggression fold);
   `ToM.AdjustAffinity` (the persisted Resentment Affinity drop, writes through the real `Belief`);
   `ToM.Self` / `ToM.SelfID` (reads `ToM[self]`, D8); `tom.StatEvidence`.
-- `engine/stats` — `*Registry` (capability set for Intelligence normalization;
+- `engine/mind/stats` — `*Registry` (capability set for Intelligence normalization;
   **Vindictiveness** / **Aggression** disposition ids resolved from `Config`, never a literal — D7).
-- `engine/planner` — sentinel errors `ErrUnreachable` / `ErrBudgetExceeded` (the cascade trigger,
+- `engine/mind/planner` — sentinel errors `ErrUnreachable` / `ErrBudgetExceeded` (the cascade trigger,
   observed at the planner boundary in phase 5); the planner budget reference (Apathy reduction →
   `SPEC-dynamics.md §A-budget`); `planner.DimensionPriority` (passed to `rebindSubstitute`).
 - `content/balance.yaml` — `resentment.*` (`per_trigger`, `threshold`, `affinity_drop`,
@@ -490,7 +490,7 @@ Copied verbatim from the monolith (coping/resentment ACs only):
 
 ## 12. Open Questions (coping-relevant)
 
-- **`engine/tom` Affinity write path (RESOLVED in code).** `accrueResentment` persists the Resentment
+- **`engine/mind/tom` Affinity write path (RESOLVED in code).** `accrueResentment` persists the Resentment
   Affinity drop via `a.ToM.AdjustAffinity(triggerID, delta)`; the prior "mutates a copy" concern no
   longer applies. (The §B-drift gap-closure moves only the Aggression-Drift threshold check to
   `updateResentment`; the Affinity-drop path is unchanged.)

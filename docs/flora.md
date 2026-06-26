@@ -2,13 +2,13 @@
 
 Concept & rationale: `docs/design.md §5` (초목=flora 객체, terrain 아님), `§6` (Formula DSL),
 `§7` (lifecycle / object-mortality 계열). 이 문서는 **결정 표면(Tier-2 plan)**이고 module SPEC은 작성됨
-(`backend/engine/flora/SPEC.md`, `backend/engine/perception/SPEC.md` 그늘 확장).
+(`backend/engine/env/flora/SPEC.md`, `backend/engine/mind/perception/SPEC.md` 그늘 확장).
 형제 문서: `docs/climate.md`(동적 지형·다중주기·결정성 패턴 — climate가 `moisture`/`temperature`를 굴린다),
 `docs/lifecycle.md`(object-mortality·구조물 파괴와 동형), `docs/map-plan.md`(navmap·objects·serialization).
 
-관련 모듈: terrain 속성(`engine/navmap` `TerrainAt`) + climate 상태(`moisture`/`temperature`) 읽기(=world가 값으로 주입),
-적합도/그늘/자원 = §6 수식(`engine/expr` 평가기, L0 — design §6에서 확정), 식물 객체 = `engine/world` objects,
-그늘→LoS 감소 = `engine/perception`, 베리/목재 supply `Effect`·수율표 = `content/objects.yaml`,
+관련 모듈: terrain 속성(`engine/space/navmap` `TerrainAt`) + climate 상태(`moisture`/`temperature`) 읽기(=world가 값으로 주입),
+적합도/그늘/자원 = §6 수식(`engine/kernel/expr` 평가기, L0 — design §6에서 확정), 식물 객체 = `engine/world` objects,
+그늘→LoS 감소 = `engine/mind/perception`, 베리/목재 supply `Effect`·수율표 = `content/objects.yaml`,
 초기 분포 = world-gen / 시나리오 픽스처. **신규 `content/flora.yaml`은 만들지 않음** — flora 종은 `objects.yaml`
 object_kind에 `flora:` 블록으로 합류(1i 결정: flora가 objects[]에 합류).
 
@@ -62,8 +62,8 @@ object_kind에 `flora:` 블록으로 합류(1i 결정: flora가 objects[]에 합
 - [RESOLVED→rec] **bulk 결정성 적용 순서** — 식물 객체를 어떤 순서로 갱신? options: (a) `ObjectID` 정렬 1패스(D12 표준) (b) 공간 파티션 병렬 + 고정순서 merge; rec: (a) — climate/world apply와 동일, 단순·결정적; 병렬은 프로파일 후.
 
 ### 1h. 모듈 경계 + DAG 위치
-- [RESOLVED→rec] **신규 `engine/flora` vs `world`/objects 흡수** — 어디에 살까? options: (a) 신규 `engine/flora`: 순수 transform `(식물 상태 + terrain/climate 입력 + Rules) → (성장/번식/고사 델타)`, climate와 동형(world가 적용) (b) `world` objects 로직에 흡수(별 모듈 없음) (c) 적합도/성장=`flora`, 그늘 occlusion=`perception` 확장; rec: (a)+(c) — climate 패턴 직접 복제(`core`(+`expr`)+`rng`만 의존, 순수·테스트 용이, D5 관심사 분리); 그늘은 perception 소관이라 flora는 그늘 *파라미터*만 노출.
-- [RESOLVED→rec] **DAG 위치** — `engine/flora`의 leaf level·의존? options: (a) L1 leaf = `core`(+`expr`)+`rng`만(climate와 같은 stage 2; 입력은 navmap/climate 상태를 *값으로* 받음) (b) navmap/climate import(L2+); rec: (a) — climate "navmap/worldtime import 금지" 불변식과 동형, world가 입력(terrain/climate 상태)을 주입하고 출력 델타를 적용 → world가 유일 객체 변이자. **의존:** 적합도/그늘 수식 = §6 → `engine/expr`(L0, design §6에서 확정) — climate와 공유. **escalation 해소됨**(`engine/expr`가 L0 leaf로 확정 → core 승격 불필요).
+- [RESOLVED→rec] **신규 `engine/env/flora` vs `world`/objects 흡수** — 어디에 살까? options: (a) 신규 `engine/env/flora`: 순수 transform `(식물 상태 + terrain/climate 입력 + Rules) → (성장/번식/고사 델타)`, climate와 동형(world가 적용) (b) `world` objects 로직에 흡수(별 모듈 없음) (c) 적합도/성장=`flora`, 그늘 occlusion=`perception` 확장; rec: (a)+(c) — climate 패턴 직접 복제(`core`(+`expr`)+`rng`만 의존, 순수·테스트 용이, D5 관심사 분리); 그늘은 perception 소관이라 flora는 그늘 *파라미터*만 노출.
+- [RESOLVED→rec] **DAG 위치** — `engine/env/flora`의 leaf level·의존? options: (a) L1 leaf = `core`(+`expr`)+`rng`만(climate와 같은 stage 2; 입력은 navmap/climate 상태를 *값으로* 받음) (b) navmap/climate import(L2+); rec: (a) — climate "navmap/worldtime import 금지" 불변식과 동형, world가 입력(terrain/climate 상태)을 주입하고 출력 델타를 적용 → world가 유일 객체 변이자. **의존:** 적합도/그늘 수식 = §6 → `engine/kernel/expr`(L0, design §6에서 확정) — climate와 공유. **escalation 해소됨**(`engine/kernel/expr`가 L0 leaf로 확정 → core 승격 불필요).
 
 ### 1i. 직렬화 (snapshot / delta)
 - [RESOLVED→rec] **식물 객체 직렬화 형태** — flora를 어떻게 스냅샷/스트림? options: (a) 일반 `objects[]`에 합류(현행 berry_bush처럼) + `growth`/그늘 상태 필드 (b) climate형 periodic full + sparse delta(생성/성장단계전이/고사 이벤트) (c) 정적 + 이벤트(spawn/grow/die); rec: (b)/(c) 혼합 — 식물은 동적이라 `data-contracts.md §6`(periodic full + sparse delta, wear/terrain와 정합); spawn/die = `objects[]` add/remove 이벤트, growth = 주기 full. data-contracts §1 objects 스키마 확장 필요(growth 필드).
@@ -76,9 +76,9 @@ object_kind에 `flora:` 블록으로 합류(1i 결정: flora가 objects[]에 합
 > **핵심 안전 레버:** P_f1~P_f3는 outcome-중립(flora-off / `Rules` 비어있음 / 그늘 occluder 빈 슬라이스 → 거동 0 변화)
 > → 기존 world/perception 골든 불변. **P_f4에서만** 의도적 재기준. climate M-staging과 동형(`docs/climate.md §2`).
 
-### P_f1 — `engine/flora` 순수 transform + flora-OFF 출하 (outcome-중립)  ✅ SPEC 작성됨
-- `backend/engine/flora/SPEC.md` 구현: `New`/`Step`(성장 적분·씨앗분산 번식·이력 고사)/`ShadeOf`/`Suitability`/`Stage`/`Yield`.
-- 의존: `core` + `engine/expr`(§6, L0) + `rng`만. navmap/climate/world/perception import 금지(grep 가드).
+### P_f1 — `engine/env/flora` 순수 transform + flora-OFF 출하 (outcome-중립)  ✅ SPEC 작성됨
+- `backend/engine/env/flora/SPEC.md` 구현: `New`/`Step`(성장 적분·씨앗분산 번식·이력 고사)/`ShadeOf`/`Suitability`/`Stage`/`Yield`.
+- 의존: `core` + `engine/kernel/expr`(§6, L0) + `rng`만. navmap/climate/world/perception import 금지(grep 가드).
 - **출하 시 flora-off:** `Rules` 비어있음 → `Step`은 spawn/die 0, `Growth` 불변; `ShadeOf`는 zero-radius. world/perception 미접촉 → 시뮬 거동 불변.
 - 테스트: 성장 적분·파생 stage·§6 적합도·씨앗분산(시드 재현)·이력 고사(flicker 없음)·그늘 §6·수율표 seeded 롤(Dexterity 스케일)·owner seam inert·**flora-off 중립**·정렬 결정성·결정성 골든(flora-off 먼저)·resume·missing-input panic·import/literal 가드.
 
@@ -94,7 +94,7 @@ object_kind에 `flora:` 블록으로 합류(1i 결정: flora가 objects[]에 합
 - **NEW Q (사람 결정 필요, P_f3 전):** occluder 인터페이스 명칭/합성 site, boolean 임계 vs 연속 strength → §3 / SPEC Open Questions.
 
 ### P_f4 — 활성 적합도/번식/자원 (`content/objects.yaml` `flora:`) + 골든 의도적 재기준
-- `objects.yaml`에 flora 종 활성(예: `berry_shrub`/`oak`) + §6 수식(`platform/config`가 `engine/expr`로 컴파일 → `flora.Rules`); 스키마 검증·종/아이템/operand 교차검증.
+- `objects.yaml`에 flora 종 활성(예: `berry_shrub`/`oak`) + §6 수식(`platform/config`가 `engine/kernel/expr`로 컴파일 → `flora.Rules`); 스키마 검증·종/아이템/operand 교차검증.
 - **berry_bush 마이그레이션:** 활성 시 `berry_bush` → `berry_shrub`(flora) 전환 + `balance.regen.berry_bush` 제거(라이브 hunger-loop 골든 의도적 재기준). `prey`/timer regen은 비-flora로 유지.
 - **`Fell`/`Plant` actions.yaml 정의** + `Fell`이 object-mortality 트리거(world apply가 대상을 `flora.Died`에 추가) + `Yield`→inventory 와이어링. `Plant`(owner 설정)는 economy phase로 연기 권고.
 - **이 phase에서만** 영향받는 world/perception 골든 재기준(climate M4 동형). 시나리오: "가뭄 N일 → 적합도<θ 지속 → 군집 고사(객체 제거)" + "성숙 군집이 씨앗분산으로 확장" + "Dexterity 높은 채집자가 더 많은 베리".
@@ -108,7 +108,7 @@ object_kind에 `flora:` 블록으로 합류(1i 결정: flora가 objects[]에 합
 economy 소유(`Plant`→owner, 과수원 사유화·상속) · 밀도 경쟁(1c: 그늘→이웃 적합도 피드백 = 종간 경쟁) · 명시 천이(창발만) · 낮밤 그늘(1d) · climate 계절 성장 modulation.
 
 ## 3. Notes / escalations
-- **§6 평가기 의존 (해소):** 적합도·그늘·자원 재생·고사 판정이 모두 §6 수식 → `engine/expr`(L0 leaf, `design.md §6` line 89에서 확정) 사용. climate와 공유. 이전 climate escalation("평가기 home")은 `engine/expr`가 L0로 확정되며 **해소**(core 승격 불필요). `architecture.md §2/§4` 반영.
+- **§6 평가기 의존 (해소):** 적합도·그늘·자원 재생·고사 판정이 모두 §6 수식 → `engine/kernel/expr`(L0 leaf, `design.md §6` line 89에서 확정) 사용. climate와 공유. 이전 climate escalation("평가기 home")은 `engine/kernel/expr`가 L0로 확정되며 **해소**(core 승격 불필요). `architecture.md §2/§4` 반영.
 - **현행 코드와의 정합:** `content/objects.yaml`의 `berry_bush`(이미 `depletes`+`balance.regen.berry_bush` 재생)와 `prey`(mobile)는 flora가 일반화/형식화할 대상. flora-OFF phases 동안 `berry_bush`는 레거시 유지(골든 churn 0), 활성(P_f4)에서 `berry_shrub`로 전환(의도적 재기준). 신규 `berry_shrub`/`oak` flora 종은 활성 전까지 dormant(placement 없음).
 - **NEW open questions (사람 결정 필요, 구현 전):** `flora`/`perception` SPEC의 Open Questions에 옵션+추천과 함께 정리됨 —
   (1) `Fell`/`Plant` actions.yaml 추가 + 고사 트리거 위치(P_f4 차단), (2) `berry_bush` in-place 전환 vs 신규 종(P_f4 — 라이브 hunger-loop 영향), (3) perception occluder 인터페이스 명칭/합성 site(P_f3 차단), (4) 그늘 boolean 임계 vs 연속 visibility strength(P_f3), (5) flora cadence N vs climate N(P_f2 비차단), (6) `NeighborCount` 종 범위(P_f4 비차단). **stat 단련 메커니즘(Dexterity를 use로 올림)은 flora 범위 밖 — stats/lifecycle 소관**(flora는 §6로 읽기만).

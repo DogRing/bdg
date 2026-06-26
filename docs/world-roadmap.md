@@ -8,7 +8,7 @@
 | 단계 | 상태 |
 |---|---|
 | **물질사슬 (materials)** | ✅ 설계 완료 — P_m1~P_m4 SPEC READY (구현 전). `docs/materials.md` |
-| `engine/expr` (§6 평가기, L0) | ⏭ **다음 빌드 가능 leaf** — materials/decay/flora 활성의 선행 |
+| `engine/kernel/expr` (§6 평가기, L0) | ⏭ **다음 빌드 가능 leaf** — materials/decay/flora 활성의 선행 |
 | **fauna (동물)** | ⬜ 미설계 — Tier2 필요 |
 | **불 & 빛 (fire/light)** | ⬜ 미설계 — Tier2 필요 |
 | **world-gen (월드 생성기)** | ⬜ 미설계 — 기반, Tier2 필요 (강 hydrology 포함) |

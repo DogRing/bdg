@@ -35,7 +35,7 @@ agent's dynamic `Body` state and `ToM`, sequences the upstream pure modules, and
 the **Stamina** drain/regen loop, the **Adrenaline** surge/crash, the **Mood** update, and
 **Resentment** drift. It feeds the live Body scalars (Stamina, Mood, Adrenaline, Urgency) into the
 gate/planner snapshot each tick so the P3 gates (`stamina`, `apathy`, `conscience`-relief,
-`adrenaline`-cost) can read them (`engine/gates/SPEC.md`). All rate constants are injected from
+`adrenaline`-cost) can read them (`engine/mind/gates/SPEC.md`). All rate constants are injected from
 `content/balance.yaml` (D10); the package hardcodes none.
 
 ## Current state (P1/P2 — IMPLEMENTED, DO NOT regress)
@@ -99,7 +99,7 @@ Apathy      ← global Mood↓, plan budget↓; recovers on a SINGLE plan succes
 #### A-budget. Apathy-reduced planner budget — exact mechanism (gap-closure)
 
 The reduced Apathy budget reaches the planner through **one channel only**: the optional
-`ApathyBudget *planner.Budget` field on `planner.AgentSnapshot` (added in `engine/planner/SPEC.md`
+`ApathyBudget *planner.Budget` field on `planner.AgentSnapshot` (added in `engine/mind/planner/SPEC.md`
 this batch). When non-nil, the planner uses `*ApathyBudget` for that `Plan` call instead of its
 construction-time `PlannerConfig.Budget`. The agent computes it in `replan` **every tick** (not only
 under Apathy) as follows:
@@ -136,7 +136,7 @@ if a.Coping == Apathy {
 - Determinism (D12): the budget is a pure function of (perceived Intelligence, Config, Coping
   state); no rng draw. Reducing the budget changes only the planner's search caps, not its ordering,
   so a reduced-budget plan is still deterministic.
-- See `engine/planner/SPEC.md` `AgentSnapshot.ApathyBudget` + "Per-call budget override" for the
+- See `engine/mind/planner/SPEC.md` `AgentSnapshot.ApathyBudget` + "Per-call budget override" for the
   consuming side. The two SPECs are co-authored this batch.
 
 ### B. Resentment accrual (Latent residence) + Aggression-Drift threshold (gap-closure)
@@ -199,7 +199,7 @@ ticks with no fresh trigger. The corrected split is:
 ### C. Apathy ↔ gates coupling
 
 - Each tick the agent injects its **live Mood** into the planner/gate `AgentSnapshot` (new
-  `Mood`/`Stamina`/`Adrenaline`/`Urgency` fields on `gates.AgentSnapshot`, `engine/gates/SPEC.md`).
+  `Mood`/`Stamina`/`Adrenaline`/`Urgency` fields on `gates.AgentSnapshot`, `engine/mind/gates/SPEC.md`).
   When `Mood ≤ gates.apathy_mood_threshold` (`-0.60`), the `apathy` gate makes `abstraction:med`+
   actions invisible — so a deeply apathetic agent's planner sees a narrowed action set for free
   (no special-case in the agent; the gate does it from the injected Mood).
@@ -218,7 +218,7 @@ REGEN  (while executing a recovery action):
   if it is Sleep (stronger Rest supply):                        Stamina += RegenSleep × tickMinutes
   clamp: Stamina ∈ [0, StaminaMax]   (StaminaMax = 1.0)
 
-GATE   (visibility, via engine/gates):
+GATE   (visibility, via engine/mind/gates):
   Stamina < gates.stamina_effort_high_threshold (0.20) → effort:high actions INVISIBLE
   (the agent does not branch on this; it injects Stamina into the snapshot and the `stamina`
    gate hides the action — D4/D10).
@@ -244,7 +244,7 @@ CRASH: else:
            Stamina   -= AdrDecay × adrenaline.crash_stamina_penalty   (0.50)   ← NEW stamina debt
            Mood      += Lambda × (−AdrDecay)                          (the post-surge dip, existing)
 
-EFFECT (via engine/gates, NOT a branch here):
+EFFECT (via engine/mind/gates, NOT a branch here):
   Adrenaline ≥ 0.70 → the `adrenaline` gate sets Result.CostMultiplier = 0.50 for
                       effort:high / risk:high / violent:* actions (the planner applies it).
   After the crash, Stamina < 0.20 → effort:high returns to invisible via the `stamina` gate.
@@ -303,7 +303,7 @@ a.NeedIntensities[cfg.SafetyDim] =
   dimension, and reads `a.NeedIntensities[dim]`). When `threats` is empty the intensity DECAYS
   toward 0 over `⌈cur/ThreatSafetyDecay⌉` ticks; when `len(threats) ≥ 1` it RISES by
   `ThreatPerThreatGain × len(threats)`, clamped to `[0,1]`. The arithmetic lives in
-  `engine/needs.Def.UpdateConditionalNeeds` (pure); the agent only supplies the threat list + the
+  `engine/mind/needs.Def.UpdateConditionalNeeds` (pure); the agent only supplies the threat list + the
   two injected constants and stores the result (D5: the need-pressure math is the need layer's; the
   perception is the agent's).
 - The two constants `ThreatPerThreatGain` / `ThreatSafetyDecay` are injected from
@@ -355,7 +355,7 @@ UrgencyProxy = max( Self-Priority(over Dimensions), Other-Priority(over cared-fo
 - The Other-Priority terms come from `values.DeriveReferentInput(Other, …)` →
   `values.ComputeStanding/Salience` → `values.ComputePriority` for each cared-for Other, with the
   per-agent **bond multiplier** applied to the base weight by the agent loop (the multiplication is
-  the agent's job, not values' — `engine/values/SPEC.md` Out of Scope "Per-agent weight
+  the agent's job, not values' — `engine/mind/values/SPEC.md` Out of Scope "Per-agent weight
   perturbation by Affinity/bond").
 - The Place-Priority terms (Scenario E) come from the new `appraisePlace` method, which iterates
   over the agent's `Values` field (those with `Ref.Kind == core.Place`), calls
@@ -399,7 +399,7 @@ Values []core.Value
 
 ## Implement (P6 — emergent institutions & politics)
 
-P6 makes the agent the **policy** layer over `engine/tom`'s reliance/Influence primitives: it
+P6 makes the agent the **policy** layer over `engine/mind/tom`'s reliance/Influence primitives: it
 decides *when* to rely on another, casts delegation **Vote** signals, and weights incoming social
 signals by the source's **Influence**. The world then detects the resulting `RelyOn` cluster as a
 `RoleEmerged` statistic (no role type anywhere — D2). All thresholds/ratios are injected (D10).
@@ -527,7 +527,7 @@ handles `SignalVote` and must now ALSO handle gossip/hearsay signals:
 `Config.InfluenceWeight` = `balance.yaml politics.influence_weight`. A heavily-relied-upon
 (high-Influence) source therefore shifts the agent's beliefs **more** for the same claim — the
 table AC. `GossipUpdate`'s signature is unchanged (Influence is folded into the weight the agent
-passes, per `engine/tom/SPEC.md` §P6).
+passes, per `engine/mind/tom/SPEC.md` §P6).
 
 #### I-fold. Gossip handling in `processIncomingSignals` (gap-closure)
 
@@ -558,7 +558,7 @@ passes, per `engine/tom/SPEC.md` §P6).
   a.ToM.GossipUpdate(subject, sourceModel, signalWeight)
   ```
 
-  > **Verify the exact tom API before coding.** Confirmed against `engine/tom/SPEC.md` §P4/§P6:
+  > **Verify the exact tom API before coding.** Confirmed against `engine/mind/tom/SPEC.md` §P4/§P6:
   > the fold method is `tom.ToM.GossipUpdate(subject core.AgentID, source Belief, trustWeight
   > float64) map[core.StatID]float64`, where `source` is the **source's Belief about the subject**
   > (not the raw signal), and `Influence` has signature
@@ -568,7 +568,7 @@ passes, per `engine/tom/SPEC.md` §P6).
   > signal into a `(subject, sourceBeliefAboutSubject, weight)` triple. If a future tom change adds
   > a signal-shaped overload, update this section first.
 - `GossipUpdate` returns the per-stat mean delta; the agent emits one `ReputationGossip` event per
-  changed stat (the existing P4 contract, `engine/tom/SPEC.md` Out of Scope) when `emit` is
+  changed stat (the existing P4 contract, `engine/mind/tom/SPEC.md` Out of Scope) when `emit` is
   threaded — pass `emit` into `processIncomingSignals` if the gossip-event emission is wired this
   batch (Open Question below).
 
@@ -589,14 +589,14 @@ InfluenceWeight     float64       // politics.influence_weight — Influence→s
 package agent
 
 import (
-    "github.com/dogring/bdg/engine/core"
-    "github.com/dogring/bdg/engine/needs"
-    "github.com/dogring/bdg/engine/perception"
-    "github.com/dogring/bdg/engine/planner"
-    "github.com/dogring/bdg/engine/rng"
-    "github.com/dogring/bdg/engine/stats"
-    "github.com/dogring/bdg/engine/tom"
-    "github.com/dogring/bdg/engine/values"
+    "github.com/dogring/bdg/engine/kernel/core"
+    "github.com/dogring/bdg/engine/mind/needs"
+    "github.com/dogring/bdg/engine/mind/perception"
+    "github.com/dogring/bdg/engine/mind/planner"
+    "github.com/dogring/bdg/engine/kernel/rng"
+    "github.com/dogring/bdg/engine/mind/stats"
+    "github.com/dogring/bdg/engine/mind/tom"
+    "github.com/dogring/bdg/engine/mind/values"
 )
 
 // CopingState — unchanged from P1/P2.
@@ -830,28 +830,28 @@ votes and Influence-weighted gossip.
 ## Dependencies
 
 (Unchanged set; P5/P6 add no new module import.)
-- `engine/core` — ids, `Vec2`, `Tick`, `GameMinutes`, `Dimension`, `Tag`, `AgentID`, `Referent`,
+- `engine/kernel/core` — ids, `Vec2`, `Tick`, `GameMinutes`, `Dimension`, `Tag`, `AgentID`, `Referent`,
   `Function` (`FuncSafety`/`FuncKnowledge`), `Signal`/`SignalVote`, `Value`, `EventEmitter`,
   `Event`. Emits
   `GoalSelected`/`PlanBuilt`/`ActionStarted`/`ActionDone`/`Interacted`/`BeliefUpdated`/`CopingEntered`/`ReputationGossip`.
-- `engine/stats` — `*Registry` (capability set for Intelligence; **Vindictiveness**/**Aggression**
+- `engine/mind/stats` — `*Registry` (capability set for Intelligence; **Vindictiveness**/**Aggression**
   disposition ids resolved from `Config`, never a literal — D7); `Stats`.
-- `engine/needs` — `*Registry` (`Kinds(Consumable)`/`IDs()`, consumable forward-roll for decay +
+- `engine/mind/needs` — `*Registry` (`Kinds(Consumable)`/`IDs()`, consumable forward-roll for decay +
   Mood expected; **`Def.UpdateConditionalNeeds` for the §F Safety-intensity drive**; P5 resolves the
   **Safety** Dimension id into `Config.SafetyDim` via platform/config, not a literal).
-- `engine/values` — appraisal helpers (`ComputeStanding`/`Salience`/`EffValue`/`Priority`); P5 also
+- `engine/mind/values` — appraisal helpers (`ComputeStanding`/`Salience`/`EffValue`/`Priority`); P5 also
   uses `DeriveReferentInput` + applies the per-agent bond multiplier to the base weight before
   `ComputePriority`.
-- `engine/tom` — `ToM`: `Observe` (β + the §B-drift Aggression fold), `AdjustAffinity` (the persisted
+- `engine/mind/tom` — `ToM`: `Observe` (β + the §B-drift Aggression fold), `AdjustAffinity` (the persisted
   Resentment Affinity drop), `AdjustRelyOn`/`BestProviderFor`/`Influence`/`GossipUpdate` (P6
   reliance + Influence-weighted gossip), `Self`/`Subjects`/`SelfID`. `Belief`/`StatEvidence`.
-- `engine/planner` — `*Planner`, `Plan`, `Trace`, `AgentSnapshot` (incl. the new optional
+- `engine/mind/planner` — `*Planner`, `Plan`, `Trace`, `AgentSnapshot` (incl. the new optional
   `ApathyBudget *Budget`), `Budget`, the sentinel errors.
-- `engine/perception` — the senses; `WorldView` embeds `WorldSnapshot`. (The §F threat scan reads
+- `engine/mind/perception` — the senses; `WorldView` embeds `WorldSnapshot`. (The §F threat scan reads
   perceived entities + their copied `Tags` from `Sensor.Sight`.)
-- `engine/rng` — injected `*RNG` (D12); the coping branch, the §F threat override, and the
+- `engine/kernel/rng` — injected `*RNG` (D12); the coping branch, the §F threat override, and the
   budget-sizing are rng-free.
-- `engine/actions` — `*Registry` (effort-tag resolution for Stamina drain; Rest/Sleep detection).
+- `engine/mind/actions` — `*Registry` (effort-tag resolution for Stamina drain; Rest/Sleep detection).
 - **Contract — NOT imported**: `engine/world` implements `WorldView` (dependency inversion).
 - **Contract**: `content/balance.yaml` — existing blocks **plus** the `gates:` thresholds,
   `adrenaline.crash_stamina_penalty`, `tag_levels.effort`, `resentment.{per_trigger,threshold}`, the
@@ -882,8 +882,8 @@ votes and Influence-weighted gossip.
 
 - **Orchestrator only (D5)**: the coping/Stamina/Adrenaline/Resentment logic and the P5
   referent-aware Urgency / defensive-goal logic sequence and thread state; the agent computes no
-  Standing/Priority of its own (it calls `engine/values`), assembles no action sequence (it calls
-  `engine/planner`), and **computes no need-intensity arithmetic of its own** — the §F Safety drive
+  Standing/Priority of its own (it calls `engine/mind/values`), assembles no action sequence (it calls
+  `engine/mind/planner`), and **computes no need-intensity arithmetic of its own** — the §F Safety drive
   delegates the math to `needs.Def.UpdateConditionalNeeds`. The per-call `ApathyBudget` is sized by
   the agent but the search itself is the planner's. The §F override forces the Safety **Dimension**
   only — it never decides how to satisfy it.
@@ -934,7 +934,7 @@ votes and Influence-weighted gossip.
 - [ ] **Apathy reduces the planner budget via ApathyBudget (gap-closure)**: while `Coping ==
   Apathy`, the `AgentSnapshot` built by `replan` has a non-nil `ApathyBudget` whose `MaxNodes` equals
   `max(1, int(effectiveNodes × (1 − ApathyBudgetPenalty)))` (and likewise for depth/actions); while
-  `Coping != Apathy`, `ApathyBudget == nil`. A planner-level companion AC (in `engine/planner`)
+  `Coping != Apathy`, `ApathyBudget == nil`. A planner-level companion AC (in `engine/mind/planner`)
   asserts the override is honored for that call only. Table-driven over {Apathy, non-Apathy}.
 - [x] **Latent Resentment trigger drops Affinity (golden)**: an agent in `Latent` that receives a
   `ResentmentTriggers == [B]` event accrues `Resentment += per_trigger × Vindictiveness` and the
@@ -1111,27 +1111,27 @@ seed 303.)
 ## Out of Scope
 
 (Unchanged from P1/P2.) Additionally:
-- **The four P3 gate predicates themselves** → `engine/gates`.
-- **Applying the `CostMultiplier` to the tag-cost sum** → `engine/planner`.
-- **Consuming the `ApathyBudget` override in the search** → `engine/planner` (the agent only sizes
+- **The four P3 gate predicates themselves** → `engine/mind/gates`.
+- **Applying the `CostMultiplier` to the tag-cost sum** → `engine/mind/planner`.
+- **Consuming the `ApathyBudget` override in the search** → `engine/mind/planner` (the agent only sizes
   and sets the optional `AgentSnapshot.ApathyBudget` pointer).
 - **Resource-conflict resolution and "rejection without Offer"** → `engine/world` (via
   `WorldView.ResentmentTriggers`).
-- **The persisted-Affinity write mechanism on `Belief`** → `engine/tom` (`AdjustAffinity`).
-- **The `Influence` aggregate derivation + the `GossipUpdate` fold math** → `engine/tom`; this
+- **The persisted-Affinity write mechanism on `Belief`** → `engine/mind/tom` (`AdjustAffinity`).
+- **The `Influence` aggregate derivation + the `GossipUpdate` fold math** → `engine/mind/tom`; this
   module only computes the Influence-weighted `signalWeight` it passes.
-- **The conditional Safety-intensity ARITHMETIC** (the rise/decay/clamp math) → `engine/needs`
+- **The conditional Safety-intensity ARITHMETIC** (the rise/decay/clamp math) → `engine/mind/needs`
   (`Def.UpdateConditionalNeeds`); this module only scans perception for the threat list, supplies
   the two injected constants, and stores the result.
 - **The two `threats.*` scalar values, the `politics.*` ratios, the Safety dimension-id resolution,
   and the `Config.Functions` table population from file** → `platform/config` + `backend/main.go`
   (`agentConfigFromBalance`); this module consumes the resulting `Config` fields.
-- **The Other-referent input-derivation math (P5)** → `engine/values` (`DeriveReferentInput`).
-- **The Intelligence-gated lookahead hard-skip (P5)** → `engine/planner`.
+- **The Other-referent input-derivation math (P5)** → `engine/mind/values` (`DeriveReferentInput`).
+- **The Intelligence-gated lookahead hard-skip (P5)** → `engine/mind/planner`.
 
 ## Open Questions
 
-- **`engine/tom` Affinity write path (RESOLVED in code).** `accrueResentment` persists the Resentment
+- **`engine/mind/tom` Affinity write path (RESOLVED in code).** `accrueResentment` persists the Resentment
   Affinity drop via `a.ToM.AdjustAffinity(triggerID, delta)`; the prior "mutates a copy" concern no
   longer applies. (The §B-drift gap-closure moves only the Aggression-Drift threshold check to
   `updateResentment`; the Affinity-drop path is unchanged.)

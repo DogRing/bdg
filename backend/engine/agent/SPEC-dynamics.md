@@ -11,10 +11,10 @@ surge/crash loop (including the crash → Stamina-debt + Mood-dip coupling), the
 and the **Apathy-reduced planner budget** that shapes the planner call.
 
 These are the per-agent Body dynamics the agent feeds into the gate/planner snapshot each tick so the
-P3 gates (`stamina`, `apathy`, `adrenaline`-cost) can read them (`engine/gates/SPEC.md`). The agent
+P3 gates (`stamina`, `apathy`, `adrenaline`-cost) can read them (`engine/mind/gates/SPEC.md`). The agent
 **writes** the live Body scalars (`Stamina`, `Mood`, `Adrenaline`, `Urgency`) into the snapshot; it
 never reads them back from the gate registry, and it never applies the gate predicates itself (those
-live in `engine/gates`). All rate constants are injected from `content/balance.yaml` (D10); this
+live in `engine/mind/gates`). All rate constants are injected from `content/balance.yaml` (D10); this
 domain hardcodes none.
 
 **What is NOT here (pointers, no duplication):**
@@ -23,7 +23,7 @@ domain hardcodes none.
   `updateDynamics`).
 - **Coping cascade transitions** (Rebinding → Longing → Latent → Apathy) → `SPEC-coping.md` §A.
 - **Apathy recovery** (single plan success) → `SPEC-coping.md` §A.
-- **The gate predicates themselves** (`stamina`/`apathy`/`adrenaline`) → `engine/gates`.
+- **The gate predicates themselves** (`stamina`/`apathy`/`adrenaline`) → `engine/mind/gates`.
 - **Reliance / Vote / Influence (politics)** → `SPEC-politics.md`.
 
 `updateDynamics` is called in **phase 8** of the loop. The exact 8-phase ordering and the snapshot
@@ -43,7 +43,7 @@ REGEN  (while executing a recovery action):
   if it is Sleep (stronger Rest supply):                        Stamina += RegenSleep × tickMinutes
   clamp: Stamina ∈ [0, StaminaMax]   (StaminaMax = 1.0)
 
-GATE   (visibility, via engine/gates):
+GATE   (visibility, via engine/mind/gates):
   Stamina < gates.stamina_effort_high_threshold (0.20) → effort:high actions INVISIBLE
   (the agent does not branch on this; it injects Stamina into the snapshot and the `stamina`
    gate hides the action — D4/D10).
@@ -58,7 +58,7 @@ GATE   (visibility, via engine/gates):
   the magnitude of their `Rest` `effect_per_minute` (Sleep > Rest), or by an injected mapping.
 
 P3 completion note: effort-level data-driven, no literal (D10); no action-id literal (D7). The gate
-predicate is owned by `engine/gates` (the agent only injects the `Stamina` scalar) — see §6.
+predicate is owned by `engine/mind/gates` (the agent only injects the `Stamina` scalar) — see §6.
 
 ### Method specs
 
@@ -127,7 +127,7 @@ CRASH: else:
            Stamina   -= AdrDecay × adrenaline.crash_stamina_penalty   (0.50)   ← NEW stamina debt
            Mood      += Lambda × (−AdrDecay)                          (the post-surge dip, existing)
 
-EFFECT (via engine/gates, NOT a branch here):
+EFFECT (via engine/mind/gates, NOT a branch here):
   Adrenaline ≥ 0.70 → the `adrenaline` gate sets Result.CostMultiplier = 0.50 for
                       effort:high / risk:high / violent:* actions (the planner applies it).
   After the crash, Stamina < 0.20 → effort:high returns to invisible via the `stamina` gate.
@@ -185,7 +185,7 @@ a.updateResentment()
 ## 4. Mood
 
 Mood is **computed here** (in `updateDynamics`); the **Apathy gate reads it** (the agent injects the
-`Mood` scalar into the snapshot; the `apathy` gate predicate lives in `engine/gates` — pointer, §6).
+`Mood` scalar into the snapshot; the `apathy` gate predicate lives in `engine/mind/gates` — pointer, §6).
 
 Three Mood effects own a piece of this domain:
 
@@ -257,7 +257,7 @@ no rng draw. Reducing the budget changes only the planner's search caps, not its
 reduced-budget plan is still deterministic.
 
 **Cross-reference:** The budget is applied (the snapshot constructed) in `replan()` — see
-`SPEC-core.md` §replan. The planner reads `agent.ApathyBudget` — see `engine/planner/SPEC.md`
+`SPEC-core.md` §replan. The planner reads `agent.ApathyBudget` — see `engine/mind/planner/SPEC.md`
 §AgentSnapshot (the consuming side; the two SPECs are co-authored). This is the §A-budget from the
 gap-closure SPEC update; it is the SOLE budget-override path (no per-call config mutation).
 
@@ -277,7 +277,7 @@ scalars the P3 gates read — VERBATIM the four fields:
 
 The planner forwards the body scalars into `gates.AgentSnapshot` when evaluating each candidate. The
 agent computes these from its own Body/Coping; it **never reads them back from the gate registry**,
-and the gate predicates themselves are out of scope (→ `engine/gates`).
+and the gate predicates themselves are out of scope (→ `engine/mind/gates`).
 
 **Cross-reference:** the snapshot construction (including the `Stamina`/`Mood`/`Adrenaline`/`Urgency`
 assignment and the optional `ApathyBudget`) lives in `replan()` — see `SPEC-core.md` §replan. This
@@ -383,16 +383,16 @@ RestDim: "Rest",
 
 ## 8. Dependencies (dynamics-relevant)
 
-- `engine/actions` — `*Registry`: effort-tag resolution for Stamina drain (`resolveEffortLevel` reads
+- `engine/mind/actions` — `*Registry`: effort-tag resolution for Stamina drain (`resolveEffortLevel` reads
   `ActionDef.Tags` against `Config.EffortLevels`); Rest/Sleep detection (`hasRestEffectPerMinute` /
   `resolveRegenRate` read `ActionDef.EffectPerMinute[Config.RestDim]`). No action-id literal (D7).
-- `engine/gates` — receives the `Stamina`/`Mood`/`Adrenaline` scalars (and `Urgency`) via the
+- `engine/mind/gates` — receives the `Stamina`/`Mood`/`Adrenaline` scalars (and `Urgency`) via the
   snapshot (pointer only); owns the `stamina` / `apathy` / `adrenaline` gate predicates. This domain
   writes the scalars; it never reads the registry or applies the predicates.
-- `engine/planner` — `planner.Budget` / `AgentSnapshot.ApathyBudget` (the §A-budget per-call
+- `engine/mind/planner` — `planner.Budget` / `AgentSnapshot.ApathyBudget` (the §A-budget per-call
   override), `planner.DimensionPriority` (the `priorities` arg to `updateDynamics`, for the max
   Salience → Urgency computation).
-- `engine/needs` — `Def.UpdateConditionalNeeds` for the Safety-intensity drive (pointer to
+- `engine/mind/needs` — `Def.UpdateConditionalNeeds` for the Safety-intensity drive (pointer to
   `SPEC-core.md` §F; the conditional-need arithmetic is the need layer's, not this domain's).
 - `content/balance.yaml` — all dynamics blocks (`mood:`, `adrenaline:` incl.
   `crash_stamina_penalty`, `stamina:`, `urgency:`, `tag_levels.effort`,
@@ -437,12 +437,12 @@ Copied verbatim from the monolith (each maps to a unit / golden / scenario):
 - [ ] **Apathy reduces the planner budget via ApathyBudget (gap-closure)**: while `Coping == Apathy`,
   the `AgentSnapshot` built by `replan` has a non-nil `ApathyBudget` whose `MaxNodes` equals
   `max(1, int(effectiveNodes × (1 − ApathyBudgetPenalty)))` (and likewise for depth/actions); while
-  `Coping != Apathy`, `ApathyBudget == nil`. A planner-level companion AC (in `engine/planner`)
+  `Coping != Apathy`, `ApathyBudget == nil`. A planner-level companion AC (in `engine/mind/planner`)
   asserts the override is honored for that call only. Table-driven over {Apathy, non-Apathy}.
 
 > The body-scalar injection ACs above (Stamina/Adrenaline/Mood gate coupling) assert the agent writes
 > the live scalar; the gate-predicate side (the actual visibility / cost-multiplier decision) is an
-> `engine/gates` AC.
+> `engine/mind/gates` AC.
 
 ## 11. Out of Scope (dynamics)
 
@@ -451,15 +451,15 @@ Copied verbatim from the monolith (each maps to a unit / golden / scenario):
 - **Coping cascade transitions** (Rebinding → Longing → Latent → Apathy) → `SPEC-coping.md` §A.
 - **Apathy recovery on a single plan success** (the state transition that fires the Mood bump) →
   `SPEC-coping.md` §A. Only the `Mood += ApathyRecoverMood` term is owned here.
-- **The `stamina` / `apathy` / `adrenaline` gate predicates themselves** → `engine/gates` (the agent
+- **The `stamina` / `apathy` / `adrenaline` gate predicates themselves** → `engine/mind/gates` (the agent
   only injects the Body scalars into the snapshot).
-- **Applying the `CostMultiplier` to the tag-cost sum** → `engine/planner`.
-- **Consuming the `ApathyBudget` override in the search** → `engine/planner` (this domain only sizes
+- **Applying the `CostMultiplier` to the tag-cost sum** → `engine/mind/planner`.
+- **Consuming the `ApathyBudget` override in the search** → `engine/mind/planner` (this domain only sizes
   and sets the optional `AgentSnapshot.ApathyBudget` pointer).
 - **The referent-aware Urgency proxy assembly + the snapshot construction** → `SPEC-core.md` §replan
   (this domain computes the Salience-driven Urgency for the adrenaline decision and owns the four
   Body-scalar values; core assembles the snapshot).
-- **The conditional Safety-intensity arithmetic** (`Def.UpdateConditionalNeeds`) → `engine/needs`;
+- **The conditional Safety-intensity arithmetic** (`Def.UpdateConditionalNeeds`) → `engine/mind/needs`;
   the §F drive that calls it → `SPEC-core.md` §F.
 
 ## 12. Open Questions (dynamics-relevant)

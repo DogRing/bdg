@@ -1,6 +1,6 @@
 # Fauna — 동물 (축소 반응 루프) — Subsystem Plan
 
-Concept & rationale: `docs/design.md §5`(연속좌표·동적지형), `§6`(Formula DSL — `engine/expr` 공유 평가기),
+Concept & rationale: `docs/design.md §5`(연속좌표·동적지형), `§6`(Formula DSL — `engine/kernel/expr` 공유 평가기),
 `§7`(생애주기 — 사망×번식, object-mortality 계열), `§9`(경제 — 무주물/소유 seam).
 메뉴: `docs/world-roadmap.md` 🦌 동물 섹션 + 교차연결(fauna→물질사슬·decay·flora·climate).
 형제 문서(양식·패턴 출처): `docs/materials.md`(FINAL recipe model — 산물이 *이미 설계된* craft 사슬로 합류),
@@ -12,8 +12,8 @@ Concept & rationale: `docs/design.md §5`(연속좌표·동적지형), `§6`(For
 > **메커니즘을 발명하면 결함이지 주도성이 아니다** — SPEC/구현이 §0·§1을 벗어나면 여기를 먼저 고치고 사람 승인.
 
 관련(예정) 모듈: **신규** `engine/fauna`(축소 반응 컨트롤러 + 냄새 그리드 보조-색인), `engine/world`(소유·갱신주기·
-intent 수집·apply·냄새 bulk 패스), `engine/actions`(공유 원자행위 레지스트리 — Hunt/Eat/Forage… + 신규
-Butcher/Flee/Graze), `engine/expr`(§6), `engine/spatial`(근접), `engine/decay`(P_m2 — 사체 산물 lot 부패, **재사용**),
+intent 수집·apply·냄새 bulk 패스), `engine/mind/actions`(공유 원자행위 레지스트리 — Hunt/Eat/Forage… + 신규
+Butcher/Flee/Graze), `engine/kernel/expr`(§6), `engine/space/spatial`(근접), `engine/env/decay`(P_m2 — 사체 산물 lot 부패, **재사용**),
 `content/objects.yaml`(종 = object_kind `fauna:` 블록 + 산물 item·material tag), 초기 분포 = world-gen/시나리오 픽스처.
 
 ---
@@ -29,7 +29,7 @@ Butcher/Flee/Graze), `engine/expr`(§6), `engine/spatial`(근접), `engine/decay
    손그림 금지), D4(tag/§6 파생, per-animal bespoke Go 함수 금지), D10(종 = content 데이터+스키마, 코드 아님),
    D11(연속좌표; 그리드는 *색인*일 뿐, 동물을 칸에 스냅 금지), D12(결정성: seeded RNG, 고정 apply 순서, map-순회 로직 금지).
 5. **산물은 *이미 설계된* 물질사슬로 합류(병렬 시스템 금지):** 고기(food/decay)·가죽·뼈(craft 입력 W7)·힘줄
-   (binding W8)·젖/털 = `materials.md` FINAL recipe model의 **material-tag item**. 사체→재료는 `engine/decay`
+   (binding W8)·젖/털 = `materials.md` FINAL recipe model의 **material-tag item**. 사체→재료는 `engine/env/decay`
    (owner-agnostic lot, Dm4/Dm5)와 Craft/extract를 **재사용**한다 — 평행 부패/추출 시스템을 발명하지 않는다.
 
 > **현행 baseline(일반화 대상):** `content/objects.yaml`의 `prey`(`mobile:true`, `Hunt`→`raw_meat`,
@@ -45,7 +45,7 @@ Butcher/Flee/Graze), `engine/expr`(§6), `engine/spatial`(근접), `engine/decay
 ### 1.0 Resolution table
 | F# | 주제 | RESOLVED |
 |---|---|---|
-| F1 | 의사결정 기계 | **(a) horizon-1 utility arbitration** — 매 틱 공유 `engine/actions` 후보를 drives+문맥 §6로 점수화 → 최고 1개(동률 ID). multi-step plan 없음 ⇒ **planner 무의존** |
+| F1 | 의사결정 기계 | **(a) horizon-1 utility arbitration** — 매 틱 공유 `engine/mind/actions` 후보를 drives+문맥 §6로 점수화 → 최고 1개(동률 ID). multi-step plan 없음 ⇒ **planner 무의존** |
 | F2 | 게이트/2채널 | **(a) 실제-스탯 단일 채널** — 동물 ToM 없음 → 시도/판정 2채널이 1채널로 collapse |
 | F3 | 내부상태 | **(b) drives + Stamina + 단일 vital + Pos**; **ToM/Value/Inventory 없음**. drive ≠ agent Value(별 동기 기계, D5 분리) |
 | F4 | entity substrate | **(a) 신규 경량 `Animal`** + 축소 컨트롤러 (Agent 오염 없음, D5) |
@@ -71,7 +71,7 @@ Butcher/Flee/Graze), `engine/expr`(§6), `engine/spatial`(근접), `engine/decay
 | F24 | cadence | **(a) 계층** — 이동/flee=매 틱 · 냄새 확산=Ns틱 · 체감온도=Nt틱(더 느림) · 번식=bulk; N=`balance.yaml` |
 
 ### 1.1 감지 모델 — F15 대체 (F20~F24 통합; SPEC 지침)
-**단일 균일 그리드 = world 소유 보조 색인** (spatial hash·navmap cost field와 동류; 모듈 배치 = `engine/spatial` 확장
+**단일 균일 그리드 = world 소유 보조 색인** (spatial hash·navmap cost field와 동류; 모듈 배치 = `engine/space/spatial` 확장
 vs `engine/fauna` 서브모듈은 SPEC 시 확정, F5 정신). **동물은 연속좌표 유지, 자기 위치가 속한 칸만 읽는다(스냅 금지, D11).**
 
 1. **침착(deposit):** 냄새나는 객체/동물이 자기 칸의 **채널 플래그**(`food`/`prey`/`predator`) set. 이진(있다/없다).
@@ -98,17 +98,17 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `flora.md §2`/`climate.md §2` 양식)
 > **모든 §1 게이트 RESOLVED ✓** → phase의 남은 실제 선행은 **Open question이 아니라 선행 leaf 빌드**다:
-> `engine/expr`(§6 — drive·utility·체감온도 내성·yield 수식) + `engine/decay`(P_m2 — 사체 lot 부패). 둘 다 READY/다음 leaf.
+> `engine/kernel/expr`(§6 — drive·utility·체감온도 내성·yield 수식) + `engine/env/decay`(P_m2 — 사체 lot 부패). 둘 다 READY/다음 leaf.
 > **핵심 안전 레버:** P_fa1~P_fa2는 outcome-중립(종 미배치 → 거동 0 변화; 현행 `prey` 타이머-respawn legacy 유지)
 > → 기존 world 골든 불변. **P_fa3에서만** 의도적 재기준(climate/flora staging 동형).
 
 - **P_fa1 — `engine/fauna` 축소 반응 컨트롤러 + 단일 냄새 그리드 + fauna-OFF 출하(outcome-중립)**
   horizon-1 utility arbitration(drives + 실제-스탯 §6; planner/ToM 없음, F1/F2/F3), cheap steering 이동(F14),
-  **단일 균일 냄새 그리드 감지**(F20~F24 — 이진 채널 플래그·근접 읽기; 바람=중립), 공유 `engine/actions` 후보 점수화
+  **단일 균일 냄새 그리드 감지**(F20~F24 — 이진 채널 플래그·근접 읽기; 바람=중립), 공유 `engine/mind/actions` 후보 점수화
   → 단일 intent(동률 ID). **종 미배치 → intent 0 → 거동 불변.** 테스트: utility 동률-ID 결정성, drive 통합, seeded
   steering 재현, 냄새 그리드 침착/읽기 결정성·중립, 공유-레지스트리 점수화, fauna-OFF 중립, import/literal 가드
   (actions/expr/spatial만; world/agent import 금지).
-  **선행(RESOLVED ✓): F1·F2·F3·F4·F5·F14·F20·F21·F22·F23.** 빌드 선행: `engine/expr`.
+  **선행(RESOLVED ✓): F1·F2·F3·F4·F5·F14·F20·F21·F22·F23.** 빌드 선행: `engine/kernel/expr`.
 
 - **P_fa2 — `world` 와이어링(cadence + 통합 apply 순서 + 냄새 bulk 패스 + spawn/move/die 델타) — 여전히 outcome-중립**
   world가 fauna 컨트롤러를 통합 read→score→intent→**apply(고정 결합 agent+animal ID 순서, D12)**에 합류; 냄새
@@ -116,13 +116,13 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   와이어링·cadence·fork·apply-순서·냄새 패스 결정성만 검증. **선행(RESOLVED ✓): F4·F16·F24.**
 
 - **P_fa3 — 활성: 야생 단독 prey+predator + 사체→재료 + 골든 의도적 재기준**
-  `content/objects.yaml`에 `fauna:` 종 활성(prey 1 + predator 1) + §6 수식(`platform/config`가 `engine/expr`로
+  `content/objects.yaml`에 `fauna:` 종 활성(prey 1 + predator 1) + §6 수식(`platform/config`가 `engine/kernel/expr`로
   컴파일). 초식 prey가 flora를 Graze(`food` 냄새 따라), predator가 prey를 Hunt(`prey` 냄새 + 표적팅), predator가
   `threat:predator` 보유 → agent Safety(F8 채널 재사용) + 인접 초식 Flee(`predator` 냄새). 사망 → `carcass` 객체 +
   decay lot(Dm4) → `Butcher` 추출(hide/bone/sinew → material-tag item, W7/W8 공급); 미추출 사체는 부패(W10 정합).
   **이 phase에서만** 영향 골든 재기준. 시나리오: "포식자 접근 → agent Safety goal 창발", "사냥→사체→butcher→
   뼈/힘줄이 craft 입력", "사체 미추출 → 부패(W10)". **선행(RESOLVED ✓): F6·F7·F8·F11·F12.**
-  빌드 선행: `engine/decay`(P_m2) + `expr` + (초식용 edible flora — flora 활성 or placeholder edible 객체).
+  빌드 선행: `engine/env/decay`(P_m2) + `expr` + (초식용 edible flora — flora 활성 or placeholder edible 객체).
 
 - **P_fa4 — 창발 번식/개체군 사이클(타이머 respawn 대체) + 체감온도 thermal 거동**
   drive-gated 창발 birth(F9 승격 — flora 씨앗분산 동형, §7 비의존 최소 사이클) + 체감온도 thermal drive/vital(F10) —
@@ -134,13 +134,13 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   (wear/terrain/flora 정합). frontend: 동물 렌더(이동·종).
 
 - **park (frontier — P1 비차단):** 사회적 동물(무리/herd/세력권, **사람 연기**) · husbandry/길들임(F13 창발 flee-shift) ·
-  계절 이주 richness · 작물/구조물 피해 · 스칼라 농도 냄새 승격 · `engine/perception` full-LoS 동물 지각 · navmap/pathfind 동물 경로.
+  계절 이주 richness · 작물/구조물 피해 · 스칼라 농도 냄새 승격 · `engine/mind/perception` full-LoS 동물 지각 · navmap/pathfind 동물 경로.
 
 ## 3. Notes / escalations (정직 플래그 — 덮지 않음)
 
 - **의존 현실(차단 회피 — 확정):** ① **planner 미빌드** → F1(a) horizon-1로 회피(plan 조립 없음). ② **lifecycle(§7)
   미빌드** → F9(c) 타이머 respawn 부트스트랩으로 P1 비차단; 창발 번식은 P_fa4. ③ **climate 미빌드** → 체감온도·
-  바람은 **입력 계약**(F10/F21), P1은 thermal-OFF + 냄새 단거리(바람 중립). ④ **`engine/expr` + `engine/decay`
+  바람은 **입력 계약**(F10/F21), P1은 thermal-OFF + 냄새 단거리(바람 중립). ④ **`engine/kernel/expr` + `engine/env/decay`
   (P_m2)** 가 선행 leaf(둘 다 READY/다음 빌드).
 - **불변 플래그(아래는 위반이 아니라 가드레일):**
   - **D3:** Hunt/Graze/Flee/Butcher가 horizon-1 utility로 선택되는 한 OK — 단 drive→utility는 **§6 데이터**(D4)여야

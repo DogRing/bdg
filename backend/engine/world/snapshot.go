@@ -4,9 +4,9 @@ import (
 	"sort"
 
 	"github.com/dogring/bdg/engine/agent"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/perception"
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/perception"
+	"github.com/dogring/bdg/engine/mind/tom"
 )
 
 // ── Compile-time interface check ───────────────────────────────────────────────

@@ -21,8 +21,8 @@ Do not leave empty sections as "N/A" — delete them. Fill every <...>.
 
 ## Dependencies
 <By path only. No copy-paste. One line per dependency naming *which interface* you use.>
-- `engine/core` — `<StatID, Vec2, …>`
-- `engine/stats` — `<Registry>`
+- `engine/kernel/core` — `<StatID, Vec2, …>`
+- `engine/mind/stats` — `<Registry>`
 
 ## Owned Data
 <State/types this module owns or transfers ownership of. What other modules must not mutate.>

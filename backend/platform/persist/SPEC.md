@@ -25,7 +25,7 @@ import (
     "context"
     "errors"
 
-    "github.com/dogring/bdg/engine/core"
+    "github.com/dogring/bdg/engine/kernel/core"
     "github.com/dogring/bdg/engine/world"
 )
 
@@ -177,8 +177,8 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
 ```
 
 > persist DEFINES no simulation vocabulary. `world.WorldState`/`world.World` are `engine/world`'s
-> contract; `core.RunID`/`AgentID`/`Tick`/`Vec2`/`Event` are `engine/core`'s; `rng.RNGState`
-> (carried inside `world.WorldState`) is `engine/rng`'s. This module encodes & transports them.
+> contract; `core.RunID`/`AgentID`/`Tick`/`Vec2`/`Event` are `engine/kernel/core`'s; `rng.RNGState`
+> (carried inside `world.WorldState`) is `engine/kernel/rng`'s. This module encodes & transports them.
 
 ## Dependencies
 
@@ -186,8 +186,8 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
   `World.State()` / `World.RestoreState(WorldState)`, `World.CurrentTick()`,
   `World.AgentIDs()` / `World.AgentOf()` (to build per-agent `AgentView`s for Redis). persist
   reads the world's **public** state only; it never reaches into agent internals.
-- `engine/core` — `RunID`, `AgentID`, `Tick`, `Vec2`, `Event` (the event rows it persists).
-- `engine/rng` — only transitively: `rng.RNGState` rides inside `world.WorldState` and round-trips
+- `engine/kernel/core` — `RunID`, `AgentID`, `Tick`, `Vec2`, `Event` (the event rows it persists).
+- `engine/kernel/rng` — only transitively: `rng.RNGState` rides inside `world.WorldState` and round-trips
   through Encode/Decode; persist does not import rng for logic.
 - **Contract — NOT imported by the engine**: the engine emits `SnapshotReady`/events through the
   injected `core.EventEmitter`; persist (or the wiring around it) listens and reacts. The engine
@@ -346,7 +346,7 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
   Do **not** reimplement capture/restore — call `World.State()`/`RestoreState`.
 - **Snapshot field mapping (data-contracts §1).** `schema_version` ← `SchemaVersion`; `run_id` ←
   caller; `tick` ← `World.CurrentTick()`; `rng_state` ← `WorldState.RNGState` (`rng.RNGState`, a
-  base64 PCG blob — `engine/rng/SPEC.md`); `world.objects[]` ← `WorldState.Objects`; `agents[]` ←
+  base64 PCG blob — `engine/kernel/rng/SPEC.md`); `world.objects[]` ← `WorldState.Objects`; `agents[]` ←
   `WorldState.Agents` (carries the god-view `RealStats` → Postgres only).
 - **Two tiers, one boundary.** Redis (`LiveStore`) = live, render/decision-visible, TTL'd, lossy.
   Postgres (`BackupStore`) = periodic, full, durable, the replay/why-trace source. The full

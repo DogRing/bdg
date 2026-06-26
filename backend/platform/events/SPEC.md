@@ -20,7 +20,7 @@ package events
 import (
     "context"
 
-    "github.com/dogring/bdg/backend/engine/core"
+    "github.com/dogring/bdg/engine/kernel/core"
 )
 
 // Emitter implements core.EventEmitter and writes to a Redis STREAM.
@@ -85,7 +85,7 @@ const (
 
 ## Dependencies
 
-- `engine/core` — `EventEmitter`, `Event`, `RunID`. The engine imports `core`; `platform/events`
+- `engine/kernel/core` — `EventEmitter`, `Event`, `RunID`. The engine imports `core`; `platform/events`
   *implements* the `EventEmitter` interface. This is the **only** engine package `platform/events`
   imports (architecture §1).
 - `encoding/json` — serialization of `Event` → the `payload` stream field.
@@ -102,7 +102,7 @@ const (
   entry ID.
 - The Redis STREAM key (`sim:{runID}:events`), composed once from the injected `runID`.
 - The serialization logic (`Event` → `payload` JSON, with the real_stats strip).
-- **NOT owned**: the `Event` / `EventEmitter` definitions (those are `engine/core` +
+- **NOT owned**: the `Event` / `EventEmitter` definitions (those are `engine/kernel/core` +
   data-contracts), the payload *shapes* (those are the emitting engine module's responsibility),
   the concrete Redis client (injected), and the Redis STREAM consumer/SSE fan-out (`platform/api`).
 
@@ -176,7 +176,7 @@ correct payload.
 - [ ] **Wired — RoleEmerged**: when `engine/world`'s reliance scan crosses threshold it emits
   `TypeRoleEmerged`; the `Emitter` writes it.
 - [ ] **No real logic (import guard)**: a grep guard confirms `platform/events` imports only
-  `engine/core` (no other `engine/*` package), `encoding/json`, `context`, and the redis interface
+  `engine/kernel/core` (no other `engine/*` package), `encoding/json`, `context`, and the redis interface
   package — nothing that performs simulation.
 - [ ] **Stub RedisClient for tests**: every AC above passes against an in-memory stub that records
   `XAdd` calls; **no live Redis** is required for unit tests.
@@ -193,14 +193,14 @@ correct payload.
 - Payload-schema enforcement → the `Emitter` is a dumb forwarder; each **emitting engine module**
   owns its payload shape (the table above is the agreed contract, not a runtime check).
 - `BeliefUpdated` wiring → already tracked in `engine/agent/SPEC.md` (emitted there); not new for P4.
-- `ReputationGossip` *production* (the `GossipUpdate` fold + per-stat delta map) → `engine/tom`
-  (`backend/engine/tom/SPEC.md` "P4 Gossip Propagation Contract"); this module only transports the
+- `ReputationGossip` *production* (the `GossipUpdate` fold + per-stat delta map) → `engine/mind/tom`
+  (`backend/engine/mind/tom/SPEC.md` "P4 Gossip Propagation Contract"); this module only transports the
   events the agent emits from those deltas.
 
 ## Open Questions
 
 - **`Emit` cannot return an error (BLOCKS the error-path AC — flag to architect/human).**
-  `core.EventEmitter.Emit(e Event)` returns nothing (`engine/core/SPEC.md`), so the concrete
+  `core.EventEmitter.Emit(e Event)` returns nothing (`engine/kernel/core/SPEC.md`), so the concrete
   `Emit` must also return nothing to satisfy the interface. This SPEC resolves it by: (a) `Emit`
   records the transport error on the Emitter and the run-driver reads it via `Err()`; (b) an
   `EmitErr(ev) error` sibling is provided for non-engine callers (platform/api, cmd/run) that want
@@ -211,7 +211,7 @@ correct payload.
 - **Per-event `schema_version` source (NOT blocking).** Each `core.Event` carries
   `SchemaVersion` (set by the engine emitter). The `Emitter` passes it through unchanged; it does
   not stamp or validate the version. Confirm the engine sets `SchemaVersion` at emit time (it does,
-  per `engine/core/SPEC.md` Notes) so the `Emitter` never has to.
+  per `engine/kernel/core/SPEC.md` Notes) so the `Emitter` never has to.
 
 ## Notes
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dogring/bdg/engine/core"
+	"github.com/dogring/bdg/engine/kernel/core"
 )
 
 // goRedisClient is the minimal subset of operations RedisLiveStore needs.

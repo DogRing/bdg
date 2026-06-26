@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"github.com/dogring/bdg/engine/agent"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/rng"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
 )
 
 // ── Test 1: Under threat → villagers delegate Safety to Tyrant ────────────────

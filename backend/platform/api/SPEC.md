@@ -28,7 +28,7 @@ import (
     "context"
     "net/http"
 
-    "github.com/dogring/bdg/engine/core"
+    "github.com/dogring/bdg/engine/kernel/core"
     "github.com/dogring/bdg/platform/persist"
 )
 
@@ -121,7 +121,7 @@ func (s *Server) Handler() http.Handler
 
 > api DEFINES no simulation vocabulary. `persist.LiveStore` / `persist.Keyer` / `persist.AgentView`
 > / `persist.Snapshot` are `platform/persist`'s contract; `core.Event` / `core.AgentID` /
-> `core.RunID` are `engine/core`'s. This module reads, filters (god-view), and serializes them over
+> `core.RunID` are `engine/kernel/core`'s. This module reads, filters (god-view), and serializes them over
 > HTTP. The `time.Duration` in `XRead` is stdlib. The `GodViewResponse` group + the `/api/god/*`
 > wire detail live in the [godview SPEC](godview/SPEC.md) (kept out of this file to stay < ~400
 > lines, CLAUDE.md §5); only the injected `GodViewStore` interface and the route entries below are
@@ -201,7 +201,7 @@ The `data:` value is the `core.Event` JSON exactly as `platform/events` wrote it
 - `platform/config` — `config.EnvConfig` supplies `HTTPAddr` → `Config.Addr`, `RunID` →
   `Config.RunID`, and `RedisAddr` (used by the wiring to dial the client injected as `RedisReader`;
   api does not read env itself).
-- `engine/core` — `core.Event` (the SSE payload type + the `/api/god/why` event source),
+- `engine/kernel/core` — `core.Event` (the SSE payload type + the `/api/god/why` event source),
   `core.AgentID`, `core.RunID`, `core.Tick`. Read-only; api never mutates engine state.
 - Standard library — `net/http`, `context`, `encoding/json`, `time` (the `XRead` BLOCK duration).
 - **External infra** — a Redis client injected via the `RedisReader` interface (the **same**
@@ -386,8 +386,8 @@ The `data:` value is the `core.Event` JSON exactly as `platform/events` wrote it
 - **Import path** is `github.com/dogring/bdg/platform/api` (module `github.com/dogring/bdg`; the
   `backend/` dir is the module root, **not** part of the path — matching `main.go`,
   `platform/persist/SPEC.md`, and the actual source under `backend/engine/*`). `platform/events/SPEC.md`
-  shows `backend/engine/core`, which is a stale typo — the canonical engine import is
-  `github.com/dogring/bdg/engine/core`.
+  shows `backend/engine/kernel/core`, which is a stale typo — the canonical engine import is
+  `github.com/dogring/bdg/engine/kernel/core`.
 - **api reuses persist's contract, not its implementation.** Keys come from `persist.Keyer`; the
   agent shape is `persist.AgentView`; the blob is `persist.Snapshot`. api never re-derives the
   keyspace or the god-view boundary policy — it inherits both from persist (single source,

@@ -1,6 +1,6 @@
 package api
 
-import "github.com/dogring/bdg/engine/core"
+import "github.com/dogring/bdg/engine/kernel/core"
 
 // ── GodViewResponse group (the four /api/god/* response shapes) ───────────────────
 

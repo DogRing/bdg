@@ -4,13 +4,13 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dogring/bdg/engine/actions"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
-	"github.com/dogring/bdg/engine/core"
-	"github.com/dogring/bdg/engine/perception"
-	"github.com/dogring/bdg/engine/rng"
-	"github.com/dogring/bdg/engine/stats"
-	"github.com/dogring/bdg/engine/tom"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/perception"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/stats"
+	"github.com/dogring/bdg/engine/mind/tom"
 )
 
 // ── Tick: the 4-phase loop (D12 read → plan → collect → apply) ─────────────────
