@@ -64,11 +64,11 @@ type Context interface {
     // deterministic policy for a missing operand (see Invariants), it never panics.
     Attr(name core.Tag) (val float64, ok bool)
 
-    // Pred resolves a boolean predicate call by NAME + its single Tag argument (has(itemID),
-    // isOwner(obj), paid(toll)). The predicate name + arity were checked against the known-
-    // predicate table at load (#3), so an unknown name can never reach here; new predicates are
-    // added by a caller implementing this method for the new name + registering it in the table
-    // (no core edit, D10). Returns the boolean truth of the predicate for this subject.
+    // Pred resolves a boolean predicate call by NAME + its Tag argument (has(itemID), paid(toll),
+    // or the arity-0 bare isOwner). The predicate name + arity were checked against the known-
+    // predicate table at load (#3), so an unknown name can never reach here; an arity-0 predicate is
+    // called with arg="" (OQ-B). New predicates are added by a caller implementing this method for the
+    // new name + registering it in the table (no core edit, D10). Returns the predicate's truth.
     Pred(name string, arg core.Tag) bool
 }
 
@@ -123,32 +123,40 @@ func (p *Program) EvalBool(ctx Context) bool
 // ── Parse (RESOLVED #2/#3/#5/#6: platform/config is the ONLY producer of a Program) ──
 
 // KnownPred describes one registered predicate's signature for load-time arity/name checking (#3).
-// expr ships the §6 base table (has/isOwner/paid, each arity 1 over a Tag); a caller adding a new
-// predicate passes an EXTENDED table to Parse so its new name validates — and implements Context.Pred
-// for that name (no core edit, D10).
+// expr ships the §6 base table — `has`/`paid` arity 1 over a Tag, `isOwner` arity 0 (OQ-B RESOLVED:
+// a BARE predicate, no parentheses, as written in the §9 portal formula `… | isOwner`). A caller
+// adding a new predicate passes an EXTENDED table to Parse so its new name validates — and implements
+// Context.Pred for that name (no core edit, D10).
 type KnownPred struct {
-    Name  string // predicate identifier as written in the formula (e.g. "has")
-    Arity int    // number of Tag arguments (the §6 base predicates are all arity 1)
+    Name  string // predicate identifier as written in the formula (e.g. "has", "isOwner")
+    Arity int    // number of Tag arguments: 0 for a bare predicate (isOwner), 1 for has/paid
 }
 
-// BasePreds is the §6 base predicate table (has, isOwner, paid). platform/config passes this
-// (optionally extended by a caller's own predicates) as the known set to Parse.
+// BasePreds is the §6 base predicate table: has (arity 1), isOwner (arity 0), paid (arity 1).
+// platform/config passes this (optionally extended by a caller's own predicates) as the known set
+// to Parse. An arity-0 predicate is evaluated via Context.Pred(name, "").
 func BasePreds() []KnownPred
 
 // Parse compiles §6 formula text into an immutable Program and performs ALL static validation
 // (RESOLVED #2/#3/#5/#6 — everything catchable at load is caught here, never at eval):
 //   • lexes/parses the §6 grammar with FIXED operator precedence (D12): unary ! ; * / ; + - ;
-//     comparisons > < >= <= == != ; logical & ; logical | (parentheses override). Format is
-//     fixed; identifier names are free.
+//     comparisons > < >= <= == != ; logical & ; logical | (parentheses override). The ONLY unary
+//     operator is `!` (OQ-C RESOLVED): there is NO unary minus, and numeric literals are non-negative
+//     (write `0 - x` for negation). Format is fixed; identifier names are free.
 //   • static type inference per node (#5/#7): arithmetic requires Num operands and yields Num;
 //     comparison requires Num operands and yields Bool; logical &|! require Bool operands and
 //     yield Bool; Stat/Attr are Num; a Pred call is Bool; a numeric literal is Num. There is NO
 //     num↔bool coercion — a type clash (e.g. `moisture & 0.5`, or arithmetic on a predicate) is a
 //     LOAD failure.
-//   • identifier validation (D10): every referenced StatID must be in knownStats; every predicate
-//     NAME+arity must be in knownPreds; an undefined identifier/predicate or wrong arity is a LOAD
-//     failure. (Attr names are a caller namespace — Parse records them via ReadsAttrs for the
-//     caller's own cross-check; it does not have a fixed attr vocabulary.)
+//   • operand classification + identifier validation (D10, OQ-A RESOLVED — case-based): a `name(args)`
+//     form is a Pred. A BARE token is classified: a known arity-0 predicate (isOwner) → Pred; else
+//     UPPERCASE-INITIAL → Stat; else (lowercase-initial) → Attr. A DOTTED/colon token (terrain.depth,
+//     tool:cutting.quality) is always an Attr. Every Stat token must be in knownStats and every
+//     predicate NAME+arity in knownPreds — an undefined Stat / undefined predicate / wrong arity is a
+//     LOAD failure (the error names the offending identifier). Attr names are a caller namespace
+//     (recorded via ReadsAttrs for the caller's own cross-check; Parse has no fixed attr vocabulary).
+//     CONVENTION (enforced by this rule): stat IDs are uppercase-initial (PascalCase, e.g. Strength,
+//     Dexterity — see content/stats.yaml); attribute operands are lowercase-initial or dotted.
 //   • result-kind assertion: the inferred whole-Program ResultKind must equal want (KindBool for a
 //     gate/condition site, KindNum for a cost/suitability/chance site). A mismatch is a LOAD failure.
 // On success it returns a Program safe to evaluate. On any violation it returns a descriptive error
@@ -296,6 +304,21 @@ type StatSet interface {
 > `docs/expr.md §1` is ALL RESOLVED (7/7 adopted-as-`rec`); this SPEC writes from those resolutions
 > and re-decides nothing. The items below are NEW seams surfaced while writing the SPEC — none
 > re-opens a resolved §1 item, none blocks Pxa (the core), and each is flagged to its later phase.
+
+### Resolved during Pxa implementation (human-confirmed 2026-06-26)
+- **OQ-A `RESOLVED: case-based operand classification` (blocking, now folded into the Parse contract).**
+  A bare token → arity-0 known predicate (isOwner) ⇒ Pred; else uppercase-initial ⇒ Stat (validated
+  against knownStats, undefined ⇒ LOAD failure); else lowercase-initial ⇒ Attr (caller namespace,
+  unvalidated). Dotted/colon token ⇒ always Attr. Backed by content/stats.yaml (all stat IDs
+  PascalCase) + climate/flora operands (all lowercase/dotted). Convention now enforced + documented
+  above; mirror it in `docs/glossary.md` (stat IDs uppercase-initial, attrs lowercase/dotted).
+  (Rejected: all-bare=Stat — breaks bare `moisture`; knownStats-first — undefined stat silently
+  becomes a 0-valued Attr, defeats the load-failure AC.)
+- **OQ-B `RESOLVED: isOwner is arity 0` (bare predicate).** `BasePreds() = {has:1, isOwner:0, paid:1}`;
+  an arity-0 predicate is written bare (`… | isOwner`, §9 portal) and evaluated via `Context.Pred(name,
+  "")`. The earlier "each arity 1" SPEC phrasing was wrong (AC formula + glossary are ground truth).
+- **OQ-C `RESOLVED: no unary minus` for Pxa.** The only unary operator is `!`; numeric literals are
+  non-negative (write `0 - x` for negation). Revisit only if a negative-literal need is actually authored.
 
 - **gates schema/golden re-baseline at the swap (Pxb — flag to gates owner; NOT blocking Pxa).**
   The byte-identity AC proves expr can reproduce `gates.evalExpr`, but the actual migration
