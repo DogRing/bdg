@@ -287,6 +287,10 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
 > **3-방향(heading 기반) 시야** 칸에 들면 FLEE." 이는 F25(fear)/F28(action set)/F34(읽기)/§1.1(감지)를 **정련**하는 2차 detail —
 > SPEC 작성 전 사람 확정 필요. 전부 옵션+추천+`OPEN`. **결정 금지·발명 금지.** F25/F28/F30/F34 와 교차(위 인라인 노트 참조).
 
+> **RESOLVED — 사람 확정 (2026-06-26):**
+> - **F43 = `(a) 단일 fear drive + 2입력 채널`** (scent → Wary 밴드 / sight → Flee 밴드) + **신규 공유 `Wary` 행위**(feed 인터럽트·경계·천천히 edge away). 순서 `Flee > Wary > Graze` 는 §6 fear-band utility(연속값이 임계 넘는 것일 뿐, wary→flee FSM 금지 — D3). 골든 churn → P_fa3 활성 시 추가. F25(fear)/§1.1 은 이 2채널로 정련.
+> - **F44 = `(c) 하이브리드` + `(c-ii) continuous bearing`** — smell = omni scent 그리드(조기경보 → Wary, F34), **sight = spatial-hash 포식자 엔티티 질의 → 상대 bearing 이 `Heading ± fov_arc` 안이면 → Flee**(D11-정합 연속 시야, 채널 깨끗 분리). 신규 operand `sight.predator`(1/0) + `dist.predator`. **F34 의 omni 규칙은 scent-only 로 좁아짐**(F34↔F44 동시 확정). `fov_arc` = balance 데이터.
+
 **F43 — Wary↔Flee 2단계 포식자 반응(smell vs sight).** 사람의 2단계 = **2 감지 채널**에 깨끗이 매핑: **포식자 SCENT(omni 그리드,
 중거리) → WARY**, **포식자 SIGHT(heading 전방 FOV, 근거리) → FLEE**. 남은 것 = (i) `fear` 가 단일 drive(근접도로 스케일)인가 2신호인가
 (ii) 신규 `Wary` 행위 정의 + F28 집합/utility 순서 (iii) F25/§1.1 정련.

@@ -48,6 +48,14 @@ Concept & rationale: `docs/design.md §5` (동적 지형). SPECs now exist:
 > 생성**이지 apparent_temp 계산이 아니다. 교차참조는 fauna §1.3 F40/F33/F43/F44, **중복 금지**.
 > **operand 명칭(두 문서 공유, 고정):** `temperature` · `moisture` · `wind.dir` · `wind.mag` · (fauna 측) `apparent_temp`.
 
+### Resolutions — 사람 확정 (2026-06-26)
+> CA1·CA2·CA3 + worldtime 캘린더 RESOLVED. 아래 옵션 상세는 근거 기록(재논쟁 금지).
+- **worldtime (선행):** `DaysPerSeason=30`·`SeasonsPerYear=4` ⇒ **`DaysPerYear=120`** (1게임년=120게임일). `YearFraction(t)`/`DayOfYear(t)` accessor 추가 + climate `Forcing`에 world-파생 `YearFraction` 필드. (worldtime SPEC Open Q "Calendar granularity" = RESOLVED 30/4.)
+- **CA1 = `(a) day-of-year sinusoid` + `(a) additive offset`.** CA3=(ii)라 °C로 직접: `T(°C) = annualMid + annualAmp·sin(2π·yearFraction+φ) + dailyDelta(hourOfDay) − rainDrop·raining`; `annualMid`/`annualAmp`는 연 진동이 ~**−5…30°C**를 덮도록(balance 계수). season enum 없음(§0-3 정합).
+- **CA2 = `(a) world-uniform 우세풍 + seeded directional random-walk`** (climate per-step `fork(tick)`), **climate-step cadence**(별도 Nw 없음). operand `wind.dir`(**라디안 [0,2π)**) + `wind.mag`(정규화 [0,1]). world-uniform `Wind`는 `State`에 보관(resume byte-동일). `wind.mag` = glossary 신규 coin.
+- **CA3 = (ii) 전면 °C** (사람이 (i) 약-rec를 뒤집음). climate `Temperature` 상태 = **실제 °C**; operand `temperature` = °C; fauna `apparent_temp`가 °C 직독; `moisture`는 [0,1] 유지. climate가 `CellAt(pos core.Vec2) CellState` + `Wind()` 노출 → world가 동물 로컬 셀+바람을 fauna Context로 어댑트(apparent_temp 식은 fauna 소유).
+  - **⚠ 결과 — 구현 시 °C 재기준 필요(M-phase staging, M4 동형):** 기존 [0,1] 가정 전부 °C로 — 1b(`TempDayPeak`/`TempNightLow`/`TempRainDrop`), 증발식(`EvapBaseRate + EvapTempScale·Temperature`), `content/climate.yaml` `when: temperature > …` 임계, climate SPEC `CellState`/`Init*`/`[0,1] clamp`, climate 골든. 이로써 **1b의 정규화-기온 + RESOLVED #2의 계절·바람 park를 supersede**.
+
 **CA1 — 연주기 기온 (annual temperature cycle).** 1게임년 주기 곡선을 기존 일주기(1b) + 강우 강하와 합성해 평균기온이
 30°C↔−5°C 로 진동. 남은 것 = (i) 주기 **shape** (ii) 일주기와의 **합성 방식** (iii) `worldtime` **의존**.
 - shape options: (a) **day-of-year sinusoid** — 연평균을 `annualMid ± annualAmp·sin(2π·yearFraction + φ)` 로(파라미터 2개:
