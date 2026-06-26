@@ -106,6 +106,30 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 > Cm3 `tool:<family>.quality` Attr 피연산자, needs `UpdateConditionalNeeds`(rate + 조건부 set, F8 채널),
 > spatial `cellSize`(balance), climate `fork(tick)` per-step RNG, navmap `wear` deposit(apply 직렬·고정순서).
 
+### Resolutions (F25~F42) — 사람 확정 (2026-06-26): **전부 추천대로**
+> 아래 표가 권위. 각 F의 옵션 상세·근거는 그대로 기록(재논쟁 금지). F43/F44는 클러스터 6에서 RESOLVED.
+
+| F | RESOLVED (rec) |
+|---|---|
+| **F25** | (c) 하이브리드 — 누적형(hunger/fatigue/repro)=rate상수(D9), 문맥결합(fear←predator scent/sight via `UpdateConditionalNeeds`, thermal←apparent_temp §6)=set-from-context; thermal P1 OFF |
+| **F26★** | (a) (종×행위)당 §6 `Program` 하나, 컨트롤러 max(동률 `actions.IDs()`); dot-product/EffValue 기각(D4/D5) |
+| **F27★** | (a) drive/scent/dist/apparent_temp/wind을 **소문자·dotted Attr operand**로 노출, base stat=`Stat` 유지, **expr L0 무수정**; config가 `ReadsAttrs()` 교차검증 |
+| **F28** | (a) 신규 공유 `Graze`/`Flee`(+`Wary`,F43), `Hunt`/`MoveTo`/`Rest` 재사용, `Butcher`=agent action; **P_fa3 추가(골든 재기준)** |
+| **F29** | open `core.Stats` + `map[DriveID]float64` + Stamina/Vital/Pos/Heading/CurrentAction; stat 단련·노화=cross-cutting(D7 읽기만) |
+| **F30** | (a) 매 틱 재점수, stickiness=§6 항(명시 FSM 금지, D3) |
+| **F31** | (a) 종-블록 맵 `fauna:{stats,drives,utility:{<ActionID>:§6},diet,senses,products}`; config가 `expr.Parse`+operand 교차검증 (★F26/F27 종속) |
+| **F32** | (a) `cellSize`∝sense반경(balance), 셀=uint8 채널 비트셋 |
+| **F33** | (a) 고정순서 stencil bulk(`tick%Ns`) + **next-tick(1틱) 지연**; ⚠ **predator 채널은 매 틱 source 셀 침착**(확산만 bulk — §1.1 막판회피 일관) |
+| **F34** | (c) 바람 있으면 upwind, 중립이면 이웃-on coarse — **F44로 scent-only 한정**(food/prey homing + predator 조기경보/Wary) |
+| **F35** | (a)+(c) §6(base stat) 기본속도 + fear/fatigue 변조; navmap `Passable`/`TerrainAt` 샘플만(pathfind 없음, D11) |
+| **F36** | (a) P1=`engine/fauna` 서브모듈 소유 → 나중 `engine/space` 승격 |
+| **F37** | (a) 종 products→파라미터화 `carcass` kind + `raw_meat` decay lot(Dm4); 미식→`rotten_matter`(W10) |
+| **F38** | (a) Mine/Fell 평행 non-recipe extract, `tool:cutting` gate, §6(Dexterity,`tool:cutting.quality`) yield; agent action |
+| **F39** | (a) `balance.regen.prey_respawn` 타이머 재사용; 창발 birth=P_fa4 |
+| **F40** | (a) 종-블록 §6(climate attr[**°C** `temperature`/`moisture`/`wind.*`] + 동물 attr); P1 climate-OFF 중립 |
+| **F41** | (a) 단일 read→score→intent→apply, **결합 agent+animal ObjectID 정렬 apply 순서**, `fork(tick)`; ⚠ architecture.md DAG 삽입=SPEC 직전 사인오프 |
+| **F42** | F19와 batch 등재: `SpeciesID`·`DriveID`·`fauna.Rules`·Attr operand명(`hunger`/`fear`/`scent.*`/`dist.*`/`sight.predator`/`apparent_temp`/`wind.dir`/`wind.mag`)·`Heading`·`cellSize`·`fov_arc`·`Wary` |
+
 ### 클러스터 1 — 의사결정 코어
 
 **F25 — drive set + per-tick 갱신 규칙.** drive 집합은 F19 수준(`hunger`/`fear`/`thermal`/`fatigue`/`repro_readiness`)으로
