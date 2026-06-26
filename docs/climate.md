@@ -38,6 +38,72 @@ Concept & rationale: `docs/design.md §5` (동적 지형). SPECs now exist:
 - `Temperature` = f(시각[밤↓/낮↑, `worldtime`], 강우[비 오면 ↓]). 계절 보정은 park.
 - 용도: Moisture 증발률 변조(위). 이후 agent comfort/stamina로 확장 가능(§6 수식).
 
+## 1c. Phase-1 reopened — annual cycle / wind / apparent_temp (was parked, RESOLVED #2)
+
+> **2차 게이트 (re-open) 2026-06-26.** §1 RESOLVED #2 가 **계절·바람·해·고도를 명시적으로 park** 했다. Phase-1 world 목표
+> (연 1주기 기온 30°C→−5°C · 바람이 냄새를 그리드에 퍼뜨림 · 바람+기온 = 체감온도)가 그중 **연주기 기온·바람**을 다시
+> 요구하므로, 그 둘을 여기서 **OPEN으로 재개방**한다(park 상태였으니 RESOLVED 아님 — 사람만 flip). **아무것도 결정하지
+> 않는다(메커니즘 발명 = 결함).** 옵션은 §0·§1·design.md §5/§6 안에서만 고르며, 깨끗한 메커니즘이 도출 불가하면 그게
+> OPEN 으로 열거할 대상이다. **체감온도 자체는 fauna 소관**(fauna F40) — 여기 climate 의 책임은 **operand 노출 + 단위 + 바람
+> 생성**이지 apparent_temp 계산이 아니다. 교차참조는 fauna §1.3 F40/F33/F43/F44, **중복 금지**.
+> **operand 명칭(두 문서 공유, 고정):** `temperature` · `moisture` · `wind.dir` · `wind.mag` · (fauna 측) `apparent_temp`.
+
+**CA1 — 연주기 기온 (annual temperature cycle).** 1게임년 주기 곡선을 기존 일주기(1b) + 강우 강하와 합성해 평균기온이
+30°C↔−5°C 로 진동. 남은 것 = (i) 주기 **shape** (ii) 일주기와의 **합성 방식** (iii) `worldtime` **의존**.
+- shape options: (a) **day-of-year sinusoid** — 연평균을 `annualMid ± annualAmp·sin(2π·yearFraction + φ)` 로(파라미터 2개:
+  중앙값·진폭, 또는 min/max −5..30), 매끈·주기 1개 의도와 정합, RNG 무관(결정성 무료). (b) season-index 구간선형 — `worldtime.Season`
+  4 setpoint 보간; 거칠고 'season enum' 냄새(§0-3 fauna 정신 "계절 label 없음"과 충돌 위험). (c) seeded 연간 random-walk —
+  강우식 차용; "1년 주기" 의도를 깨고 과함. **rec: (a) sinusoid.**
+- 합성 options: (a) **additive offset** — 연주기 = 일주기 곡선의 *중앙값*을 이동, 일주기는 그 위 고정진폭 delta, 강우는 추가 차감
+  (`T = annual(dayOfYear) + dailyDelta(hourOfDay) − rainDrop·raining`). 단순·1b 그대로 위에 얹힘. (b) amplitude modulation — 연주기가
+  일교차 진폭을 변조(여름 일교차↑); 더 사실적이나 파라미터↑, 후행. (c) max/곱 — 의미 없음. **rec: (a) additive offset.**
+- **⚠ worldtime 의존 (foundational flag):** 연주기는 **연속적 day-of-year(또는 year-fraction)** 가 필요. 현 `worldtime`은
+  `Season(t)`/`Year(t)`/`DayOfRun(t)` + `DaysPerSeason`/`SeasonsPerYear` 는 있으나 **`DayOfYear(t)`/`YearFraction(t)` accessor 와
+  `DaysPerYear`(=DaysPerSeason·SeasonsPerYear) 가 없다**. 또한 worldtime SPEC 자체 Open Question(§"Calendar granularity":
+  `DaysPerSeason`/`SeasonsPerYear` 미확정, 제안 30/4)이 **선결**이어야 연 길이가 고정된다. 그리고 climate `Forcing` 는 현재
+  `HourOfDay`+`AbsHour` 만 운반 — 연주기를 순수 transform 으로 유지하려면 **`Forcing` 에 `DayOfYear`(또는 `YearFraction`) 필드
+  추가**(world 가 worldtime 에서 파생해 주입, climate 는 wall-clock 미접촉, D12). ⇒ **worldtime 재개방(작은 확장) + climate Forcing
+  확장이 CA1 의 선행.** **OPEN.**
+
+**CA2 — 바람 모델 (wind model).** 신규 forcing `Wind{dir, mag}`(world-uniform 스칼라; per-cell 필드는 후행). 남은 것 = (i) 시간에
+따른 **결정적 생성**(seeded, D12) (ii) cadence (iii) §6 operand 노출 (iv) `dir` 표현 단위.
+- 생성 options: (a) **prevailing 방향 + seeded directional random-walk** — `dir` 가 우세풍 각 둘레로 표류, `mag` 는 seeded noise;
+  강우의 "seeded 확률 과정"(RESOLVED #3) 선례·climate per-step `fork(tick)` 그대로(D12). **rec.** (b) 결정적 sinusoid/회전 dir —
+  byte 사소하나 기계적·주기적. (c) **per-climate-cell 바람장** — 공간변화 풍부하나 scent 확산 스텐실(F33)이 복잡해지고 무거움 → frontier;
+  P1 = world-uniform 단일 `Wind`. **rec: (a) world-uniform directional random-walk(seeded fork).**
+- cadence: climate step(`tick % 60`, 1게임시간)에서 같이 생성(별도 `Nw` 도입 안 함); scent 확산(F33 `tick % Ns`)·apparent_temp(fauna
+  Nt)은 그 시점의 `Wind` 를 읽음. **rec: climate step cadence 재사용.**
+- operand 노출: `wind.dir`(스칼라 방향) + `wind.mag`(스칼라 세기). scent 확산은 world 가 `(dir, mag)` 에서 downwind 이웃 offset 을 파생
+  (F33), fauna utility/apparent_temp 는 `wind.dir`/`wind.mag` 를 §6 Attr 피연산자로 읽음(F27 어댑터, expr L0 불변). **rec: 둘 다 노출.**
+- **⚠ `dir` 표현 단위(미결):** 라디안 `[0,2π)` vs turns `[0,1)` vs degrees — §6 operand 는 float 라 어느 쪽이든 동작하나 scent 스텐실의
+  downwind 이웃 선택·fauna upwind steer(F34)와 **단위 합의**가 필요. **rec: 라디안 `[0,2π)`** (단, 사람 확인). `mag` 정규화 `[0,1]`
+  vs world-units/step 도 동반 결정. **⚠ `wind.mag` 는 신규 coin** (fauna §1.2 에는 `wind.dir` 만 등재 — `wind.mag` glossary 추가 필요).
+- 결정성: 생성 = climate 의 주입 per-step rng fork; world-uniform `Wind` 는 `State` 에 보관(resume byte-동일, D12). **OPEN.**
+
+**CA3 — 단위 + apparent_temp operand 노출.** (i) **단위 결정** (ii) climate 가 `temperature`/`moisture`/`wind.*` 를 §6 Attr
+operand 로 노출하는지 확인(apparent_temp 식 자체는 fauna F40 소관).
+- (i) 단위 options: (a) climate 내부 `Temperature ∈ [0,1]` 유지 + **°C 매핑**(config `tempMinC=−5`, `tempMaxC=30`; `°C = lerp`) —
+  기존 강우/증발/전이 수식(`EvapBase + EvapTempScale·Temperature`, `TempDayPeak/Low/RainDrop` 전부 [0,1] 가정)의 **byte-안정** 보존, °C 는
+  display + operand 로만. (b) climate 를 **실제 °C(−5..30)** 로 이동 — 사람이 명시한 °C 와 직접 정합·개념 명료하나 위 수식·climate 골든
+  전부 재기준(blast radius↑). **⚠ 진짜 fork:** 사람이 "°C" 라 했고 fauna apparent_temp 도 °C 로 읽는 게 자연스러움 → 그러면 operand
+  `temperature` 가 °C 여야 한다. 그러나 operand 명칭은 **두 문서 공유 고정**(`temperature` 하나)이라 "정규화 [0,1] 인가 °C 인가" 가
+  fauna 와 **동시에** 정해져야 함(CA3↔F40 결합). 절충안: 내부 [0,1] 유지 + 별도 °C operand(`temperature_c`) 노출 — 그러나 새 operand
+  명칭 도입 = 명칭 일관성 제약과 충돌. **이 fork 가 정확히 OPEN** — climate·fauna 양쪽 operand 의미를 사람이 한 번에 결정. **rec(약):**
+  내부 transform 은 [0,1] 정규화 유지(골든 안정), **operand `temperature` 의 노출 단위(정규화 vs °C)는 fauna apparent_temp 식과 함께
+  사람이 확정** — climate 단독 결정 금지.
+- (ii) operand 노출 seam: climate 는 **producer**, apparent_temp 는 fauna 의 animal Context 어댑터가 읽는다(F27). 따라서 world 가
+  동물의 **로컬 climate 셀**(CellState: `Moisture`/`Temperature`) + `Wind` 를 샘플해 animal expr Context 의 `Attr("temperature")`/
+  `Attr("moisture")`/`Attr("wind.dir")`/`Attr("wind.mag")` 로 주입해야 함. **현 climate 노출 API = `Cells()`(정렬 full) + `Rain()` 뿐** —
+  위치-샘플 읽기 경로(`CellAt(pos core.Vec2) CellState` 또는 world 가 GridCell 매핑 후 `Cells()` 인덱싱)와 `Wind()` accessor 추가가
+  필요. **rec: climate 가 `CellAt(pos)` + `Wind()` 노출; world 가 fauna Context 로 어댑트**(apparent_temp 식은 fauna 소유 — climate 책임
+  = operand 값 + 단위). **OPEN.**
+
+> **통합 seam(교차참조, 중복 금지):** `world` 가 climate `Wind` 를 ① fauna scent-spread(F33 downwind 전파) ② apparent_temp operand
+> (F40) 양쪽에 먹인다 — 이는 fauna F41/F33 와이어링이다. climate 는 `Wind` 를 *생성·노출*만, 소비·확산 패스는 fauna/world.
+> **불변 플래그:** D12(바람 생성 = seeded·고정순서; 연주기 = worldtime 파생, wall-clock 금지) · D10(신규 forcing/operand = content/data
+> + §6) · D11(world-uniform 스칼라 바람 → 동물 칸 스냅 무관) — 직접 위반 없음. 단 **CA3 단위 fork 는 cross-doc operand 의미(climate↔fauna)
+> 를 흔들므로** 조율 리스크로 표기(위반 아님): `temperature`/`wind.mag` 의 단위·정규화가 두 문서에서 **반드시 동일**해야 한다.
+
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `map-plan.md M1~M5` 양식)
 > 빌드순서: `engine/env/climate`는 L1 leaf(core+rng)라 `engine/space/navmap`과 같은 stage 2에서 독립적으로 만들 수 있다.
 > 와이어링(주기·SetTerrain 브리지)은 `world`(stage 7)에서, 콘텐츠 로드는 `platform/config`(stage 8)에서 합류한다.
@@ -76,4 +142,5 @@ Concept & rationale: `docs/design.md §5` (동적 지형). SPECs now exist:
 - frontend: 동적 지형 재렌더(숲↔늪 색 전이), 선택적으로 강우/습도 오버레이. 기존 terrain region 렌더 확장(map-plan M5와 합류).
 
 ### (park, frontier) — design.md §5/§6 확장 seam
-- Temperature → path cost(agent comfort/stamina), 연속 moisture-cost 가산, 계절·바람·해·고도(§6 피연산자 데이터 추가, D10). dirty-set/부하분산 cadence(프로파일 후). 모두 새 코드 아닌 데이터/계수 확장.
+- Temperature → path cost(agent comfort/stamina), 연속 moisture-cost 가산, **per-cell 바람장**·해·고도(§6 피연산자 데이터 추가, D10). dirty-set/부하분산 cadence(프로파일 후). 모두 새 코드 아닌 데이터/계수 확장.
+- **CA1~CA3 활성화 phase(연주기·바람·apparent_temp operand)** 는 사람 RESOLVE 후 별도 M(climate)·P_fa4(fauna thermal/wind)에서 의도적 재기준 — staging 양식은 M4/flora 동형.
