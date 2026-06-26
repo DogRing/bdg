@@ -22,6 +22,7 @@ The highest-leverage check is **"run seed S for N ticks, diff against golden."**
 
 ## 4. Scenario fixtures = integration tests (intent ↔ code)
 Encode scenarios A–H from `docs/design.md` / `PRD.md` as named fixtures. Each = `{initial state, seed, expected-emergence assertion}`.
+> **World-layer (물리/세계) 시나리오 W1–W16** — 지형·기후·식생·물질사슬·부패·경제·생애 창발 — 은 **`docs/scenarios-world.md`** 에 별도 카탈로그로 있다(의존 subsystem·`BLOCKED` 상태 포함). 사회 시나리오(A–L)를 보완.
 | Fixture | Assertion (example) |
 |---------|---------------------|
 | B starving pauper | given enough urgency, theft becomes *visible* and is selected |
