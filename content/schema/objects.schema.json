@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/objects.schema.json",
-  "title": "content/objects.yaml — object & item kinds carrying supply Effect (D9/D10), incl. flora + material tags + decay",
+  "title": "content/objects.yaml — object & item kinds carrying supply Effect (D9/D10), incl. flora + material tags + decay + tool durability + finite source",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version"],
@@ -44,7 +44,7 @@
       "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
     },
     "formula": {
-      "description": "A §6 Formula string (design.md §6), compiled by platform/config via engine/expr. Operands: terrain attrs, climate (moisture/temperature), the two morphology axes `length`/`width`, capability StatIDs (e.g. Dexterity). An unknown operand is a load-time failure (D10). Structural check here is non-empty string; semantic validation is platform/config's.",
+      "description": "A §6 Formula string (design.md §6), compiled by platform/config via engine/expr. Operands: terrain attrs, climate (moisture/temperature), the two morphology axes `length`/`width`, capability StatIDs (e.g. Dexterity), the held-tool quality operand `tool:<family>.quality` (Mine yield, Cm3). An unknown operand is a load-time failure (D10). Structural check here is non-empty string; semantic validation is platform/config's.",
       "type": "string",
       "minLength": 1
     },
@@ -63,7 +63,7 @@
       "maxItems": 2
     },
     "yieldEntry": {
-      "description": "One yield-table row (flora 1e). `chance` is a §6 Formula (typically `§6(Dexterity)`) → [0,1] success probability for a SEEDED roll; `qty` is the base [min,max] amount on success, scaled by the plant's `length` (yield ∝ length, flora §1 refinement). D7: chance composes a capability stat, NOT a per-action skill. D9: regen is this table refilling as `length` grows, never a future-quantity field.",
+      "description": "One yield-table row (flora 1e; reused by Mine, Xm5). `chance` is a §6 Formula (typically `§6(Dexterity)` for flora, `§6(Dexterity, tool:digging.quality)` for Mine) → [0,1] success probability for a SEEDED roll; `qty` is the base [min,max] amount on success, scaled by the plant's `length` (flora) or used as-is (Mine). D7: chance composes a capability stat, NOT a per-action skill. D9: regen is this table refilling (flora) or the node's finite `source.remaining` (Mine), never a future-quantity field.",
       "type": "object",
       "additionalProperties": false,
       "required": ["item", "chance", "qty"],
@@ -74,7 +74,7 @@
       }
     },
     "yieldTable": {
-      "description": "The yield table: an array of {item, chance, qty} rolled by a generic harvest action (Forage/Fell) with the seeded RNG (flora 1e, D12). Yield scales with the plant's `length` (flora §1 refinement).",
+      "description": "The yield table: an array of {item, chance, qty} rolled by a generic harvest action (Forage/Fell/Mine) with the seeded RNG (flora 1e, D12). Yield scales with the plant's `length` (flora §1 refinement) or is finite-source-bounded (Mine, Xm1).",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/yieldEntry" }
@@ -158,6 +158,19 @@
         }
       }
     },
+    "tool": {
+      "description": "Marks an item_kind as a DURABLE TOOL (Materials & Crafting plan §0 'Recipe model — FINAL'). A tool is NOT consumed by use; instead a recipe alternative with `mode: wear` decrements the tool INSTANCE's CURRENT durability by that alternative's `amount` (Mine wears the held digging tool the same way) — the wear AMOUNT is per-recipe, NOT a per-item constant. When durability reaches 0 the tool is REMOVED (object-mortality, §7) — break = reaching 0, deterministic (D12-clean). This block carries ONLY `wear_max`, the durability CEILING: a produced tool's STARTING durability = the crafting basis_stat roll · wear_max (skilled → sturdier). The per-tool-INSTANCE current durability is runtime state (data-contracts §9), NOT here. The Mine yield §6 may read the held tool's quality (= current durability / wear_max) via the world's `tool:<family>.quality` Context operand (Cm3). NOTE: a `tool` item carries its `tool:<family>` tag in `tags` (the recipe `wear`-alternative / Mine-gate vocabulary); this block adds the durability ceiling.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wear_max"],
+      "properties": {
+        "wear_max": {
+          "description": "Durability CEILING (FINAL): the maximum durability of a fresh instance. A produced tool's starting durability = the recipe basis_stat roll · wear_max (skilled crafters make sturdier tools). A recipe `wear` alternative decrements current durability by its own `amount` per use; at 0 the tool breaks (object-mortality, §7). > 0. (There is NO per-item `wear_per_use` — the wear amount is per-recipe — and NO per-item `quality` formula — output quality comes from the crafting basis_stat roll.)",
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
     "flora": {
       "description": "Marks an object_kind as a flora SPECIES (engine/flora; docs/flora.md). All behavior is §6 data (D4/D10); succession/forests emerge (D2/D3). TWO continuous morphology axes (§1 refinement, replacing the single `growth` scalar): `length` (height; maturity proxy → stages; yield ∝ length) and `width` (canopy spread → shade), each with its OWN growth rate so a species can grow tall faster than wide. Stages DERIVED from `length` via `stages` thresholds (D9: no stored stage, no future field).",
       "type": "object",
@@ -204,6 +217,23 @@
         }
       }
     },
+    "source": {
+      "description": "Marks an object_kind as a FINITE EXTRACTION SOURCE (Materials & Crafting Xm1 RESOLVED — e.g. an `ore_node`). The finite quantity is OBJECT-LOCAL (D9 locality, berry_bush parity): the runtime per-INSTANCE `remaining` count (data-contracts §1 objects[]) starts at `initial` and is decremented by extraction (Mine) — NOT a future-quantity field, just the supply left. When `remaining` reaches 0 the world removes the node (object-mortality, §7) AND fires ONE `navmap.SetTerrain` over the node's cells to `depleted_terrain` (Xm2/Xm3 — one permanent reroute on exhaustion, apply phase). `depleted_terrain` MUST be a terrain type defined in content/terrain.yaml (the navmap `types` table; load-time validated, Xm6 prerequisite). The yield per extraction is the object_kind's `harvest.yields` table rolled via §6 (Xm5, flora-yield reuse).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["initial", "depleted_terrain"],
+      "properties": {
+        "initial": {
+          "description": "Starting `remaining` count for a fresh node instance (Xm1). Integer >= 1; finite + scarce (Q5). The per-instance runtime `remaining` lives in objects[] serialization (data-contracts §1), not here.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "depleted_terrain": {
+          "description": "The terrain type the node's cells become when `remaining` reaches 0 (Xm3 — the permanent reroute, e.g. `bare_rock`). MUST exist in content/terrain.yaml / the navmap `types` table (Xm6 prerequisite; load-time validated, D10).",
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
     "objectKind": {
       "type": "object",
       "additionalProperties": false,
@@ -213,6 +243,7 @@
         "mobile": { "type": "boolean" },
         "tags": { "$ref": "#/$defs/tagList" },
         "flora": { "$ref": "#/$defs/flora" },
+        "source": { "$ref": "#/$defs/source" },
         "harvest": {
           "type": "object",
           "additionalProperties": false,
@@ -220,14 +251,17 @@
           "properties": {
             "action": { "$ref": "#/$defs/identifier" },
             "yields": {
-              "description": "Either the LEGACY single item id (non-flora object_kinds: a fixed item placed into inventory) OR the flora YIELD TABLE [{item, chance, qty}] rolled with the seeded RNG (flora 1e; qty ∝ length, §1 refinement). platform/config picks the form by shape.",
+              "description": "Either the LEGACY single item id (non-flora object_kinds: a fixed item placed into inventory) OR the flora/Mine YIELD TABLE [{item, chance, qty}] rolled with the seeded RNG (flora 1e / Xm5; qty ∝ length for flora, finite-source-bounded for a `source` node). platform/config picks the form by shape.",
               "anyOf": [
                 { "$ref": "#/$defs/identifier" },
                 { "$ref": "#/$defs/yieldTable" }
               ]
             },
             "provides": { "$ref": "#/$defs/predList" },
-            "depletes": { "type": "boolean" }
+            "depletes": {
+              "description": "Legacy boolean: the harvest consumes the instance (prey) or a finite-but-timer-regrown source (legacy berry_bush + balance.regen). For a FINITE EXTRACTION node use the `source` block instead (Xm1: object-local `remaining` + a SetTerrain reroute on exhaustion), not this boolean.",
+              "type": "boolean"
+            }
           }
         },
         "occupy": {
@@ -254,6 +288,7 @@
         },
         "tags": { "$ref": "#/$defs/tagList" },
         "decay": { "$ref": "#/$defs/decay" },
+        "tool": { "$ref": "#/$defs/tool" },
         "supply": { "$ref": "#/$defs/supply" }
       }
     }

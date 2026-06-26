@@ -29,7 +29,8 @@
     "action": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "tags", "duration"],
+      "required": ["id", "tags"],
+      "description": "One atomic durative action (D3). `recipe_mediated: true` (Materials plan §0 'Recipe model — FINAL') marks a Craft-style action parameterized by a content/recipes.yaml recipe bound at plan time (D3 parametric): the recipe owns the input slots (wear|consume alternatives), the `ambient` stations, the per-recipe `duration`, the `basis_stat` outcome roll, and the outputs. Such an action MUST NOT set `produces_item` (the recipe owns outputs), MUST NOT set `target_kind` (its stations are the recipe's `ambient`, bound in-range by the world), and OMITS `duration` (the recipe supplies it). TOOL REQUIREMENTS (FINAL): a recipe-mediated action (Craft) has NO tool tag — a tool is a recipe input alternative with `mode: wear` (or `consume`). A NON-recipe action (Mine) expresses its tool need as an action-level `tool:<family>` tag (the actor must hold a matching tool); the world wears it (decrement current durability, break at 0) at a world/balance rate. There is NO `target_tags`/station action field. A non-recipe action MUST carry `duration` (enforced below).",
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
         "tags": {
@@ -37,17 +38,34 @@
           "minItems": 1,
           "items": { "$ref": "#/$defs/tag" }
         },
-        "target_kind": { "$ref": "#/$defs/identifier" },
+        "target_kind": {
+          "description": "A specific objects.yaml object_kind id this action targets (Forage→berry_bush, Mine→ore_node). A recipe_mediated action has NO target_kind (its stations are the recipe `ambient`, bound in-range by the world).",
+          "$ref": "#/$defs/identifier"
+        },
         "requires": { "$ref": "#/$defs/predList" },
         "requires_any": { "$ref": "#/$defs/predList" },
         "produces": { "$ref": "#/$defs/predList" },
-        "produces_item": { "$ref": "#/$defs/identifier" },
+        "produces_item": {
+          "description": "Item kind placed into inventory on completion (a FIXED single item; Forage→berries). MUST be absent when recipe_mediated is true (FINAL — the bound recipe's outputs replace it).",
+          "$ref": "#/$defs/identifier"
+        },
         "consumes_item": { "$ref": "#/$defs/identifier" },
+        "recipe_mediated": {
+          "description": "Materials plan §0 'Recipe model — FINAL'/D3: true marks an action (Craft) parameterized by a content/recipes.yaml RECIPE bound at plan time — the recipe owns the input slots (each `{any:[{tagQuery, amount, mode:wear|consume}…]}`), `ambient` stations, `duration`, `basis_stat`, and outputs. The action names no recipe (parametric) and carries NO tool tag, NO target_kind, and NO duration. When true, `produces_item`, `target_kind`, and `duration` MUST be absent.",
+          "type": "boolean"
+        },
         "duration": { "type": "integer", "minimum": 1 },
         "effect": { "$ref": "#/$defs/needDelta" },
         "effect_per_minute": { "$ref": "#/$defs/needDelta" },
         "interruptible": { "type": "boolean" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["recipe_mediated"], "properties": { "recipe_mediated": { "const": true } } },
+          "then": { "not": { "anyOf": [ { "required": ["duration"] }, { "required": ["produces_item"] }, { "required": ["target_kind"] } ] } },
+          "else": { "required": ["duration"] }
+        }
+      ]
     }
   }
 }

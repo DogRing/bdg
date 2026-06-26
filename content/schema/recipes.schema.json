@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/recipes.schema.json",
-  "title": "content/recipes.yaml — craft recipes mediating the single Craft atomic action (D3/D4/D10)",
-  "description": "The recipe catalog (Materials & Crafting plan §0 locked). A recipe is DATA, not a hand-drawn plan: Craft is ONE atomic action (D3) parameterized by a recipe; the planner chains gather→craft itself (never authored). Inputs are TAG QUERIES, not specific item ids — an input requires a tag SET (e.g. `shaft_stock`) at a quantity, so substitutability EMERGES from tags (D4): any item_kind carrying the queried tags is a valid input, and a new item becomes eligible by carrying the tag (no recipe edit). Tools are non-consumed durables matched by tag; the §6 capability multiplier reading the held tool's tags lives in the Craft action's Formula, NOT here (plan §0). platform/config compiles this into the recipe registry and cross-checks that every `outputs[].item` is a known item_kind and every input `tagQuery`/`tool` tag is referenced by at least one item_kind's `tags` (an unreachable recipe is a load-time WARNING/failure, D10). Quality/yield (Dexterity → chance/qty) reuses the flora yield model in the Craft action, NOT a per-recipe field.",
+  "title": "content/recipes.yaml — craft recipes (FINAL slot/alternative model, D3/D4/D10)",
+  "description": "The recipe catalog (Materials & Crafting plan §0 'Recipe model — FINAL'). A recipe is DATA, not a hand-drawn plan: Craft is ONE atomic action (D3) parameterized by a recipe bound at plan time; the planner chains gather→craft itself (never authored). Craft has NO tool/station action tag — the gate is purely 'inputs present + ambient in range'. A recipe is { id, inputs[], ambient[], duration, basis_stat, outputs[] }. `inputs[]` is an ordered list of SLOTS; each slot `{ any: [alternative,…] }` is satisfied by EXACTLY ONE alternative (OR). An alternative `{ tagQuery (AND), amount, mode: wear|consume }`: `consume` removes `amount` matching items/units (most-decayed-first, ties by ObjectID; works on stackable lots AND a whole durable instance); `wear` requires the matched item carry a `tool` block, decrements its current durability by `amount`, breaks (object-mortality) at 0, else persists. `ambient[]` = station tags the actor must be in range of (substitutable, NOT consumed, optional). `duration` = per-recipe craft ticks. `basis_stat` = the StatID whose roll drives success/qty AND the produced instance's durability/quality (a produced tool's start durability = roll·wear_max). Determinism (D12): a slot takes the FIRST satisfiable alternative in authored order; `wear` picks the most-worn matching tool (ties by ID); `consume` takes the most-decayed lots (ties by ID). platform/config cross-checks: every output `item` is a known item_kind; every alternative `tagQuery` tag is carried by >=1 item_kind; every `wear` alternative's tagQuery is satisfiable ONLY by item_kinds with a `tool` block; every `ambient` tag is carried by >=1 object_kind; `basis_stat` is a known StatID (D10).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "recipes"],
@@ -10,47 +10,66 @@
     "schema_version": { "const": 1 },
     "recipes": {
       "type": "array",
-      "description": "The recipe table. An empty array = no craftables (outcome-neutral introduction). Order is NOT significant (recipes are matched by tag-query availability, deterministically by sorted recipe id in the planner/Craft action).",
+      "description": "The recipe table. An empty array = no craftables (outcome-neutral introduction). Order is NOT significant (recipes are matched by satisfiability, deterministically by sorted recipe id in the planner/Craft action).",
       "items": { "$ref": "#/$defs/recipe" }
     }
   },
   "$defs": {
     "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
     "tag": {
-      "description": "A core.Tag identifier (material tag like `shaft_stock`, tool tag like `tool:cutting`, or station tag). Must match the glossary/tag vocabulary; cross-checked at load (D10).",
+      "description": "A core.Tag identifier (material tag `shaft_stock`, tool-family tag `tool:cutting`, station tag `station:bench`). Cross-checked at load (D10).",
       "type": "string",
       "pattern": "^[A-Za-z][A-Za-z0-9_:]*$"
     },
     "tagQuery": {
-      "description": "The set of tags an INPUT item_kind must ALL carry to satisfy this slot (AND over the set — substitutability emerges from tags, plan §0/D4). Any item_kind whose `tags` is a superset of this set is a valid input; the actor/planner picks among them. An empty set is a load failure (an input must constrain something).",
+      "description": "A set of tags an item must carry (AND — the matched item's `tags` must be a SUPERSET of this set; D4 — any item carrying the set auto-qualifies, a new item needs no recipe edit). minItems 1.",
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/tag" },
       "uniqueItems": true
     },
-    "input": {
-      "description": "One required input slot: a tag-query that the consumed item must satisfy, at a quantity. NOT a specific item id (D4 — substitutability via tags).",
+    "alternative": {
+      "description": "One alternative way to satisfy a slot (the `any` OR list, authored order = priority): match an item carrying `tagQuery`, at `amount`, used by `mode`. `consume` removes `amount` (most-decayed lots first, ties by ObjectID; works on stackable lots AND a whole durable instance — a tool consumed AS material, e.g. an old knife reforged). `wear` requires the matched item carry a `tool` block; it decrements current durability by `amount` and breaks (object-mortality) at 0, else persists (picks the most-worn matching tool, ties by ID).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["tagQuery", "qty"],
+      "required": ["tagQuery", "amount", "mode"],
       "properties": {
         "tagQuery": { "$ref": "#/$defs/tagQuery" },
-        "qty": {
-          "description": "Number of items satisfying tagQuery consumed by one craft. Integer >= 1.",
+        "amount": {
+          "description": "consume: count of matching items/units removed. wear: durability points decremented from the matched tool. Integer >= 1.",
           "type": "integer",
           "minimum": 1
+        },
+        "mode": {
+          "description": "`consume` — remove `amount` matching items/units (most-decayed-first, ties by ObjectID; stackable lots OR a whole durable instance). `wear` — the matched item MUST have a `tool` block; decrement its current durability by `amount`, break/remove at 0, else persist (most-worn matching tool, ties by ID).",
+          "type": "string",
+          "enum": ["consume", "wear"]
+        }
+      }
+    },
+    "slot": {
+      "description": "One ordered input slot, satisfied by EXACTLY ONE of its `any` alternatives (OR). The planner/world takes the FIRST satisfiable alternative in authored order (D12).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["any"],
+      "properties": {
+        "any": {
+          "description": "The OR list of alternatives (authored order = priority). minItems 1 (a single-alternative slot is just a required input; multiple alternatives = substitutable 2단 대체, possibly with different amount/mode).",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/alternative" }
         }
       }
     },
     "output": {
-      "description": "One produced item: a concrete item_kind id at a base quantity. The actual rolled qty/quality scales by §6(Dexterity) in the Craft action (flora yield model reuse, plan §0), NOT here — `qty` is the base amount before that scaling.",
+      "description": "One produced item at a BASE quantity. Actual success/qty AND the produced instance's durability/quality are ROLLED from the recipe's `basis_stat` (skilled -> sturdier/more) — `base_qty` is the pre-roll base. A produced tool's starting durability = roll·`wear_max`. A perishable output is placed as a fresh decay lot {kind, qty, decayAge=0} (Dm5).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["item", "qty"],
+      "required": ["item", "base_qty"],
       "properties": {
         "item": { "$ref": "#/$defs/identifier" },
-        "qty": {
-          "description": "Base produced quantity per craft (integer >= 1). Dexterity-driven quality/qty scaling is applied by the Craft action via §6, reusing the flora yield roll.",
+        "base_qty": {
+          "description": "Base produced quantity before the basis_stat roll (integer >= 1).",
           "type": "integer",
           "minimum": 1
         }
@@ -59,28 +78,35 @@
     "recipe": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "inputs", "outputs"],
+      "required": ["id", "inputs", "duration", "basis_stat", "outputs"],
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
         "inputs": {
-          "description": "Required input slots (tag-query + qty each). minItems 1 — a recipe consumes something.",
+          "description": "Ordered list of SLOTS (each `{ any: [alternative,…] }`). minItems 1 — a recipe consumes/uses something. The craftable gate: every slot has a satisfiable alternative (no partial run).",
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/input" }
+          "items": { "$ref": "#/$defs/slot" }
+        },
+        "ambient": {
+          "description": "Station tags (주변도구: bench/furnace…) the actor must be IN RANGE of an object carrying (each tag; substitutable — any object carrying the tag). NOT consumed. Optional (a recipe with no ambient needs no station). The Craft action binds the in-range objects via the spatial hash; there is NO action `target_tags` (FINAL).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/tag" },
+          "uniqueItems": true
+        },
+        "duration": {
+          "description": "Per-recipe craft time in ticks (FINAL — replaces the Cm6 action-flat duration). Integer >= 1; the engine may scale it by the basis_stat at execution.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "basis_stat": {
+          "description": "The StatID whose roll drives the outcome (success, qty, AND the produced instance's durability/quality — produced tool start durability = roll·wear_max). Must be a known StatID (D10; e.g. Dexterity).",
+          "$ref": "#/$defs/identifier"
         },
         "outputs": {
-          "description": "Produced items (item + base qty each). minItems 1 — a recipe produces something.",
+          "description": "Produced items (item + base_qty each). minItems 1 — a recipe produces something.",
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/output" }
-        },
-        "tool": {
-          "description": "Optional REQUIRED tool tag: the actor must hold an item_kind carrying this tag for the craft to be visible/possible. The tool is a non-consumed durable (`wear`, plan §0) — its `wear` decrement + the §6 capability multiplier reading the held tool's tags live in the Craft action, NOT in the recipe.",
-          "$ref": "#/$defs/tag"
-        },
-        "station": {
-          "description": "Optional REQUIRED station tag: the actor must be at an object_kind carrying this tag (e.g. tool_bench → `station:bench`) for the craft. Like `tool`, the station is referenced by tag (D4); the at-station gate is enforced by the Craft action/planner.",
-          "$ref": "#/$defs/tag"
         }
       }
     }

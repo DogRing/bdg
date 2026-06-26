@@ -14,6 +14,16 @@ per-action cost field**), a `Duration`, optional need-satisfaction `Effect`/`Eff
 its `Target` kind, and the `produces`/`requires` predicates the planner backward-chains over.
 This module knows *what* an action is, never *when to do it* (D5).
 
+It also owns the **recipe-mediated `Craft`** and the **terrain-altering `Mine`** action shapes
+(Materials & Crafting plan §0 "Recipe model — FINAL", P_m3/P_m4): both are ordinary `ActionDef`s — the
+*recipe binding* (which recipe), the *slot/alternative input application* (FINAL: per slot the first
+satisfiable alternative; `wear` vs `consume` modes; most-decayed-first / most-worn ordering), the
+*`ambient` station gate*, the *per-recipe `duration`*, the *`basis_stat` outcome roll* (incl. produced
+durability), and the *node depletion + `SetTerrain`* (Xm2/Xm3) are all the **world apply phase**'s job
+(see Out of Scope). This module only declares the action shape + the `RecipeMediated` flag the world
+reads. A recipe-mediated action (Craft) carries **no** tool tag, **no** target, and **no** duration
+(the recipe supplies them); a non-recipe action (`Mine`) keeps an action-level `tool:<family>` tag.
+
 ## Public Interface
 
 ```go
@@ -28,14 +38,15 @@ import (
 type ActionID string
 
 // TargetKind classifies what an action acts on (the brief's `target.kind`). It is DERIVED at
-// Load from the action's content shape (target_kind / the at_target|near_other predicates),
-// so the YAML stays in its existing form — no new schema field (see Notes).
+// Load from the action's content shape (target_kind / the at_target|near_other predicates), so the
+// YAML stays in its existing form. A recipe-mediated action (Craft) has NO target_kind — its
+// station(s) are the bound recipe's `ambient` tags, bound in-range by the world (TargetNone here).
 type TargetKind uint8
 
 const (
-    TargetNone     TargetKind = iota // no target (Rest, Sleep)
+    TargetNone     TargetKind = iota // no target (Rest, Sleep, Craft — Craft's stations are recipe `ambient`)
     TargetLocation                   // a Vec2 destination (MoveTo; binds via at_target)
-    TargetObject                     // an objects.yaml object_kind (Forage→berry_bush, Craft→tool_bench, …)
+    TargetObject                     // an objects.yaml object_kind (Forage→berry_bush, Mine→ore_node)
     TargetAgent                      // another agent (Signal, Attack; binds via near_other)
 )
 
@@ -52,19 +63,33 @@ type ActionDef struct {
     ID       ActionID    // canonical identifier (docs/glossary.md)
     Tags     []core.Tag  // drives gate visibility (engine/gates) + planner cost (D4). NEVER a
                          // per-action gate list or cost number — both are tag-derived elsewhere.
-    Duration core.GameMinutes // BASE durative length in game-minutes (≥ 1); engine scales it.
+                         // A NON-recipe action's tool need is a `tool:<family>` tag here (Mine); a
+                         // recipe-mediated action (Craft) carries NO tool tag (FINAL — tool = a recipe
+                         // input alternative with mode:wear|consume).
+    Duration core.GameMinutes // BASE durative length in game-minutes (≥ 1). ZERO for a RecipeMediated
+                         // action — the bound recipe's per-recipe `duration` is used (FINAL).
 
-    Target       TargetKind    // none | location | object | agent (derived; see Notes)
-    TargetKindID core.Tag       // the objects.yaml object_kind id when Target == TargetObject
-                                // (e.g. "berry_bush"); empty otherwise. (Typed as core.Tag only
-                                // for the identifier-string shape; it is an object-kind id.)
+    Target       TargetKind // none | location | object | agent (derived; see Notes)
+    TargetKindID core.Tag    // the objects.yaml object_kind id when Target == TargetObject
+                            // (e.g. "berry_bush","ore_node"); empty otherwise.
 
     Requires    []core.Pred // preconditions that must hold to START (planner; ALL must hold)
     RequiresAny []core.Pred // alt preconditions (planner; ANY of these satisfies the start gate)
     Produces    []core.Pred // predicates this action makes true on completion (GOAP forward)
 
-    ProducesItem core.Tag // item kind placed into inventory on completion (empty if none)
+    ProducesItem core.Tag // item kind placed into inventory on completion (empty if none / recipe-driven)
     ConsumesItem core.Tag // item kind removed; its supply becomes the Effect on completion (D9)
+
+    // RecipeMediated marks an action whose inputs/outputs/duration/station come from a
+    // content/recipes.yaml RECIPE bound at plan time (D3 — Craft = single atomic action parameterized
+    // by a recipe, FINAL). When true, the world reads the bound recipe entirely: ordered input SLOTS
+    // (each `{any:[alternative…]}`, first-satisfiable-in-authored-order, D12; an alternative
+    // `{tagQuery, amount, mode:wear|consume}`), `ambient` station tags (in-range via the spatial hash),
+    // per-recipe `duration`, `basis_stat` (the outcome roll), and `outputs[]{item, base_qty}`. The
+    // action def names NO specific recipe (parametric, like MoveTo's target) and carries NO tool tag,
+    // NO target_kind, and a ZERO Duration — the planner picks the recipe whose every slot is satisfiable
+    // and whose ambient stations are in range, deterministically by sorted recipe id.
+    RecipeMediated bool
 
     Effect          Effect // direct need deltas applied ON COMPLETION (empty for consumption acts)
     EffectPerMinute Effect // need deltas accrued EACH game-minute while running (durative supply)
@@ -82,8 +107,8 @@ type Registry struct{ /* opaque: defs map[ActionID]ActionDef + sorted []ActionID
 // immutable Registry plus its Producers reverse index. It performs SEMANTIC validation (see
 // Invariants) and returns an error describing the FIRST violation. STRUCTURAL JSON-schema
 // validation (content/schema/actions.schema.json) and cross-file referential integrity
-// (StatIDs in tags, need ids in effects, target_kind/item ids in objects.yaml) are NOT done here
-// — they are platform/config's job, run before this call.
+// (StatIDs in tags, need ids in effects, target_kind/item ids in objects.yaml, recipe references)
+// are NOT done here — they are platform/config's job, run before this call.
 func Load(r io.Reader) (*Registry, error)
 
 // Get returns the definition for id and whether it exists.
@@ -121,146 +146,181 @@ func (reg *Registry) Tags() []core.Tag
 - `engine/stats` — **referenced only by contract**: an action's `uses:<StatID>` tags name stats;
   the *cross-check* that those StatIDs exist is `platform/config`'s referential-integrity step,
   not this module. No runtime call into `engine/stats`.
-- `engine/gates` — **referenced only by contract**: an action's `Tags` are what `engine/gates`
-  matches at planning time. This module does NOT import `engine/gates` (that would create an
-  L3→L2 dependency that the planner already mediates) and stores no gate ids.
+- `engine/gates` — **referenced only by contract**: an action's `Tags` (incl. a non-recipe action's
+  `tool:*`) are what `engine/gates` matches at planning time. This module does NOT import
+  `engine/gates` and stores no gate ids.
 - **Contract**: `content/schema/actions.schema.json` defines the on-disk shape; `content/actions.yaml`
-  is the data. The tag grammar is `content/README.md §Tags`. `platform/config` bridges
-  file → schema-validate → referential-integrity → `Load`.
+  is the data; `content/recipes.yaml` carries the recipes a `RecipeMediated` action binds (the recipe
+  registry is `platform/config`'s; this module stores no recipe content, only the `RecipeMediated`
+  flag). The tag grammar is `content/README.md §Tags`. `platform/config` bridges file →
+  schema-validate → referential-integrity → `Load`.
 
 ## Owned Data
 
 - `Registry`, `ActionDef`, `Effect`, and the `ActionID`/`TargetKind` types. The `Registry` is
   **immutable after `Load`** and owns its internal map + precomputed sorted id slice + the
   `Producers` reverse index — no other module mutates it. Returned slices/maps are copies.
+- This module owns **no** recipe content, **no** tool durability state, **no** ore-node `remaining` —
+  those are content (`recipes.yaml`/`objects.yaml`) compiled by `platform/config` and runtime state
+  mutated by `engine/world` (apply phase). The action def only declares `RecipeMediated`.
 
 ## Invariants
 
 - **Atomic only; no trees (D3)**: an `ActionDef` is a single leaf action. The registry stores
   **no** `Method`, `Task`, subtask list, or plan. The only relational structure is the
-  `Producers` reverse index (a flat `Pred → []ActionID` map for GOAP), which is **not** a tree —
-  it is regenerated mechanically from each action's `Produces`. A grep/struct guard confirms no
-  subtask/method field exists.
-- **No per-action gate list, no per-action cost (D4)**: `ActionDef` carries `Tags` and nothing
-  that names a `GateID` or a cost number. Gate visibility is decided by `engine/gates` matching
-  these tags; cost is composed from tags in the planner (`balance.yaml cost_terms × tag_levels`).
-  Adding gating/cost behaviour is a content edit (a gate or a tag), never a field here (D10).
+  `Producers` reverse index (a flat `Pred → []ActionID` map for GOAP), regenerated mechanically from
+  each action's `Produces`. `Craft` being recipe-mediated does NOT make it a tree: the recipe is a
+  parametric BINDING (like MoveTo's target), and the gather→craft chain is assembled by the planner
+  via `produces`/`requires`, never hand-drawn here. A grep/struct guard confirms no
+  subtask/method/recipe-content field exists (`RecipeMediated` is a flag, not embedded recipe data).
+- **No per-action gate list, no per-action cost (D4)**: `ActionDef` carries `Tags` and nothing that
+  names a `GateID` or a cost number. Gate visibility is decided by `engine/gates` matching these tags;
+  cost is composed from tags in the planner. A non-recipe action's tool requirement is a TAG
+  (`Mine`'s `tool:digging`), never a cost field; a recipe-mediated action's tool requirement is a
+  recipe input alternative with `mode: wear`/`consume` (FINAL), never an action tag.
 - **Objects carry supply; actions stay generic (D9)**: a consumption action (`ConsumesItem != ""`)
-  carries an **empty** direct `Effect` — its satisfaction is the consumed item's `supply` from
-  `content/objects.yaml`, resolved at apply time by the world, not stored on the action. There is
-  **no "future need" / quantity / schedule field** anywhere on an action.
-- **What, not when (D5)**: this module describes actions; it never decides whether/when to run
-  one, never orders or selects actions, and never reads agent state. Selection is the planner.
-- **Canonical ordering (D12)**: the `Registry` precomputes a single fixed-order `[]ActionID`
-  (sorted lexicographically) via `IDs()`. **All action iteration — here and in every consumer —
-  MUST use this slice; ranging over the backing map for logic is forbidden.** `Producers(pred)`
-  and `Tags()` return slices in this same lexicographic order.
-- **Immutable after init**: `Registry` exposes no setter and no writable field; once `Load`
-  returns, contents never change for the run's lifetime. Returned slices/maps are copies.
-- **Well-formed at load (semantic check)**: `Load` rejects a duplicate `id`, an empty `tags`
-  list, a `duration < 1`, an action that is BOTH a producer-of-item and a consumer-of-item of an
-  incompatible shape, and a consumption action that also declares a non-empty direct `Effect`
-  (D9 conflict). Errors name the offending action id.
-- **No hardcoded action names (D10)**: this package never references `"Forage"`, `"Eat"`, etc. as
-  literals in logic; all actions come from the loaded data.
+  carries an **empty** direct `Effect`. A `RecipeMediated` action carries no `ProducesItem` (outputs
+  come from the bound recipe). There is **no "future need"/quantity/schedule field** on an action.
+- **What, not when (D5)**: this module describes actions; it never decides whether/when to run one,
+  never orders/selects actions, never picks a recipe, never picks which lot/alternative to apply, and
+  never reads agent/tool/node state. Selection + binding is the planner; application is the world.
+- **Canonical ordering (D12)**: the `Registry` precomputes a single fixed-order `[]ActionID` (sorted
+  lexicographically) via `IDs()`. **All action iteration MUST use this slice; ranging over the backing
+  map for logic is forbidden.** `Producers(pred)` and `Tags()` are sorted.
+- **Immutable after init**: no setter, no writable field; returned slices/maps are copies.
+- **Well-formed at load (semantic check)**: `Load` rejects a duplicate `id`, an empty `tags`, a
+  `duration < 1` (on a NON-recipe action), an action that is BOTH item-producer and item-consumer of
+  an incompatible shape, a consumption action with a non-empty direct `Effect` (D9), and a
+  `recipe_mediated` action that ALSO sets `produces_item`, `target_kind`, or `duration` (the recipe
+  owns all three — FINAL). Errors name the offending action id.
+- **No hardcoded action/kind names (D10)**: never references `"Forage"`, `"Craft"`, `"Mine"`,
+  `"tool_bench"`, `"ore_node"`, etc. as literals in logic; all come from loaded data.
 - **No IO**: imports no `os`/`net`/filesystem package; reads from an injected `io.Reader` only.
-  No JSON-schema validation here (that lives in `platform/config`).
 
 ## Acceptance Criteria (testable)
 
-- [ ] **Loads from an injected `io.Reader`**: `Load` builds a `Registry` from in-memory YAML
-  bytes (no file path); the registry contains exactly the action ids in the source. For the
-  shipped content this includes the P1 atomic actions `Eat`, `MoveTo`, `Forage`, `Hunt`,
-  `Craft`, `Rest` (the brief's eat/move/gather/hunt/craft/rest) plus the rest of the catalog.
-- [ ] **`Get` round-trips a definition faithfully**: `Get("Hunt")` returns `Tags` containing
-  `uses:Strength`, `uses:Agility`, `effort:high`, `noise:high`, `risk:med`, `violent:low`,
-  `abstraction:med`; `Duration == 35`; `Target == TargetObject` with `TargetKindID == "prey"`;
-  `Produces == [has_food]`; `ProducesItem == "raw_meat"`. Table-driven over several actions.
-- [ ] **`IDs()` ordering is deterministic (D12)**: `IDs()` returns the same lexicographically
-  sorted order across repeated calls in a process AND yields the identical order in a second
-  freshly-`Load`-ed registry from the same bytes (cross-process stability).
-- [ ] **`Producers` reverse index (GOAP)**: `Producers("has_food")` returns `[Forage, Hunt]`
-  (lexicographic, D12); `Producers("at_target")` includes `MoveTo`; `Producers("nonexistent")`
-  returns nil. Each returned action's `Produces` actually contains the queried predicate.
-- [ ] **Target kind derived correctly**: `MoveTo` → `TargetLocation`; `Rest`/`Sleep` →
-  `TargetNone`; `Forage`/`Craft`/`Eat` (object/item) → `TargetObject`; `Signal`/`Attack`
-  (near_other) → `TargetAgent`. Table-driven.
-- [ ] **Atomic-only guard (D3)**: a struct/grep guard confirms `ActionDef` exposes no
-  method/task/subtask/plan field; the only relational output is the flat `Producers` index.
-- [ ] **No gate/cost field guard (D4)**: a struct/grep guard confirms `ActionDef` exposes no
-  field naming a `GateID` and no numeric cost field; only `Tags` drive gates/cost.
-- [ ] **Consumption action carries no direct Effect (D9)**: `Get("Eat")` has `ConsumesItem ==
-  "any_food"` and an EMPTY `Effect`; `Load` errors on a synthetic action that both consumes an
-  item and declares a non-empty `Effect`.
-- [ ] **Semantic rejects**: `Load` errors (table-driven, each naming the offending id) on a
-  duplicate id, an empty `tags`, and `duration < 1`.
-- [ ] **Immutable after init**: the public API exposes no mutator; mutating a returned id slice,
-  `Producers` slice, or `ActionDef.Tags` copy does not change the registry.
-- [ ] **No literal action name in source (D10)**: grep guard — no `"Forage"`/`"Eat"`/… literal in
-  `engine/actions` logic.
+- [ ] **Loads from an injected `io.Reader`**: `Load` builds a `Registry` from in-memory YAML bytes
+  (no file path); contains exactly the source action ids. Shipped content includes `Eat`, `MoveTo`,
+  `Forage`, `Hunt`, `Craft`, `Mine`, `Rest`, `TakeShelter`, … plus the rest of the catalog.
+- [ ] **`Get` round-trips a definition faithfully**: `Get("Hunt")` returns its tags/duration/target as
+  before. Table-driven over several actions.
+- [ ] **`Craft` is recipe-mediated, target-less, tool-tag-free, duration-less (FINAL/D3/D4)**:
+  `Get("Craft")` has `RecipeMediated == true`, `Target == TargetNone`, empty `TargetKindID`,
+  `Produces == [has_tool]`, an EMPTY `ProducesItem`, a ZERO `Duration` (the recipe supplies it), and
+  `Tags` contain **no** `tool:*` tag (the tool need is a recipe `wear`/`consume` alternative). `Load`
+  errors on a synthetic Craft that ALSO sets `produces_item`, `target_kind`, or `duration`.
+- [ ] **`Mine` parallels `Fell`, action-tagged tool (Xm4/Xm5)**: `Get("Mine")` has `Target ==
+  TargetObject`, `TargetKindID == "ore_node"`, `Tags` include `uses:Strength`/`effort:high`/
+  `tool:digging` (the pickaxe gate is an ACTION tag here — Mine is NOT recipe-mediated, Xm5),
+  `Requires` includes `at_target`, `Produces == [has_materials]`, and a non-zero `Duration`. Distinct
+  id/tags from `Forage` (Xm4). Node yield/`remaining`/`SetTerrain` + the held-tool wear are
+  objects.yaml/world, not on the action.
+- [ ] **`IDs()` ordering deterministic (D12)**: same lexicographic order across repeated calls and a
+  second freshly-`Load`-ed registry from the same bytes.
+- [ ] **`Producers` reverse index (GOAP)**: `Producers("has_materials")` returns `[Build, Mine]` for
+  the CURRENT catalog (lexicographic, D12 — `Fell` joins this set when the flora `Fell` action ships,
+  glossary/flora SPEC Open Questions); `Producers("has_tool")` includes `Craft`;
+  `Producers("nonexistent")` is nil. Each returned action's `Produces` actually contains the predicate.
+- [ ] **Target kind derived correctly**: `MoveTo`→`TargetLocation`; `Rest`/`Sleep`/`Craft`→`TargetNone`
+  (`Craft`'s stations are recipe `ambient`, not an action target); `Forage`/`Mine`/`Eat`→`TargetObject`;
+  `Signal`/`Attack`→`TargetAgent`. Table-driven.
+- [ ] **Atomic-only guard (D3)** + **No gate/cost field guard (D4)**: struct/grep guards (incl. no
+  `TargetTags`/recipe-content field on `ActionDef`).
+- [ ] **Consumption→no direct Effect (D9)** + **recipe-mediated→no produces_item/target_kind/duration**:
+  `Load` errors on a synthetic action violating either.
+- [ ] **Semantic rejects**: table-driven — duplicate id, empty `tags`, `duration < 1` (non-recipe),
+  `recipe_mediated`+`produces_item`, `recipe_mediated`+`target_kind`, `recipe_mediated`+`duration`.
+- [ ] **Immutable after init**: mutating a returned id/`Producers`/`Tags` slice does not change the
+  registry.
+- [ ] **No literal action/kind name in source (D10)**: grep guard.
 
-> Structural JSON-schema validation of `content/actions.yaml` against
-> `content/schema/actions.schema.json`, and referential integrity (every `uses:<StatID>` tag
-> names a stat in `content/stats.yaml`; every effect/supply need id exists in
-> `content/needs.yaml`; every `target_kind`/item id exists in `content/objects.yaml`) are
-> **platform/config** ACs — it owns the file IO + the schemas. This module proves only semantic
-> checks reachable from the injected reader.
+> Structural JSON-schema validation + referential integrity (every `uses:<StatID>` tag names a stat;
+> every effect/supply need id exists; every `target_kind`/item id exists in `content/objects.yaml`;
+> every recipe a `recipe_mediated` action could bind exists in `content/recipes.yaml`; every recipe
+> `wear` alternative's tagQuery is satisfiable only by `tool`-block kinds; every `ambient` tag exists)
+> are **platform/config** ACs.
 
 ## Out of Scope
 
-- Reading the file from disk, JSON-schema validation, and cross-file referential integrity →
-  `platform/config` (architecture §3, `content/README.md §Load & validate flow`).
-- **Gate visibility evaluation** (matching an action's `Tags` to gates) → `engine/gates`
-  (this module supplies the `Tags`; it does not evaluate them).
-- **Tag-derived action cost** (`cost_terms × tag_levels`) → `engine/planner`
-  (`content/balance.yaml`). No cost lives here.
-- **Selecting / ordering / scheduling actions, HTN methods, GOAP search, provisioning** →
-  `engine/planner` (this module supplies only the `ActionDef`s and the `Producers` index).
-- **Applying an action's Effect / consuming an item / resolving the consumed item's supply** →
-  `engine/world` apply phase (reads `objects.yaml` supply, D9).
-- **Outcome resolution** (does the Hunt succeed, scaled by Real Stats) → `engine/world` /
-  `engine/agent`; this module only declares the action shape.
+- Reading the file from disk, JSON-schema validation, cross-file referential integrity →
+  `platform/config`.
+- **Gate visibility evaluation** (matching `Tags`/`Mine`'s `tool:digging` to gates) → `engine/gates`.
+- **Tag-derived action cost** → `engine/planner` (`content/balance.yaml`).
+- **Recipe BINDING + craftable gate (FINAL)** — which recipe to craft; whether it is craftable (every
+  slot has a satisfiable alternative AND every `ambient` station is in range, read off the BOUND
+  recipe); matching tag-query alternatives to inventory/tools → `engine/planner` (selection) +
+  `engine/world` (apply). This module only flags `RecipeMediated`.
+- **Craft APPLY (FINAL)** — per ordered slot, take the FIRST satisfiable alternative in authored order
+  (D12) and apply its `mode`: `consume` → remove `amount` matching items/units (most-decayed lots
+  first, ties by `ObjectID`; a whole durable instance if a tool is consumed as material); `wear` →
+  decrement the most-worn matching tool's CURRENT durability by `amount` (ties by `ObjectID`), break
+  (object-mortality, §7) at 0, else persist. Check every `ambient` station in range. Roll the outcome
+  (success, qty, AND the produced instance's durability) from `basis_stat` (produced tool start
+  durability = roll·`wear_max`); place a perishable output as a fresh decay lot `{kind, qty,
+  decayAge=0}` (Dm5). Use the recipe's per-recipe `duration`. No partial run on any unsatisfiable
+  slot/ambient. → `engine/world` apply (reads `recipes.yaml` + the decay lot rule + the `tool:`
+  `wear_max`).
+- **The §6 tool-quality OPERAND (Cm3)** — `expr.Context.Attr("tool:<family>.quality")` resolution from
+  a held tool's current durability / `wear_max` → `engine/world`/`engine/agent`'s Mine `Context` adapter
+  (the `expr` L0 interface is UNCHANGED — it already declares `Attr`; `engine/expr/SPEC.md` "callers
+  adapt"). This module names no operand. (Craft's outcome roll is `basis_stat`-driven; the §6 operand
+  is used by the Mine yield.)
+- **Mine APPLY (Xm1/Xm2/Xm3 + tool wear)** — decrement the `ore_node`'s object-local `remaining`, roll
+  the node's yield table (§6, flora reuse), WEAR the held `tool:digging` instance (decrement current
+  durability by the Mine action's world/balance wear rate — Mine has no recipe, so the wear AMOUNT is a
+  world rate like navmap `WearOnUse`, NOT a per-item field; break at 0 — same wear path as a recipe
+  `wear` alternative), and on `remaining→0` remove the node (object-mortality) + fire one
+  `navmap.SetTerrain` over the node's cells → `engine/world` apply (reads `objects.yaml`
+  `source.remaining` + `tool.wear_max` + the navmap `SetTerrain` writer). Water stays infinite
+  (`depletes:false`); flora stays flora-regen — no extraction.
+- **Outcome resolution** (does the roll succeed, scaled by Real Stats) → `engine/world`/`engine/agent`.
 
 ## Open Questions
 
-- **Object-kind targeting representation (NOT blocking P1).** The brief asked for an explicit
-  `target: {kind, required_tags}` object on each action. The existing `content/actions.yaml`
-  (already frozen, schema_version 1) expresses the target via `target_kind` + the
-  `at_target`/`near_other` predicates instead, which is more uniform with the GOAP `requires`
-  model and avoids a schema change. This SPEC therefore **derives** `TargetKind` at Load rather
-  than adding a new content field. If a future action needs `required_tags` on its target (e.g.
-  "any object tagged `flammable`"), add a `target_tags: []Tag` field to
-  `content/schema/actions.schema.json` and surface it here — flag to architect before P-anything
-  that needs it.
-- **`Hunt`'s "animal" target.** The brief calls Hunt's target an *agent (animal)*. In the
-  current content an animal is an `objects.yaml` object_kind (`prey`, `mobile: true`), so Hunt is
-  `TargetObject(prey)`, not `TargetAgent`. If animals become first-class agents later, Hunt's
-  derived `TargetKind` flips to `TargetAgent` with no SPEC change (the derivation reads the
-  resolved kind). Recorded so the planner/world author knows prey is an object today.
+> Materials Cm1–Cm7 + Xm1–Xm6 are all `RESOLVED` and the recipe model is FINAL/LOCKED
+> (`docs/materials.md §0/§1`); this SPEC writes from them and re-decides nothing. No remaining OPEN for
+> P_m3. (`Hunt`'s prey target note is retained below; it is a recorded fact, not an open decision.)
+
+- **`Hunt`'s "animal" target** (unchanged, recorded): prey is an `objects.yaml` object_kind today, so
+  Hunt is `TargetObject(prey)`; flips to `TargetAgent` for free if animals become first-class agents.
 
 ## Notes
 
-- **`TargetKind` derivation (no new schema field)**: at `Load`, `Target` is computed from the
-  content shape — `target_kind` present → `TargetObject` (with `TargetKindID` = that id);
-  else `at_target` in `Produces` (the action *is* the move, e.g. `MoveTo`) → `TargetLocation`;
-  else `near_other` in `Produces` (the action *is* the approach toward an agent, e.g. `Approach`)
-  → `TargetAgent`; else `near_other` in `requires` (a social action acting on a nearby agent)
-  → `TargetAgent`; else `TargetNone`. This keeps the on-disk YAML in
-  its existing, schema-valid form (the brief's `{kind, required_tags}` object is represented by
-  the existing `target_kind` + predicate convention; see Open Questions).
-- **Tag grammar** is documented once in `content/README.md §Tags` and `content/gates.yaml`
-  header; this module treats tags as opaque `core.Tag` strings and never interprets a family.
-  The `uses:<Stat>` / `effort:*` / `risk:*` / `violent:*` / `noise:*` / `abstraction:*` /
-  `norm:transgressive` / `social*`/`cooperative` families are read by gates (`engine/gates`) and
-  the planner cost — not here.
-- **Item supply vs direct effect (D9)**: `Effect`/`EffectPerMinute` are for self-sourced
-  satisfaction (e.g. `Sleep` → `Rest`). A consumption action leaves `Effect` empty and names
-  `ConsumesItem`; the world resolves that item's `supply` from `content/objects.yaml` at apply
-  time. Both shapes are `Effect` (`map[Dimension]float64`) so the planner treats them uniformly
-  when forward-simulating need satisfaction.
-- The `Producers` index is the glossary `Producers map[Pred][]Action`; it is the engine-side
-  GOAP reverse index the planner backward-chains over. It is derived state — built at `Load`,
-  never serialized (data-contracts §1 carries no action catalog; the catalog is fixed by
-  `config_hash`, data-contracts §3).
-- `Duration` is `core.GameMinutes` (the authored unit, `core/SPEC.md`); the engine scales the
-  base duration by stats/distance at execution time (planner/world), not here.
+- **`TargetKind` derivation**: at `Load`, `Target` is computed from the content shape — `target_kind`
+  present → `TargetObject` (`TargetKindID` = that id); else `at_target` in `Produces` → `TargetLocation`;
+  else `near_other` in `Produces`/`requires` → `TargetAgent`; else `TargetNone`. A `recipe_mediated`
+  action has no `target_kind` → `TargetNone` (its stations are the recipe's `ambient`, bound in-range
+  by the world).
+- **Craft (P_m3) action shape (FINAL)**: `recipe_mediated: true` + `requires: [has_materials]` (the
+  generic "recipe inputs satisfiable" precondition) + `produces: [has_tool]`; **no** `tool:*` tag,
+  **no** `target_kind`/station field, **no** `duration` (the recipe supplies it). It binds a recipe at
+  plan time (D3 parametric); the recipe owns the slot/alternative inputs (`wear`|`consume`), `ambient`
+  stations, `duration`, `basis_stat`, and outputs. The world applies: first-satisfiable alternative
+  per slot (D12); `consume` removes most-decayed lots first (ties by `ObjectID`); `wear` decrements the
+  most-worn matching tool (ties by `ObjectID`), break at 0; `ambient` in-range gate; the `basis_stat`
+  roll sets success/qty + produced durability (= roll·`wear_max`); a perishable output → fresh decay
+  lot (Dm5). The legacy fixed `produces_item: crafted_tool` / `target_kind: tool_bench` / flat
+  `duration` / `tool:cutting` action tag are all REPLACED (a deliberate re-baseline — Materials §2):
+  `craft_basic_tool` is consume-only → bare-handed bootstrap; `craft_pickaxe` has a `mode: wear`
+  cutting-tool alternative → toolmaking chain (D2).
+- **Mine (P_m4) action shape**: `target_kind: ore_node` + tags `uses:Strength`/`effort:high`/
+  `noise:med`/`tool:digging` + `requires: [at_target]` + `produces: [has_materials]` + a flat
+  `duration` (Mine is NOT recipe-mediated, so it keeps its own duration). Its tool need IS the
+  action-level `tool:digging` tag (the actor must hold a pickaxe); the world wears that held tool per
+  use (decrement current durability by the Mine action's world/balance wear rate — like navmap
+  `WearOnUse`, since the FINAL `tool:` block has no per-item wear amount; break at 0). Parallel to
+  flora's `Fell` (destructive-on-depletion) vs `Forage` (non-destructive food) — Xm4 keeps them
+  distinct ids so gates/cost/tool differ (D4). The node's yield table + `remaining` +
+  `SetTerrain`-on-exhaustion are objects.yaml/world.
+- **Tool requirement routes (FINAL)**: a recipe-mediated action expresses a tool as a recipe input
+  alternative (`mode: wear` to use-and-wear, or `mode: consume` to consume it as material); a
+  non-recipe action expresses a tool as an action `tool:<family>` tag. Either way the wear MECHANISM is
+  the same (decrement current durability, break at 0); the wear AMOUNT is the recipe alternative's
+  `amount` (recipe path) or the action's world/balance rate (non-recipe path). The §6
+  `tool:<family>.quality` Context operand (= current durability / `wear_max`, Cm3) reads a held tool's
+  quality. Tool tags themselves are ordinary `core.Tag`s here (opaque).
+- **Item supply vs direct effect (D9)** and the `Producers` index notes are unchanged from the P1 SPEC.
+- `Duration` is `core.GameMinutes`; the engine scales the base duration by stats/distance at execution
+  time (planner/world), not here. A recipe-mediated action's `Duration` is ZERO on the def — the bound
+  recipe's per-recipe `duration` is used (FINAL).
+```

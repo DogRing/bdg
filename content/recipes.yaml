@@ -1,37 +1,84 @@
 # content/recipes.yaml — craft recipes (data-driven, D3/D4/D10)
 #
-# Materials & Crafting plan §0 (locked). A recipe is DATA; Craft is ONE atomic action (D3)
-# parameterized by a recipe. The planner chains gather→craft itself (never authored, D3).
+# Materials & Crafting plan §0 "Recipe model — FINAL". A recipe is DATA; Craft is ONE atomic action
+# (D3, recipe_mediated: true on the Craft action, actions.yaml) parameterized by a recipe bound at plan
+# time. Craft has NO tool/station action tag — the gate is purely "inputs present + ambient in range".
+# The planner chains gather→craft itself (never authored, D3) and binds the recipe whose slots are all
+# satisfiable (deterministically by sorted recipe id).
 #
-# SUBSTITUTABILITY EMERGES FROM TAGS (D4): an input is a TAG QUERY (a set of tags + a qty), NOT a
-# specific item id. Any item_kind whose `tags` (content/objects.yaml) is a SUPERSET of the queried
-# set satisfies the slot — so "a wooden shaft OR a bone shaft" both work iff both carry `shaft_stock`,
-# and a NEW item becomes a valid substitute by carrying the tag (no recipe edit).
+# RECIPE = { id, inputs[], ambient[], duration, basis_stat, outputs[] }
+#   inputs[]  — ORDERED list of SLOTS. Each slot { any: [alternative,…] } is satisfied by EXACTLY ONE
+#               alternative (OR). The slot takes the FIRST satisfiable alternative in authored order (D12).
+#     alternative { tagQuery: [tags] (AND — matched item carries ALL), amount: int>=1, mode: wear|consume }
+#       • consume — remove `amount` matching items/units (MOST-DECAYED first, ties by ObjectID). Works on
+#                   stackable lots AND a whole durable instance (a tool consumed AS material → removed;
+#                   "칼 > 더 좋은 칼"). A partial-use material (cordage/실) is just a small `amount`.
+#       • wear    — the matched item MUST carry a `tool` block; decrement its CURRENT durability by
+#                   `amount`; break (object-mortality remove) at 0, else PERSISTS. Picks the MOST-WORN
+#                   matching tool (ties by ID) — uses up the nearly-spent tool first.
+#   ambient[] — STATION tags (주변도구: bench/furnace…) the actor must be IN RANGE of (each tag; any object
+#               carrying it; substitutable; NOT consumed). Optional. Bound via the spatial hash (no action tag).
+#   duration  — per-recipe craft time in ticks (FINAL — replaces the action-flat duration).
+#   basis_stat— the StatID whose roll drives the outcome: success, qty, AND the produced instance's
+#               durability/quality (skilled → sturdier/more). A produced tool's START durability =
+#               roll·wear_max. A perishable output → fresh decay lot {kind, qty, decayAge=0} (Dm5).
+#   outputs[] — { item, base_qty } (base_qty = pre-roll base; the basis_stat roll scales actual).
 #
-#   inputs:  [{ tagQuery: [<tags...>], qty: <int> }]   # consumed; matched by tag superset
-#   outputs: [{ item: <item_kind id>,  qty: <int> }]   # produced (base qty; §6(Dexterity) scales actual)
-#   tool?:    <tag>     # REQUIRED held durable tool tag (non-consumed `wear`; §6 multiplier in Craft)
-#   station?: <tag>     # REQUIRED at-station object_kind tag (e.g. station:bench)
+# CRAFTABLE GATE (planner/world reads the BOUND recipe): every slot has a satisfiable alternative AND
+# every `ambient` station is in range. No partial run — if the gate fails the action never starts.
 #
-# Quality/yield (Dexterity → chance/qty) is NOT a recipe field — the Craft action reuses the flora
-# yield-roll model (plan §0). Tool `wear` decrement + the §6 capability multiplier reading the held
-# tool's tags also live in the Craft action, NOT here.
+# Schema: content/schema/recipes.schema.json. platform/config cross-checks every output `item` is a
+# known item_kind, every alternative `tagQuery` tag is carried by >=1 kind, every `wear` alternative's
+# tagQuery is satisfiable ONLY by item_kinds with a `tool` block, every `ambient` tag is carried by >=1
+# object_kind, and `basis_stat` is a known StatID (D10).
 #
-# Schema: content/schema/recipes.schema.json. platform/config cross-checks that every output `item`
-# is a known item_kind and every input/tool/station tag is carried by at least one kind (D10).
-#
-# ⚠ This file ships with an illustrative recipe so the schema + load test have a fixture. Craft is
-#   P_m3 (not this run); these recipes are inert until the Craft action ships.
+# ⚠ These recipes are inert until the Craft action ships (P_m3).
 
 schema_version: 1
 
 recipes:
-  # A simple tool: any shaft-stock material + any blade-stock material → a crafted tool, at a bench.
-  # `shaft_stock` is carried by BOTH wood and bone (objects.yaml), so either substitutes (D4 emergence).
+  # BOOTSTRAP — a basic cutting tool, bare-handed (consume-only slots, no `wear` tool slot): any
+  # shaft-stock + any blade-stock → a crafted (cutting) tool, at a bench. This is the seed of the tool
+  # economy: the FIRST cutting tool is knapped without one. `shaft_stock` is carried by wood + bone;
+  # `blade_stock` by wood + stone (objects.yaml) — either auto-qualifies (D4). Each slot has a single
+  # alternative (a plain required input). basis_stat Dexterity → a more dexterous knapper makes a
+  # sturdier tool (higher start durability) and more often succeeds.
   - id: craft_basic_tool
     inputs:
-      - { tagQuery: [ shaft_stock ], qty: 1 }
-      - { tagQuery: [ blade_stock ], qty: 1 }
+      - any:
+          - { tagQuery: [ shaft_stock ], amount: 1, mode: consume }
+      - any:
+          - { tagQuery: [ blade_stock ], amount: 1, mode: consume }
+    ambient: [ station:bench ]
+    duration: 90
+    basis_stat: Dexterity
     outputs:
-      - { item: crafted_tool, qty: 1 }
-    station: station:bench
+      - { item: crafted_tool, base_qty: 1 }
+
+  # A pickaxe (the Mine `tool:digging` gate, P_m4/Xm5): a sturdy shaft, a stone HEAD, a little binding
+  # cordage (partial-use — amount 1 from a larger lot), shaped USING a cutting tool (mode: wear — worn,
+  # not consumed). This closes the toolmaking dependency (D2): to mine you must craft a pickaxe; to
+  # craft a pickaxe you must already HOLD a cutting tool. Demonstrates a 2단-대체 `any` slot: the head
+  # is EITHER 1 blade-stock (preferred, a proper sharp head) OR 2 shaft-stock (a cruder, more-of-it
+  # substitute) — different `amount`, authored priority order (blade first). basis_stat Dexterity →
+  # skill sets the pickaxe's start durability.
+  - id: craft_pickaxe
+    inputs:
+      # haft
+      - any:
+          - { tagQuery: [ shaft_stock ], amount: 1, mode: consume }
+      # head — 2단 대체 (OR): 1 blade-stock (preferred) OR 2 shaft-stock (substitute, different amount)
+      - any:
+          - { tagQuery: [ blade_stock ], amount: 1, mode: consume }
+          - { tagQuery: [ shaft_stock ], amount: 2, mode: consume }
+      # binding — partial-use material (small amount from a larger lot)
+      - any:
+          - { tagQuery: [ binding_stock ], amount: 1, mode: consume }
+      # shaping tool — WEAR a held cutting tool (persists; breaks at 0 durability)
+      - any:
+          - { tagQuery: [ tool:cutting ], amount: 5, mode: wear }
+    ambient: [ station:bench ]
+    duration: 150
+    basis_stat: Dexterity
+    outputs:
+      - { item: pickaxe, base_qty: 1 }

@@ -16,9 +16,16 @@
 #   requires         — predicates (core.Pred) that must hold to start (planner preconditions).
 #   produces         — predicates this action makes true (engine/actions reverse index, GOAP).
 #   target_kind      — object_kind (objects.yaml) this action operates on, if any.
-#   produces_item    — item placed into Body.Inventory on completion.
+#   recipe_mediated  — Materials plan §0 "Recipe model — FINAL"/D3: true marks an action (Craft)
+#                      parameterized by a content/recipes.yaml RECIPE bound at plan time. The recipe's
+#                      slot/alternative inputs (wear|consume), `ambient` stations, `duration`,
+#                      `basis_stat`, and outputs drive everything. Such an action carries NO tool tag,
+#                      NO station target, and NO `duration` (the recipe supplies it). MUST NOT set
+#                      produces_item.
+#   produces_item    — item placed into Body.Inventory on completion (a FIXED single item).
 #   consumes_item    — item removed from inventory; its `supply` becomes the Effect (D9).
-#   duration         — BASE durative length in game-minutes; engine scales by stats/distance.
+#   duration         — BASE durative length in game-minutes; engine scales by stats/distance. OMITTED
+#                      for a recipe_mediated action (the recipe's per-recipe duration is used).
 #   effect           — direct need deltas applied on completion (omit for consumption actions).
 #   effect_per_minute— need deltas accrued each game-minute the action runs (durative supply).
 #   interruptible    — durative actions are interruptible unless false (FR: durative + 중단 가능).
@@ -27,11 +34,24 @@
 # object instance. Schema: content/schema/actions.schema.json
 #
 # Target kind (brief mapping): an action's TARGET is expressed by `target_kind`
-#   • none     → no target_kind and no requires-at-target (e.g. Rest, Sleep)
-#   • location → MoveTo (binds a Vec2 destination via the at_target predicate)
-#   • object   → target_kind names an objects.yaml object_kind (Forage, Eat-via-item, Craft …)
-#   • agent    → target is another agent; expressed by the near_other predicate (Hunt, Signal,
-#                Attack). "Animal" targets (Hunt prey) are object_kinds tagged as creatures.
+#   • none        → no target_kind and no requires-at-target (e.g. Rest, Sleep)
+#   • location    → MoveTo (binds a Vec2 destination via the at_target predicate)
+#   • object      → target_kind names an objects.yaml object_kind (Forage, Mine, Eat-via-item …)
+#   • agent       → target is another agent; expressed by the near_other predicate (Hunt, Signal,
+#                   Attack). "Animal" targets (Hunt prey) are object_kinds tagged as creatures.
+#   A recipe_mediated action (Craft) has NO target_kind — its station(s) are the recipe's `ambient`
+#   tags, bound IN-RANGE via the spatial hash by the world (FINAL — no action target/station field).
+#
+# TOOLS — two routes (Materials plan §0 "Recipe model — FINAL"):
+#   • A RECIPE-MEDIATED action (Craft): a tool is a recipe INPUT alternative with `mode: wear` (the
+#     matched held tool's CURRENT durability is decremented by that alternative's `amount`; break at 0;
+#     else persists). NO action tool tag. A tool can also be a `mode: consume` alternative (consumed as
+#     material — whole instance removed). The craftable gate reads the bound recipe.
+#   • A NON-recipe action (Mine): the tool requirement IS an action-level `tool:<family>` tag (the actor
+#     must HOLD a matching tool). The world apply phase WEARS that held tool the same way (decrement
+#     current durability, break at 0); the per-use wear AMOUNT is a world/balance rate for the action
+#     (like navmap WearOnUse) — NOT a per-item field (FINAL removed per-item wear_per_use). Mine keeps
+#     `tool:digging` this way (it is not recipe-mediated).
 
 schema_version: 1
 
@@ -178,21 +198,52 @@ actions:
     duration: 6
     interruptible: true
 
+  # ── Extraction / mining (Materials P_m4) ──────────────────────────────────────
+  # Mine is the parallel to flora's Fell (destructive-on-depletion) — distinct from Forage
+  # (non-destructive food) so gates/cost/tool differ (D4, Xm4). It targets a finite-qty
+  # ore_node object_kind (Xm1: object-local `remaining`, D9 — berry_bush parity), and is
+  # TOOL-GATED on `tool:digging` (a pickaxe; Xm5) — an ACTION-LEVEL tag (Mine is NOT
+  # recipe-mediated): invisible/un-startable without holding a pickaxe. The world apply phase
+  # WEARS the held digging tool (decrement current durability, break at 0 — same path as a recipe
+  # `wear` alternative); the per-use wear AMOUNT is a world/balance rate for Mine (like navmap
+  # WearOnUse), since Mine has no recipe and the FINAL `tool:` block has no per-item wear amount.
+  # The node's yield table + §6(Dexterity, tool-quality) roll (flora-yield reuse, Xm5) + the
+  # remaining-→0 → object-mortality removal + ONE navmap.SetTerrain reroute (Xm2/Xm3) are the
+  # world apply phase, NOT on this action. D3: atomic; the gather chain is planner-assembled.
+  # PREREQUISITE (Xm6): the SetTerrain reroute needs content/terrain.yaml + a depleted/bare_rock
+  # terrain type to exist (world+navmap M3); P_m4 is scheduled after those.
+  - id: Mine
+    tags: [ "uses:Strength", "effort:high", "noise:med", "tool:digging", "abstraction:low" ]
+    target_kind: ore_node
+    requires: [ at_target ]
+    produces: [ has_materials ]        # ore/stone feeds the craft/build chain (GOAP reverse index)
+    duration: 45
+    interruptible: true
+
   # ── Crafting / construction (P1 craft loop + P6 emergent building) ────────────
-  # Craft is the brief's P1 atomic craft action: it USES Intelligence (capability_floor
-  # gate via the uses:Intelligence tag) and is an abstraction:med method (knowledge gate),
-  # so a low-Intelligence agent cannot SEE it (D8). It operates on a workbench object_kind
-  # and places a crafted item into inventory. D3: it is ATOMIC — the planner assembles the
-  # gather→craft chain via the `produces`/`requires` reverse index; this entry hand-draws
-  # no tree. D4: no per-action cost — effort:high + the uses:Intelligence tag drive cost in
-  # the planner.
+  # Craft is the recipe-mediated atomic craft action (Materials P_m3, "Recipe model — FINAL"). D3: it
+  # is ATOMIC and PARAMETERIZED by a content/recipes.yaml recipe bound at plan time (recipe_mediated:
+  # true). The recipe owns EVERYTHING: ordered input SLOTS (each `{any:[alternative…]}`, first
+  # satisfiable in authored order; alternative `{tagQuery, amount, mode: wear|consume}`), `ambient`
+  # station tags (in-range via the spatial hash — NO action target/station field), per-recipe
+  # `duration` (so the action carries NO duration), `basis_stat` (the outcome roll), and outputs. It
+  # USES Intelligence (capability_floor gate) + is abstraction:med (knowledge gate) so a
+  # low-Intelligence agent cannot SEE it (D8). Craft has NO tool tag — a tool requirement is a `wear`
+  # (or `consume`) recipe alternative; a tool-free recipe (craft_basic_tool) is bare-handed (bootstrap).
+  # The world apply phase: per slot takes the FIRST satisfiable alternative (D12) and applies its mode
+  # (consume = remove `amount`, most-decayed lots first ties by ObjectID; wear = decrement the
+  # most-worn matching tool by `amount`, break at 0); checks every `ambient` station in range; rolls
+  # the outcome (success, qty, AND produced-instance durability) from `basis_stat` (produced tool start
+  # durability = roll·wear_max); places a perishable output as a fresh decay lot {kind,qty,decayAge=0}
+  # (Dm5); and does NOT half-run on an unsatisfiable slot/ambient (no partial consumption). D4: no
+  # per-action cost — tags drive it. The gather→craft chain is planner-assembled; this entry hand-draws
+  # no tree.
   - id: Craft
     tags: [ "uses:Intelligence", "effort:high", "noise:low", "abstraction:med" ]
-    target_kind: tool_bench
-    requires: [ at_target, has_materials ]
+    recipe_mediated: true              # FINAL/D3: parameterized by a recipes.yaml recipe at plan time
+    requires: [ has_materials ]        # generic "recipe inputs are satisfiable" precondition
     produces: [ has_tool ]
-    produces_item: crafted_tool
-    duration: 90
+    # NO duration — the bound recipe's per-recipe `duration` is used (FINAL).
     interruptible: true
 
   - id: Build

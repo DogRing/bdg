@@ -17,10 +17,24 @@
 #
 # ── MATERIAL TAGS & RECIPES (Materials & Crafting plan; content/recipes.yaml) ────────
 # A material is NOT a separate type — it is an item_kind carrying MATERIAL `tags` (D10 minimal
-# extension, plan §0). A recipe input is a TAG QUERY, not a specific item id: substitutability
-# EMERGES from tags (D4) — any item whose `tags` is a superset of the query satisfies the slot, and
-# a NEW item becomes a valid substitute purely by carrying the tag (no recipe edit). Tools carry a
-# `tool:*` tag; stations (object_kinds) carry a `station:*` tag, matched by the recipe.
+# extension, plan §0). A recipe input alternative is a TAG QUERY, not a specific item id:
+# substitutability EMERGES from tags (D4) — any item whose `tags` is a superset of the query satisfies
+# the slot, and a NEW item becomes a valid substitute purely by carrying the tag (no recipe edit).
+# Tools carry a `tool:*` tag; stations (object_kinds) carry a `station:*` tag (the recipe `ambient`).
+#
+# ── TOOLS = DURABLES (Materials & Crafting plan §0 "Recipe model — FINAL"; engine/world apply) ──
+# A tool item_kind carries a `tool:` block + its `tool:<family>` tag (the query vocabulary). The `tool:`
+# block is JUST `{ wear_max }` — the durability CEILING. There is NO per-item `wear_per_use` (the wear
+# AMOUNT is per-recipe: a recipe `wear`-mode alternative decrements the matched tool's CURRENT
+# durability by that alternative's `amount`) and NO per-item `quality` formula (a produced tool's
+# quality = its start durability, set by the crafting roll). Tools are NOT consumed by normal use: a
+# `wear` alternative (Craft) or Mine decrements current durability by the amount; at 0 the tool is
+# REMOVED (object-mortality, §7 — break = reaching 0). A produced tool's STARTING durability =
+# basis_stat roll · wear_max (skilled crafters make sturdier tools). The per-tool-INSTANCE current
+# durability is runtime state (data-contracts §9). A tool can also be CONSUMED as material (a `consume`
+# alternative whose tagQuery matches it removes the whole instance — "칼 > 더 좋은 칼"). The Mine yield §6
+# may read the held tool's quality (current durability / wear_max) via the world's `tool:<family>.quality`
+# operand (Cm3). Bootstrap: `craft_basic_tool` has consume-only slots → bare-handed (no tool needed).
 #
 # ── DECAY (Materials & Crafting plan; engine/decay; mirrors flora's data-driven §6 shape) ─────
 # A perishable item_kind carries a `decay` block: ordered discrete `states` (Q1: fresh→stale→
@@ -36,6 +50,17 @@
 # the item. engine/decay OWNS + evaluates the `accel` §6 Program via engine/expr (Dm3(a), flora parity).
 # The decay UNIT is a LOT `{kind, qty, decayAge}` (Dm5(a)); lots never auto-merge; a kind's `{Tag:int}`
 # inventory count is the SUM over its live lots. (Dm1–Dm5 are RESOLVED (a) — materials.md §1.)
+#
+# ── FINITE EXTRACTION SOURCES (Materials & Crafting Xm1 RESOLVED; engine/world + navmap apply) ──
+# A mineral node (ore_node) is an object_kind carrying a `source:` block: a finite OBJECT-LOCAL
+# `initial` count (D9 locality, berry_bush parity) — the runtime per-INSTANCE `remaining` (objects[]
+# serialization, data-contracts §1) decremented by Mine. When `remaining` reaches 0 the world removes
+# the node (object-mortality, §7) AND fires ONE navmap.SetTerrain over the node's cells to
+# `depleted_terrain` (Xm2/Xm3 — one permanent reroute on exhaustion). The yield per Mine is the node's
+# `harvest.yields` table rolled via §6(Dexterity, tool:digging.quality) (Xm5, flora-yield reuse). Q5
+# 혼합: minerals are finite (this), water is infinite (`depletes:false`), flora regenerates (flora).
+# ⚠ PREREQUISITE (Xm6): `depleted_terrain` (e.g. bare_rock) must exist in content/terrain.yaml + the
+#   navmap `types` table (world+navmap M3) before the SetTerrain reroute golden — P_m4 scheduling.
 #
 # ── FLORA (engine/flora; docs/flora.md, design.md §5/§7) ─────────────────────────
 # A flora species is an object_kind carrying a `flora:` block: the §6 formulas + thresholds
@@ -66,11 +91,12 @@
 #   flora.death_threshold (θ) + flora.death_hysteresis — sustained suitability<θ for hysteresis
 #                        steps → object-mortality removal (1b option a; no flicker).
 #   harvest.yields     — the YIELD TABLE (1e): [{item, chance, qty:[min,max]}]. A generic action
-#                        (Forage/Fell) rolls it with the seeded RNG; `chance = §6(Dexterity)` scales
-#                        the per-entry success (D7: capability, not a per-action skill); the rolled
-#                        qty further scales with `length` (§1). Regen is the yield refilling as length
-#                        grows — NO future "amount ripening" field (D9), NO balance.regen.* timer for
-#                        a flora species (regen is LOCAL to the object via its length + yield table).
+#                        (Forage/Fell/Mine) rolls it with the seeded RNG; `chance = §6(Dexterity,
+#                        tool-quality)` scales the per-entry success (D7: capability, not a per-action
+#                        skill); the rolled qty further scales with `length` (flora §1). Regen is the
+#                        yield refilling as length grows (flora) — NO future "amount ripening" field
+#                        (D9), NO balance.regen.* timer for a flora species (regen is LOCAL to the
+#                        object via its length + yield table).
 #
 # ⚠ MIGRATION (see SPEC Open Questions): the legacy `berry_bush` below stays a plain non-flora
 #   object_kind (with balance.regen.berry_bush) through the flora-OFF phases so the live hunger-loop
@@ -217,20 +243,50 @@ object_kinds:
       action: Drink
       yields: water           # may be drunk in place or carried
       provides: [ has_water, at_water ]
-      depletes: false         # effectively unlimited
+      depletes: false         # effectively unlimited (Q5/Xm3: water is the INFINITE source case)
+
+  # ── ORE NODE (Materials P_m4 / Xm1) — finite mineral source; Mine target ──────────
+  # A finite, scarce mineral node (Q5: 광물 = 유한·희소 → 고갈 → economy 분쟁 시드 D2). The finite
+  # quantity is OBJECT-LOCAL (`source.initial` → runtime per-instance `remaining`, D9 locality, parity
+  # with berry_bush). Mine (tool:digging-gated, Xm5) rolls the yield table via §6(Dexterity,
+  # tool:digging.quality) (flora-yield reuse). On `remaining → 0` the world removes the node
+  # (object-mortality) and fires ONE navmap.SetTerrain over its cells → `bare_rock` (Xm2/Xm3 — the
+  # permanent reroute). ⚠ Xm6: `bare_rock` must exist in content/terrain.yaml + the navmap types table
+  # (world+navmap M3) before the SetTerrain reroute golden. DORMANT until P_m4 placement.
+  - id: ore_node
+    mobile: false
+    source:
+      initial: 8                    # finite, scarce (Xm1/Q5): ~8 successful extractions before depletion
+      depleted_terrain: bare_rock   # Xm3: the cells become this on exhaustion (one SetTerrain reroute)
+    harvest:
+      action: Mine                  # Xm4: parallel to flora Fell; tool:digging-gated (Xm5)
+      provides: [ has_materials ]   # ore/stone feeds the craft/build chain (GOAP reverse index)
+      yields:                       # YIELD TABLE (Xm5): seeded roll; chance = §6(Dexterity, tool quality)
+        - { item: stone, chance: "0.6 + Dexterity*0.3", qty: [1, 2] }
 
   - id: tool_bench
     mobile: false
-    # The workbench the P1 Craft action operates on. Yields a crafted tool; the gather→craft
-    # chain (materials → has_tool) is assembled by the planner, never authored here (D3).
-    # `station:bench` is the STATION tag a recipe references (content/recipes.yaml, D4) — a recipe
-    # with `station: station:bench` requires the actor to be at an object_kind carrying this tag.
+    # A crafting STATION. `station:bench` is the tag a recipe's `ambient` list references (FINAL — the
+    # actor must be IN RANGE of an object carrying it; substitutable; NOT consumed). There is NO Craft
+    # action target_tags any more — the station is bound via the recipe `ambient` + the spatial hash.
     tags: [ station:bench ]
+    # NOTE (P_m3 re-baseline): Craft is recipe-mediated (actions.yaml), so the legacy `harvest.action:
+    # Craft` shape here is no longer how Craft binds. The bench is an AMBIENT station (matched by tag),
+    # not a harvestable kind. The harvest block is retained inert for the flora-OFF / pre-P_m3 goldens
+    # and dropped at the P_m3 re-baseline (Materials §2).
     harvest:
       action: Craft
       yields: crafted_tool
       provides: [ has_tool ]
       depletes: false         # the bench is reusable
+
+  - id: forge
+    mobile: false
+    # A second crafting STATION (a furnace/forge) carrying `station:forge` — the ambient tag a
+    # metalworking recipe references. Demonstrates that `ambient` is substitutable across station
+    # KINDS (a recipe needing `station:forge` binds to ANY object carrying it). No recipe uses it yet;
+    # it exists so the `station:forge` ambient vocabulary is referenceable (D4/D10) and validates.
+    tags: [ station:forge ]
 
   - id: shelter
     mobile: false
@@ -314,9 +370,19 @@ item_kinds:
     stackable: true
     perishable: false
     # Another substitutable material: stone carries `blade_stock` (a sharp edge), so it substitutes
-    # for split wood in the blade slot (D4 emergence). (An extraction/mining yield in P_m4.)
+    # for split wood in the blade slot (D4 emergence). The Mine (P_m4) yield off an ore_node (Xm5).
     tags: [ blade_stock ]
     supply: { Standing: 0.01 }
+
+  - id: cordage
+    stackable: true
+    perishable: false
+    # A PARTIAL-USE / binding material (the thread-like example): twine/cord that hafts a tool head.
+    # `binding_stock` is the tag `craft_pickaxe` queries at a SMALL `amount` (1) drawn from a larger lot
+    # — a consume alternative does not have to take a whole lot (the lot keeps the remainder). (A later
+    # phase yields cordage from plant fiber / sinew; for now it is a placeholder material.)
+    tags: [ binding_stock ]
+    supply: { Standing: 0.0 }
 
   - id: rotten_matter
     stackable: true
@@ -327,12 +393,31 @@ item_kinds:
     supply: { Standing: 0.0 }
 
   - id: crafted_tool
-    stackable: false
-    perishable: false
-    # A crafted tool's "supply" is a tiny Standing contribution (skilled output is socially
-    # legible). Its real value is instrumental (it enables other actions) — but D9 requires a
-    # supply Effect, and tools are not consumed for need-satisfaction, so the value is minimal.
-    # TOOL TAG (Materials plan §0/D4): `tool:cutting` is the durable-tool tag a recipe references
-    # (`tool: tool:cutting`); the §6 capability multiplier reading this tag lives in the Craft action.
+    stackable: false           # a tool is a per-INSTANCE durable (not a stackable count)
+    perishable: false          # tools do not rot; they WEAR (the `tool:` block), distinct from decay
+    # A crafted (cutting) tool. TOOL TAG (D4): `tool:cutting` is the query a recipe `wear` alternative
+    # matches (e.g. craft_pickaxe), or a Mine-style action tag would match (FINAL — no Craft action tag).
+    # TOOL DURABLE (FINAL): the `tool:` block is JUST `wear_max` (the durability CEILING). A recipe
+    # `wear` alternative decrements this instance's CURRENT durability by that alternative's `amount`;
+    # at 0 it breaks (object-mortality, §7). A freshly crafted tool's START durability = the crafting
+    # basis_stat roll · wear_max (skilled → sturdier). There is NO per-item wear_per_use or quality
+    # formula (output quality = start durability from the roll). Numbers untuned.
     tags: [ tool:cutting ]
+    tool:
+      wear_max: 20             # durability ceiling; a fresh tool starts at roll·20 (skill-dependent)
+    supply: { Standing: 0.05 }
+
+  - id: pickaxe
+    stackable: false           # per-instance durable
+    perishable: false          # wears, does not rot
+    # The Mine tool (P_m4/Xm5): `tool:digging` is the action-level tag gating Mine (the actor must HOLD
+    # a pickaxe). Craftable via `craft_pickaxe` (content/recipes.yaml), which WEARS a held cutting tool
+    # (mode: wear) — closing the toolmaking dependency (D2): you must already hold a cutting tool to make
+    # a pickaxe, and a pickaxe to mine. Mining decrements this instance's CURRENT durability (the Mine
+    # apply uses the same wear path; amount is the action's wear rate); at 0 it breaks. START durability
+    # = craft basis_stat roll · wear_max. The Mine yield §6 reads `tool:digging.quality` (= current
+    # durability / wear_max). FINAL: `tool:` is just wear_max (no per-item wear_per_use/quality). Untuned.
+    tags: [ tool:digging ]
+    tool:
+      wear_max: 25             # durability ceiling; a fresh pickaxe starts at roll·25
     supply: { Standing: 0.05 }
