@@ -94,11 +94,174 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 (`scent:food`/`scent:prey`/`scent:predator`), 바람 operand `wind.dir`.
 > 명칭은 추천 확정값. `glossary.md` 반영은 별도 단계(여기 등재 후 동기화).
 
+## 1.3 SPEC-design open questions — Phase-1 detail (F25~F42)
+
+> **2차 게이트(2026-06-26):** §1(F1–F24)은 메커니즘 *선택*을 확정했다. F25~F42는 그 아래 **"정확히 어떤 데이터 모양·수식
+> 형태"** 층 — `engine/fauna` module SPEC 작성 전 **사람 확정 필요**. 전부 옵션+추천+`OPEN`. **아무것도 결정하지 않는다**
+> (메커니즘 발명 = 결함, 주도성 아님). 옵션은 §0·§1을 벗어나지 않으며, 깨끗한 메커니즘이 §1에서 도출 불가하면 그게 바로 OPEN으로
+> 열거할 대상이다(발명 금지).
+> **★ foundational(아래 스키마 전부를 형성): F26(per-action utility 수식 형태) · F27(expr↔fauna 피연산자 브리지).**
+> F31(fauna 블록 스키마)은 이 둘에 종속.
+> 선례(발명 아님, 그대로 차용): flora `SiteInput`/`Rules`(§6 Program 소유 + Context 어댑트), decay `accel` Program(Dm3),
+> Cm3 `tool:<family>.quality` Attr 피연산자, needs `UpdateConditionalNeeds`(rate + 조건부 set, F8 채널),
+> spatial `cellSize`(balance), climate `fork(tick)` per-step RNG, navmap `wear` deposit(apply 직렬·고정순서).
+
+### 클러스터 1 — 의사결정 코어
+
+**F25 — drive set + per-tick 갱신 규칙.** drive 집합은 F19 수준(`hunger`/`fear`/`thermal`/`fatigue`/`repro_readiness`)으로
+고정; **남은 것 = 각 drive의 갱신식·단위·range·cadence + P1 활성 여부.** options: (a) 전부 §6 갱신식(종 블록 `drives.<id>.update`)
+(b) 고정 엔진 shape + rate-only 데이터(needs `decay_per_tick` 동형) (c) 하이브리드 — 누적형(hunger/fatigue/repro_readiness)
+= rate 상수(D9 정신, 미래수치 필드 금지), 문맥결합형(fear ← predator scent intensity = needs `UpdateConditionalNeeds`
+채널형 / thermal ← `apparent_temp` 편차 = §6) = set-from-context. range = [0,1] 정규화(needs 동형). **rec: (c)** — needs 기계와
+동형으로 재사용·최소, 결합 있는 곳만 §6. **P1 활성:** hunger/fatigue/fear/repro_readiness 활성, **thermal = OFF**(F10 — climate
+전 내성식 존재·중립), repro_readiness는 F9 타이머-respawn에 종속(자체 birth는 P_fa4). cadence는 F24 계층에 매핑(fear=매 틱,
+thermal=Nt). **⚠ D5 가드:** drive ≠ agent Value(별 동기 기계 — 코드베이스 2번째 동기 기계, drift 위험). **OPEN.**
+
+**F26 ★foundational — per-action utility 수식 형태.** F1 = 매 틱 후보 §6 점수화 → max(동률 ID). 남은 것 = 그 수식의 정확한
+shape·피연산자·부착 단위. options: (a) **(종 × action)별 §6 utility `Program`** — 종 `fauna:` 블록의 `utility: {Graze:"<§6>",
+Flee:"<§6>", Hunt:"<§6>"}` 맵, 각각 수치 반환, 매 틱 animal Context로 평가, 컨트롤러가 max(동률 = `actions.IDs()` 순) (b) 제네릭
+`Σ drive_weight·action_drive_match` 닷프로덕트(종별 가중치=데이터, "어떤 action이 어떤 drive 충족"=엔진 로직) (c) action `Effect`·
+drive 결핍 닷프로덕트(agent EffValue 기계 차용). **rec: (a)** — D3(평탄 점수 집합, 트리 아님)·D4(§6 데이터)·D10(content)·D5(agent
+Value와 분리) 동시 충족; (b)는 drive↔action 매핑이 엔진 코드화 → D4 위험, (c)는 agent Value 기계 차용 → D5 위반. **후보 집합 =
+utility 맵 키**(F28과 교차). **⚠ D3 가드:** utility는 *순수 점수*여야 함 — 수식이 서로 참조하거나 시퀀싱을 인코딩하면 손그림 트리 =
+D3 위반. 동률·thrash는 §6 stickiness 항 또는 ID-타이브레이크로(F30). **OPEN.**
+
+**F27 ★foundational — expr↔fauna 피연산자 브리지.** expr은 `Stat(StatID)`/`Attr(Tag)`/`Pred(name,Tag)`만 노출(대문자-bare
+= Stat 검증, 소문자/점 = Attr 무검증 caller 네임스페이스). fauna utility/drive/apparent_temp 수식이 **drive 값·scent 셀
+읽기·표적까지 거리**를 어떻게 참조? options: (a) **전부 소문자/점 Attr 피연산자**로 노출 — animal Context 어댑터의 `Attr(name)`이
+`hunger`/`fear`/`scent.predator`/`scent.food`/`dist.food`/`dist.prey`/`apparent_temp`/`wind.dir`(F19) 등을 스위치; base 스탯은
+`Stat(StatID)`(Strength/Agility…). **expr L0 불변**(Cm3 `tool:<family>.quality`·flora `moisture` 동형). (b) expr에 신규 메서드
+(`Drive(id)`/`Scent(ch)`) — expr L0 변경, 단일 caller용, "callers adapt" 규칙 위반. (c) drive/scent/dist를 가짜 StatID로 Stat
+채널에 밀어넣음 — Stat은 knownStats 검증·대문자 컨벤션이라 오염·D10 위반. **rec: (a)** — flora/decay/Cm3 선례 그대로, expr 불변.
+**dist/scent 선결(닭-달걀):** `dist.*`/`scent.*`는 표적/방향이 *read 단계에서 먼저* 해소돼야 함(utility가 표적을 고르는데 dist는
+표적을 요구) → 컨트롤러가 read 단계에서 채널별 최근접 scent 방향·거리를 미리 해소해 Context에 채움(expr 순수성 유지). **⚠ 누락
+정책:** expr missing Attr → 0이라 오타 피연산자가 조용히 0 → `platform/config`가 fauna 수식 `ReadsAttrs()`를 fauna 피연산자
+어휘와 로드시 교차검증(flora operand cross-check 동형). **OPEN — 이게 클러스터 2 스키마(F31)를 형성.**
+
+**F28 — fauna 원자행위 집합 + `actions.yaml` 신규 여부.** F1 = 공유 `engine/mind/actions` 후보; F19 = Graze/Flee/Butcher coin.
+options: (a) fauna 후보집합 = **종 선언 ActionID 리스트(= utility 맵 키)**, 전부 **공유 `actions.yaml` 엔트리**(Graze/Flee 신규,
+Hunt/MoveTo/Rest 기존; Butcher는 **agent** extract 행위로 동물 후보 아님) (b) fauna 전용 action 서브레지스트리 — F1/F5 공유 결정
+위반, 기계 중복 (c) 기존만 재사용(Graze→Forage, Flee→MoveTo-away) — F19가 이미 distinct coin, tag 구분(D4) 상실. **rec: (a)** —
+신규 공유 엔트리 `Graze`(초식 비파괴 flora 채집→hunger; `Forage` 평행·herbivore tag), `Flee`(predator scent 반대 이동; target
+없음); `Hunt`(기존, predator→prey), `MoveTo`/`Rest`(기존). **Butcher = agent 행위**(carcass extract, F11/F12 — 동물 후보 아님).
+**fauna는 gate/cost 기계 미사용**(F1 — planner 없음): fauna action `Tags`는 utility tag-match에만 쓰임(gates/planner 아님) — 확인
+필요. **⚠ 골든 가드:** Graze/Flee가 공유 레지스트리에 들면 `actions.IDs()`/`Producers`/gate-match가 변해 **agent 골든 churn** →
+P_fa1/P_fa2 outcome-중립 레버 보존 위해 **P_fa3 활성 시 추가**(의도적 재기준). **OPEN.**
+
+### 클러스터 2 — entity + 종 콘텐츠 스키마
+
+**F29 — `Animal` struct 필드.** F3 = drives + Stamina + 단일 vital + Pos; ToM/Value/Inventory 없음. sub-options: (i) base
+stats = **full open `core.Stats` 벡터**(D7 — 역량 = §6 합성, 종이 값 선언) vs 축소 subset; **rec: full `core.Stats`**(D7/D10,
+§6가 읽음). (ii) drives = **open `map[DriveID]float64`**(D10 — 신규 drive = 데이터, Stats 평행) vs 고정 struct; **rec: open
+map**. (iii) 그 외 = `ID core.ObjectID`(spatial ObjectID 공간 공유) · `Species SpeciesID` · `Pos core.Vec2`(연속, D11) ·
+`Stamina float64` · `Vital float64`(단일) · `Heading`(steering 방향) · `CurrentAction`(ActionID + 잔여, F30). **rec 종합:**
+`Animal{ID, Species, Pos, Stats(open), Drives(open map), Stamina, Vital, Heading, CurrentAction}`. **⚠ D7 가드:** stat 단련/노화는
+**cross-cutting stats/lifecycle 소관**(flora Dexterity 동일) — fauna는 §6로 *읽기만*, per-action 스킬 저장 금지. **OPEN.**
+
+**F30 — durative 행위 commitment vs 매 틱 재중재.** F1 = 매 틱 horizon-1; 그러나 공유 action은 durative(Duration틱). 긴장.
+options: (a) **매 틱 재점수** — 동기 drive가 여전히 높아 같은 action 재승리(자연 stickiness); 인터럽트(fear 급등) = max 전환;
+thrash는 §6 stickiness 항/ID-타이브레이크; action Duration → `EffectPerMinute` rate 분모(commitment 아님) (b) Duration 동안
+commit + 고우선 인터럽트 채널(fear>θ)만 선점 — durative 정합하나 commit+interrupt 상태기계(경미한 D3 냄새) (c) 동물 action =
+틱당 micro-action(Duration=1) → 매 틱 재점수 정확. **rec: (a)** — F1 문자 그대로, durative 지속은 drive 지속에서 창발, 동률은
+§6 stickiness(agent `Stickiness` 동형)/ID(D12). **⚠ D3 가드:** stickiness는 §6 항으로 — 손코딩 FSM 금지. **OPEN.**
+
+**F31 — `fauna:` 블록 스키마 + utility 부착(F26/F27 종속).** F6 = `objects.yaml` `fauna:` 블록. options(utility 부착): (a)
+**종 블록 내 맵** `fauna: { stats:{…}, drives:{<id>:{…}}, utility:{<ActionID>:"<§6>"}, diet:[tags], senses:{radius, deposits:
+[scent:*]}, products:[{item, base_qty}], size, apparent_temp:"<§6>" }`(flora `flora:` 블록 확장; 후보집합 = utility 키) (b)
+utility를 `actions.yaml`에(종 무관) — 늑대≠사슴 Flee, utility는 본질상 종×action (c) 신규 `content/fauna.yaml` — F6 위반(flora가
+flora.yaml 안 만든 것 동형). **rec: (a)**. `platform/config`가 각 수식 `expr.Parse`(utility/drive/apparent_temp = KindNum) +
+피연산자(F27)·StatID·diet/product item-tag 교차검증; `fauna.Rules`로 컴파일(`flora.Rules` 동형). **⚠ 크기:** 블록이 크다 — module
+SPEC이 ~400줄 넘으면 fauna 콘텐츠 스키마/`fauna.Rules` 컴파일을 별 concern으로 분리(CLAUDE.md split 규칙). **OPEN(F26/F27 해소 후
+확정).**
+
+### 클러스터 3 — 냄새 그리드 구체화
+
+**F32 — 그리드 해상도 + 셀 데이터 shape.** §1.1 = 단일 균일 보조 색인, 이진 채널 플래그. options(해상도): (a) `cellSize` =
+**sense radius 비례**(balance 데이터, spatial `cellSize` 동형 — locality 최적) (b) animal max-speed×cadence 비례(틱당 ≤1셀 이동
+보장) (c) spatial hash cellSize 재사용(그리드 1개로 통합). **rec: (a)** + (b)를 하한 제약으로(≥ max-speed·Ns, upwind steer가
+셀을 건너뛰지 않게). 셀 데이터: 채널별 이진 플래그 → **`uint8` bitset**(`{scent:food, scent:prey, scent:predator}` = 3비트; F22
+채널 확장 = 비트 추가). **⚠ D11 가드:** 그리드 = 색인, 동물 연속좌표·자기 셀만 읽음(스냅 금지). **OPEN.**
+
+**F33 — deposit 규칙 + 바람-확산 알고리즘(D12 스텐실) + cadence Ns + 침착→읽기 지연.** §1.1: predator = 매 틱 자기 셀 deposit,
+그 외 채널 확산 = bulk(Ns). options(확산): (a) **고정순서 스텐실 bulk 패스**(`tick % Ns`, 셀 정렬 1패스, downwind 이웃으로 플래그
+전파, RNG 없음 — navmap wear/terrain 패스 동형) (b) deposit 시 즉시 반경 stamp(확산 패스 없음) — 바람 downwind 표현 불가 (c) BFS
+거리장 — 스칼라 농도라야 의미(F21 이진과 불일치). **rec: (a)**. **바람 입력 계약(F21):** P1 바람 중립 → 플래그 국소(출처+인접만,
+단거리); climate 출하 시 downwind 전파 + 거리 확장. cadence Ns = balance(F24); predator 채널만 매 틱(임박 회피). **⚠ deposit→read
+지연(D12):** predator deposit(apply 단계)과 herbivore read(score 단계)의 **동틱 vs 차틱** — §1.1 "즉시"가 same-tick이면 score 전
+predator pre-pass 필요, next-tick이면 깨끗한 스냅샷(1틱 지연). **rec: next-tick(1틱 지연)** — read = 이전 틱 그리드 스냅샷(navmap
+동형, 결정성 명료); 임박성은 predator 매-틱 deposit으로 충분. (F41 와이어링과 교차.) **OPEN.**
+
+**F34 — read/upwind-steer 규칙.** §1.1: 동물이 자기+이웃 셀 읽음 → 채널 플래그면 바람 따라 upwind(food/prey 접근), predator
+반대(flee). options: (a) **이웃 8셀 중 켜진 셀 방향 평균 → steer 벡터**(바람 없을 때 coarse 방향; F23 출처 정체 불요) (b)
+`wind.dir` operand만으로 upwind(바람 필수 — P1 바람 중립이라 무력) (c) 둘 결합 — 바람 있으면 upwind 우선, 없으면 이웃-켜짐 방향.
+**rec: (c)** — P1(바람 중립)은 이웃-켜짐 coarse 방향, climate 출하 시 upwind homing 활성(thermal-OFF 동일 패턴). 결과 = utility
+수식의 `dist.*`/방향 피연산자로 노출(F27). predator = 벡터 반전(Flee). **OPEN.**
+
+**F35 — steering/locomotion 갱신(max-speed·그리드 추종).** F14 = 연속 Pos + cheap steering(pathfind 없음, terrain passability
+샘플만). options(max-speed): (a) **§6(base stats) 수식**(`speed = §6(Agility,…)`, 종 블록; D7) (b) 종 상수(balance) (c) drive
+변조(fear→speed↑, fatigue→↓). **rec: (a)+(c)** — base speed = §6(D4/D7), fear/fatigue 변조 = §6 항; terrain passability는 navmap
+`Passable`/`TerrainAt` 샘플(D11, 못 가는 지형 회피만, pathfind 없음). 이동 = steer 벡터 방향으로 speed·dt 전진(연속). **⚠ D11
+가드:** 칸 스냅 금지. **OPEN.**
+
+**F36 — 그리드 소유/배치(`engine/space` 확장 vs `engine/fauna` 서브모듈).** §1.1/F5: SPEC 시 확정. options: (a) **`engine/fauna`
+서브모듈**이 그리드 소유(scent는 fauna 전용 보조 색인; world가 deposit/spread 패스 구동, navmap 동형) (b) `engine/space`(spatial
+옆 신규 `scent`) — 범용 필드지만 현 유일 소비자 = fauna, 조기 일반화 (c) navmap에 채널 추가 — navmap = terrain cost 전용, 의미
+혼입. **rec: (a) for P1** — fauna 단독 소비자라 fauna 소유가 응집적·D5; 후일 다른 소비자 생기면 `engine/space`로 승격(스칼라 농도
+승격과 함께, frontier). world가 bulk 확산 패스 구동(유일 mutator, D12). **OPEN.**
+
+### 클러스터 4 — 산물 & 생애주기 훅
+
+**F37 — `carcass` 객체 스키마 + decay lot 매핑.** F11 = `carcass` 객체 + owner-agnostic decay lot(Dm4) + Butcher; 미추출 →
+`rotten_matter`(W10). options(yield 표 위치): (a) **종 블록 `products:[{item, base_qty}]`; 사망 시 world가 `carcass` 인스턴스에
+종 product 표 복사**(carcass 자기서술 — Butcher가 live animal과 분리) + `raw_meat` decay lot 생성 (b) 제네릭 `carcass` 1종에
+고정 yield — 늑대≠사슴 carcass (c) 종별 carcass object_kind — kind 폭발, D10은 1 carcass kind 매개변수화 선호. **rec: (a)**.
+carcass = object_kind(`mobile:false`) + 런타임 product 표 + decay lot(Dm5 `{kind, qty, decayAge=0}`); 미Butcher → decay가
+`rotten_matter`로 transform(W10, decay 재사용 — 평행 시스템 금지). **OPEN.**
+
+**F38 — Butcher extract 메커니즘.** F12 = 신규 extract 행위(`tool:cutting` gate, Dexterity §6 yield; Mine/Fell 평행, non-recipe).
+options: (a) **Mine/Fell 평행 non-recipe 행위** — action-level `tool:cutting` tag, `target_kind:carcass`, `§6(Dexterity,
+tool:cutting.quality)` yield 롤(Cm3 operand 재사용), carcass `remaining`/product 표 소진, 소진 → carcass 제거(object-mortality)
+(b) recipe-mediated Craft로 — Butcher는 추출이지 조합 아님, FINAL recipe 모델 부적합 (c) Hunt에 흡수 — 사냥(죽임)≠해체(추출),
+tag/행위 분리(D4). **rec: (a)** — Mine 동형(Xm4/Xm5 그대로): `tool:cutting` gate, Dexterity 수율, 보유 도구 durability wear
+(world rate), carcass product 소진. **agent 행위**(F28 — 동물 후보 아님). hide/bone/sinew → material-tag item(W7/W8 공급).
+**OPEN.**
+
+**F39 — 번식 부트스트랩(타이머-respawn) 와이어링.** F9 = 타이머-respawn(`prey_respawn`) 부트스트랩, 비차단; 창발 birth = P_fa4.
+options: (a) **기존 `balance.regen.prey_respawn` 타이머 재사용** — 사냥된 동물 인스턴스가 N틱 후 적합도-가중 위치에 respawn(현행
+prey legacy 그대로, F18) (b) drive-gated 창발 birth를 P1에 — F9가 P_fa4로 명시 연기 (c) 고정 개체수 유지(죽으면 즉시 1:1 spawn).
+**rec: (a)** — F9 확정 그대로, P1 비차단; respawn 위치 = 적합도-가중(F18, 라이브) / 픽스처(시나리오). repro_readiness drive(F25)는
+P1엔 타이머에 종속(자체 사이클 P_fa4). **OPEN.**
+
+**F40 — `apparent_temp` 수식 형태(climate-OFF 출하).** F10 = thermal drive bias + 지속초과 vital 손상; climate 전 thermal-OFF
+(내성식 존재·중립). options: (a) **종 블록 `apparent_temp:"<§6>"`** = local climate 속성(`temperature`/`moisture`/`wind`) +
+동물 자기 속성(size·base stats)의 §6 → 수치; thermal drive가 이 값 편차로 bias(F25) (b) 엔진 고정 shape + 계수 데이터 (c) climate
+미출하라 P1엔 아예 필드 없음. **rec: (a)** — §0-3 체감온도 = per-entity §6 정합(D4/D10); climate 입력은 **입력 계약**(P1 중립값 →
+thermal 거동 0, decay/flora 동형); climate 출하 시 활성(P_fa4, '겨울' = 지속저하 창발). `platform/config`가 `expr.Parse`(KindNum).
+**OPEN.**
+
+### 클러스터 5 — 통합 + 어휘
+
+**F41 — 컨트롤러↔world 틱 와이어링(결합 ID apply 순서 + scent bulk cadence) 구체 shape.** F16/F24 = 매 틱 interleave + 고정
+결합 agent+animal ID apply 순서, per-step rng fork, bulk cadence. options: (a) **world가 단일 read→score→intent→apply 루프에
+animal 합류** — score(병렬 read-only, animal Context 빌드 + utility max) → intent 수집 → **apply(agent+animal 통합 ObjectID
+정렬 1순서, D12)**; scent 확산 = `tick % Ns` bulk 패스(F33), per-step `fork(tick)` RNG(climate 동형), world가 ObjectID 발급 +
+spatial Insert/Move/Remove (b) animal 별도 루프(2-패스) — 결합 순서(F16) 위반 (c) fauna 자체 apply — world 유일 mutator(F5)
+위반. **rec: (a)**. apply 순서 = agent+animal **하나의 정렬된 ObjectID 시퀀스**(타이 ID, D12); scent deposit = apply 직렬(F33
+next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architecture.md:** `engine/fauna`가 stage6(agent 옆)·world(stage7)
+와이어링 — **반영 미시행**, SPEC 착수 직전 사람 확인(§3 DAG 영향). **OPEN.**
+
+**F42 — 이번 라운드가 굳히는 신규 glossary 용어.** F19 채택 위 추가 식별자(SPEC가 도입): `SpeciesID`(fauna 종, flora `SpeciesID`
+동형) · `DriveID`(open drive 키, StatID 평행) · `fauna.Rules`(컴파일된 §6, `flora.Rules` 동형) · utility 피연산자 `hunger`/`fear`/
+`thermal`/`fatigue`/`repro_readiness`·`scent.food`/`scent.prey`/`scent.predator`·`dist.food`/`dist.prey`·`apparent_temp`·
+`wind.dir`(F27 어댑터 네임스페이스) · `Heading`(steering) · scent 그리드 `cellSize`(balance). **rec:** F19 동기화 단계에서 일괄
+`glossary.md` 등재(별도 단계 — 여기 coin 확정만). **OPEN(어휘 확정).**
+
 ---
 
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `flora.md §2`/`climate.md §2` 양식)
 > **모든 §1 게이트 RESOLVED ✓** → phase의 남은 실제 선행은 **Open question이 아니라 선행 leaf 빌드**다:
 > `engine/kernel/expr`(§6 — drive·utility·체감온도 내성·yield 수식) + `engine/env/decay`(P_m2 — 사체 lot 부패). 둘 다 READY/다음 leaf.
+> **⚠ 2차 게이트(§1.3 F25~F42):** SPEC-design 세부는 **OPEN** — module SPEC 작성 전 사람 확정 필요(특히 ★F26/F27).
 > **핵심 안전 레버:** P_fa1~P_fa2는 outcome-중립(종 미배치 → 거동 0 변화; 현행 `prey` 타이머-respawn legacy 유지)
 > → 기존 world 골든 불변. **P_fa3에서만** 의도적 재기준(climate/flora staging 동형).
 
@@ -109,11 +272,13 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   steering 재현, 냄새 그리드 침착/읽기 결정성·중립, 공유-레지스트리 점수화, fauna-OFF 중립, import/literal 가드
   (actions/expr/spatial만; world/agent import 금지).
   **선행(RESOLVED ✓): F1·F2·F3·F4·F5·F14·F20·F21·F22·F23.** 빌드 선행: `engine/kernel/expr`.
+  **⚠ SPEC-design 선행(OPEN, §1.3): F25·★F26·★F27·F28·F29·F30·F31·F32·F33·F34·F35·F36·F42.**
 
 - **P_fa2 — `world` 와이어링(cadence + 통합 apply 순서 + 냄새 bulk 패스 + spawn/move/die 델타) — 여전히 outcome-중립**
   world가 fauna 컨트롤러를 통합 read→score→intent→**apply(고정 결합 agent+animal ID 순서, D12)**에 합류; 냄새
   확산 bulk 패스(`tick % Ns`, F24) + per-step rng fork + ID 발급. **종 여전히 미배치 → 거동 불변(중립 회귀 가드).**
   와이어링·cadence·fork·apply-순서·냄새 패스 결정성만 검증. **선행(RESOLVED ✓): F4·F16·F24.**
+  **⚠ SPEC-design 선행(OPEN, §1.3): F33·F41.**
 
 - **P_fa3 — 활성: 야생 단독 prey+predator + 사체→재료 + 골든 의도적 재기준**
   `content/objects.yaml`에 `fauna:` 종 활성(prey 1 + predator 1) + §6 수식(`platform/config`가 `engine/kernel/expr`로
@@ -123,6 +288,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   **이 phase에서만** 영향 골든 재기준. 시나리오: "포식자 접근 → agent Safety goal 창발", "사냥→사체→butcher→
   뼈/힘줄이 craft 입력", "사체 미추출 → 부패(W10)". **선행(RESOLVED ✓): F6·F7·F8·F11·F12.**
   빌드 선행: `engine/env/decay`(P_m2) + `expr` + (초식용 edible flora — flora 활성 or placeholder edible 객체).
+  **⚠ SPEC-design 선행(OPEN, §1.3): F31·F37·F38·F39·F40 + (Graze/Flee 공유-레지스트리 추가, F28 골든 재기준).**
 
 - **P_fa4 — 창발 번식/개체군 사이클(타이머 respawn 대체) + 체감온도 thermal 거동**
   drive-gated 창발 birth(F9 승격 — flora 씨앗분산 동형, §7 비의존 최소 사이클) + 체감온도 thermal drive/vital(F10) —
@@ -142,17 +308,25 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   미빌드** → F9(c) 타이머 respawn 부트스트랩으로 P1 비차단; 창발 번식은 P_fa4. ③ **climate 미빌드** → 체감온도·
   바람은 **입력 계약**(F10/F21), P1은 thermal-OFF + 냄새 단거리(바람 중립). ④ **`engine/kernel/expr` + `engine/env/decay`
   (P_m2)** 가 선행 leaf(둘 다 READY/다음 빌드).
+- **2차 게이트(§1.3 F25~F42, 2026-06-26):** module SPEC 착수 전 **사람 확정 필요**한 SPEC-design 세부. ★foundational = F26
+  (per-action utility 수식 형태)·F27(expr↔fauna 피연산자 브리지) — 이 둘이 나머지 스키마(F31 fauna 블록)를 형성하므로 가장 먼저
+  resolve. **resolve 전 SPEC 작성 금지(발명 = 결함).**
 - **불변 플래그(아래는 위반이 아니라 가드레일):**
   - **D3:** Hunt/Graze/Flee/Butcher가 horizon-1 utility로 선택되는 한 OK — 단 drive→utility는 **§6 데이터**(D4)여야
-    하고 per-species behavior tree를 저작하면 위반.
-  - **D2:** husbandry/길들임은 *창발*만 — 'tame' 상태/플래그 저작은 위반(F13 이연; 열리면 flee-drive shift로만).
+    하고 per-species behavior tree를 저작하면 위반. (§1.3 F26/F30: utility는 순수 점수, stickiness는 §6 항 — 손그림 FSM 금지.)
+  - **D4:** drive 갱신·utility·apparent_temp·yield 전부 tag/§6 파생(§1.3 F25/F26/F40); F26(b) 닷프로덕트는 drive↔action
+    매핑을 엔진 코드화할 위험이라 reject 권고.
   - **D5/D1:** 동물 drive-set은 agent `Value` 계와 **별개의** 동기 기계다(축소 루프, §0-1). 코드베이스에 두 번째
-    동기 기계가 생기므로 drive≠Value로 명확 분리(F3) — 위반은 아니나 drift 위험.
+    동기 기계가 생기므로 drive≠Value로 명확 분리(F3; §1.3 F26(c) reject 근거) — 위반은 아니나 drift 위험.
   - **D6/D8:** 동물 ToM 없음(F2/F3); 포식자→agent Safety는 지각 hostile tag로만 흐름(F8) — D6/D8과 정합.
-  - **D11:** 냄새 그리드 = 보조 색인. 동물은 연속좌표 유지·칸 스냅 없음, 필드는 *읽기만*(F20/§1.1) — 위반 아님.
   - **D7:** 동물 base 스탯은 §6 합성·mutable일 수 있으나 **stat-training/노화는 cross-cutting stats/lifecycle 소관**
-    (flora 동일) — fauna는 §6로 *읽기만*.
-- **glossary(F19):** §1.2 용어 채택 확정 → `docs/glossary.md` 동기화는 별도 단계.
+    (flora 동일) — fauna는 §6로 *읽기만*(§1.3 F29 가드).
+  - **D10:** species = content `fauna:` 블록(F6); Animal `Stats`/`Drives` = open(§1.3 F29 — 신규 stat/drive = 데이터).
+  - **D11:** 냄새 그리드 = 보조 색인. 동물은 연속좌표 유지·칸 스냅 없음, 필드는 *읽기만*(F20/§1.1; §1.3 F32/F35 가드) — 위반 아님.
+  - **D12:** scent 확산 = 고정순서 stencil bulk(§1.3 F33); apply = 결합 agent+animal 정렬 ID 1순서(F41); per-step rng fork.
+  - **expr L0 불변(§1.3 F27):** drive/scent/dist/apparent_temp/wind은 전부 소문자/점 **Attr 피연산자**(caller 네임스페이스,
+    flora `moisture`·Cm3 `tool:<family>.quality` 동형) — expr 메서드 추가 금지. `platform/config`가 `ReadsAttrs()` 교차검증.
+- **glossary(F19/F42):** §1.2 + §1.3 F42 용어 채택 확정 → `docs/glossary.md` 동기화는 별도 단계.
 - **DAG 영향(F5):** `engine/fauna`가 `architecture.md §2/§4/§5`에 합류 — actions/spatial 뒤(agent 옆), world(stage 7)가
   apply + 냄새 bulk 패스 와이어링. **architecture.md 수정은 아직 미시행** — SPEC 착수 직전 사람 확인 후 반영.
 - **시나리오 정합:** P_fa3가 W7(뼈 craft 입력)·W8(힘줄 binding/대체)·W10(사체/유품 부패) 공급측을 활성화; 포식자→
