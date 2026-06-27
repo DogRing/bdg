@@ -349,7 +349,17 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
   scent 채널은 F34 omni 그대로(food/prey homing + predator 조기경보/Wary).
 - **⚠ D11 가드:** cell-based 든 continuous 든 동물은 연속 Pos+Heading 유지·칸 스냅 없음. **⚠ D12:** FOV 셀 선택/bearing 테스트는
   고정순서·결정적(map-순회 로직 금지). **⚠ F34 결합:** F44(c) 확정이 F34 의 omni 규칙을 *scent-only* 로 좁힌다 — **F34/F44 함께 resolve.**
-  **OPEN.**
+  **(RESOLVED — 클러스터 6 상단 블록.)**
+
+### 클러스터 7 — 적응형 cadence · 수영 · 성향 반응 (F45~F46 + 개정) — 사람 확정 (2026-06-27)
+> R1~R5 RESOLVED. `backend/engine/fauna/SPEC.md`에 반영됨. F16/F24/F29/F30/F35/F41 개정·§1.2 glossary 추가.
+
+- **F45 — 적응형 per-animal cadence (R1; F16/F24/F41 개정).** 동물 = DORMANT/ACTIVE 2상태. **DORMANT**: `(tick + phase(ID)) % N == 0` 일 때만 풀 재중재(N≈100 balance, `phase`=ID 파생 부하분산), 사이 틱엔 `CurrentAction` 유지 + 싼 steering. **ACTIVE**: 매 틱. **포식자 항상 ACTIVE.** **깨우기**: 매 틱 모든 동물이 자기 칸 predator-scent 비트 **O(1)** 읽음 → 켜지면 그 틱 ACTIVE(+쿨다운=balance). 결정성 = ID-phase·순수 읽기·고정순서·map-순회 금지. cadence 로직은 fauna `Step` 안(world는 매 틱 호출, apply 순서는 F41).
+- **F46 — 성향(disposition) 기반 agent 반응 (R4; #4 이진판 supersede; P_fa3).** 초식 sight 가 agent 감지 → **`agent.disposition` = 부호 §6(agent 실 base stat; rec `Sociability − Aggression − Vindictiveness`, 계수=balance/content, D4)** → 양수=stay(fear 0) / 음수=flee(fear↑) via F43 fear 채널. ToM 아님(실 스탯, F3), '사냥꾼' 창발(D2). F8(포식자→agent Safety) 방향 불변. 세부 §6·operand 확정 = P_fa3.
+- **F35 개정 (R2):** `TerrainSampler{Passable, Cost}` (옵션 b). **물 = 벽 아님, 고비용 통과 = 수영**(steering 진입 가능; Passable=false 는 진짜 blocker[벽/footprint]만). 수영 Stamina 소모·익사 risk(W1 동물판)는 §7/lifecycle 로 이연.
+- **F29 정렬 (R3):** `Animal.Stats` = `map[core.StatID]float64` (inline; fauna 는 `stats` import 안 함, D7 읽기전용).
+- **F30 (R5):** `is_current` §6 Attr operand 채택(현재 행동=1.0 / else 0.0) — ACTIVE-모드 stickiness(anti-thrash; FSM 금지, D3). `AttrOperands()` + glossary.
+- **glossary(§1.2/F42) 추가:** `is_current` · `agent.disposition`.
 
 ---
 

@@ -2,23 +2,25 @@
 
 > Status: `DRAFT`
 > Leaf level: `L4` (sub-module of `engine/fauna`)  ·  Owner agent: `<filled by implementer>`
-> Scope: **P_fa1** (`docs/fauna.md §2`, §1.1 + F20–F24, F32–F34/F44). Parent: `backend/engine/fauna/SPEC.md`.
+> Scope: **P_fa1** (`docs/fauna.md §2`, §1.1 + F20–F24, F32–F34/F44; `PresentAt` wake probe for F45). Parent: `backend/engine/fauna/SPEC.md`.
 
 ## Purpose
 The **scent grid**: a single uniform, multi-channel **auxiliary index** (spatial-hash / navmap-cost-field
 kin) over continuous space (D11 — the grid is an *index*, not the world; animals keep continuous `Pos`
 and only READ the cell they fall in + neighbors, never snapped to it). Each cell carries a `uint8` bitset
 of binary presence flags for the channels `{food, prey, predator}` (F21/F22 — presence + wind direction,
-NOT scalar concentration). It owns three operations: **deposit** (a scent source sets its cell's channel
+NOT scalar concentration). It owns these operations: **deposit** (a scent source sets its cell's channel
 bit), **wind-spread** (a deterministic fixed-order stencil carries non-predator flags downwind on the
-`tick % Ns` bulk cadence, with a **next-tick (1-tick) latency**), and **read** (an animal reads its cell
-+ neighbors within its smell radius → per-channel presence + a coarse upwind / neighbor-on direction +
-coarse distance proxy, F34). It does **not** own *when* deposit/spread/commit run (cadence is
+`tick % Ns` bulk cadence, with a **next-tick (1-tick) latency**), **read** (an animal reads its cell +
+neighbors within its smell radius → per-channel presence + a coarse upwind / neighbor-on direction +
+coarse distance proxy, F34), and the O(1) own-cell **`PresentAt`** probe the parent runs as the F45
+predator-scent wake check. It does **not** own *when* deposit/spread/commit run (cadence is
 `engine/world`'s, F33/F41), the animal decision that consumes a `Reading` (parent `engine/fauna`), the
 wind VALUE (injected by world from climate, neutral in P1), or any object/animal mutation. No IO, no
 wall-clock, **no RNG** (spread is a fixed-order stencil, D12). Concept & rationale: `docs/fauna.md §1.1`
 + F20–F24 (single uniform binary multi-channel grid) + F32–F34 (cell shape / spread algorithm / read
-rule) + F44 (sight is separate — this grid is *scent-only*: food/prey homing + predator early-warning).
+rule) + F44 (sight is separate — this grid is *scent-only*: food/prey homing + predator early-warning)
++ F45 (the wake probe).
 
 ## Public Interface
 ```go
@@ -34,7 +36,7 @@ type Channel uint8
 const (
     ChanFood     Channel = iota // edible-flora / food scent (herbivore homing → Graze)
     ChanPrey                    // prey-animal scent (carnivore homing → Hunt)
-    ChanPredator               // predator scent (early-warning → Wary; sight handles close Flee, F44)
+    ChanPredator               // predator scent (early-warning → Wary + F45 wake; close Flee = sight, F44)
 )
 
 // Wind is the local wind VALUE world injects from climate (operands wind.dir / wind.mag, CA2). Dir is
@@ -90,6 +92,13 @@ func (g *Grid) Commit()
 
 // ── Read (read phase; pure; the parent controller consumes this) ──────────────────────
 
+// PresentAt is the O(1) own-cell channel-bit test over the COMMITTED buffer: true iff ch's presence bit
+// is set in the single cell containing pos (NO neighbor scan, NO direction). It is the cheap per-tick
+// probe the parent runs for EVERY animal as the F45 wake check — `PresentAt(ChanPredator, Pos)` wakes a
+// DORMANT herbivore "exactly when predator scent reaches its cell" without a neighbor scan. Pure
+// (committed buffer), no RNG. (A full sense uses Read; this is only the wake gate.)
+func (g *Grid) PresentAt(ch Channel, pos core.Vec2) bool
+
 // Read returns the multi-channel reading at pos over the COMMITTED buffer, scanning the cell containing
 // pos plus the neighbor cells within smellRadius (F34). For each channel it reports presence + a coarse
 // direction toward the aggregate on-cells (UPWIND of pos when Wind.Mag > 0, else the average offset of
@@ -132,20 +141,21 @@ type ChannelReading struct {
 - The two sparse **cell buffers** (committed + pending), keyed by integer cell coords (`struct{cx,cy int}`,
   not a formatted string — alloc-free + deterministic, spatial parity), each value a `uint8` channel
   bitset. The grid OWNS these; no other module reads or mutates them directly — callers interact only
-  through Deposit/Spread/Commit/Read. `Reading` is a fresh value the caller may retain freely.
+  through Deposit/Spread/Commit/Read/PresentAt. `Reading` is a fresh value the caller may retain freely.
 - `cellSize` is fixed at `New` (injected from balance, `cellSize ∝ smell radius`, F32) — never mutated.
 - The grid is fauna-owned for P1 (F36); world holds one per run and drives its cadence. It is DERIVED
   state — rebuilt from positions on resume (like the spatial hash), so it is not separately serialized
   (`docs/data-contracts.md` — the animal/source positions are the source of truth).
 
 ## Invariants
-- **D11 — index, not the world** — the grid is an auxiliary index over continuous space; `Deposit`/`Read`
-  take continuous `Vec2` and compute `floor(p/cellSize)` per axis; animals are NEVER snapped to a cell.
-  The grid drives no agent/animal logic by itself — it is a scent *data field* the parent reads (navmap
-  wear/terrain-pass parity), exactly the D11 "grids are indices, not the world" rule.
+- **D11 — index, not the world** — the grid is an auxiliary index over continuous space; `Deposit`/`Read`/
+  `PresentAt` take continuous `Vec2` and compute `floor(p/cellSize)` per axis; animals are NEVER snapped to
+  a cell. The grid drives no agent/animal logic by itself — it is a scent *data field* the parent reads
+  (navmap wear/terrain-pass parity), exactly the D11 "grids are indices, not the world" rule.
 - **D12 determinism, no RNG** — `Spread` is a fixed-order stencil over the sorted on-cell keys with no
-  randomness; `Deposit` is idempotent bit-set; `Read` scans the neighbor ring in a fixed nested order.
-  Same deposit/spread/commit sequence ⇒ byte-identical buffers and `Reading`s, every run, every process.
+  randomness; `Deposit` is idempotent bit-set; `Read` scans the neighbor ring in a fixed nested order;
+  `PresentAt` is a pure single-cell lookup. Same deposit/spread/commit sequence ⇒ byte-identical buffers,
+  `Reading`s, and `PresentAt` results, every run, every process.
 - **D12 no map-iteration for logic** — every buffer traversal (spread, read, any digest) iterates cell
   keys in **sorted order**, never raw map-range. Float accumulation in the read's direction average is in
   the fixed sorted-cell order.
@@ -153,10 +163,10 @@ type ChannelReading struct {
   grid stores NO scalar intensity. Distance is therefore only ring-coarse (`CoarseDist`) and direction is
   upwind-or-neighbor-on — sufficient for steering; a future scalar-concentration upgrade is a deliberate
   later phase (frontier), not P1.
-- **Next-tick latency is fixed (F33)** — `Read` sees the COMMITTED buffer only; `Deposit`/`Spread` write
-  PENDING; `Commit` swaps. A deposit at tick T is invisible until T+1 (clean prior-tick snapshot,
-  determinism-clear, navmap parity). The predator channel's responsiveness comes from being re-deposited
-  EVERY tick (so it is fresh at T+1), not from same-tick reads.
+- **Next-tick latency is fixed (F33)** — `Read`/`PresentAt` see the COMMITTED buffer only; `Deposit`/
+  `Spread` write PENDING; `Commit` swaps. A deposit at tick T is invisible until T+1 (clean prior-tick
+  snapshot, determinism-clear, navmap parity). The predator channel's responsiveness (incl. the F45 wake)
+  comes from being re-deposited EVERY tick (so it is fresh at T+1), not from same-tick reads.
 - **Predator channel: deposit-only, never spread (F33)** — `Spread` propagates only food/prey; predator
   presence is the every-tick source deposit. (Wind-carried predator scent is a later-phase choice.)
 - **Wind is an input contract (F21/F33)** — `Wind.Mag == 0` (P1 climate-OFF) ⇒ spread is local
@@ -172,9 +182,14 @@ type ChannelReading struct {
   wind)` reports `Food.Present == true` and (with another channel absent) `Prey.Present == false`; the
   bitset packs the three channels independently (setting food does not set prey/predator). Table-driven
   over the three channels.
-- [ ] **Next-tick latency (F33)** — a `Deposit` is NOT visible to a `Read` BEFORE `Commit` (read sees the
-  committed buffer); it IS visible after `Commit`; a second `Commit` with no new deposits clears the field
-  (food/prey not re-deposited disappear; predator persists only if re-deposited each tick). Table-driven.
+- [ ] **`PresentAt` O(1) own-cell wake probe (F45)** — after `Deposit(ChanPredator, p)` + `Commit`,
+  `PresentAt(ChanPredator, p)` is true for any `Pos` inside p's cell and false one cell away (no neighbor
+  scan, unlike `Read`); before `Commit` it is false (next-tick latency); it agrees with
+  `Read(...).Predator.Present` for the OWN cell but not for neighbor-only presence (Read sees neighbors,
+  PresentAt does not). Table-driven.
+- [ ] **Next-tick latency (F33)** — a `Deposit` is NOT visible to a `Read`/`PresentAt` BEFORE `Commit`; it
+  IS visible after `Commit`; a second `Commit` with no new deposits clears the field (food/prey not
+  re-deposited disappear; predator persists only if re-deposited each tick). Table-driven.
 - [ ] **Spread = fixed-order stencil, downwind / local (F33)** — with `Wind.Mag > 0`, `Spread` propagates
   a food on-flag to the downwind neighbor cell(s) (range grows with Mag) and NOT upwind; with
   `Wind{0,0}`, it propagates only to the immediate neighbor cells (local); the PREDATOR channel is never
@@ -187,15 +202,15 @@ type ChannelReading struct {
 - [ ] **Scent-only (F44)** — `Reading` exposes no forward-FOV sight result; `Predator.Present` is purely
   the omni scent read (early-warning), and the grid offers no API for the Heading-relative cone (that is
   the parent's spatial query). Documents the F34↔F44 split.
-- [ ] **Continuous-coordinate cell math (D11)** — deposits at `(-1000.5, 7.2)` and a read centered there
-  agree (negative + fractional coords bucket correctly); an animal whose `Pos` lies anywhere inside a
-  cell reads that cell (no snapping); a far read does not see it.
+- [ ] **Continuous-coordinate cell math (D11)** — deposits at `(-1000.5, 7.2)` and a read/`PresentAt`
+  centered there agree (negative + fractional coords bucket correctly); an animal whose `Pos` lies
+  anywhere inside a cell reads that cell (no snapping); a far read does not see it.
 - [ ] **Empty-grid neutrality (the P_fa1 lever)** — with no deposits, every `Read` returns all channels
-  `Present == false` / zero `Dir` / sentinel `CoarseDist`; `Spread`/`Commit` on an empty grid are no-ops;
-  the parent controller therefore emits no scent-driven behaviour (fauna-OFF neutrality). Regression guard.
-- [ ] **Determinism golden (D12)** — a fixed `(deposit/spread/commit/read sequence, wind sequence)` over
-  N ticks yields a byte-identical digest of the committed buffer + the per-read `Reading`s; a second run
-  reproduces it (cross-process). No `time`/global-rand/RNG anywhere.
+  `Present == false` / zero `Dir` / sentinel `CoarseDist` and every `PresentAt` is false; `Spread`/`Commit`
+  on an empty grid are no-ops; the parent emits no scent-driven behaviour (fauna-OFF neutrality). Guard.
+- [ ] **Determinism golden (D12)** — a fixed `(deposit/spread/commit/read/PresentAt sequence, wind
+  sequence)` over N ticks yields a byte-identical digest of the committed buffer + the per-read `Reading`s
+  + `PresentAt` results; a second run reproduces it (cross-process). No `time`/global-rand/RNG anywhere.
 - [ ] **`New` guards + injected cellSize (D10)** — `New(cellSize ≤ 0)` panics; no cell-size / channel /
   radius literal appears in logic (grep guard) — `cellSize` is injected, the channel bits are the fixed
   `Channel` constants.
@@ -205,15 +220,16 @@ type ChannelReading struct {
 ## Out of Scope
 - **The cadence** — *when* to `Deposit` (each apply, predator every tick / food·prey bulk), `Spread`
   (`tick % Ns`), and `Commit` (per tick) → `engine/world` (P_fa2, F33/F41). The grid exposes the
-  operations; world schedules them.
+  operations; world schedules them. (The parent runs `PresentAt`/`Read` in its own read phase.)
 - **The `Wind` SOURCE** — climate generates `Wind{dir,mag}` (CA2) and world injects it into Spread + the
   parent's `apparent_temp`/read; climate-OFF P1 ⇒ `Wind{0,0}` (`docs/climate.md §1c`). The grid never
   imports or computes wind.
 - **Who deposits what** — which source object/animal carries which channel (a predator deposits
   `ChanPredator`, edible flora `ChanFood`, prey `ChanPrey`) is the parent/world's classification from
   content tags (D4/D10); the grid only sets the bit it is told to.
-- **Consuming a `Reading`** — turning presence/direction into a drive set, a utility score, or a steer
-  vector → the parent `engine/fauna` controller (`backend/engine/fauna/SPEC.md`).
+- **Consuming a `Reading` / the F45 wake decision** — turning presence/direction into a drive set, a
+  utility score, a steer vector, or the dormant→active wake → the parent `engine/fauna` controller
+  (`backend/engine/fauna/SPEC.md`). The grid only reports the bit; the parent decides.
 - **The forward-FOV sight channel** — `sight.predator`/`dist.predator` come from the parent's
   spatial-hash predator query (F44(c-ii)), NOT this grid. The grid is scent-only.
 - **Scalar-concentration upgrade** — promoting the binary flags to a scalar gradient (for precise
@@ -225,19 +241,21 @@ type ChannelReading struct {
 > None new. The scent grid is fully determined by `docs/fauna.md §1.1` + F20–F24 (single uniform binary
 > multi-channel grid), F32 (cellSize ∝ smell radius, uint8 bitset), F33 (predator-every-tick deposit +
 > fixed-order stencil bulk spread on `tick%Ns` + next-tick latency), F34 (omni neighbor/upwind read,
-> scent-only after F44), all RESOLVED. This SPEC invents no mechanism. (The `cellSize`/`Ns`/wind units are
-> balance/climate data owned elsewhere — see Out of Scope, not open mechanism choices.)
+> scent-only after F44), F45 (the `PresentAt` wake probe), all RESOLVED. This SPEC invents no mechanism.
+> (`cellSize`/`Ns`/wind units are balance/climate data owned elsewhere — Out of Scope, not open choices.)
 
 ## Notes
 - Double-buffer (committed/pending) is the concrete realization of F33's next-tick latency — it is exactly
   the "read sees the prior-tick snapshot" rule navmap/climate use, made explicit so determinism is
   trivial to reason about: the read phase never observes a mid-tick partial deposit.
+- `PresentAt` is deliberately the cheapest possible probe (one cell lookup) so the F45 per-tick wake check
+  over EVERY animal stays O(N), not O(N · neighborhood) — the full `Read` is paid only by ACTIVE animals.
 - Keep the cell key a comparable `struct{cx,cy int}` (spatial-hash Notes parity) — no string formatting on
   the hot path, alloc-free, and deterministic. Iterate keys via a sorted slice for spread/digest (D12).
 - The binary-presence honesty trade-off (F21): the grid knows *whether* and *roughly which way*, not
   *how far*. That is enough for upwind/neighbor-on steering; if precise distance is ever needed, promote to
   a scalar field then (frontier) — do not smuggle pseudo-distance into the binary grid now.
-- Reference paths: `docs/fauna.md §1.1` + F20–F24/F32–F34/F44 (binding), `backend/engine/fauna/SPEC.md`
-  (the parent controller that consumes `Read`), `backend/engine/space/spatial/SPEC.md` (the cell-key /
-  continuous-coordinate / determinism patterns this mirrors), `docs/climate.md §1c` (the `Wind` input
-  contract), `docs/glossary.md` (`scent grid` / `scent channel` / `wind.dir`/`wind.mag` coined terms).
+- Reference paths: `docs/fauna.md §1.1` + F20–F24/F32–F34/F44/F45 (binding), `backend/engine/fauna/SPEC.md`
+  (the parent controller that consumes `Read`/`PresentAt`), `backend/engine/space/spatial/SPEC.md` (the
+  cell-key / continuous-coordinate / determinism patterns this mirrors), `docs/climate.md §1c` (the `Wind`
+  input contract), `docs/glossary.md` (`scent grid` / `scent channel` / `wind.dir`/`wind.mag` terms).
