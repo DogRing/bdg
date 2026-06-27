@@ -25,13 +25,14 @@ import "github.com/dogring/bdg/engine/kernel/core"
 type Config struct {
     TickMinutes  int64 // game-minutes advanced per Tick           (balance.yaml world.tick_minutes)
     DayMinutes   int64 // game-minutes per day                     (balance.yaml world.day_minutes, 1440)
-    DaysPerSeason int64 // days per season                         (calendar; e.g. 30)
-    SeasonsPerYear int64 // seasons per year                       (calendar; e.g. 4)
+    DaysPerSeason int64 // days per season                         (calendar; RESOLVED 30 → balance.yaml world.days_per_season)
+    SeasonsPerYear int64 // seasons per year                       (calendar; RESOLVED 4 → DaysPerYear = 30*4 = 120)
 }
 
 // DefaultConfig returns the canonical 12× calendar implied by the glossary
-// (24 game-h = 2 real-h; 1 Tick = 1 game-minute; 1440 min/day). It exists for
-// tests and headless runs; production injects Config from content/balance.yaml.
+// (24 game-h = 2 real-h; 1 Tick = 1 game-minute; 1440 min/day) + the RESOLVED calendar
+// (DaysPerSeason=30, SeasonsPerYear=4 ⇒ DaysPerYear=120). It exists for tests and headless
+// runs; production injects Config from content/balance.yaml.
 func DefaultConfig() Config
 
 // Validate rejects a Config with non-positive fields (would make conversions ill-defined).
@@ -63,11 +64,26 @@ func (c Clock) Season(t core.Tick) int
 // Year returns the 0-based year index since run start.
 func (c Clock) Year(t core.Tick) int64
 
+// DayOfYear returns the 0-based day index within the current year, in [0, DaysPerYear).
+func (c Clock) DayOfYear(t core.Tick) int64
+
+// DaysPerYear returns the calendar constant DaysPerSeason * SeasonsPerYear (RESOLVED: 30*4 = 120).
+func (c Clock) DaysPerYear() int64
+
+// YearFraction returns the continuous position within the current year in [0,1) — DayOfYear plus the
+// intra-day fraction. This is the phase the climate ANNUAL temperature cycle reads (climate CA1:
+// `T = annualMid + annualAmp·sin(2π·YearFraction + φ) + …`). It is the SINGLE float accessor (all
+// calendar *fields* stay integer); it is a closed-form deterministic function of t — `float64(minutes
+// into year) / float64(minutes per year)`, byte-identical across platforms (IEEE-754 division of two
+// int64-derived values), no wall-clock. `world` injects it into `climate.Forcing.YearFraction`.
+func (c Clock) YearFraction(t core.Tick) float64
+
 // Calendar bundles all derived fields for a Tick (one struct, for logging / events / render).
 type Calendar struct {
     Minute  core.GameMinutes // absolute game-minute count
     HourOfDay int            // [0,24)
     DayOfRun  int64          // 0-based
+    DayOfYear int64          // [0, DaysPerYear)  (annual-cycle phase, climate CA1)
     Season    int            // [0, SeasonsPerYear)
     Year      int64          // 0-based
 }
@@ -107,7 +123,10 @@ func (c Clock) TicksForMinutes(m core.GameMinutes) core.Tick
   no `map` iteration, no goroutines, no panics for any `core.Tick` value `t ≥ 0`.
 - **Monotone**: for `t1 < t2`, `Minutes(t1) ≤ Minutes(t2)`; the clock never runs backward.
 - **Determinism of conversion**: same `(Config, t)` → byte-identical `Calendar` on every call
-  and every platform (no float for time math — integer division only).
+  and every platform (no float for time math — integer division only). **Exception:** `YearFraction`
+  is the single float accessor (for the climate annual cycle) — it is still a closed-form deterministic
+  function of `t` (one IEEE-754 division of two integer-derived operands, no accumulation, no wall-clock);
+  all `Calendar` *fields* remain integer.
 - **Config is content-driven**: calendar constants come from `content/balance.yaml` via
   `platform/config`; nothing in this package hardcodes 1440, 12, season counts, etc. for
   *logic* (DefaultConfig holds them only as a test/headless convenience, D10).
@@ -116,8 +135,11 @@ func (c Clock) TicksForMinutes(m core.GameMinutes) core.Tick
 
 ## Acceptance Criteria (testable)
 
-- [ ] `DefaultConfig()` satisfies `Validate()` and yields `TickMinutes=1, DayMinutes=1440`
-  (matches `content/balance.yaml` world.tick_minutes / world.day_minutes).
+- [ ] `DefaultConfig()` satisfies `Validate()` and yields `TickMinutes=1, DayMinutes=1440,
+  DaysPerSeason=30, SeasonsPerYear=4` (matches `content/balance.yaml` world.*); `DaysPerYear()==120`.
+- [ ] `DayOfYear(t) ∈ [0, DaysPerYear)` over a multi-year sweep; rolls 119→0 at a year boundary;
+  `Calendar.DayOfYear` equals the accessor. `YearFraction(t) ∈ [0,1)`, monotone-increasing within a
+  year, resets at the boundary, and is byte-identical across 10 000 repeats for fixed `t` (determinism).
 - [ ] `Validate()` rejects every field ≤ 0 (table-driven: zero and negative for each field).
 - [ ] `Minutes/MinuteOfDay/HourOfDay/DayOfRun/Season/Year` table test against hand-computed
   values across day boundaries, season boundaries, and a year rollover (e.g. `t=0`, end-of-day,
@@ -141,10 +163,11 @@ func (c Clock) TicksForMinutes(m core.GameMinutes) core.Tick
 
 ## Open Questions
 
-- **Calendar granularity (season/year)**: the design docs fix the 12× day scale but do not
-  specify `DaysPerSeason` / `SeasonsPerYear`. Proposed defaults: 30 days/season, 4 seasons/year.
-  These belong in `content/balance.yaml world.*` (D10) — needs a human/architect decision and a
-  matching `balance.schema.json` addition. Does **not** block P1 (P0 only needs `Minute/Hour/Day`).
+- **Calendar granularity (season/year)** — `RESOLVED (2026-06-27): DaysPerSeason=30, SeasonsPerYear=4
+  ⇒ DaysPerYear=120` (1 game-year = 120 game-days). Lives in `content/balance.yaml world.*` (D10) with a
+  matching `balance.schema.json` addition. Added for climate CA1 (annual temperature cycle): the
+  `DayOfYear`/`DaysPerYear`/`YearFraction` accessors + `Calendar.DayOfYear` field above. (`docs/climate.md
+  §1c`, `docs/fauna.md` F45/F40.)
 
 > Resolved: `core.GameMinutes` (and the `Tick` ownership question) — `engine/kernel/core` now declares
 > both `Tick` and `GameMinutes`; the ratio is worldtime-owned (`Config.TickMinutes`). No longer a
