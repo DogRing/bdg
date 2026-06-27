@@ -66,7 +66,7 @@ type SiteInput struct {
     Terrain        core.Tag           // terrain type at Pos (drives suitability via Rules)
     TerrainAttrs   map[core.Tag]float64 // §5 terrain attribute vector (grainSize, slope, depth, salinity, …) for §6 suitability operands
     Moisture       float64            // climate Moisture at Pos ∈ [0,1] (suitability operand)
-    Temperature    float64            // climate Temperature at Pos ∈ [0,1] (suitability operand)
+    Temperature    float64            // climate Temperature at Pos in °C (climate CA3; suitability §6 operand — content thresholds in °C)
     NeighborCount  int                // plants within propagation radius of Pos (density; P1 reads it only for propagation weighting, RESOLVED 1c: competition parked)
 }
 

@@ -60,9 +60,9 @@ type Lot struct {
 
 // EnvInput is the per-lot exogenous environment world samples at the lot's position and injects each
 // decay step. Decay is a pure transform over VALUES — it does NOT import climate (mirrors flora's
-// SiteInput rule). Temperature/Moisture are the SHAPE of the climate output (climate.CellState's
-// normalized [0,1] fields), passed as plain numbers — the `accel` §6 Context operand names match the
-// climate/flora Context vocabulary exactly (`temperature`, `moisture`).
+// SiteInput rule). Temperature/Moisture are the SHAPE of the climate output (climate.CellState:
+// Temperature in °C (climate CA3), Moisture normalized [0,1]), passed as plain numbers — the `accel` §6
+// Context operand names match the climate/flora Context vocabulary exactly (`temperature`, `moisture`).
 //
 // StorageRateMult is the storage-structure rate multiplier (eng-locked: 저장 구조물이 rate 곱 감속 →
 // cold-storage emerges, D2). world computes it from the structure the lot is stored in (a cold cellar
@@ -70,7 +70,7 @@ type Lot struct {
 // NOT model storage structures (that is world's, like flora's NeighborCount). It composes
 // MULTIPLICATIVELY: `effectiveRate = baseRate · accel(temperature, moisture) · StorageRateMult` (Dm2(a)).
 type EnvInput struct {
-    Temperature     float64 // climate Temperature at the lot's Pos ∈ [0,1] (accel operand `temperature`)
+    Temperature     float64 // climate Temperature at the lot's Pos in °C (climate CA3; accel operand `temperature` — content thresholds in °C)
     Moisture        float64 // climate Moisture at the lot's Pos ∈ [0,1] (accel operand `moisture`)
     StorageRateMult float64 // storage-structure rate multiplier (≥ 0; 1 = neutral, < 1 = preserved, 0 = halted)
 }
