@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/world.schema.json",
+  "title": "content/world.yaml — world setup (geometry · grids · motion · sizes · senses · render)",
+  "description": "The single tunable surface for world SHAPE/SIZE/SPEED values (docs/world-integration.md W1-W9). platform/config parses this into world.EnvConfig and the per-module Configs (climate.Config geometry, navmap.Config, the scent grid cellSize, fauna.Cadence + DT) and injects them via world.InstallEnv / world.InstallFauna. Numerics are UNTUNED placeholders (adjustable later; balance auto-tuning may sweep them). CROSS-FIELD INVARIANT (NOT expressible in JSON-Schema, enforced semantically by platform/config, D12): grids.scent_cell_size >= motion.max_speed * cadence.scent_spread (the scent cell-skip floor, W3). grids.navmap_cell_size SHOULD equal balance.yaml world.spatial_hash_cell. bounds MAY be overridden by a world-gen / scenario fixture (W1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "bounds", "grids", "motion", "cadence", "sizes", "senses", "render"],
+  "properties": {
+    "schema_version": { "const": 1 },
+
+    "bounds": {
+      "type": "object",
+      "description": "The finite rectangle the env grids span (W1). Agents/animals keep CONTINUOUS Pos (D11) and may stray outside; bounds clamp ONLY grid lookups (climate CellAt / navmap cell index). A fixture may override.",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "$ref": "#/$defs/vec2", "description": "lower-left world corner (world units)" },
+        "max": { "$ref": "#/$defs/vec2", "description": "upper-right world corner; each axis MUST exceed min (semantic check)" }
+      }
+    },
+
+    "grids": {
+      "type": "object",
+      "description": "Auxiliary index cell sizes over the same continuous space (W2). One climate cell = (climate cell size / navmap_cell_size)^2 navmap cells; world owns the GridCell -> []navmap.Cell mapping.",
+      "additionalProperties": false,
+      "required": ["navmap_cell_size", "climate_grid_cols", "climate_grid_rows", "scent_cell_size"],
+      "properties": {
+        "navmap_cell_size":  { "type": "number", "exclusiveMinimum": 0, "description": "navmap cost-field cell edge; = balance.yaml world.spatial_hash_cell (keep in sync)" },
+        "climate_grid_cols": { "type": "integer", "minimum": 1, "description": "coarse climate grid columns over bounds (-> climate.Config.GridCols)" },
+        "climate_grid_rows": { "type": "integer", "minimum": 1, "description": "coarse climate grid rows over bounds (-> climate.Config.GridRows)" },
+        "scent_cell_size":   { "type": "number", "exclusiveMinimum": 0, "description": "scent grid cell edge; MUST be >= motion.max_speed * cadence.scent_spread (cell-skip floor, W3 — semantic check)" }
+      }
+    },
+
+    "motion": {
+      "type": "object",
+      "description": "Base locomotion (world units per fauna DT; DT = 1 tick). Fauna base speeds; the species §6 Speed program modulates them. Agents move via MoveTo (not here).",
+      "additionalProperties": false,
+      "required": ["fauna_dt", "herbivore_base_speed", "predator_base_speed", "max_speed"],
+      "properties": {
+        "fauna_dt":             { "type": "number", "exclusiveMinimum": 0, "description": "locomotion time-step magnitude for one tick (fauna.Snapshot.DT)" },
+        "herbivore_base_speed": { "type": "number", "minimum": 0 },
+        "predator_base_speed":  { "type": "number", "minimum": 0 },
+        "max_speed":            { "type": "number", "exclusiveMinimum": 0, "description": "fastest species; drives the scent_cell_size floor (W3)" }
+      }
+    },
+
+    "cadence": {
+      "type": "object",
+      "description": "Env-phase step intervals in ticks (world drives via tick % N, never wall-clock, D12).",
+      "additionalProperties": false,
+      "required": ["climate_step", "flora_step", "decay_step", "scent_spread", "fauna_dormant_period", "fauna_wake_cooldown"],
+      "properties": {
+        "climate_step":         { "type": "integer", "minimum": 1, "description": "climate.Step cadence (e.g. 60 = 1 game-hour); wind shares it" },
+        "flora_step":           { "type": "integer", "minimum": 1 },
+        "decay_step":           { "type": "integer", "minimum": 1 },
+        "scent_spread":         { "type": "integer", "minimum": 1, "description": "Ns — scent diffusion bulk pass (drives scent_cell_size floor)" },
+        "fauna_dormant_period": { "type": "integer", "minimum": 1, "description": "F45 dormant re-arbitration period N" },
+        "fauna_wake_cooldown":  { "type": "integer", "minimum": 0, "description": "ticks an animal stays ACTIVE after a predator-scent wake" }
+      }
+    },
+
+    "sizes": {
+      "type": "object",
+      "description": "Representative entity sizes (per-species values ultimately live in objects.yaml; these are starting defaults + the render baseline). Animals are POINTS (W6): fauna 'size' is a §6 ATTRIBUTE, NOT a collision radius. Flora has real Length/Width morphology.",
+      "additionalProperties": false,
+      "required": ["flora", "fauna", "resource"],
+      "properties": {
+        "flora": {
+          "type": "object",
+          "description": "Per-kind {length (height), width (canopy)} in world units (open kind keys).",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/morphology" }
+        },
+        "fauna": {
+          "type": "object",
+          "description": "Per-kind 'size' attribute (open kind keys); NOT a collision radius.",
+          "minProperties": 1,
+          "additionalProperties": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "resource": {
+          "type": "object",
+          "description": "Per-kind visual / interaction footprint radius, world units (open kind keys).",
+          "minProperties": 1,
+          "additionalProperties": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    },
+
+    "senses": {
+      "type": "object",
+      "description": "Default fauna sense radii (per-species -> objects.yaml fauna.senses later). fov_arc = the HALF-angle (radians) of the forward sight cone (Heading ± fov_arc), F44.",
+      "additionalProperties": { "$ref": "#/$defs/sense" }
+    },
+
+    "render": {
+      "type": "object",
+      "description": "Frontend display hints for the SSE WorldFrame consumer. God-view fields (real_stats) are NEVER sent over SSE.",
+      "additionalProperties": false,
+      "required": ["pixels_per_unit"],
+      "properties": {
+        "pixels_per_unit": { "type": "number", "exclusiveMinimum": 0, "description": "canvas scale (world units -> px)" }
+      }
+    }
+  },
+
+  "$defs": {
+    "vec2": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "morphology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length", "width"],
+      "properties": {
+        "length": { "type": "number", "minimum": 0, "description": "height (maturity proxy), world units" },
+        "width":  { "type": "number", "minimum": 0, "description": "canopy spread (drives shade), world units" }
+      }
+    },
+    "sense": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["smell_radius", "sight_radius", "fov_arc"],
+      "properties": {
+        "smell_radius": { "type": "number", "exclusiveMinimum": 0, "description": "scent-grid read radius (grid cellSize ∝ this, F32)" },
+        "sight_radius": { "type": "number", "exclusiveMinimum": 0, "description": "spatial-hash forward-FOV predator-query radius" },
+        "fov_arc":      { "type": "number", "exclusiveMinimum": 0, "maximum": 3.14159265358979, "description": "HALF-angle of the forward sight cone, radians (π = full 360° FOV)" }
+      }
+    }
+  }
+}

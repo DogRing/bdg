@@ -23,6 +23,7 @@ package climate
 
 import (
     "github.com/dogring/bdg/engine/kernel/core"
+    "github.com/dogring/bdg/engine/kernel/expr" // §6 evaluator (L0); NewRules takes compiled *expr.Program (WI-P0)
     "github.com/dogring/bdg/engine/kernel/rng"
 )
 
@@ -89,8 +90,8 @@ type Config struct {
                                  // (WorldMax−WorldMin)/(GridCols,GridRows). The SAME per-run layout
                                  // source navmap.New uses, so New's cell centers AND CellAt(pos) agree
                                  // with navmap (CA3 read path — made explicit; was implied by terrainAt).
-    InitMoisture       float64   // starting Moisture ∈ [0,1] (climate.yaml grid.initial_moisture; default 0.5)
-    InitTemperature    float64   // starting Temperature in °C (CA3; climate.yaml grid.initial_temperature; e.g. AnnualMid≈12.5)
+    InitMoisture       float64   // starting Moisture ∈ [0,1] (climate.yaml init.initial_moisture; default 0.5)
+    InitTemperature    float64   // starting Temperature in °C (CA3; climate.yaml init.initial_temperature; default ≈ AnnualMid)
 
     // ── Rain process (1a; fixed 10d/30d/2–12h SHAPE, rate-only tuning) ──
     RainProbPerHour    float64 // per-game-hour increment to PRain, calibrated so E[first rain] ≈ 10 days
@@ -171,6 +172,22 @@ type Transition struct {
 // condition via engine/kernel/expr + validate every type id exists in content/terrain.yaml).
 // engine/env/climate evaluates it read-only; it never parses YAML (D10 — content is injected).
 type Rules struct{ /* opaque; per-from-type ordered []rule{cond, to}. Deterministic eval order. */ }
+
+// NewRules builds the immutable transition table from COMPILED rules — the config-facing constructor
+// (WI-P0). platform/config parses content/climate.yaml `transitions`, compiles each `when` via
+// expr.Parse, validates every from/to ⊆ content/terrain.yaml, preserves FILE ORDER, then calls this;
+// climate never parses YAML (D10). Order within a from-type is significant (first match wins, D12).
+// An empty slice = climate-off (no transitions, outcome-neutral, RESOLVED #10). Pure.
+func NewRules(transitions []TransitionRule) *Rules
+
+// TransitionRule is one compiled from×when→to rule (the NewRules input, mirroring Eval). When is the
+// compiled §6 boolean Program over CellState operands (`moisture` [0,1], `temperature` °C, CA3). For a
+// given From, rules are evaluated in slice order and the FIRST whose When is true wins.
+type TransitionRule struct {
+    From navTerrainID
+    When *expr.Program
+    To   navTerrainID
+}
 
 // Eval returns the destination terrain for a cell given its state, or ("",false) if no rule fires
 // (stays put). Conditions are §6-DSL booleans over CellState operands — `moisture` ([0,1]) and

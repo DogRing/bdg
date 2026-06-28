@@ -2,7 +2,7 @@
 
 > Status: `DRAFT`
 > Leaf level: `L4` (flat, beside `agent`)  ·  Owner agent: `<filled by implementer>`
-> Scope: **P_fa1** (`docs/fauna.md §2`). Sub-SPEC: `backend/engine/fauna/scent/SPEC.md` (the scent grid).
+> Scope: **P_fa1** (`docs/fauna.md §2`). Sub-SPEC: `backend/engine/space/scent/SPEC.md` (the scent grid).
 
 ## Purpose
 The **reduced-reactive animal controller**: a pure, deterministic per-tick **horizon-1 utility
@@ -32,7 +32,7 @@ import (
     "github.com/dogring/bdg/engine/kernel/rng"
     "github.com/dogring/bdg/engine/mind/actions"
     "github.com/dogring/bdg/engine/space/spatial"
-    "github.com/dogring/bdg/engine/fauna/scent"
+    "github.com/dogring/bdg/engine/space/scent"
 )
 
 // ── Identity & state ──────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ type Cadence struct {
 // animal's evaluation is independent and reads only immutable/snapshot state, D12 plan phase).
 //   Animals — all live animals in sorted ObjectID order (D12); never mutated by Step.
 //   Scent   — the scent field; Step calls only its READ side (committed snapshot buffer, next-tick
-//             latency, F33): PresentAt (O(1) own-cell predator wake check, F45) + Read (full sense).
+//             latency, F33): IntensityAt (O(1) own-cell predator wake check, F45) + Read (full sense).
 //   Spatial — the shared proximity index (combined agent/object/animal ObjectID space) world keeps
 //             populated; READ-ONLY, for the F44 sight predator query.
 //   Terrain — the passability/cost sampler (above).
@@ -151,7 +151,7 @@ type Intent struct {
 // Step scores ALL animals and returns ONE Intent each, in sorted Animal-ObjectID order (D12). PURE
 // function of (snap, rules, rng): it does NOT mutate snap (incl. snap.Animals, the scent grid, the
 // spatial index) and returns intents world applies. For each animal, in sorted ObjectID order:
-//   0. CADENCE / WAKE (F45): every tick do an O(1) snap.Scent.PresentAt(ChanPredator, Pos) read. The
+//   0. CADENCE / WAKE (F45): every tick do an O(1) snap.Scent.IntensityAt(ChanPredator, Pos) read. The
 //      animal is ACTIVE iff Rules.IsPredator(species) (predators are always ACTIVE) OR the predator bit
 //      is set (wake — also set ActiveUntil = Tick + Cadence.WakeCooldown) OR Tick ≤ ActiveUntil
 //      (cooldown still running). Otherwise it is DORMANT. A DORMANT animal additionally RE-ARBITRATES
@@ -201,6 +201,35 @@ func AttrOperands() []core.Tag
 // engine/kernel/expr, validate StatIDs/operands/action-ids/tags); engine/fauna evaluates it READ-ONLY
 // and never parses YAML (D10). Mirrors flora.Rules / decay.Rules.
 type Rules struct{ /* opaque; per-SpeciesID compiled §6 programs + drive params + sense radii + tags. */ }
+
+// NewRules builds the immutable per-species fauna table from COMPILED inputs — the config-facing
+// constructor (WI-P0). platform/config parses content/objects.yaml `fauna:`, compiles each §6 via
+// expr.Parse, validates each program's ReadsAttrs ⊆ AttrOperands() ∪ that species' drive ids +
+// Reads ⊆ stats registry + candidate ids ⊆ actions.Registry, then calls this; fauna never parses YAML
+// (D10). Pure. (An empty map = fauna-off: Candidates returns empty for every species, the P_fa1 lever.)
+func NewRules(species map[SpeciesID]SpeciesRule) *Rules
+
+// SpeciesRule is one species' compiled fauna spec (the NewRules input, mirroring the Rules accessors).
+type SpeciesRule struct {
+    Utilities  map[actions.ActionID]*expr.Program // candidate set + per-action §6 utility (F26) → Candidates/Utility
+    Drives     []DriveRule                        // drive vocabulary + params (F25(c)) → DriveUpdate
+    AppTemp    *expr.Program                      // §6 apparent_temp (F40) → AppTemp
+    Speed      *expr.Program                      // §6 locomotion speed (F35) → Speed
+    Diet       []core.Tag                         // diet/target tags (F7)
+    IsPredator bool                               // carries `threat:predator` (F8) → IsPredator
+    SmellRadius, SightRadius, FovArc float64      // senses (F31/F44) → Senses
+}
+
+// DriveRule is one drive's compiled params (F25(c)/F43; the drive id is also its §6 Attr operand, F27).
+// An ACCUMULATOR drive uses Rate; a SET-from-context fear drive uses WaryLevel (scent.predator) /
+// FleeLevel (sight.predator) + Decay; a DERIVED drive (thermal from apparent_temp) uses none.
+type DriveRule struct {
+    ID        DriveID
+    Rate      float64 // accumulator per-tick rise (hunger/fatigue/repro_readiness); 0 for set/derived
+    Decay     float64 // per-tick decay when not raised/set (e.g. fear cooling)
+    WaryLevel float64 // fear value SET on scent.predator (F43); 0 if unused
+    FleeLevel float64 // fear value SET on sight.predator (F43); 0 if unused
+}
 
 // Candidates returns the species' candidate ActionIDs (= the utility-map keys, F26(a)/F28) in sorted
 // order (D12). Each is a SHARED engine/mind/actions id (Graze/Flee/Wary/Hunt/MoveTo/Rest). Empty for an
@@ -253,9 +282,9 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
   an action's `Tags` feed utility tag-matching / steer channel only, never a gate or cost.
 - `engine/space/spatial` — `*SpatialHash` (`NearbyEntities`, ObjectID-sorted) for the F44 sight predator
   query; READ-ONLY in the score phase. world keeps it populated (combined ObjectID space).
-- `engine/fauna/scent` — the **scent grid** sub-module (`backend/engine/fauna/scent/SPEC.md`): `Grid`,
-  `Channel`, `Wind`, `Reading`. fauna OWNS the grid for P1 (F36); the controller calls only its READ side
-  (`PresentAt` wake check + `Read` full sense).
+- `engine/space/scent` — the **scent grid** sub-module (`backend/engine/space/scent/SPEC.md`): `Grid`,
+  `Channel`, `Wind`, `Reading`. The grid is a **world-owned shared index** (F36 promotion, `engine/space`);
+  the controller calls only its READ side (`IntensityAt` wake check + `Read` full sense).
 - *(NOT `engine/world` / `engine/agent` / `engine/mind/planner`)* — the L4 cut: fauna emits intents and
   world applies them (combined agent+animal ObjectID order, F41); no cycle (dependency-inversion like
   climate/flora/decay). Import-guarded.
@@ -268,8 +297,10 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
 ## Owned Data
 - The **`Animal` entity type** + the live animal set is held by `engine/world` (one per run, snapshot-
   serialized — `docs/data-contracts.md §6`, P_fa5); `fauna.Step` reads a `Snapshot` and never mutates it.
-- The **scent grid** (`engine/fauna/scent.Grid`) is fauna-owned for P1 (F36); world DRIVES deposit/
-  spread/commit cadence (P_fa2), fauna defines the behaviour. See the scent sub-SPEC.
+- The **scent field** (`engine/space/scent.Grid`) is a **shared world index** (promoted out of fauna, ①;
+  `engine/space`, spatial/navmap kin) — **world-owned**, fed by world from `scent:<channel>`-tagged emitters
+  (flora/fauna/decay), `world` DRIVES deposit/spread/commit (P_fa2); **fauna only READS it** + defines the
+  read→behaviour. **Scalar intensity** (F21 revised). See `backend/engine/space/scent/SPEC.md`.
 - The **`Rules`** table is owned by `platform/config` (built from `content/objects.yaml` `fauna:` via
   `engine/kernel/expr`), injected read-only; never parsed or mutated here.
 - This module owns **no** object instances, **no** spatial-hash entries, **no** navmap/climate state — it
@@ -282,10 +313,10 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
 - **D12 determinism** — `Step` is a pure function of `(snap, Rules, rng)`. Same snapshot (incl. `Tick`) +
   same RNG fork ⇒ byte-identical `[]Intent`. No `time.Now()`, no global rand, no wall-clock; the only
   randomness is the injected `*rng.RNG` (steering jitter only).
-- **F45 cadence determinism** — active/dormant is a pure function of `(IsPredator, PresentAt(predator),
+- **F45 cadence determinism** — active/dormant is a pure function of `(IsPredator, IntensityAt(predator),
   Tick, ActiveUntil)`; the dormant re-eval gate is `(Tick + phase(ID)) % DormantPeriod`; `phase(ID)` is a
   FIXED stable ObjectID hash, identical across runs/processes. The wake read is the pure committed-buffer
-  `PresentAt` (next-tick latency, F33). No wall-clock, no map-iteration; animals processed in sorted ID
+  `IntensityAt` (next-tick latency, F33). No wall-clock, no map-iteration; animals processed in sorted ID
   order. Same `(snap, Rules, rng)` ⇒ identical dormant/active partition + intents.
 - **D12 no map-iteration for logic** — animals scored in sorted `ObjectID` order; intents returned sorted
   by `Animal`; candidate actions via `Rules.Candidates` (sorted), ties by sorted `ActionID`; drive ids
@@ -377,7 +408,7 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
   re-baselined at activation (P_fa3).
 - [ ] **No wall-clock / no global rand / no forbidden import (D12 guard)** — grep/import guard: no `time`
   import for logic, no global `rand`; import set EXACTLY `core`, `expr`, `rng`, `actions`, `spatial`,
-  `fauna/scent` (+ stdlib `sort`/`math`/`hash`); NO `engine/world`, `engine/agent`,
+  `space/scent` (+ stdlib `sort`/`math`/`hash`); NO `engine/world`, `engine/agent`,
   `engine/mind/planner`, `engine/space/navmap`, `engine/env/climate`, `engine/mind/needs`,
   `engine/mind/stats`, `engine/mind/tom`, `engine/mind/values`, `engine/mind/gates`,
   `engine/mind/perception` import.
@@ -437,7 +468,7 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
   means "skip full re-arbitration this tick and hold the last §6-chosen action + cheap steer." The wake
   (own-cell predator scent → ACTIVE) gives "the herbivore goes real-time exactly when predator scent
   reaches it" with zero O(N²) scan. Determinism rests on the ID-`phase` hash + the pure committed-buffer
-  `PresentAt` read; never introduce a per-animal Go state machine.
+  `IntensityAt` read; never introduce a per-animal Go state machine.
 - **Two motivation machines, kept apart (D5).** The drive set is the animal's whole motivation; keep
   utility a per-(species×action) §6 score (F26(a)) — never an EffValue dot-product nor an engine-coded
   drive↔action map (D4 risk).
@@ -449,8 +480,8 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
   F45 wake), sight = the spatial-hash forward-FOV predator query (proximity → Flee). The F34 omni rule is
   scent-only; sight is the Heading-relative continuous-bearing cone (D11).
 - The scent grid is split into its own sub-SPEC (CLAUDE.md split rule): see
-  **`backend/engine/fauna/scent/SPEC.md`** for the cell/bitset shape, deposit/spread/read/commit +
-  `PresentAt` contract, `cellSize ∝ smell radius`, and the determinism + neutrality ACs.
+  **`backend/engine/space/scent/SPEC.md`** for the cell/bitset shape, deposit/spread/read/commit +
+  `IntensityAt` contract, `cellSize ∝ smell radius`, and the determinism + neutrality ACs.
 - Tuning + behaviour live in `content/objects.yaml` `fauna:` §6 (D10); cadence N/cooldown in
   `content/balance.yaml`. Adding a species, drive, predator/prey relation, or steer/utility is a content +
   §6 change, never code (D2/D3 — herds/husbandry/food-chains must emerge).

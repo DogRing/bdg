@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/terrain.schema.json",
+  "title": "content/terrain.yaml — terrain TYPE catalog (base materials + cost/passable/§5 attributes, D4/D10)",
+  "description": "The single owner of the terrain TYPE vocabulary (docs/design.md §5: 바탕재료 sand/soil/river/mountain/sea + 속성 벡터). Each entry is a `navmap.TerrainType` (base_cost / passable / required_tags) PLUS the §5 attribute preset (grain_size/moisture/temperature/depth/slope/salinity) that feeds the `terrain.<attr>` §6 operands (flora suitability, traversal gates, climate transitions). It is a TYPE table, NOT a layout — the per-run terrain LAYOUT (which cell is which type) is the world-gen / scenario fixture (docs/world-gen.md). platform/config compiles this into the navmap `types` table + the world's TerrainID→attrs join; EVERY terrain id referenced elsewhere (climate transitions from/to, objects.yaml source.depleted_terrain, resource affinity) MUST exist here (load-time validated, D10). Values are UNTUNED placeholders (adjustable later).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "terrains"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "terrains": {
+      "type": "array",
+      "description": "The terrain type catalog. Ids must be unique (platform/config enforces beyond JSON-Schema). At least the base materials + any `depleted_terrain` referenced by an ore node.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/terrainType" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+    "tag": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_:]*$" },
+    "terrainType": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "base_cost", "passable"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier", "description": "terrain type id (a base material like sand/soil/river/mountain/sea, or a derived type like bare_rock)" },
+        "base_cost": {
+          "type": "number",
+          "minimum": 1,
+          "description": "navmap.TerrainType.BaseCost — multiplies step length (≥ 1; rough terrain > 1). High (not impassable) for swimmable water = traversable-at-cost (fauna R2)."
+        },
+        "passable": {
+          "type": "boolean",
+          "description": "navmap.TerrainType.Passable — false ⇒ NEVER traversable (deep sea, cliff). NOTE (fauna R2): fauna treats high-base_cost water as traversable-at-cost via the world's footprint-only TerrainSampler; `passable:false` is for terrain that is truly impassable to everyone."
+        },
+        "required_tags": {
+          "type": "array",
+          "description": "navmap.TerrainType.RequiredTags — capability/action tags needed to ENTER a cell of this type (e.g. Swim for a ford, Climb for a steep slope); empty ⇒ none. Pathfinding only enters if the traversing action carries one of these.",
+          "items": { "$ref": "#/$defs/tag" },
+          "uniqueItems": true
+        },
+        "attrs": {
+          "type": "object",
+          "description": "The §5 attribute preset vector (docs/design.md §5). Feeds the `terrain.<attr>` §6 operands (flora suitability, traversal gates like `terrain.depth`↔Swim, climate transition conditions). A preset = base-material defaults; per-run overrides (e.g. climate raising `moisture`) are dynamic state, NOT here. All keys optional (absent ⇒ 0/neutral).",
+          "additionalProperties": false,
+          "properties": {
+            "grain_size":  { "type": "number", "description": "fine↔coarse (sand fine, gravel coarse). [0,1] convention." },
+            "moisture":    { "type": "number", "minimum": 0, "maximum": 1, "description": "dry↔wet↔submerged base level; climate drives the dynamic value on top. [0,1]." },
+            "temperature": { "type": "number", "description": "STATIC terrain heat offset in °C (e.g. sun-baked rock); the DYNAMIC temperature is climate's (CA3). Default 0 (neutral)." },
+            "depth":       { "type": "number", "minimum": 0, "description": "water depth (river mid, sea high; gates Swim via `terrain.depth`). [0,1] convention." },
+            "slope":       { "type": "number", "minimum": 0, "description": "incline (mountain high; gates Climb / raises cost). [0,1] convention." },
+            "salinity":    { "type": "number", "minimum": 0, "maximum": 1, "description": "salt (sea high, river 0; gates drinkability). [0,1]." }
+          }
+        },
+        "extract": {
+          "type": "object",
+          "description": "Terrain-driven `Mine` yield (resources R1 / WI-P3): the yield table a Mine over a cell of THIS terrain rolls when there is NO ore_node present — abundant materials (stone anywhere, clay on soil) come from the ground itself, no finite node. Reuses the §6(Dexterity, tool quality) yield mechanism (Xm5 / flora-yield). ABSENT ⇒ this terrain yields nothing to terrain-driven Mine (the scarce metals come from finite `ore_node` objects on mountain instead, objects.yaml `source`). Abundant ⇒ NO depletion in P1 (stone 고갈≈0); finite extraction is the ore_node path (the node-path SetTerrain reroute is unrelated to this).",
+          "additionalProperties": false,
+          "required": ["yields"],
+          "properties": {
+            "yields": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/extractYield" }
+            }
+          }
+        }
+      }
+    },
+    "extractYield": {
+      "description": "One terrain-driven Mine yield row (resources R1; parity with objects.yaml flora/Mine yieldEntry). `chance` is a §6 Formula → [0,1] success for a SEEDED roll (typically §6 over the actor's Dexterity + held tool quality, D7 — capability composition, not a skill); `qty` is the base [min,max] on success.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "chance", "qty"],
+      "properties": {
+        "item":   { "$ref": "#/$defs/identifier", "description": "the produced item_kind id (objects.yaml; e.g. stone, clay)" },
+        "chance": { "type": "string", "minLength": 1, "description": "§6 Formula success probability (compiled by platform/config via expr; unknown operand = load failure, D10)." },
+        "qty":    { "type": "array", "items": { "type": "integer", "minimum": 0 }, "minItems": 2, "maxItems": 2, "description": "[min,max] inclusive base quantity (0 ≤ min ≤ max, cross-checked by platform/config)." }
+      }
+    }
+  }
+}

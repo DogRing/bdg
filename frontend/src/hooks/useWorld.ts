@@ -1,5 +1,8 @@
 import { useReducer, useCallback } from 'react'
-import type { WorldState, WorldAction, SimEvent, AgentState, LogEntry, WorldObject } from '../types'
+import type {
+  WorldState, WorldAction, SimEvent, AgentState, LogEntry, WorldObject,
+  PlantState, ClimateState,
+} from '../types'
 import { formatEvent } from '../utils/eventFormatter'
 import { API_BASE } from '../config'
 
@@ -17,6 +20,10 @@ const initial: WorldState = {
   paused: false,
   food: null,
   wood: null,
+  animals: new Map(),
+  flora: [],
+  climate: null,
+  render: null,
 }
 
 function parsePos(raw: unknown): { x: number; y: number } {
@@ -60,6 +67,76 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
         : { id, pos, goal, action, mood, cluster: null, copingMode: null })
     }
     return { ...state, tick, agents, roles, log: state.log, food, wood }
+  }
+
+  // WorldFrame (data-contracts §4, WI-P4) is the env-inclusive render frame: agent + animal
+  // positions, flora stage deltas, and the ambient weather (hour/day-night, temperature, rain,
+  // wind). Like TickDone it returns early (no log spam) after merging the render state. God-view
+  // is never present here.
+  if (ev.type === 'WorldFrame') {
+    if (Array.isArray(p.agents)) {
+      for (const raw of p.agents as Array<Record<string, unknown>>) {
+        const id = String(raw.id ?? '')
+        if (!id) continue
+        const prev = agents.get(id)
+        const pos = parsePos(raw.pos)
+        const action = String(raw.action ?? prev?.action ?? '')
+        agents.set(id, prev
+          ? { ...prev, pos, action }
+          : { id, pos, goal: '', action, mood: 0.5, cluster: null, copingMode: null })
+      }
+    }
+
+    const animals = new Map(state.animals)
+    if (Array.isArray(p.animals)) {
+      for (const raw of p.animals as Array<Record<string, unknown>>) {
+        const id = String(raw.id ?? '')
+        if (!id) continue
+        const prev = animals.get(id)
+        animals.set(id, {
+          id,
+          pos: parsePos(raw.pos),
+          species: String(raw.species ?? prev?.species ?? ''),
+          action: String(raw.action ?? prev?.action ?? ''),
+          heading: Number(raw.heading ?? prev?.heading ?? 0),
+          stamina: Number(raw.stamina ?? prev?.stamina ?? 1),
+        })
+      }
+    }
+
+    // flora arrives as a sparse delta — merge by id
+    let flora = state.flora
+    if (Array.isArray(p.flora_delta) && (p.flora_delta as unknown[]).length > 0) {
+      const byId = new Map(state.flora.map((f): [string, PlantState] => [f.id, f]))
+      for (const raw of p.flora_delta as Array<Record<string, unknown>>) {
+        const id = String(raw.id ?? '')
+        if (!id) continue
+        const prev = byId.get(id)
+        byId.set(id, {
+          id,
+          pos: parsePos(raw.pos),
+          species: prev?.species ?? '',
+          stage: Number(raw.stage ?? prev?.stage ?? 0),
+          width: prev?.width ?? 0,
+        })
+      }
+      flora = Array.from(byId.values())
+    }
+
+    const wind = (p.wind ?? {}) as Record<string, unknown>
+    const climate: ClimateState = {
+      temperature: Number(p.temperature ?? state.climate?.temperature ?? 0),
+      apparentTemp: typeof p.apparent_temp === 'number' ? p.apparent_temp : (state.climate?.apparentTemp ?? null),
+      moisture: state.climate?.moisture ?? 0,
+      raining: Boolean(p.raining),
+      windDir: Number(wind.dir ?? state.climate?.windDir ?? 0),
+      windMag: Number(wind.mag ?? state.climate?.windMag ?? 0),
+      hourOfDay: Number(p.hour_of_day ?? state.climate?.hourOfDay ?? 0),
+      dayNight: p.day_night === 'night' ? 'night' : 'day',
+      yearFraction: state.climate?.yearFraction ?? 0,
+    }
+
+    return { ...state, tick, agents, animals, flora, climate, roles, log: state.log, food, wood }
   }
 
   // Update agent state from event payload

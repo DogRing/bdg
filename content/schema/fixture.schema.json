@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dogring/bdg/content/schema/fixture.schema.json",
+  "title": "world fixture — terrain layout + placed entities for a run (W9; world-gen OR scenario)",
+  "description": "The UNIFIED per-run fixture (docs/world-integration.md W9): the same shape whether produced by the world-gen generator (backend/tools/worldgen, author-time, seeded — docs/world-gen.md WG1-a) OR hand-authored as a scenario. The engine does NOT generate at runtime (D12): backend/tools/worldgen.Load parses this, builds the env states (navmap/climate/flora/decay + the animal set + scent grid) and calls world.InstallEnv/InstallFauna + Spawn/PlaceObject. This is a PER-RUN artifact, NOT content (architecture §7) — but it is schema-validated by the loader like content. EVERYTHING except schema_version+seed is OPTIONAL: an absent block ⇒ that subsystem is OFF (env-neutral). Terrain ids ⊆ content/terrain.yaml; species ⊆ content/objects.yaml flora:/fauna: (loader cross-checks, D10).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "seed"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "seed": { "type": "integer", "description": "the run seed (D12) — the world-gen RNG seed AND the sim root seed source; same seed ⇒ same world." },
+    "bounds": {
+      "type": "object",
+      "description": "The finite rectangle the env grids span (W1). Overrides content/world.yaml's default bounds. Absent ⇒ use the world.yaml default.",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "$ref": "#/$defs/vec2" },
+        "max": { "$ref": "#/$defs/vec2" }
+      }
+    },
+    "terrain": {
+      "type": "object",
+      "description": "The per-cell terrain LAYOUT at navmap resolution over bounds (the navmap base layer + climate t=0 terrain). Absent ⇒ no navmap/env terrain (flat default; env terrain-driven features off). `cells` is row-major, length cols*rows; each entry a terrain id from content/terrain.yaml.",
+      "additionalProperties": false,
+      "required": ["cols", "rows", "cells"],
+      "properties": {
+        "cols":  { "type": "integer", "minimum": 1, "description": "grid columns = round((max.x-min.x)/navmap_cell_size); loader cross-checks vs world.yaml." },
+        "rows":  { "type": "integer", "minimum": 1 },
+        "cells": {
+          "type": "array",
+          "description": "row-major terrain ids (length MUST equal cols*rows; loader enforces). Each ∈ content/terrain.yaml.",
+          "items": { "$ref": "#/$defs/identifier" },
+          "minItems": 1
+        }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "description": "Placed in-world objects (ore_node, water_source, shelter, station:*, …). `kind` ∈ content/objects.yaml object_kinds. `remaining` only for a finite `source` node (ore_node, Xm1). `owner` only for owned objects.",
+      "items": { "$ref": "#/$defs/objectPlacement" }
+    },
+    "agents": {
+      "type": "array",
+      "description": "Agent placements. RealStats are SAMPLED by world.Spawn from the stat GenSpec with the seeded RNG (NOT in the fixture) — the fixture carries placement + optional Value/threat seeding (live-emergence lever, world-gen WG5/§6). Absent ⇒ no agents.",
+      "items": { "$ref": "#/$defs/agentPlacement" }
+    },
+    "animals": {
+      "type": "array",
+      "description": "Fauna placements (F18 suitability seeding). Absent/empty ⇒ fauna OFF (no InstallFauna animals → fauna-neutral). `species` ∈ content/objects.yaml fauna: blocks.",
+      "items": { "$ref": "#/$defs/animalPlacement" }
+    },
+    "flora": {
+      "type": "array",
+      "description": "Flora placements (suitability seeding). Absent/empty ⇒ flora OFF. `species` ∈ content/objects.yaml flora: blocks. length/width default to seedling start (world.yaml sizes) when omitted.",
+      "items": { "$ref": "#/$defs/floraPlacement" }
+    },
+    "lots": {
+      "type": "array",
+      "description": "Optional initial perishable decay lots (usually empty — most lots arise at runtime from harvest/craft). `kind` ∈ content/objects.yaml decay: item_kinds.",
+      "items": { "$ref": "#/$defs/lotPlacement" }
+    }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+    "vec2": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "continuous world coords [x,y] (D11)" },
+    "objectPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "pos"],
+      "properties": {
+        "id":        { "$ref": "#/$defs/identifier" },
+        "kind":      { "$ref": "#/$defs/identifier" },
+        "pos":       { "$ref": "#/$defs/vec2" },
+        "remaining": { "type": "integer", "minimum": 0, "description": "finite-source count for an ore_node (Xm1); omit for non-source objects (defaults to source.initial)." },
+        "owner":     { "$ref": "#/$defs/identifier", "description": "optional owner AgentID." }
+      }
+    },
+    "agentPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "pos"],
+      "properties": {
+        "id":  { "$ref": "#/$defs/identifier" },
+        "pos": { "$ref": "#/$defs/vec2" },
+        "values": { "type": "object", "additionalProperties": { "type": "number" }, "description": "optional initial Value/dimension seeding (live-emergence lever); keys = need/value Dimension ids." }
+      }
+    },
+    "animalPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "species", "pos"],
+      "properties": {
+        "id":      { "$ref": "#/$defs/identifier" },
+        "species": { "$ref": "#/$defs/identifier" },
+        "pos":     { "$ref": "#/$defs/vec2" },
+        "heading": { "type": "number", "description": "optional initial heading (radians); default 0." }
+      }
+    },
+    "floraPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "species", "pos"],
+      "properties": {
+        "id":      { "$ref": "#/$defs/identifier" },
+        "species": { "$ref": "#/$defs/identifier" },
+        "pos":     { "$ref": "#/$defs/vec2" },
+        "length":  { "type": "number", "minimum": 0, "description": "optional initial height; default = world.yaml sizes.flora.seedling_start." },
+        "width":   { "type": "number", "minimum": 0, "description": "optional initial canopy; default = seedling start." }
+      }
+    },
+    "lotPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "qty"],
+      "properties": {
+        "id":        { "$ref": "#/$defs/identifier" },
+        "kind":      { "$ref": "#/$defs/identifier" },
+        "qty":       { "type": "integer", "minimum": 1 },
+        "decay_age": { "type": "number", "minimum": 0, "description": "optional initial effective-decay-time (Dm1); default 0 (fresh)." },
+        "location":  { "$ref": "#/$defs/identifier", "description": "optional storage/inventory handle; default = floor at pos (objectPlacement carries pos)." }
+      }
+    }
+  }
+}

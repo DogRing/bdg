@@ -302,7 +302,7 @@ hear(e) = observer.Distance(e.Pos) ≤ HearingRadius   -- no LoS, no shade; soun
 - Emitting / collecting `[loud]` sound events into the per-tick slice, implementing `WorldSnapshot`
   (which entity has which tag/opacity this tick), and **adapting `engine/env/flora.Shade`/`ShadeOf` into
   the `ShadeOccluder` set** → `engine/world` apply/tick phase (this module only filters/queries the
-  supplied view). The flora shade PARAMETER (`Radius`/`Opacity` = §6(growth)) is computed in
+  supplied view). The flora shade PARAMETER (`Radius`/`Opacity` = §6(width)) is computed in
   `engine/env/flora` (`backend/engine/env/flora/SPEC.md`); world projects it; perception composes the LoS
   attenuation.
 - Deciding what to do with a percept — attention, fear, goal raising, gossip → `engine/agent` /
@@ -377,7 +377,7 @@ hear(e) = observer.Distance(e.Pos) ≤ HearingRadius   -- no LoS, no shade; soun
   family. `[loud]` is an **action** tag (the emitter is set when the world builds the per-tick
   `[]SoundEvent` from acting agents); `[opaque]`/`[scented]` are **entity** tags resolved via
   `WorldSnapshot`. Flora shade is NOT a tag — it is the continuous `ShadeOccluder` projection
-  (Radius/Opacity = §6(growth)), distinct from the binary `[opaque]` tag. The `hearing_radius` in
+  (Radius/Opacity = §6(width)), distinct from the binary `[opaque]` tag. The `hearing_radius` in
   `balance.yaml` is a *base*; per the comment there it may later be scaled by an action's `noise:*`
   level — that scaling, if added, multiplies the radius in `engine/world` when building the event or
   in `engine/agent`, not here (perception uses the base).
@@ -385,5 +385,5 @@ hear(e) = observer.Distance(e.Pos) ≤ HearingRadius   -- no LoS, no shade; soun
   perceived* (if needed) is an `engine/agent` concern. This module is a pure query layer.
 - Snapshot/serialization: perception output is **derived, per-tick, never persisted**
   (data-contracts carries no percept cache); it is recomputed each tick from positions + the world
-  view (including shade, which is itself derived from flora `Pos`+`Growth`), mirroring how
+  view (including shade, which is itself derived from flora `Pos`+`Width`), mirroring how
   `engine/space/spatial` treats its index as rebuildable derived state.

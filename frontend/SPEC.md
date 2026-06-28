@@ -36,8 +36,25 @@ The `type` field determines how the event is rendered. The frontend handles thes
 | `ReputationGossip` | `about, from, trust, delta` | Log line: "🗣 farmer_1 heard about guard_1" |
 | `RoleEmerged` | `function, holder, reliance_share` | Banner: "👑 guard_1 is now Safety holder" |
 | `CopingEntered` | `mode` | Log line: "😶 farmer_1 → Apathy" |
+| `WorldFrame` | `tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, agents[]{id,pos,action}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain,wear}` | Env render frame (WI-P4): move agents + animals, merge flora stage deltas, terrain, ambient weather. Returns early (no log spam) |
+| `AnimalBorn` / `AnimalDied` | `object_id, species, pos / cause` | Add / remove an animal sprite; log line (WI-P4) |
+| `PlantSpawned` / `PlantDied` | `object_id, species, pos` | Add / remove a plant sprite (WI-P4) |
 
 Unknown `type` values are logged as raw JSON at the detail level and otherwise ignored.
+
+### Env render channel — `WorldFrame` (WI-P4, data-contracts §4/§10)
+Once the env subsystem is installed backend-side, the world streams a periodic **`WorldFrame`** — the
+graphics frame carrying agent + animal positions/actions, flora **stage** deltas, terrain deltas, and
+the ambient weather (`hour_of_day`/`day_night`, `temperature`/`apparent_temp`, `raining`, `wind`). The
+frontend stores it into `WorldState.animals` / `flora` / `climate` (`src/types.ts`: `AnimalState`,
+`PlantState`, `ClimateState`, `WorldFramePayload`; reducer in `src/hooks/useWorld.ts`). It is the env
+analogue of `TickDone` (which carries only agents). **God-view (`real_stats`/drives/stats) is NEVER in
+a `WorldFrame`** — same observation boundary as today. Derived display values arrive ready-to-render:
+`day_night` (from `hour_of_day`), `stage` (from a plant's length). When env is OFF, no `WorldFrame` is
+emitted and `animals`/`flora`/`climate` stay empty — the viewer is unchanged.
+
+`RenderConfig` (`bounds` + `pixelsPerUnit`, from `content/world.yaml`) sizes the canvas + sprite
+scale; it loads from REST world-geometry (not SSE) and is `null` until fetched.
 
 ### REST endpoints (initial load)
 - `GET /api/snapshot` — full world state blob on page load. Extracts agent positions and tick.

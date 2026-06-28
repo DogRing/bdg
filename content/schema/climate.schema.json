@@ -1,23 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/climate.schema.json",
-  "title": "content/climate.yaml — terrain transition table + climate tuning rates (D4/D10)",
-  "description": "The single owner of climate DATA (docs/climate.md RESOLVED #4). Two blocks: `transitions` (from-type × condition-Formula → to-type, the §6-DSL-driven dynamic-terrain rules consumed by engine/climate.Rules) and `balance` (rate-only tuning constants, D9 spirit). The 10-day-expected / 30-day-forced / 2-12h-duration SHAPE is fixed design and lives in engine code, NOT here — only the rates below are tunable. platform/config compiles this into climate.Rules + climate.Config and cross-checks every `from`/`to` against content/terrain.yaml (an undefined terrain id is a load-time failure, D10).",
+  "title": "content/climate.yaml — terrain transition table + climate tuning rates (CA1-3, D4/D10)",
+  "description": "The single owner of climate DATA (docs/climate.md RESOLVED #4 + §1c CA1-3). Two blocks: `transitions` (from-type × condition-Formula → to-type, the §6-DSL dynamic-terrain rules consumed by engine/env/climate.Rules) and `balance` (rate + annual-°C + wind tuning, D9 spirit). UPDATED to CA1-3: `temperature` is ACTUAL °C (NOT clamped) with an annual sinusoid (CA1 annual_mid/amp/phase) + a daily °C delta + a world-uniform wind (CA2 wind_*); the old normalized-[0,1] temperature model is superseded. The 10d-expected/30d-forced/2-12h-duration rain SHAPE is fixed design in engine code — only the rates here are tunable. COARSE-GRID GEOMETRY (cols/rows) + world bounds live in content/world.yaml (grids.climate_grid_cols/rows + bounds), injected into climate.Config by platform/config — NOT here. platform/config compiles this into climate.Rules + the climate.Config rates and cross-checks every from/to against content/terrain.yaml (an undefined terrain id is a load-time failure, D10).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "grid", "transitions", "balance"],
+  "required": ["schema_version", "init", "transitions", "balance"],
   "properties": {
     "schema_version": { "const": 1 },
-    "grid": {
+    "init": {
       "type": "object",
-      "description": "Coarse climate-grid geometry (RESOLVED #1: one climate cell spans many navmap cells). Injected into climate.Config.GridCols/GridRows.",
+      "description": "Initial per-cell climate state seeds (CA3). Grid GEOMETRY (cols/rows/bounds) is content/world.yaml's, not here.",
       "additionalProperties": false,
-      "required": ["cols", "rows"],
       "properties": {
-        "cols": { "type": "integer", "minimum": 1, "description": "Coarse-grid columns." },
-        "rows": { "type": "integer", "minimum": 1, "description": "Coarse-grid rows." },
-        "initial_moisture":    { "type": "number", "minimum": 0, "maximum": 1, "description": "Optional default starting Moisture for every cell; defaults to 0.5 when absent." },
-        "initial_temperature": { "type": "number", "minimum": 0, "maximum": 1, "description": "Optional default starting Temperature for every cell; defaults to 0.5 when absent." }
+        "initial_moisture":    { "type": "number", "minimum": 0, "maximum": 1, "description": "Optional default starting Moisture for every cell ([0,1], clamped); defaults to 0.5 when absent (climate.Config.InitMoisture)." },
+        "initial_temperature": { "type": "number", "description": "Optional default starting Temperature in °C (CA3 — NOT clamped, sub-zero allowed); defaults to ≈ annual_mid when absent (climate.Config.InitTemperature)." }
       }
     },
     "transitions": {
@@ -27,12 +24,14 @@
     },
     "balance": {
       "type": "object",
-      "description": "Rate-only tuning injected into climate.Config (D9 spirit: rates are content, the SHAPE is fixed design). The fixed-design hard values (hard-cap 720h, duration 2-12h) are carried here ONLY so engine code stays literal-free (D10); they are not free design knobs.",
+      "description": "Tuning injected into climate.Config (D9 spirit: rates/constants are content, the rain SHAPE is fixed design). Rain rates (1a) + the annual-°C cycle constants (CA1) + the daily-°C deltas (CA3) + the world-uniform wind random-walk params (CA2). The fixed-design hard values (hard-cap 720h, duration 2-12h) are carried here ONLY so engine code stays literal-free (D10).",
       "additionalProperties": false,
       "required": [
         "rain_prob_per_hour", "rain_hard_cap_hours", "rain_dur_min_hours", "rain_dur_max_hours",
         "moisture_rain_rate", "evap_base_rate", "evap_temp_scale",
-        "temp_day_peak", "temp_night_low", "temp_rain_drop"
+        "annual_mid", "annual_amp", "annual_phase",
+        "temp_day_peak", "temp_night_low", "temp_rain_drop",
+        "wind_prevailing_dir", "wind_dir_drift", "wind_dir_reversion", "wind_mag_mean", "wind_mag_noise"
       ],
       "properties": {
         "rain_prob_per_hour":  { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Per-game-hour increment to PRain, calibrated so E[first rain] ≈ 10 days = 240 game-hours (1a)." },
@@ -40,11 +39,22 @@
         "rain_dur_min_hours":  { "type": "integer", "minimum": 1, "description": "Rain duration lower bound in game-hours. FIXED DESIGN = 2 (1a)." },
         "rain_dur_max_hours":  { "type": "integer", "minimum": 1, "description": "Rain duration upper bound in game-hours. FIXED DESIGN = 12 (1a); must be ≥ rain_dur_min_hours." },
         "moisture_rain_rate":  { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Moisture gained per game-hour while raining (1a)." },
-        "evap_base_rate":      { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Base Moisture lost per dry game-hour (1a)." },
-        "evap_temp_scale":     { "type": "number", "minimum": 0, "maximum": 1, "description": "Extra Moisture lost per dry game-hour per unit Temperature — the Temperature→Moisture feedback (1a)." },
-        "temp_day_peak":       { "type": "number", "minimum": 0, "maximum": 1, "description": "Temperature at the daily peak (midday), normalized (1b)." },
-        "temp_night_low":      { "type": "number", "minimum": 0, "maximum": 1, "description": "Temperature at the daily trough (night), normalized; must be ≤ temp_day_peak (1b)." },
-        "temp_rain_drop":      { "type": "number", "minimum": 0, "maximum": 1, "description": "Temperature reduction applied while raining (1b)." }
+        "evap_base_rate":      { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Base Moisture lost per dry game-hour, temperature-independent (1a)." },
+        "evap_temp_scale":     { "type": "number", "minimum": 0, "description": "EXTRA Moisture lost per dry game-hour PER °C of positive Temperature — the Temperature→Moisture feedback, per-°C units (CA3, floored at 0 in engine; NO [0,1] clamp now)." },
+
+        "annual_mid":   { "type": "number", "description": "°C annual midline — the year-cycle center (CA1; e.g. 12.5)." },
+        "annual_amp":   { "type": "number", "minimum": 0, "description": "°C annual amplitude — annual_mid ± annual_amp spans the yearly swing (CA1; e.g. 17.5 ⇒ ≈ −5…30 °C)." },
+        "annual_phase": { "type": "number", "description": "φ radians — aligns the sin peak with summer YearFraction / trough with winter (CA1)." },
+
+        "temp_day_peak":  { "type": "number", "minimum": 0, "description": "°C DELTA added at the daily peak (midday), POSITIVE, around the annual midline (CA3)." },
+        "temp_night_low": { "type": "number", "maximum": 0, "description": "°C DELTA added at the daily trough (night), NEGATIVE, around the annual midline (CA3; ≤ 0)." },
+        "temp_rain_drop": { "type": "number", "minimum": 0, "description": "°C reduction applied while raining (CA3)." },
+
+        "wind_prevailing_dir": { "type": "number", "minimum": 0, "exclusiveMaximum": 6.283185307179586, "description": "Prevailing wind direction Dir reverts toward, radians [0,2π) (CA2)." },
+        "wind_dir_drift":      { "type": "number", "minimum": 0, "description": "Per-step seeded random-walk step scale for wind Dir, radians (CA2)." },
+        "wind_dir_reversion":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Fraction Dir is pulled back toward wind_prevailing_dir each step — mean-reverting [0,1] (CA2)." },
+        "wind_mag_mean":       { "type": "number", "minimum": 0, "maximum": 1, "description": "Mean wind magnitude [0,1] (CA2)." },
+        "wind_mag_noise":      { "type": "number", "minimum": 0, "description": "Seeded per-step magnitude-noise amplitude; resulting Mag clamped [0,1] (CA2)." }
       }
     }
   },
@@ -64,7 +74,7 @@
         "when": {
           "type": "string",
           "minLength": 1,
-          "description": "A §6 Formula boolean condition over CellState operands `moisture` and `temperature` (both in [0,1]), e.g. \"moisture > 0.7\" or \"moisture < 0.2 & temperature > 0.6\". Compiled + validated by platform/config via the shared engine/core Formula evaluator; an undefined operand is a load-time failure (D10/design.md §6). No RNG inside a condition (deterministic, D12)."
+          "description": "A §6 Formula boolean condition over CellState operands `moisture` ([0,1]) and `temperature` (**°C**, CA3 — thresholds are °C, e.g. \"temperature < 0\" or \"moisture > 0.7 & temperature > 20\"). Compiled + validated by platform/config via the shared engine/kernel/expr Formula evaluator; an undefined operand is a load-time failure (D10/design.md §6). No RNG inside a condition (deterministic, D12)."
         }
       }
     }

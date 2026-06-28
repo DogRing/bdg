@@ -9,6 +9,9 @@
 |------|-------|
 | [`SPEC-tick.md`](SPEC-tick.md) | D12 tick loop · per-agent RNG fork · conflict resolution · outcome resolution · tick ACs · scale/perf ACs |
 | [`SPEC-emergent.md`](SPEC-emergent.md) | Emergent reliance-cluster detection (RoleEmerged, D2) · ToM pruning · emergent/prune ACs |
+| [`SPEC-world-env.md`](SPEC-world-env.md) | **WI-P1** env orchestration: climate/flora/decay pure-Step driving + cadence · climate→navmap `SetTerrain` bridge · env sampling (flora `SiteInput` / decay env) · flora-shade→perception · env-OFF neutrality (`docs/world-integration.md`) |
+| [`SPEC-world-fauna.md`](SPEC-world-fauna.md) | **WI-P2**: animals + `fauna.Step` (plan phase) · combined agent+animal apply (F41) · scent deposit/spread/commit · `EnvSample`/`TerrainSampler` adapters |
+| [`SPEC-mine-terrain.md`](SPEC-mine-terrain.md) | **WI-P3**: `Mine` terrain-driven extraction path (resources R1) — stone anywhere / clay on soil from terrain `extract`, coexisting with the `ore_node` node path |
 
 Read the relevant sub-spec for detailed mechanics; this file is the **entry point** — it holds the
 public contract, wiring rules, cross-cutting invariants, and out-of-scope boundaries.

@@ -29,6 +29,11 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
     known[]   { agent_id, objects[] }            // per-agent known-object set
     decay_lots[]      { object_id, kind, qty, decay_age, location }  // perishable LOTS (§8, Dm5(a)); periodic-full
     tool_instances[]  { object_id, kind, durability, location }      // durable TOOLS (§9, FINAL); periodic-full
+    flora[]    { object_id, species, pos, length, width, death_streak } // live plants (§10, WI-P4); periodic-full
+    animals[]  { object_id, species, pos, stats{StatID:float}, drives{DriveID:float},
+                 stamina, vital, heading, current_action, active_until }  // fauna (§10, WI-P4); periodic-full
+    climate    { cells[]{cell, moisture, temperature}, rain{raining, rain_ends_at_hour,
+                 p_rain, hours_since_rain}, wind{dir, mag} }          // climate field (§10, WI-P4); periodic-full
     emerged_roles[] { function, holder }         // P6 (D2-derived)
     tom_digest {                                 // cross-agent ToM, god-view projection (D6/D8)
       <observerID>: { <subjectID>: { est_stats: { StatID: { mean, variance } }, rely_on: { Function: float } } }
@@ -50,6 +55,15 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
   A plain (non-perishable, non-tool) kind has no instance rows; its `inventory` count is authoritative.
 - **`objects[].remaining`** is the finite-source count for an `ore_node` (Xm1, §9); absent for objects
   that are not finite sources. `objects[].owner` is the optional owner AgentID (glossary `owner`).
+- **Env state (WI-P4, §10).** `flora[]`/`animals[]`/`climate` are the periodic-full sources for the
+  env subsystems; they stream like decay/navmap — **periodic full + sparse per-step deltas** (§10).
+  Derived discrete views are NOT stored: a plant's `stage` derives from `length`, an animal's
+  active/dormant from `active_until` (recomputed on read, mirrors decay `state`). The **scent grid is
+  DERIVED** (rebuilt from `scent:<channel>` emitter positions on resume) and is **NOT serialized**
+  (spatial-hash parity, §1). **Dynamic terrain** (climate transitions) streams via the navmap
+  `TerrainOverrides()` sparse delta (§6) — the base layout comes from the fixture. When env is OFF
+  (`InstallEnv`/`InstallFauna` not called) these blocks are **absent/empty** — existing snapshots are
+  byte-unchanged (the schema_version bump is additive; absent ⇒ env-off).
 
 ## 2. Redis — live state
 Keyspace (`{run}` = RunID):
@@ -58,10 +72,19 @@ sim:{run}:meta          HASH    { tick, schema_version, started_at, status }
 sim:{run}:tick          STRING  current tick (fast read)
 sim:{run}:snapshot      STRING  latest Snapshot (serialized)  // or chunked
 sim:{run}:agent:{id}    HASH     live agent summary (render): pos, goal, action, mood
+sim:{run}:animal:{id}   HASH     live animal summary (render): pos, species, action, heading, stamina (WI-P4)
+sim:{run}:flora         STRING   live plant render set: [{object_id, species, pos, stage, width}] (WI-P4)
+sim:{run}:climate       HASH     ambient: temperature, apparent_temp?, moisture, raining, wind_dir, wind_mag,
+                                 hour_of_day, day_night, year_fraction (WI-P4 — frontend ambient FX)
+sim:{run}:terrain       STRING   render terrain: base layout + overrides (climate transitions) + wear (trails) (WI-P4)
 sim:{run}:events        STREAM   events (§4). XADD append; SSE tails
+sim:{run}:frame         STREAM   per-frame render deltas (WorldFrame, §4); SSE tails for the graphics client (WI-P4)
 ```
 - Live keys hold **only what render/observation needs.** Full state lives in the snapshot key.
 - TTL: keep only active runs; on completion, back up to Postgres then expire.
+- The env render keys (`animal:{id}`/`flora`/`climate`/`terrain`/`frame`) exist only when env is
+  installed; absent ⇒ env-off (WI-P4). `stage`/`day_night` are DERIVED (from `length`/`hour_of_day`)
+  on write — the live keys carry the render-ready view, not the raw sim state.
 
 ## 3. Postgres — periodic backup (replay / analytics)
 ```
@@ -95,9 +118,13 @@ Representative `type`s (payload gist):
 | `Crafted` | recipe, outputs[]{item, qty, durability?}, consumed[]{kind, amount}, tools_worn[]{object_id, durability, broke} (Materials P_m3/FINAL; on a Craft completion — `durability` is the produced tool's start durability = basis_stat roll·wear_max) |
 | `Mined` | object_id (ore_node), yields[]{item, qty}, remaining, depleted, tool, tool_broke (Materials P_m4/Xm; on a Mine completion; `depleted`+the reroute when remaining→0) |
 | `ToolBroke` | object_id, kind, owner (Materials FINAL; on a tool reaching 0 durability → object-mortality) |
+| `AnimalBorn` / `AnimalDied` | object_id, species, pos / cause (WI-P4; fauna spawn + object-mortality §7) |
+| `PlantSpawned` / `PlantDied` | object_id, species, pos (WI-P4; flora propagation + object-mortality) |
+| `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, agents[]{id,pos,action}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain,wear} (WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
 
 - **why-trace** = NFR-3. Put the *selection rationale* (competing candidates, gates, costs) into `GoalSelected` / `PlanBuilt` so "why did it do this" is reconstructable.
 - **SSE view** = the frontend-graphics subset (positions, actions, major events). Sensitive god-view fields (`real_stats`) are not sent over SSE (controlled by an observation-mode flag).
+- **`WorldFrame`** (WI-P4) is the periodic graphics frame the frontend renders: agent + animal positions/actions, flora stage deltas, terrain deltas, and the ambient weather (hour/day-night, temperature/apparent_temp, rain, wind). It is the SSE projection of the live render keys (§2); it carries NO god-view (`real_stats`/`tom_digest`) and NO raw drive/stat vectors. `day_night` derives from `hour_of_day`; `stage` from `length`. Emitted only when env is installed.
 
 ## 5. Determinism & versioning
 - Resuming from a snapshot must be **byte-identical** to running from the start (test: `docs/testing.md`).
@@ -204,3 +231,37 @@ Representative `type`s (payload gist):
   `object_id`). No wall-clock, no map-iteration for the apply order.
 - The exact wire encoding is finalized when the Craft/Mine apply lands (P_m3/P_m4); the shape above is
   fixed by the LOCKED model. See `docs/materials.md §0/§1/§2`, `backend/engine/mind/actions/SPEC.md`.
+
+## 10. Env state (flora · animals · climate — WI-P4 → persist)
+> The env subsystems serialize like decay/navmap: **periodic full + sparse per-step deltas**. All env
+> blocks are **absent when env is OFF** (`world.InstallEnv`/`InstallFauna` not called) — the addition is
+> backward-compatible (an old env-off snapshot loads unchanged). Bump `schema_version` on env activation.
+> Owner: `platform/persist` (the writer) + `engine/world` (exposes the live state); shapes fixed here.
+
+- **Flora (`flora[]` in §1, periodic-full):** `{ object_id, species, pos, length, width, death_streak }`
+  — the live `flora.Plant` set in sorted `object_id` order (`flora.State.Plants()`). The discrete
+  `stage` is **DERIVED** from `length` (not stored, D9, mirrors decay `state`); `shade` is derived from
+  `width` (perception recomputes — not serialized). Per-step delta = the `flora.StepDeltas`:
+  `spawned[]{…}` / `died[]{object_id}` / `grown[]{object_id, length, width, death_streak}`, sorted by
+  `object_id` (the spawn/grow/die sparse channel; world emits `PlantSpawned`/`PlantDied`, §4).
+- **Animals (`animals[]` in §1, periodic-full):** `{ object_id, species, pos, stats{StatID:float},
+  drives{DriveID:float}, stamina, vital, heading, current_action, active_until }` — the live
+  `fauna.Animal` set in sorted `object_id` order. `current_action`/`heading` are render-relevant;
+  `stats`/`drives` are god-view (NOT sent over SSE, §4). active/dormant is DERIVED from `active_until`
+  vs tick (not stored). Per-step delta = move/commit/die: `moved[]{object_id, pos, heading}` /
+  `updated[]{object_id, drives, stamina, vital, current_action, active_until}` / `died[]{object_id}`,
+  sorted by `object_id` (world emits `AnimalBorn`/`AnimalDied`, §4). The legacy `prey` timer-respawn
+  object stays an `objects[]` row until fauna activation migrates it (W7).
+- **Climate (`climate` in §1, periodic-full):** `{ cells[]{cell, moisture, temperature}, rain{raining,
+  rain_ends_at_hour, p_rain, hours_since_rain}, wind{dir, mag} }` — the coarse `climate.State`
+  (`Cells()`/`Rain()`/`Wind()`) in sorted `GridCell` (Y-major then X) order. `temperature` is **°C**
+  (CA3, may be sub-zero), `moisture` ∈ [0,1], `wind.dir` radians / `wind.mag` ∈ [0,1]. `rng_state` for
+  the rain+wind process resumes byte-identically via the run's root rng fork (no separate field). The
+  per-cell delta channel is the changed `cells[]` since the last full + the per-step `wind`; terrain
+  transitions ride navmap `TerrainOverrides()` (§6), NOT here. `apparent_temp` is per-animal (fauna
+  F40), NOT a climate field — it is derived for the SSE `WorldFrame` (§4), not stored.
+- **Scent — NOT serialized.** The scent grid is derived (rebuilt from `scent:<channel>` emitter
+  positions on resume), mirroring the spatial hash (§1) — no snapshot row.
+- **Determinism (D12):** every env block is captured in sorted id/cell order; resume is byte-identical
+  (a captured `(flora,animals,climate)` + `rng_state` at tick T reproduces T+k, §5). The exact wire
+  encoding lands with `platform/persist` env serialization (`backend/platform/persist/SPEC-world.md`).

@@ -2,6 +2,7 @@
 
 > Status: `DRAFT`
 > Leaf level: `L8` (platform leaf — architecture §3, build-order stage 8)  ·  Owner agent: `<filled by implementer>`
+> Sub-spec: [`SPEC-world.md`](SPEC-world.md) — **WI-P0** world/env loading (`world.yaml`/`climate.yaml`/`fauna:`/`flora:` §6 compile + cross-checks → `world.InstallEnv`/`InstallFauna` inputs).
 
 ## Purpose
 

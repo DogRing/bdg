@@ -170,6 +170,32 @@ type TransformOut struct {
 // engine/env/decay evaluates it read-only; it never parses YAML (D10). Mirrors flora.Rules.
 type Rules struct{ /* opaque; per-KindID baseRate + ordered states + the compiled accel expr.Program. */ }
 
+// NewRules builds the immutable decay table from per-kind COMPILED inputs — the config-facing
+// constructor (WI-P0). platform/config parses content/objects.yaml `decay:`, compiles each `accel` via
+// expr.Parse, validates kind/item ids + strictly-ascending thresholds, then calls this; decay never
+// parses YAML (D10). States within a kind are ordered (ascending Threshold, first = 0). Pure.
+func NewRules(kinds map[KindID]KindRule) *Rules
+
+// KindRule is one item_kind's compiled decay spec (the NewRules input, mirroring the Rules accessors).
+type KindRule struct {
+    BaseRate float64       // → BaseRate (Q2)
+    Accel    *expr.Program // compiled §6 accel over {temperature °C, moisture} (Dm3(a)); nil ⇒ constant 1
+    States   []StateRule   // ordered discrete states (ascending Threshold) → StateAt/SupplyAt
+}
+
+// StateRule is one ordered decay state: entry threshold + transform products + optional supply override.
+type StateRule struct {
+    Threshold float64                    // DecayAge entry threshold (strictly ascending; first state = 0)
+    Supply    map[core.Dimension]float64 // per-state supply override (nil ⇒ item base supply) → SupplyAt
+    Transform []TransformRule            // products on ENTERING this state (Q3); empty for terminal `gone`
+}
+
+// TransformRule is one per-source-item transform product (the apply scales Qty by the lot's Qty, Dm5(a)).
+type TransformRule struct {
+    Item KindID
+    Qty  int
+}
+
 // StateAt maps a continuous DecayAge (effective-time units, Dm1(a)) to the kind's DERIVED discrete
 // state index via the kind's ordered thresholds (mirrors flora.Stage over Length; D9 — state is never
 // stored). DecayAge below the first non-zero threshold ⇒ state 0; at/above the last threshold ⇒ the

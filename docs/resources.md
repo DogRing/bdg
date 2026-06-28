@@ -38,7 +38,19 @@ Concept & rationale: `docs/design.md §5`(바탕재료 sand/soil/river/mountain/
 
 ---
 
-## 1. Open questions — **전부 `OPEN`** (옵션 + 추천; 사람만 resolve)
+## 1. Resolutions — 사람 확정 (2026-06-27): **R1~R7 전부 추천대로 (R2만 조정)**
+> 아래 표가 권위. 각 R의 옵션 상세·근거는 그대로 기록(재논쟁 금지).
+
+- **R1** terrain-driven **§6 yield over 지형 base material** — `Mine` 타겟 = `ore_node` 있으면 노드 path, 없으면 terrain-cell path(같은 `tool:digging`); `stone` 고갈≈0(풍부)·`clay` soil 적합도. ⇒ `materials` Mine SPEC에 **terrain-driven 경로 추가**.
+- **R2 (조정)** `clay` = **아무 `soil` terrain** — **물 근접 *불요*** (비가 moisture를 공급하므로). `moisture`(강우)는 yield를 *변조*할 수 있으나 **위치 gate 아님**. (rec (b) 물근접 → **(a) soil 전역**으로 변경.)
+- **R3** 광물별 object_kind: `iron_ore`·`copper_ore`·`coal_seam`·`gold_vein` (generic `ore_node` 특수화).
+- **R4** tags: `stone`→`stone_stock` · `clay`→`clay_stock` · `coal`→`fuel` · copper/iron ore→`ore:copper`/`ore:iron` → 산출 `metal:copper`/`metal:iron` · `gold`→`precious`/`metal:gold`.
+- **R5** `gold` = `precious` tag + Value 'wealth' hook(없으면 economy까지 inert, seam 예약).
+- **R6** `recipes.yaml`: `smelt_copper` · `smelt_iron`(+`coal` fuel) · `fire_clay`; `furnace`/`kiln` = `Build`로 짓는 `station:*` 구조물(불&빛 서브시스템 불필요).
+- **R7** affinity 계약만(ore→산·clay→soil·stone→any); 분포 generator = **world-gen Tier-2** 이연.
+> glossary 신규: `fuel` · `ore:*` · `metal:*` · `precious` · `stone_stock`/`clay_stock` · `station:furnace`(·`station:kiln`) · 광물 kind명.
+
+### (옵션 상세 — 근거 기록)
 
 - **R1 — terrain-driven 추출 메커니즘 (stone/clay).** 노드 없이 `Mine`이 terrain 셀에서 yield. options:
   (a) **§6 yield over 지형 base material/속성**(mountain→소량 돌, soil→점토 등), 추출 누적 시 terrain 속성↓→임계서

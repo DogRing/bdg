@@ -1,0 +1,86 @@
+# content/world.yaml — World setup parameters (geometry · grids · motion · sizes · senses · render)
+#
+# The SINGLE tunable surface for world SHAPE/SIZE/SPEED values, externalized so they can be
+# adjusted without touching code or hunting through balance.yaml (docs/world-integration.md W1-W9).
+#
+# ⚠ INITIAL, UNTUNED placeholders (recommended defaults, 2026-06-27). Adjustable later; balance
+#   auto-tuning (design.md §4) may sweep them. Values are CONSTRAINED to each other — keep the
+#   inline invariants true when editing (esp. scent_cell_size ≥ motion.max_speed × cadence.scent_spread).
+#
+# Relationship to balance.yaml: balance.yaml `world:` holds engine RUNTIME knobs already wired into
+#   world.Config (spatial_hash_cell, outcome_difficulty_base, backup_every_ticks, …). THIS file holds
+#   world GEOMETRY + entity sizes + base motion + grids + render hints (new, fed by platform/config).
+#   `grids.navmap_cell_size` MIRRORS `balance.yaml world.spatial_hash_cell` (keep in sync).
+#
+# Units: world units (free continuous coords, D11). Time = ticks (1 tick = 1 game-minute);
+#   1 day = 1440 ticks, 1 year = 120 days = 172,800 ticks (worldtime calendar).
+# Schema: content/schema/world.schema.json (WI-P0 — platform/config validates + injects).
+
+schema_version: 1
+
+# ── Bounds (W1) — the finite rectangle the env grids span ────────────────────────────
+# A world-gen / scenario FIXTURE is authoritative and OVERRIDES this; this is the headless default.
+# Agents & animals keep CONTINUOUS Pos (D11) and MAY stray outside — bounds clamp ONLY grid lookups
+# (climate CellAt / navmap cell index), never an agent's position.
+bounds:
+  min: [0.0, 0.0]
+  max: [512.0, 512.0]            # 512×512 village world (40 agents @ village_size; sight 18, smell 10)
+
+# ── Grids (W2) — auxiliary index cell sizes over the same continuous space ────────────
+grids:
+  navmap_cell_size: 8.0          # = balance.yaml world.spatial_hash_cell (KEEP IN SYNC); 512/8 = 64×64 cells
+  climate_grid_cols: 16          # coarse climate grid; 512/16 = 32-unit climate cells
+  climate_grid_rows: 16          #   ⇒ one climate cell = 4×4 navmap cells (32/8); world owns GridCell→[]navmap.Cell
+  scent_cell_size: 10.0          # W3 floor: MUST be ≥ motion.max_speed × cadence.scent_spread (= 1.4×6 = 8.4 ✓);
+                                 #   also ≈ herbivore smell radius (Read scans own cell + neighbors within radius)
+
+# ── Motion (W3) — base locomotion (world units per fauna DT; DT = 1 tick) ──────────────
+# Agents move via MoveTo (travel time ∝ distance, balance world.arrival_epsilon) — NOT governed here.
+# These are fauna base speeds; the §6 Speed program modulates them by fear/fatigue + terrain Cost.
+motion:
+  fauna_dt: 1.0
+  herbivore_base_speed: 1.0
+  predator_base_speed: 1.4
+  max_speed: 1.4                 # fastest species; drives scent_cell_size floor (1.4 × 6 = 8.4 ≤ 10 ✓)
+
+# ── Cadence (W4) — env-phase step intervals (ticks; world drives via tick % N) ─────────
+cadence:
+  climate_step: 60               # 1 game-hour (climate RESOLVED #9; wind shares this)
+  flora_step: 60                 # flora 1g rec (a) — aligned with climate
+  decay_step: 60                 # decay bulk pass
+  scent_spread: 6                # Ns — scent diffusion bulk pass (drives scent_cell_size floor)
+  fauna_dormant_period: 100      # F45 dormant re-arbitration period N (ID-phase spread)
+  fauna_wake_cooldown: 30        # ticks an animal stays ACTIVE after a predator-scent wake
+  # fauna.Step is called EVERY tick; active/dormant is internal to fauna (F45).
+
+# ── Sizes (W6 + flora/resource) — representative defaults ──────────────────────────────
+# Per-species values ultimately live in content/objects.yaml (flora:/fauna: blocks); these are the
+# starting defaults + the render baseline. Animals are POINTS (W6): 'size' is a §6 ATTRIBUTE
+# (apparent_temp / speed inputs), NOT a collision radius. Flora has real morphology (Length/Width).
+sizes:
+  flora:                         # Length (height) / Width (canopy spread), world units
+    grass:    { length: 0.5,  width: 0.3 }
+    bush:     { length: 2.0,  width: 1.5 }
+    tree:     { length: 12.0, width: 6.0 }
+    seedling_start: { length: 0.2, width: 0.1 }   # propagation children start here
+  fauna:                         # 'size' = §6 attribute (NOT collision); interaction = action range
+    herbivore: 1.2
+    predator:  1.0
+  resource:                      # visual / interaction footprint radius, world units
+    ore_node:   1.5
+    clay_patch: 1.0
+    stone:      1.0
+
+# ── Senses (fauna) — default sense radii (per-species → objects.yaml fauna.senses later) ─
+# fov_arc = the HALF-angle (radians) of the forward sight cone (Heading ± fov_arc), F44.
+# Prey: WIDE FOV (vigilance). Predator: NARROW, longer-range FOV (focused pursuit).
+senses:
+  herbivore: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }   # ~60° half ⇒ 120° FOV
+  predator:  { smell_radius: 12.0, sight_radius: 20.0, fov_arc: 0.79 }   # ~45° half ⇒  90° FOV
+
+# ── Render (frontend) — display hints for the SSE WorldFrame consumer ──────────────────
+render:
+  pixels_per_unit: 2.0           # canvas scale: 512 units → 1024 px
+  # Frontend reads: bounds (canvas extent), sizes.* (sprite scale), positions + deltas (WorldFrame),
+  # climate (temperature / apparent_temp / raining / wind / day_night) for ambient FX.
+  # God-view fields (real_stats) are NEVER sent over SSE (data-contracts §4).

@@ -169,6 +169,37 @@ func (s *State) Plants() []Plant
 // shared evaluator, glossary; no bespoke per-species Go function — D4).
 type Rules struct{ /* opaque; per-SpeciesID compiled §6 programs + thresholds + yield table. */ }
 
+// NewRules builds the immutable per-species flora table from COMPILED inputs — the config-facing
+// constructor (WI-P0). platform/config parses content/objects.yaml `flora:`, compiles each §6 via
+// expr.Parse (a scalar-authored rate compiles to a constant Program), validates species/item ids +
+// strictly-ascending stage thresholds, then calls this; flora never parses YAML (D10). Pure.
+func NewRules(species map[SpeciesID]SpeciesRule) *Rules
+
+// SpeciesRule is one species' compiled flora spec (the NewRules input, mirroring the Rules accessors).
+type SpeciesRule struct {
+    Suitability    *expr.Program // → Suitability
+    LengthRate     *expr.Program // → LengthRate (height growth)
+    WidthRate      *expr.Program // → WidthRate  (canopy growth)
+    ShadeRadius    *expr.Program // shade radius  = §6(width) → ShadeOf
+    ShadeOpacity   *expr.Program // shade opacity = §6(width) → ShadeOf
+    Stages         []float64     // ascending Length thresholds → Stage
+    YieldStage     int           // min derived stage for harvest yields (default 0)
+    PropagateStage int           // min derived stage for propagation (default 0)
+    PropRadius     *expr.Program // propagation radius
+    PropChance     *expr.Program // propagation chance
+    DeathThreshold float64       // θ: suitability below this counts toward death (1b)
+    DeathHysteresis int          // consecutive sub-θ steps before object-mortality (1b)
+    Yields         []YieldRule   // yield table → Yield
+}
+
+// YieldRule is one compiled yield-table row (flora 1e): `Chance` is the §6 (typically §6(Dexterity))
+// success probability; `QtyMin/QtyMax` the base [min,max] before the length scaling (flora §1).
+type YieldRule struct {
+    Item           core.Tag
+    Chance         *expr.Program
+    QtyMin, QtyMax int
+}
+
 // Suitability evaluates the species' §6 suitability formula over the site (terrain attrs +
 // climate moisture/temperature) → a scalar ∈ [0,1]. Pure, deterministic, no RNG (a §6 numeric
 // expression; design.md §6). It is the common driver of BOTH growth axes (Length and Width each

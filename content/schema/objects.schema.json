@@ -217,6 +217,64 @@
         }
       }
     },
+    "fauna": {
+      "description": "Marks an object_kind as a fauna SPECIES (engine/fauna; docs/fauna.md F1-F46). The reduced-reactive controller's per-species table: candidate actions + per-action §6 utility (horizon-1 arbitration, F26), the drive vocabulary (F25(c)/F29), the §6 apparent_temp (F40) + §6 speed (F35) programs, and the sense radii (F31/F44). All behavior is §6/data (D4/D10); herds/husbandry/food-chains EMERGE (D2/D3 — no authored tree). The predator flag is the `threat:predator` tag in `tags` (F8); scent emission is a `scent:<channel>` tag in `tags`; the animal is `mobile: true`. Drive ids double as §6 Attr operands (F27, lowercase).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actions", "drives", "apparent_temp", "speed", "senses"],
+      "properties": {
+        "actions": {
+          "description": "Candidate atomic actions (SHARED engine/mind/actions ids) + each one's §6 utility Program (F26(a)). The controller scores every entry and picks the max (ties by sorted ActionID, D12). platform/config cross-checks the ids ⊆ actions.Registry and each utility's ReadsAttrs ⊆ fauna.AttrOperands ∪ this species' drive ids.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/faunaAction" }
+        },
+        "drives": {
+          "description": "The species' drive vocabulary (F25(c)/F29(ii); open ids = §6 Attr operands, D10). Base vocabulary: hunger/fatigue/repro_readiness (accumulators, rise by `rate`) + fear (SET-from-context: wary_level on scent.predator / flee_level on sight.predator, F43) + thermal (SET from apparent_temp, F40). Each entry declares the id + the params its kind uses.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/driveSpec" }
+        },
+        "apparent_temp": { "$ref": "#/$defs/formula" },
+        "speed": { "$ref": "#/$defs/formula" },
+        "diet": { "$ref": "#/$defs/tagList" },
+        "senses": { "$ref": "#/$defs/senses" }
+      }
+    },
+    "faunaAction": {
+      "description": "One candidate action + its §6 utility (F26(a)). `action` is a SHARED engine/mind/actions id (Graze/Flee/Wary/Hunt/MoveTo/Rest); `utility` is the (species×action) §6 score Program — NO RNG, NO cross-action reference, NO sequencing (a flat score set, not a tree, D3).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "utility"],
+      "properties": {
+        "action": { "$ref": "#/$defs/identifier" },
+        "utility": { "$ref": "#/$defs/formula" }
+      }
+    },
+    "driveSpec": {
+      "description": "One drive's config (F25(c)/F29). `id` is the drive id (= its §6 Attr operand, F27). An ACCUMULATOR drive (hunger/fatigue/repro_readiness) sets `rate` (per-tick rise, D9 — no future-need field). A SET-from-context drive (fear) sets `wary_level`/`flee_level` (the values fear is set to on scent.predator / sight.predator, F43) and optionally `decay` (fall when neither present). A DERIVED drive (thermal, set from apparent_temp, F40) needs no rate. Which params apply is the drive's kind; platform/config + fauna.NewRules interpret them. Runtime drive value ∈ [0,1].",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "rate":       { "type": "number", "description": "accumulator per-tick rise (D9); for hunger/fatigue/repro_readiness." },
+        "decay":      { "type": "number", "minimum": 0, "description": "per-tick decay when not being raised/set (e.g. fear cooling)." },
+        "wary_level": { "type": "number", "minimum": 0, "maximum": 1, "description": "fear value SET when scent.predator present → Wary band (F43)." },
+        "flee_level": { "type": "number", "minimum": 0, "maximum": 1, "description": "fear value SET when sight.predator present → Flee band (F43)." }
+      }
+    },
+    "senses": {
+      "description": "Fauna sense radii (F31/F44). `smell_radius` = the scent-grid Read radius (grid cellSize ∝ this, F32); `sight_radius` = the spatial-hash forward-FOV predator-query radius; `fov_arc` = the HALF-angle (radians) of the Heading-relative forward sight cone (F44 — prey wide, predator narrow).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["smell_radius", "sight_radius", "fov_arc"],
+      "properties": {
+        "smell_radius": { "type": "number", "exclusiveMinimum": 0 },
+        "sight_radius": { "type": "number", "exclusiveMinimum": 0 },
+        "fov_arc":      { "type": "number", "exclusiveMinimum": 0, "maximum": 3.14159265358979, "description": "HALF-angle of the forward sight cone, radians (π = full 360° FOV)." }
+      }
+    },
     "source": {
       "description": "Marks an object_kind as a FINITE EXTRACTION SOURCE (Materials & Crafting Xm1 RESOLVED — e.g. an `ore_node`). The finite quantity is OBJECT-LOCAL (D9 locality, berry_bush parity): the runtime per-INSTANCE `remaining` count (data-contracts §1 objects[]) starts at `initial` and is decremented by extraction (Mine) — NOT a future-quantity field, just the supply left. When `remaining` reaches 0 the world removes the node (object-mortality, §7) AND fires ONE `navmap.SetTerrain` over the node's cells to `depleted_terrain` (Xm2/Xm3 — one permanent reroute on exhaustion, apply phase). `depleted_terrain` MUST be a terrain type defined in content/terrain.yaml (the navmap `types` table; load-time validated, Xm6 prerequisite). The yield per extraction is the object_kind's `harvest.yields` table rolled via §6 (Xm5, flora-yield reuse).",
       "type": "object",
@@ -243,6 +301,7 @@
         "mobile": { "type": "boolean" },
         "tags": { "$ref": "#/$defs/tagList" },
         "flora": { "$ref": "#/$defs/flora" },
+        "fauna": { "$ref": "#/$defs/fauna" },
         "source": { "$ref": "#/$defs/source" },
         "harvest": {
           "type": "object",

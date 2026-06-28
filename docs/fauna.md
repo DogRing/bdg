@@ -361,6 +361,13 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
 - **F30 (R5):** `is_current` §6 Attr operand 채택(현재 행동=1.0 / else 0.0) — ACTIVE-모드 stickiness(anti-thrash; FSM 금지, D3). `AttrOperands()` + glossary.
 - **glossary(§1.2/F42) 추가:** `is_current` · `agent.disposition`.
 
+### 클러스터 8 — scent 승격 + 스칼라 강도 + 발생원 태그 (F21/F22/F36 개정) — 사람 확정 (2026-06-27)
+> scent를 fauna 전용에서 **공유 월드 색인**으로 올리고 이진→스칼라로 개정. SPEC: `backend/engine/space/scent/SPEC.md`.
+- **① scent 승격(F36 개정):** `engine/fauna/scent` → **`engine/space/scent`**(spatial/navmap kin, `core`만 의존). **world 소유**(fauna 아님); world가 `scent:<channel>` 태그 단 발생원에서 침착, **fauna는 읽기만**. fauna import에 `engine/space/scent` 추가.
+- **② 발생원 태그 + perception 공존:** 냄새원 = `scent:<channel>` 태그(+magnitude) — flora=`scent:food`, prey=`scent:prey`, predator=`scent:predator`, (후속) carcass/rot=`scent:carrion`. **`perception.Smell`(agent per-entity gradient)와 공존** — 같은 발생원 태그 공유(무엇이 냄새나나 1회 author). (perception을 그리드로 통합은 frontier.)
+- **F21 개정(이진→스칼라 강도):** 셀당 채널별 `float64≥0` 농도(magnitude 비례·거리/바람 falloff). `Deposit(ch,pos,intensity)`·`Spread`=농도 diffusion·`Read`=Intensity+gradient·`IntensityAt`(F45 wake=intensity>threshold). `scent.<ch>` operand=**스칼라**(이진 아님). perception.Smell strength와 개념 통일.
+- **glossary 추가:** `scent:food`/`scent:prey`/`scent:predator`(/`scent:carrion`) 발생원 태그.
+
 ---
 
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `flora.md §2`/`climate.md §2` 양식)
