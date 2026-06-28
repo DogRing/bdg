@@ -79,6 +79,43 @@ actions:
     duration: 1                        # per-step base; arrival-based completion (see MoveTo)
     interruptible: true
 
+  # ── Fauna behaviour (engine/fauna; docs/fauna.md F26/F28/F43) ─────────────────
+  # SHARED atomic actions the reduced-reactive ANIMAL controller scores by §6 utility — NOT the GOAP
+  # planner (F1/F26: horizon-1 max over per-(species×action) utility, no behaviour tree, D3). They live
+  # in the SHARED registry (D3 single action vocabulary), so adding them is a deliberate IDs()/Producers
+  # re-baseline (fauna SPEC Out of Scope). Their `produces` predicates are fauna-internal markers — NO
+  # agent goal references them, so the agent planner never chains to them (scored ONLY by fauna §6
+  # utility). The hunger/fear/fatigue DRIVE effect of enacting one (Graze→hunger↓, Rest→fatigue↓) is
+  # layered by the world fauna-apply (P_fa2), NOT a need `effect` here (drives ≠ needs, D5). The steer
+  # CHANNEL per action is the fauna controller's STEER step (Graze→toward scent.food; Flee/Wary→away
+  # from the predator), not authored here. DORMANT until InstallFauna + a fixture places animals.
+
+  # Graze — herbivore feeding: seek + crop vegetation. The controller steers toward the scent.food
+  # gradient; at a forage source the world applies hunger↓ (P_fa2). Combined seek+feed (FA1 Graze loop).
+  - id: Graze
+    tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low" ]
+    produces: [ grazed ]
+    duration: 10
+    interruptible: true
+
+  # Flee — full-speed flight from a SEEN predator (sight.predator → fear in the Flee band, F43). The §6
+  # speed program amplifies with fear; the controller steers directly away from the predator. Short
+  # bursts (re-arbitrated each ACTIVE tick). NOT a wary→flee FSM transition — one continuous fear (D3).
+  - id: Flee
+    tags: [ "uses:Agility", "effort:high", "noise:med" ]
+    produces: [ fled ]
+    duration: 3
+    interruptible: true
+
+  # Wary — low-commitment vigilance: interrupt grazing, raise alertness, drift slowly away from predator
+  # SCENT (scent.predator → fear in the Wary band, F43). Distinct from Flee ONLY by which fear §6 band
+  # the single fear value crosses (emergent, not coded, D3). Slow away-from-scent movement.
+  - id: Wary
+    tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low" ]
+    produces: [ evaded ]
+    duration: 5
+    interruptible: true
+
   # ── Subsistence (the P1 hunger loop) ─────────────────────────────────────────
   - id: Forage
     tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low" ]

@@ -130,6 +130,8 @@ object_kinds:
   # (untuned; balance is an auto-tuning target — see balance.yaml header).
   - id: berry_shrub
     mobile: false
+    tags: [ scent:food, forage ]    # scent:food → world deposits the herbivore food channel; `forage` →
+                                    # matched by a herbivore's fauna `diet` (deer grazes it). Fauna-OFF: inert.
     flora:
       suitability: "moisture*0.6 + (1 - temperature)*0.2 + (1 - slope)*0.2"  # §6 → [0,1]
       length_rate: 0.02             # Length += rate·suitability /step — modest height (a shrub) (1b/§1)
@@ -186,6 +188,8 @@ object_kinds:
   # now it authors near-zero coefficients so the required schema fields are satisfied.)
   - id: grass
     mobile: false
+    tags: [ scent:food, forage ]    # primary grazing ground-cover: scent:food (herbivore homing) + `forage`
+                                    # (deer diet match). Fauna-OFF: inert (no animals to read the channel).
     flora:
       suitability: "moisture*0.5 + (1 - slope)*0.3 + (1 - salinity)*0.2"
       length_rate: 0.05             # grows FAST but only a little (low ceiling reached quickly)
@@ -228,6 +232,72 @@ object_kinds:
         chance: 0.20
       death_threshold: 0.18
       death_hysteresis: 2           # flowers are short-lived / fragile
+
+  # ── FAUNA species (engine/fauna; docs/fauna.md F1–F46) — DORMANT until fauna activation ──
+  # An animal SPECIES = an object_kind carrying a `fauna:` block: the reduced-reactive controller's
+  # per-species §6 table (candidate actions + per-action utility, drives, apparent_temp, speed, senses,
+  # diet, per-species terrain cost). Behaviour EMERGES from §6 utility-max + drives + scent (D2/D3 — NO
+  # behaviour tree, NO FSM). All per-species behaviour is §6/data (D4/D10). The predator flag is the
+  # `threat:predator` tag (F8); scent emission is a `scent:<channel>` tag (world deposits by it, scent
+  # SPEC); the animal is `mobile: true`. Drive ids double as lowercase §6 Attr operands (F27).
+  # §6 strings are compiled by platform/config via engine/kernel/expr; valid operands are the fauna
+  # AttrOperands() (scent.{food,prey,predator} · dist.{food,prey,predator} · sight.predator ·
+  # apparent_temp · temperature · moisture · wind.dir · wind.mag · is_current) ∪ this species' drive ids
+  # ∪ the Stat registry (UPPERCASE, content/stats.yaml). Values are UNTUNED placeholders (balance target).
+  # Adding these re-baselines actions IDs()/Producers; until InstallFauna + a fixture places animals they
+  # are inert (fauna-OFF neutrality lever). The legacy `prey`/Hunt object below is UNTOUCHED (agent hunt).
+  # FUTURE (FA8): a swimmer/fish species (low river/sea terrain_cost, land in `impassable`) demonstrates
+  # the per-species cost map further; deer+wolf already differ over river/mountain (W10b).
+
+  # DEER — a wary herbivore (prey). Grazes vegetation (diet: forage); wary/flees from wolves via the
+  # single `fear` value crossing §6 bands (F43). Emits `scent:prey` (wolves home in) + carries `game`
+  # (the wolf diet match). WIDE FOV (prey vigilance, F44). Re-arbitrates on the F45 dormant cadence,
+  # waking the tick wolf scent reaches its cell.
+  - id: deer
+    mobile: true
+    tags: [ scent:prey, game ]
+    fauna:
+      actions:
+        - { action: Graze,  utility: "hunger * (0.3 + scent.food) - fear * 1.5" }   # hungry → seek/crop food; fear suppresses
+        - { action: Wary,   utility: "fear" }                                       # predator SCENT → vigilance band (F43)
+        - { action: Flee,   utility: "(fear - 0.6) * 5" }                           # predator SIGHT (higher fear) → flight band (F43)
+        - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2" }
+        - { action: MoveTo, utility: "0.1" }                                        # wander baseline (lowest)
+      drives:
+        - { id: hunger,  rate: 0.0008 }                                             # accumulator (D9): ~0→1 over ~1250 ticks
+        - { id: fatigue, rate: 0.0004 }
+        - { id: fear,    decay: 0.05, wary_level: 0.5, flee_level: 1.0 }            # SET-from-context (F43); cools when clear
+        - { id: thermal }                                                          # DERIVED from apparent_temp (F40); no rate
+      apparent_temp: "temperature - wind.mag * 6 - moisture * 3"                    # °C felt: wind-chill + wet (CA3 °C); P1 climate-OFF ⇒ neutral
+      speed: "Agility * 1.2 + fear * 0.8 - fatigue * 0.4"                           # base from Agility; fear → faster, fatigue → slower
+      diet: [ forage ]                                                             # grazes objects carrying `forage` (grass/berry_shrub)
+      senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }             # wide FOV ~120° (prey vigilance, F44)
+      terrain_cost: { river: 1.8, mountain: 1.6 }                                  # fords water / climbs poorly (W10b); absent terrain ⇒ 1.0
+      impassable: [ sea ]                                                          # cannot enter deep sea (per-species block; sea also globally impassable)
+
+  # WOLF — an apex predator (carnivore). Hunts deer (diet: game) by SCENT homing (scent.prey, upwind in
+  # wind). Emits `scent:predator` (deer detect → Wary/Flee) + carries `threat:predator` (the predator
+  # flag, F8). NO `fear` drive (apex). NARROW long-range FOV (focused pursuit, F44). Predators are always
+  # ACTIVE (F45). Ranges over hills/water better than deer (lower terrain_cost), so pursuit can corner a
+  # fleeing deer across terrain (W10b/FA8).
+  - id: wolf
+    mobile: true
+    tags: [ threat:predator, scent:predator ]
+    fauna:
+      actions:
+        - { action: Hunt,   utility: "hunger * (0.3 + scent.prey)" }                # hungry → home on prey scent (upwind, FA2)
+        - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
+        - { action: MoveTo, utility: "0.15" }                                       # range/wander baseline
+      drives:
+        - { id: hunger,  rate: 0.0006 }
+        - { id: fatigue, rate: 0.0005 }
+        - { id: thermal }
+      apparent_temp: "temperature - wind.mag * 5 - moisture * 2"
+      speed: "Agility * 1.5 - fatigue * 0.5"                                        # faster than deer (pursuit)
+      diet: [ game ]                                                               # hunts animals carrying `game` (deer)
+      senses: { smell_radius: 12.0, sight_radius: 20.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
+      terrain_cost: { river: 1.4, mountain: 1.2 }                                  # ranges water/hills better than deer (W10b)
+      impassable: [ sea ]
 
   - id: prey
     mobile: true              # wanders; perception + pursuit handled by engine

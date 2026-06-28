@@ -1,0 +1,66 @@
+# content/climate.yaml — climate DATA: dynamic-terrain transitions + climate tuning (CA1-3)
+#
+# The single owner of climate DATA (docs/climate.md RESOLVED #4 + §1c CA1-3). Two blocks:
+#   transitions — the from-type × condition-§6 → to-type dynamic-terrain rules (D4/D10), compiled into
+#                 engine/env/climate.Rules. ORDER is significant: for a given `from`, the FIRST rule
+#                 whose `when` §6 boolean is true wins (deterministic, D12). An EMPTY array = climate-off
+#                 (outcome-neutral introduction phase). Every from/to MUST be a terrain id in
+#                 content/terrain.yaml (platform/config cross-checks; an undefined id is a load failure).
+#   balance     — rates + the annual-°C cycle + the world-uniform wind random-walk (D9 spirit: rates are
+#                 content; the rain SHAPE — 10d-expected / 30d-forced / 2-12h-duration — is fixed design
+#                 in engine code, only its rates appear here so engine stays literal-free, D10).
+#
+# ⚠ TEMPERATURE IS ACTUAL °C (CA1-3), NOT normalized [0,1]. `when` thresholds are °C (e.g.
+#   "temperature < 0"). A daily °C delta + an annual sinusoid + a rain drop ride on the annual midline.
+# ⚠ COARSE-GRID GEOMETRY (climate_grid_cols/rows) + world bounds live in content/world.yaml and are
+#   injected into climate.Config by platform/config — NOT here.
+# ⚠ ACTIVATION HOMEWORK (world-readiness): the legacy flora.suitability / decay.accel §6 formulas still
+#   treat `temperature` as [0,1] (e.g. berry_shrub "(1 - temperature)", berries accel "+ temperature*1.0").
+#   Those MUST be re-baselined to °C when climate is activated (a deliberate re-baseline, like the
+#   fauna/flora/decay introductions). The fauna apparent_temp formulas (objects.yaml) are already °C.
+#
+# Schema: content/schema/climate.schema.json (platform/config validates + compiles via engine/kernel/expr).
+
+schema_version: 1
+
+# ── Initial per-cell seeds (CA3) — grid GEOMETRY is content/world.yaml's, not here ──────
+init:
+  initial_moisture: 0.5            # [0,1] starting Moisture for every cell
+  initial_temperature: 12.5        # °C starting Temperature (≈ annual_mid; sub-zero allowed, no clamp)
+
+# ── Dynamic-terrain transitions (CA, D4/D10) ────────────────────────────────────────────
+# Illustrative placeholders demonstrating the §6 condition DSL over moisture/temperature (°C).
+# First-match-wins per `from` (D12). A richer table (river-freeze needs an `ice` terrain type, etc.) is a
+# later content+terrain addition; these two show sustained drought baking soil → sand and wet recovery.
+transitions:
+  - { from: soil, to: sand, when: "moisture < 0.15" }   # sustained drought desiccates fertile soil → loose sand
+  - { from: sand, to: soil, when: "moisture > 0.60" }   # prolonged wetness lets sand re-vegetate → soil
+
+# ── Tuning injected into climate.Config (D9 spirit; the rain SHAPE is fixed design) ──────
+balance:
+  # Rain process (1a) — the 10d-expected / 30d-forced / 2-12h-duration SHAPE is fixed; rates tunable.
+  rain_prob_per_hour:  0.0042      # per-game-hour PRain increment, calibrated so E[first rain] ≈ 240h (10 days). UNTUNED
+  rain_hard_cap_hours: 720         # forced rain after 720 dry game-hours (30 days) — FIXED DESIGN
+  rain_dur_min_hours:  2           # rain lasts 2..12 game-hours — FIXED DESIGN
+  rain_dur_max_hours:  12
+  moisture_rain_rate:  0.08        # Moisture gained per game-hour while raining
+  evap_base_rate:      0.01        # base Moisture lost per dry game-hour (temperature-independent)
+  evap_temp_scale:     0.0015      # EXTRA Moisture lost per dry game-hour per +°C (Temp→Moisture feedback, floored at 0)
+
+  # Annual °C cycle (CA1) — actual temperature = annual_mid + annual_amp·sin(2π·YearFraction + annual_phase)
+  #                          + daily delta − rain drop. Year = 120 days = 172,800 ticks (world.yaml calendar).
+  annual_mid:   12.5               # °C year-cycle midline (the center of the swing)
+  annual_amp:   17.5               # °C annual amplitude ⇒ ≈ −5 … 30 °C over the year
+  annual_phase: 0.0               # φ radians — peak/trough alignment to YearFraction
+
+  # Daily °C deltas (CA3) — added around the annual midline within a day (1 day = 1440 ticks).
+  temp_day_peak:  6.0              # +°C at midday peak
+  temp_night_low: -6.0             # −°C at the night trough (≤ 0)
+  temp_rain_drop: 3.0              # °C reduction while raining
+
+  # World-uniform wind random-walk (CA2) — Dir mean-reverts to prevailing; Mag noise around the mean.
+  wind_prevailing_dir: 1.5708      # ≈ π/2: prevailing wind blows toward +Y (radians [0,2π))
+  wind_dir_drift:      0.15        # per-step seeded random-walk step scale for Dir (radians)
+  wind_dir_reversion:  0.05        # fraction Dir is pulled back toward prevailing each step [0,1]
+  wind_mag_mean:       0.30        # mean wind magnitude [0,1]
+  wind_mag_noise:      0.10        # seeded per-step magnitude noise (resulting Mag clamped [0,1])
