@@ -162,13 +162,17 @@ func TestGetRoundTrip(t *testing.T) {
 			wantInterruptible: true,
 		},
 		{
+			// Craft is RECIPE-MEDIATED (Materials P_m3 FINAL): the content omits duration /
+			// target_kind / produces_item — the bound content/recipes.yaml recipe supplies the
+			// duration + outputs, and the station is the recipe's `ambient` (not a target_kind).
+			// So Duration=0, Target=TargetNone, ProducesItem="" (recipe owns it); produces has_tool.
 			id:               "Craft",
 			wantTags:         []core.Tag{"abstraction:med", "effort:high", "noise:low", "uses:Intelligence"},
-			wantDuration:     90,
-			wantTarget:       TargetObject,
-			wantTargetKindID: "tool_bench",
+			wantDuration:     0,
+			wantTarget:       TargetNone,
+			wantTargetKindID: "",
 			wantProduces:     []core.Pred{"has_tool"},
-			wantProducesItem: "crafted_tool",
+			wantProducesItem: "",
 			wantInterruptible: true,
 		},
 		{
@@ -381,7 +385,7 @@ func TestTargetKindDerivation(t *testing.T) {
 		{id: "Hunt",         wantKind: TargetObject,   wantKindID: "prey"},
 		{id: "Eat",          wantKind: TargetNone,     wantKindID: ""},
 		{id: "Drink",        wantKind: TargetObject,   wantKindID: "water_source"},
-		{id: "Craft",        wantKind: TargetObject,   wantKindID: "tool_bench"},
+		{id: "Craft",        wantKind: TargetNone,     wantKindID: ""}, // recipe-mediated: no target_kind (station is the recipe `ambient`, P_m3 FINAL)
 		{id: "Build",        wantKind: TargetNone,     wantKindID: ""}, // Build has requires: [at_target, has_materials] but no target_kind and produces != at_target
 		{id: "TakeShelter",  wantKind: TargetObject,   wantKindID: "shelter"},
 		{id: "PickUp",       wantKind: TargetNone,     wantKindID: ""}, // PickUp has requires: [at_target], produces: [holding] — at_target is NOT in produces
@@ -724,8 +728,8 @@ func TestHasAndLen(t *testing.T) {
 		t.Error("Has(Nonexistent) should be false")
 	}
 
-	if reg.Len() != 26 {
-		t.Errorf("Len = %d, want 26", reg.Len())
+	if reg.Len() != 30 {
+		t.Errorf("Len = %d, want 30", reg.Len())
 	}
 }
 
@@ -781,7 +785,7 @@ func TestGoldenSnapshot(t *testing.T) {
 		if len(def.Tags) == 0 {
 			t.Errorf("action %q has no tags", id)
 		}
-		if def.Duration < 1 {
+		if !def.RecipeMediated && def.Duration < 1 {
 			t.Errorf("action %q has duration %d < 1", id, def.Duration)
 		}
 	}

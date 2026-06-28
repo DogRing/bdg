@@ -44,7 +44,14 @@ type Effect map[core.Dimension]float64
 type ActionDef struct {
 	ID       ActionID       // canonical identifier
 	Tags     []core.Tag     // drives gate visibility (engine/gates) + planner cost (D4)
-	Duration core.GameMinutes // BASE durative length in game-minutes (>= 1)
+	Duration core.GameMinutes // BASE durative length in game-minutes (>= 1; 0 iff RecipeMediated)
+
+	// RecipeMediated marks a Craft-style action parameterized by a content/recipes.yaml recipe bound
+	// at plan time (Materials P_m3 "Recipe model — FINAL", D3). When true the content OMITS duration /
+	// target_kind / produces_item (the bound recipe supplies duration + outputs; the station is the
+	// recipe's `ambient`), so Duration is 0 here and the duration-≥1 invariant is waived. The recipe
+	// binding + execution are the deferred P_m3 engine work; this flag only records the action's nature.
+	RecipeMediated bool
 
 	Target       TargetKind // none | location | object | agent (derived; see Notes)
 	TargetKindID core.Tag   // objects.yaml object_kind id when Target == TargetObject; empty otherwise
@@ -79,6 +86,7 @@ type rawAction struct {
 	ID              string              `yaml:"id"`
 	Tags            []string            `yaml:"tags"`
 	Duration        int                 `yaml:"duration"`
+	RecipeMediated  bool                `yaml:"recipe_mediated,omitempty"`
 	TargetKind      string              `yaml:"target_kind,omitempty"`
 	Requires        []string            `yaml:"requires,omitempty"`
 	RequiresAny     []string            `yaml:"requires_any,omitempty"`
@@ -134,8 +142,10 @@ func Load(r io.Reader) (*Registry, error) {
 			return nil, fmt.Errorf("actions: action %q has empty tags", id)
 		}
 
-		// Semantic: duration < 1.
-		if ra.Duration < 1 {
+		// Semantic: duration < 1 — WAIVED for a recipe_mediated action. Such an action (Craft)
+		// omits duration in content (the bound content/recipes.yaml recipe supplies it at plan time,
+		// Materials P_m3 FINAL), so Duration stays 0 here; enforcing ≥1 would reject valid content.
+		if !ra.RecipeMediated && ra.Duration < 1 {
 			return nil, fmt.Errorf("actions: action %q has duration %d < 1", id, ra.Duration)
 		}
 
@@ -188,6 +198,7 @@ func Load(r io.Reader) (*Registry, error) {
 			ID:              id,
 			Tags:            tags,
 			Duration:        core.GameMinutes(ra.Duration),
+			RecipeMediated:  ra.RecipeMediated,
 			Target:          target,
 			TargetKindID:    targetKindID,
 			Requires:        requires,

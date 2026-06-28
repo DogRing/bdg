@@ -2,6 +2,7 @@
   "ids": [
     "Aggression",
     "Agility",
+    "Dexterity",
     "Greed",
     "Honesty",
     "Impulsivity",
@@ -13,6 +14,7 @@
   ],
   "capabilities": [
     "Agility",
+    "Dexterity",
     "Intelligence",
     "Strength"
   ],
@@ -28,6 +30,7 @@
   "defaults": {
     "Aggression": 0.4,
     "Agility": 0.5,
+    "Dexterity": 0.5,
     "Greed": 0.5,
     "Honesty": 0.6,
     "Impulsivity": 0.5,
