@@ -165,13 +165,12 @@
   연주기(−5↔30°C)는 **172,800틱(120일)** 이라 단기 시나리오선 안 보임 → 가속-연(年) 테스트 config 필요.
 - **본다:** F40, day/night, 시간척도 한계.
 
-### FA6 — 번식·탄생 (Reproduction & Birth)  `BLOCKED: fauna P_fa4 — ⚠ MECHANISM 미설계`
-- **초기:** 성체 초식 2 + 충분한 먹이/낮은 포식압.
-- **단언:** 먹이·안전 충족 지속 → `repro_readiness` 누적 → 임계+근접+조건 → **새 개체 탄생**(부모 근처 spawn,
-  스탯 상속/변이) → 개체수가 먹이·포식압으로 자기조절(로지스틱 창발). ⚠ **현재 설계 갭:** P1은 레거시 타이머
-  `prey_respawn`(다른 곳 재생성)뿐 — **실제 부모→자식 birth 메커니즘이 미설계**(P_fa4 OPEN: 트리거 조건·
-  offspring spawn·스탯 상속/변이·짝짓기 근접). 이 시나리오는 **메커니즘 설계 선행 필요**(가장 큰 fauna 갭).
-- **본다:** F9/F39, lifecycle(사망×번식 사이클, design §7).
+### FA6 — 개체수 유지 = 숨겨진 respawn (Population via Hidden Respawn)  `BLOCKED: fauna active·world respawn placement` · `W11 RESOLVED`
+- **초기:** 초식 무리(개체수 목표) + 포식자. 사냥/사망으로 개체수 감소.
+- **단언:** 번식(부모→자식) **없음.** 개체수 목표 미달 시 world가 시드 확률로 **1마리 respawn** — 단 **모든 agent
+  시야 밖 + 미개발 야생(건물/정착지 밖, 통과가능 야생 terrain)** 에서만 나타남(관측자에겐 "어디선가 새로 옴").
+  부모/상속 없음(스탯=종 GenSpec). 같은 seed → 같은 등장(결정성). placement가 **시야밖∧미개발 후보**에서만.
+- **본다:** 개체수 조절(번식 아님), 숨김 placement. (P_fa4 birth 메커니즘은 삭제됨 — 사용자 2026-06-28.)
 
 ### FA7 — 무리 (Herd / Flocking)  `DEFERRED: 사회적 동물 이연(fauna §0-1)`
 - **초기:** 동종 다수.

@@ -94,17 +94,22 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 > 세계 SPEC 완성 후 "시나리오가 실제로 도는가/보이는가" 점검에서 드러난 **미설계 메커니즘·정책**. 게이트:
 > 사람만 RESOLVE. (수치 비율·콘텐츠 미작성은 차단이 아니라 작업 — readiness §1/§4; 아래는 *결정*이 필요한 것.)
 
-### W10 — agent 내비게이션(navmap 사용) · **🔴 차단(강/바다/경로/건물 시나리오, design §5)** · `OPEN`
-현재 agent `MoveTo`는 유클리드 거리만 씀(navmap/pathfind 미사용) → 강·바다·산·건물·길이 **agent 경로에 무효**, desire-path wear 안 쌓임. (fauna만 `TerrainSampler`로 지형 비용 사용.)
-- (a) **신규 WI-P5 "agent navigation"**: agent `MoveTo`/`bindTarget`이 `pathfind`(navmap snapshot)로 경로비용 산출 → 이동 시 `navmap.Deposit`(wear) → `bindTarget`=경로비용 최근접 → planner cost-term 반영. (design §5 전부 활성: 길 창발·"강 건너 가까운 베리 < 이쪽 길").
-- (b) P1 euclidean 유지, navmap은 fauna/terrain 표시용만 — 강/경로/건물 agent 효과 이연.
-- **rec: (a)** — design §5 핵심이라 결국 필수이나 **큰 신규 phase**(pathfind 와이어링+wear+cost-bindTarget). SPEC 미작성. `[engine/world + pathfind + planner cost; 신규 WI-P5]`
+### W10 — 경로계획(navmap A*)을 *원하는가* · **🔴 차단(강/바다/경로/건물 agent 효과)** · `OPEN`
+**개념 정리(사용자 확인 2026-06-28):** "주변 칸 물체만 계산하는 균일 그리드"는 **`spatial` hash(근접)** — *이미 존재하고 agent/fauna가 씀*. `navmap`은 그것과 **별개**로 design §5가 도입한 **이동-비용장 + A* 길찾기 + 창발 길(desire-path)**. 현재 agent `MoveTo`는 유클리드라 navmap을 안 씀(=경로계획 미사용); fauna만 `TerrainSampler`로 *로컬* 지형비용을 씀. 그래서 결정은 "근접"이 아니라 **"경로계획을 할 것인가"**:
+- (a) **로컬 지형만(경로계획 없음)** — agent도 fauna처럼 *밟는 칸*의 지형 cost/passable만 로컬 샘플(못 가는 칸=슬라이드/정지), 이동=직선. **A* 없음·navmap 비용장 없음·desire-path 없음.** navmap=지형타입 격자로 축소. spatial=근접. ⚠ **design.md §5의 "길 창발"·경로비용 bindTarget 삭제 → design.md 수정 필요(인변식 변경, 승인).**
+- (b) **design §5 그대로** — navmap 비용장 + A*/Theta* + 통행→`wear`→길 창발 + 경로비용 최근접 bindTarget(신규 WI-P5: pathfind 와이어링).
+- **rec: 사용자 의도상 (a)에 가까움** — 단 길-창발(D1 파생 desire-path)을 포기하는 결정이라 **사람 확인 + design.md §5 개정 필요**. (a)면 강/바다/벽은 *로컬 회피*로만 작동(전역 우회 경로 없음 — 큰 호수를 빙 도는 똑똑한 우회는 안 됨). `[design.md §5 + engine/world; navmap 역할 결정]`
 
-### W11 — fauna 번식·탄생 메커니즘(P_fa4) · **차단(FA6 + 생태 자기조절)** · `OPEN`
-`repro_readiness`는 누적 drive뿐 — birth 트리거 없음. P1은 레거시 타이머 respawn(다른 곳 재생성)뿐, **실제 부모→자식 birth 미설계.**
-- (a) **drive-gated 출산**: readiness 임계 + 짝 근접 + 안전/먹이 조건 → offspring spawn(부모 근처, id 발급) + 스탯 상속(부모 평균 + variance, design §7 세대 상속률) + 개체수는 먹이/포식압으로 자기조절(로지스틱, 창발).
-- (b) P1 타이머 respawn 유지, 진짜 birth 이연.
-- **rec: (a)** — 생태 자기조절·세대에 필요. 단 **Tier-2/SPEC 설계 선행**(트리거·spawn·상속 OPEN). `[fauna P_fa4 — 신규 설계]`
+### W11 — fauna 개체수 유지 = 숨겨진 respawn · `RESOLVED: (b′) 숨김 respawn (사람 2026-06-28)`
+**번식(부모→자식) 안 함.** 개체수는 **respawn으로 조절** — 단 "매번"이 아니라 **시야 밖 + 미개발 야생**에서 나타남.
+- **RESOLVED 메커니즘:** world가 종별 **개체수 목표**를 두고, 목표 미달 시 시드 확률/cadence로 **1마리 respawn**.
+  spawn 위치 = **(1) 모든 agent의 `sight_radius` 밖(미관측) · (2) 미개발(건물 footprint/정착지 클러스터 밖) · (3)
+  통과가능 야생 terrain.** 후보 셀 중 시드 결정 선택(D12). **부모·상속 없음** — 스탯 = 종 `GenSpec` 샘플(W?=animal
+  GenSpec seam). 레거시 `balance.regen.prey_respawn`을 이 *조건부 placement*로 일반화.
+- (기각) drive-gated 출산(부모 근접+상속)·로지스틱 자기조절 — 사용자: "번식 없음, respawn이 맞음."
+- **함의:** FA6 = "개체수-조절 respawn(숨김 배치)"로 재정의; P_fa4 birth 메커니즘 **불필요(삭제)**. `repro_readiness`
+  drive도 불필요(제거 가능). 남은 작업 = **respawn placement 알고리즘**(시야밖 + 미개발 후보 탐색) — world wiring.
+  `[engine/world respawn; balance.regen 일반화; 새 메커니즘 거의 없음]`
 
 ### W12 — agent 시딩 밀도 정책 · **차단(사회 창발 A–L)** · `OPEN`
 512 월드에 40 agent 균일 배치 시 간격 ≈81 ≫ sight 18 → 서로 못 봄 → 사회 시나리오 깨짐(readiness §1b).
@@ -134,7 +139,7 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 
 ### 신규 phase (구현 직전 감사, `docs/world-readiness.md` — W10–W14 RESOLVE 후)
 - **WI-P5 (agent navigation — W10): ⬜ SPEC 미작성.** agent `MoveTo`/`bindTarget`이 `pathfind`(navmap snapshot) 경로비용 사용 → 이동 시 `navmap.Deposit`(wear) → cost-최근접 bindTarget → planner cost-term. design §5(길 창발·강 우회) 활성. **현재 agent는 navmap 미사용(유클리드)이라 강/바다/경로/건물이 agent에 무효** — readiness §3a.
-- **WI-P6 (fauna 번식·탄생 — W11): ⬜ MECHANISM 미설계.** `repro_readiness`→birth 트리거·offspring spawn·스탯 상속(§7)·개체수 자기조절. P_fa4 Tier-2/SPEC 선행. FA6 차단 — readiness §3b.
+- **WI-P6 (fauna 개체수 respawn — W11 RESOLVED): ⬜ world wiring.** 번식 X. world가 종 개체수 목표 미달 시 **시야 밖 + 미개발 야생**에 시드 확률로 1마리 respawn(부모/상속 없음, 스탯=종 GenSpec). 레거시 `prey_respawn`을 조건부 placement로 일반화. **새 메커니즘 거의 없음**(placement 후보탐색만). P_fa4 birth = 삭제. readiness §3b.
 - **WI-P7 (frontend 렌더 — W14): ⬜.** bounds+pixelsPerUnit 카메라 · fixture terrain 렌더 · animals/flora/climate 그림 · 낮밤/날씨 앰비언트 · 하드코딩 목업(가짜 강·1000 라벨) 제거 — readiness §5.
 - **콘텐츠 작성(P1, 차단 아님 — 작업):** fauna 종 deer/wolf · Graze/Flee/Wary 액션 · `climate.yaml` · scent 발생원 태그 · 시작 fixture · agent 클러스터 시딩(W12) · 가속-연 config(W13) — readiness §4/§7.
 

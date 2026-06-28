@@ -50,35 +50,41 @@
 | 동물 **행동** | 설계 ✅ (horizon-1 utility Graze/Flee/Wary/Hunt/Rest) | **Graze/Flee/Wary 액션 미작성**, 종 §6 미작성 |
 | **날씨**(비·낮밤) | 설계 ✅ (climate rain + HourOfDay) | **climate.yaml 데이터 미작성** |
 | **온도**(연·일·체감) | 설계 ✅ (CA1-3 + F40 apparent_temp) | climate.yaml + 종 apparent_temp §6 + °C 재기준 + 연주기 시간척도 |
-| **강** | terrain ✅ (river=고비용 통과) | **agent가 navmap 미사용**(아래 3a) → agent엔 강 무효; fauna만 수영 |
-| **바다** | terrain ✅ (sea=impassable) | 동상(agent 경로에 반영 안 됨) |
-| **경로**(desire-path) | navmap wear 설계 ✅ | **agent가 navmap 미사용** → 통행 wear 안 쌓임 → 길 창발 X |
+| **강** | terrain ✅ (river=고비용 통과) | **W10 결정 대기**: 경로계획(a/b)에 따라 — (a)로컬이면 강은 *로컬 회피*만, (b)면 전역 우회. fauna는 이미 수영(로컬). |
+| **바다** | terrain ✅ (sea=impassable) | 동상(W10). agent는 로컬 회피 or A* 우회 — 결정에 달림. |
+| **경로**(desire-path) | navmap wear 설계 ✅ | **W10 (a)면 길 창발 삭제**(design §5 개정), (b)면 통행→wear→길 창발. |
 | **냄새** | 설계 ✅ (scent grid + wind) | scent 구동 wiring(P2 구현 전) + 발생원 `scent:*` 태그 미작성 |
 | **사냥** | 설계 ✅ (Hunt + scent + FOV) | 포식 종 미작성 + Hunt apply(P_fa2) + carcass/Butcher(P_fa3) |
-| **번식·탄생** | ⚠ **메커니즘 미설계** | P1=레거시 타이머 respawn뿐 — **부모→자식 birth 미설계**(P_fa4 OPEN) |
+| **번식·탄생** | ✅ **respawn으로 결정**(W11) | 번식 X — 개체수 목표 미달 시 **시야밖+미개발**에 respawn. 남은=placement 알고리즘(§3b). |
 
-**요약:** 이동/행동/날씨/온도/냄새/사냥 = **설계는 됨, 콘텐츠+구현 대기**. 강/바다/경로 = **agent-navmap 미연결이라
-agent에는 무효**(3a). 번식·탄생 = **메커니즘 자체가 미설계**(3b).
+**요약:** 이동/행동/날씨/온도/냄새/사냥 = **설계됨, 콘텐츠+구현 대기**. 강/바다/경로(agent) = **W10 결정에 달림**
+(로컬 회피 vs A* 우회; (a)면 design §5 길-창발 삭제)(3a). 번식·탄생 = **respawn 개체수조절로 결정**(W11) — 남은 건
+숨김 placement 알고리즘(3b).
 
 ---
 
 ## 3. ⚠ 설계 갭 (구현 전 결정/설계 필요)
 
-### 3a. agent 내비게이션이 navmap을 안 쓴다 (가장 큰 통합 갭)
-- 현재 agent `MoveTo`는 **유클리드 거리 + `arrival_epsilon`**(travel time ∝ distance)로만 이동 — `engine/space/pathfind`/
-  `navmap` cost field를 **사용하지 않음**(SPEC-world-env Out of Scope: "agent pathfinding over navmap = 별도 후속 wiring").
-- 결과: **강·바다·산·건물·길이 agent 경로에 영향 없음.** design §5의 핵심("길은 창발", "강 건너 가까운 베리 <
-  이쪽 길로 닿는 베리", desire-path wear)이 **전부 미작동**. W1/W2/W11/W13/W16 + "경로/강/바다"(agent) 차단.
-- fauna는 `TerrainSampler`로 지형 비용을 쓰지만(수영), **agent는 안 씀** — 비대칭.
-- **필요(신규 통합 phase, 예 WI-P5 "agent navigation"):** agent `MoveTo`/`bindTarget`이 `pathfind`(navmap snapshot)로
-  경로비용 산출 → 이동 시 `navmap.Deposit`(wear) → `bindTarget`=경로비용 최근접. 플래너 cost-term에 경로비용 반영.
-  **이건 SPEC 추가가 필요한 미설계 영역** — 현 WI-P0~P4엔 없음.
+### 3a. 경로계획(navmap A*) — 할지 미정 (W10; 개념 정리 2026-06-28)
+- **개념 구분(중요):** "주변 칸 물체만 계산하는 균일 그리드"는 **`spatial` hash(근접 질의)** — *이미 존재·작동*
+  (perception/fauna sight). `navmap`은 **별개** 모듈로 design §5의 **이동-비용장 + A* 길찾기 + 창발 길(desire-path)**.
+  둘 다 균일 그리드·D11 인덱스지만 목적이 다름(근접  vs 경로).
+- 현재 agent `MoveTo`=유클리드 거리(`arrival_epsilon`) → navmap **경로계획 미사용**. fauna만 `TerrainSampler`로 *로컬*
+  지형비용(수영). 즉 빠진 건 *근접*이 아니라 ***전역 경로계획***.
+- **결정(W10) — 경로계획을 원하나?**
+  - **(a) 로컬 지형만(경로계획 없음, 사용자 의도에 가까움):** agent도 fauna처럼 밟는 칸의 cost/passable만 로컬 샘플
+    (못 가는 칸=슬라이드/정지), 직선 이동. A*·비용장·desire-path 없음. navmap=지형타입 격자. ⚠ **design §5 "길 창발"·
+    경로비용 bindTarget 삭제 → design.md 개정 필요(인변식, 승인).** 강/바다/벽은 *로컬 회피*만(큰 호수 빙 도는 전역 우회 X).
+  - **(b) design §5 그대로:** navmap 비용장 + A*/Theta* + `wear`→길 창발 + 경로비용 최근접 bindTarget(신규 WI-P5).
+- W1/W2/W13/W16 + 경로/강/바다(agent)는 이 결정에 달림. **사람 RESOLVE 필요(+ (a)면 design.md §5 개정).**
 
-### 3b. 번식·탄생 메커니즘 미설계 (P_fa4)
-- `repro_readiness`는 누적 drive로만 존재 — **birth 트리거가 없음.** P1은 `balance.regen.prey_respawn`(다른 곳 재생성)뿐.
-- **미설계 OPEN:** (1) 출산 트리거(readiness 임계 + 짝 근접 + 안전/먹이 조건) (2) offspring spawn(위치·id 발급)
-  (3) 스탯 상속/변이(부모 평균 + variance, design §7 세대 상속률) (4) 개체수 자기조절(먹이·포식압 → 로지스틱, 창발).
-- design §7(사망×번식 사이클)은 개념만; **fauna 번식의 구체 메커니즘은 Tier-2/SPEC로 설계해야 함**(FA6 차단).
+### 3b. 개체수 = 숨겨진 respawn (W11 RESOLVED 2026-06-28 — 번식 안 함)
+- **결정:** 부모→자식 번식 **없음.** 개체수는 **respawn으로 조절** — 단 "매번"이 아니라 **시야 밖 + 미개발 야생**에 등장.
+- **메커니즘(작음):** world가 종 **개체수 목표** 유지, 미달 시 시드 확률/cadence로 1마리 respawn, 위치 = (1) 모든 agent
+  `sight_radius` 밖 · (2) 미개발(건물 footprint/정착지 클러스터 밖) · (3) 통과가능 야생 terrain. 후보 중 시드 선택(D12).
+  부모/상속 없음(스탯=종 GenSpec). 레거시 `balance.regen.prey_respawn`을 이 조건부 placement로 일반화.
+- **함의:** P_fa4 birth 메커니즘 **삭제**, `repro_readiness` drive 불필요. 남은 작업 = **respawn placement 알고리즘**
+  (시야밖∧미개발 후보 탐색) — world wiring. 새 메커니즘 거의 없음.
 
 ### 3c. 기타 미해결 seam (이미 flag됨)
 - `world.WorldState`에 env 필드 + `RenderView()`(engine/world) · animal base-stat `GenSpec`(fauna: content) ·
@@ -125,13 +131,13 @@ agent에는 무효**(3a). 번식·탄생 = **메커니즘 자체가 미설계**(
 
 | # | 알고리즘 | 현 상태 | 비고 |
 |---|---|---|---|
-| 1 | **agent pathfind over navmap** (A*/Theta*, wear deposit, cost-최근접 bindTarget) | ❌ 미연결(3a) | 신규 phase; design §5 핵심 |
+| 1 | **agent 지형 처리** — W10 결정: (a)로컬 cost/passable 샘플(작음, fauna와 동형) vs (b)A*/Theta* pathfind+wear+cost-bindTarget(WI-P5) | W10 OPEN(3a) | (a)면 design §5 개정; (b)면 design §5 핵심 |
 | 2 | pathfind 연결성(8/4-conn, Theta* any-angle) + StepCost √2 정합 | navmap OQ에 위임 | pathfind SPEC 확인/확정 |
 | 3 | **scent 확산 스텐실** (downwind bias 함수·falloff 곡선·이웃 가중치) | scent SPEC "fixed weights(balance)"만 | 실제 stencil 수식 미정 |
 | 4 | **fauna steer/wander** (채널 방향 + §6 jitter rng + !Passable 슬라이드/정지) | SPEC 계약만 | wander 알고리즘·장애물 회피 미정 |
 | 5 | **FOV bearing test** (Heading±fov_arc, atan2 + 각도 wrap) | SPEC 명시 | wrap 처리 확정 |
 | 6 | **flow-accumulation hydrology** (D8 흐름·누적·pit priority-flood·침식) | world-gen.md §1 개요 | D8/priority-flood 정밀화 |
-| 7 | **reproduction/birth** (트리거·spawn·상속) | ❌ 미설계(3b) | P_fa4 설계 |
+| 7 | **respawn placement** (개체수 목표 → 시야밖∧미개발 야생 후보 탐색 + 시드 선택) | W11 RESOLVED(3b) | 번식 X; 작음(후보 필터 1패스) |
 | 8 | **apparent_temp §6 + thermal→action** 결합 | F40 계약 | 종 §6 + TakeShelter 커플링 |
 | 9 | day/night → perception 시야 감소 | parked | FA5 야행성 |
 
@@ -140,10 +146,10 @@ agent에는 무효**(3a). 번식·탄생 = **메커니즘 자체가 미설계**(
 ## 7. 우선순위 체크리스트 (구현 진입 전)
 
 **P0 — 설계/결정 (코드 전):**
-- [ ] **번식·탄생 메커니즘**(P_fa4) Tier-2/SPEC 설계 — FA6 + 생태 자기조절.
-- [ ] **agent 내비게이션(navmap)** 통합 phase(WI-P5?) 설계 — 강/바다/경로/건물이 agent에 작동하려면 필수(3a).
-- [ ] **agent 시딩 밀도 정책** — 마을 클러스터 시딩(1b) — 사회 창발 유지.
-- [ ] **가속-연 테스트 config** — 계절 시나리오 시간척도(1c).
+- [x] ~~번식 메커니즘~~ → **W11 RESOLVED: respawn 개체수조절(번식 X)** — 남은 = 시야밖+미개발 placement 알고리즘(world wiring).
+- [ ] **W10 RESOLVE: 경로계획 할지** — (a) 로컬 지형샘플(작음, design §5 길-창발 삭제→design.md 개정) vs (b) A* pathfind(WI-P5). 강/바다/경로(agent)가 여기 달림(3a).
+- [ ] **agent 시딩 밀도 정책** — 마을 클러스터 시딩(W12/1b) — 사회 창발 유지.
+- [ ] **가속-연 테스트 config**(W13) — 계절 시간척도(1c).
 - [ ] day/night→sight 결합 여부(FA5), °C 임계 재기준 owner.
 
 **P1 — 콘텐츠 작성 (스키마 존재):**
@@ -162,6 +168,7 @@ agent에는 무효**(3a). 번식·탄생 = **메커니즘 자체가 미설계**(
 
 ## 8. 한 줄 결론
 세계 통합 **SPEC은 완성**이고 **크기 비율(셀/엔티티/월드)은 정합**하다. 막는 것은 *설계 SPEC*이 아니라 **(1) 미작성
-콘텐츠**(fauna 종·액션·climate.yaml·fixture), **(2) 두 개의 미설계 메커니즘**(agent-navmap 내비게이션 3a · 번식 3b),
-**(3) 하드코딩 목업인 frontend 렌더**, **(4) agent 시딩 밀도/시간척도** 다. 이 4개를 닫으면 FA1–FA5·W-세트가 실제로 돈다.
-(FA6 번식·FA7 무리·야행성은 추가 메커니즘 설계 후.)
+콘텐츠**(fauna 종·액션·climate.yaml·fixture), **(2) 한 개의 미정 결정 W10**(경로계획 할지 — (a)로컬/(b)A*; (a)면 design §5
+개정), **(3) 하드코딩 목업인 frontend 렌더**, **(4) agent 시딩 밀도/시간척도** 다.
+**해소된 것:** 번식 = respawn 개체수조절(W11, 시야밖+미개발 placement; 부모/상속/birth 메커니즘 삭제) — 작은 world wiring만.
+이들을 닫으면 FA1–FA6·W-세트가 돈다. (FA7 무리·야행성은 추가 설계 후.)

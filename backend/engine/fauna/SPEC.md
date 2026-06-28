@@ -445,8 +445,13 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
 - **Climate operand SOURCE + `apparent_temp` activation** (climate-OFF in P1 → neutral `EnvSample`;
   wind-driven long-range scent + upwind homing) → `engine/env/climate` + `engine/world` (P_fa4,
   `docs/climate.md §1c` CA1–CA3; operand names/units MUST match across docs).
-- **Reproduction**: P1 = legacy `balance.regen.prey_respawn` timer (world); emergent drive-gated birth
-  (`repro_readiness`) → world/balance (P_fa4, F9/F39). fauna only advances the accumulator.
+- **Population maintenance (NOT breeding) — RESOLVED 2026-06-28 (W11, `docs/world-integration.md`)**: there is
+  **no parent→child birth**. The world keeps a per-species population target and, when below it, respawns ONE
+  animal on a seeded cadence at a **HIDDEN wild location** — outside every agent's `sight_radius` AND in
+  undeveloped terrain (no building footprint / settlement, passable wild). No parent, no inheritance (stats =
+  species `GenSpec`). Generalizes the legacy `balance.regen.prey_respawn`. → `engine/world` respawn placement
+  (small wiring). The `repro_readiness` drive + a drive-gated birth mechanism (P_fa4) are **dropped**; the drive
+  id may remain a latent/unused content option.
 - **Serialization / SSE of `animals[]`** → `platform/persist` + `docs/data-contracts.md §6` (P_fa5).
 - **`docs/glossary.md` sync** of the coined terms → a separate glossary step.
 - The shared §6 `expr` evaluator **implementation** → `engine/kernel/expr` (L0); fauna only USES it.
