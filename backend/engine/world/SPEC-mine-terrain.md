@@ -98,7 +98,7 @@ emit Mined{ ... terrain path: no ore_node id, no remaining/depleted } (data-cont
 
 ## Open Questions
 > `docs/resources.md` R1 + `docs/world-integration.md` W1-W9 RESOLVED. Two plumbing seams:
-- **Planner binding for the terrain path (planner/actions seam).** The node path binds an `ore_node`
+- **Planner binding for the terrain path (planner/actions seam) — ✅RESOLVED (a), 2026-06-28: world apply falls back to actor cell; planner offers Mine where the terrain has `extract`.** The node path binds an `ore_node`
   target; the terrain path extracts at the actor's standing cell (no object target). For the planner to
   select Mine to satisfy `has_materials` WHERE no node exists (stone anywhere), Mine must be selectable
   without an `ore_node` target — i.e. the planner treats Mine as available when the actor's (reachable)

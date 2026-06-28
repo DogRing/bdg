@@ -148,7 +148,7 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
 
 ## Open Questions
 > `docs/world-integration.md` W1-W9 + `docs/world-gen.md` WG1-7 RESOLVED. Plumbing seams:
-- **Animal base-stat source (fauna content seam).** `fauna.Animal.Stats` is an open base-attribute
+- **Animal base-stat source (fauna content seam) — ✅RESOLVED (a), 2026-06-28: per-species `GenSpec` sample (agent parity).** `fauna.Animal.Stats` is an open base-attribute
   vector; the fixture carries only species+pos. Options: **(a)** sample animal stats from a per-species
   `GenSpec` (like agents) with the seeded rng; **(b)** fixed per-species base stats in `content/
   objects.yaml fauna:`. **rec: (a)** — parity with agents, gives variation; the species `GenSpec` is a

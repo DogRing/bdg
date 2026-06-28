@@ -118,20 +118,27 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
   drive도 불필요(제거 가능). 남은 작업 = **respawn placement 알고리즘**(시야밖 + 미개발 후보 탐색) — world wiring.
   `[engine/world respawn; balance.regen 일반화; 새 메커니즘 거의 없음]`
 
-### W12 — agent 시딩 밀도 정책 · **차단(사회 창발 A–L)** · `OPEN`
+### W12 — agent 시딩 밀도 정책 · `RESOLVED: (a) 클러스터 + 첫 fixture (b) (사람 2026-06-28)`
 512 월드에 40 agent 균일 배치 시 간격 ≈81 ≫ sight 18 → 서로 못 봄 → 사회 시나리오 깨짐(readiness §1b).
 - (a) **마을 클러스터 시딩** — agent를 ~반경 50–60 거주 구역에 모음(world-gen WG5 + `live-emergence-underseeded`); 국소 밀도 = sight 수준. (b) 첫 시나리오는 작은 집중 맵(~160–200, bounds override). (c) 균일(현재) — 깨짐.
 - **rec: (a)** (+ 첫 fixture는 (b)) — fixture 시딩이 클러스터를 강제. `[fixture/world-gen WG5; 시딩 정책 명시]`
 
-### W13 — 계절 시간압축 config · 비차단 · `OPEN`
+### W13 — 계절 시간압축 config · `RESOLVED: (a) 가속-연 config 노브 (사람 2026-06-28)`
 연주기 = 172,800틱(10 real-day) → 계절 시나리오/라이브 관전서 안 보임(readiness §1c).
 - (a) **가속-연 테스트 config** (`DaysPerYear` 축소 또는 `YearFraction` 배속 노브). (b) 장기 배치 런만.
 - **rec: (a)** — 테스트/데모용 시간압축 노브(결정성 유지). `[worldtime/balance config 노브]`
 
-### W14 — frontend 렌더 범위 · 비차단 · `OPEN`
+### W14 — frontend 렌더 범위 · `RESOLVED: (a) 실데이터 전면 교체 (사람 2026-06-28)`
 현 canvas = 하드코딩 목업(가짜 강·"1000" 라벨·env 미렌더·auto-fit 카메라)(readiness §5).
 - (a) **실제 데이터로 교체**: bounds+pixelsPerUnit 카메라 · fixture terrain 렌더 · animals/flora/climate 그림 · 낮밤/날씨 앰비언트. (b) 점진(agent만 유지, env 후속).
 - **rec: (a)** — bounds 카메라 + 실제 terrain + env 엔티티부터. `[frontend render phase WI-P7; RenderConfig 사용]`
+
+### — 작은 엔진 seam (전부 `RESOLVED: rec`, 사람 2026-06-28) —
+- **animal base-stat 출처:** 종별 **`GenSpec` 샘플**(agent 패리티) — `fauna:` 콘텐츠에 per-stat gen 분포 추가; `worldgen.Load`가 시드로 샘플(world.Spawn 동형). `[fauna SPEC SpeciesRule + objects.schema fauna.gen — 종 작성 시]`
+- **planner terrain-Mine 바인딩:** **world apply가 actor 셀 fallback** + planner는 terrain `extract` 있는 곳서 Mine 제공(노드 없이도 `has_materials` 가능). `[SPEC-mine-terrain OQ RESOLVED]`
+- **navmap 접근자(fauna TerrainSampler):** **world가 `terrainTypes` join + navmap에 `FootprintBlocked` 하나만 신설**(BaseCost/TerrainAt는 join). `[navmap + SPEC-world-fauna OQ RESOLVED]`
+- **`world.WorldState` env 필드 + `RenderView()`:** **world가 render 투영 빌드**(god-view 필터 한 곳; persist는 쓰기만). `[engine/world + persist SPEC-world OQ RESOLVED]`
+- **`world.EnvConfig` ↔ `config.EnvConfig` 네이밍:** **유지**(다른 패키지, 한정명 충돌 없음).
 
 ---
 
@@ -144,13 +151,14 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 - **WI-P4 (직렬화/스트림/생성기 — W8/W9): ✅출력 측 SPEC 작성됨.** `docs/data-contracts.md` 확장✅(§1 flora[]/animals[]/climate{} · §2 Redis animal/flora/climate/terrain/frame 키 · §4 WorldFrame + AnimalBorn/Died·PlantSpawned/Died 이벤트 · **신규 §10 env-state 직렬화 shapes** periodic-full+델타) + **`backend/platform/persist/SPEC-world.md`**✅(persist SPEC.md sub-spec 등재): env 블록=`world.WorldState`에 탑승 · Redis 렌더키(god-view 제외) · WorldFrame SSE 투영 · scent=파생 비직렬화 · **env-OFF 바이트동일**(omitempty, 기존 골든 무변). **입력 측(W9): ✅SPEC+스키마 작성됨.** `content/schema/fixture.schema.json`(통일 fixture: seed+bounds+terrain 격자+objects/agents/animals/flora/lots; absent=OFF) + **`backend/tools/worldgen/SPEC.md`**: `Generate`(author-time seeded WG1-a→Fixture, 런타임 생성 0)·`Parse/Encode`·**`Load`(run-time: fixture→navmap/climate/flora/decay.New[같은 terrainAt→t=0 격자 정합]→`world.InstallEnv/InstallFauna`+Spawn/PlaceObject, config Rules join)**. absent-block 중립. **seam:** `world.WorldState` env 필드+`RenderView()`(engine/world) · animal base-stat source(fauna GenSpec, rec=agent 패리티) · 로더 home(main이 worldgen.Load 호출). 구현 전.
   - **프론트 SSE 계약 wire 완료(2026-06-28):** `frontend/src/types.ts`(AnimalState/PlantState/ClimateState/WorldFramePayload/RenderConfig + WorldState env 필드) + `useWorld.ts` reducer **WorldFrame 핸들러**(env 머지, god-view 없음) + `frontend/SPEC.md` 계약. **tsc 통과.** 렌더(canvas 그리기)는 미구현=데이터만 입력.
 
-### 신규 phase (구현 직전 감사, `docs/world-readiness.md` — W10–W14 RESOLVE 후)
-- **WI-P5 (agent navigation — W10): ⬜ SPEC 미작성.** agent `MoveTo`/`bindTarget`이 `pathfind`(navmap snapshot) 경로비용 사용 → 이동 시 `navmap.Deposit`(wear) → cost-최근접 bindTarget → planner cost-term. design §5(길 창발·강 우회) 활성. **현재 agent는 navmap 미사용(유클리드)이라 강/바다/경로/건물이 agent에 무효** — readiness §3a.
-- **WI-P6 (fauna 개체수 respawn — W11 RESOLVED): ⬜ world wiring.** 번식 X. world가 종 개체수 목표 미달 시 **시야 밖 + 미개발 야생**에 시드 확률로 1마리 respawn(부모/상속 없음, 스탯=종 GenSpec). 레거시 `prey_respawn`을 조건부 placement로 일반화. **새 메커니즘 거의 없음**(placement 후보탐색만). P_fa4 birth = 삭제. readiness §3b.
-- **WI-P7 (frontend 렌더 — W14): ⬜.** bounds+pixelsPerUnit 카메라 · fixture terrain 렌더 · animals/flora/climate 그림 · 낮밤/날씨 앰비언트 · 하드코딩 목업(가짜 강·1000 라벨) 제거 — readiness §5.
-- **콘텐츠 작성(P1, 차단 아님 — 작업):** fauna 종 deer/wolf · Graze/Flee/Wary 액션 · `climate.yaml` · scent 발생원 태그 · 시작 fixture · agent 클러스터 시딩(W12) · 가속-연 config(W13) — readiness §4/§7.
+### 신규 phase (구현 직전 감사, `docs/world-readiness.md` — W10–W14 모두 RESOLVED 2026-06-28)
+- **WI-P5 (agent 주관 cost 맵 — W10a): `DEFERRED`(남겨둠).** agent 이동=자기 `MoveTo`, navmap=참고만; agent마다 **주관 cost 맵=메모리**(다녀본 길+본 셀, sparse)+desire-path wear 섞음(D8, `known[]` 확장). **design.md §5 개정 후속**(공유 navmap+per-agent 주관 오버레이+agent-driven MoveTo). 그때까진 agent는 지형 무시 직선이동.
+- **WI-P6 (fauna 개체수 respawn — W11 RESOLVED): ⬜ world wiring.** 번식 X. 종 개체수 목표 미달 시 **시야 밖 + 미개발 야생**에 시드 확률로 1마리 respawn(부모/상속 없음, 스탯=종 GenSpec). 레거시 `prey_respawn` 일반화. P_fa4 birth=삭제. readiness §3b.
+- **WI-P7 (frontend 렌더 — W14 RESOLVED): ⬜.** bounds+pixelsPerUnit 카메라 · fixture terrain · animals/flora/climate · 낮밤/날씨 앰비언트 · 하드코딩 목업 제거. readiness §5.
+- **animal 종별 지형(W10b RESOLVED): ✅반영됨** — fauna `TerrainSampler`+`Rules.TerrainCost`+objects.schema `terrain_cost`/`impassable`(수영/등산). (별도 phase 아님 — fauna 구현에 포함.)
+- **콘텐츠 작성(P1, 작업):** fauna 종 deer/wolf(+`terrain_cost`/`impassable`/`gen`) · Graze/Flee/Wary · `climate.yaml` · scent 발생원 태그 · 시작 fixture(클러스터 시딩 W12·작은맵) · 가속-연 config(W13) — readiness §4/§7.
 
-> W1-W9 RESOLVED(rec) → P0-P4 게이트 해제. **W10–W14는 OPEN**(readiness 감사 surface) — RESOLVE 후 WI-P5/P6/P7. 수치는 untuned, 활성화 단계 조정.
+> **W1–W14 전부 RESOLVED**(W10a DEFER). P0–P4 SPEC 완료 + W10b/W11/W12/W13/W14 결정. 남은=콘텐츠 작성·활성화(°C 재기준)·WI-P5(agent 주관맵, 이연)·WI-P6/P7 구현. 수치 untuned.
 
 ## 3. Notes / flags
 
@@ -159,4 +167,4 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 - **glossary 신규 등재 대상:** `wind.mag`(CA2) · `apparent_temp`(F40) · `scent:<channel>`/`scent.{food,prey,predator}`(F22) · fauna drive ids(hunger/fear/thermal/fatigue/repro_readiness) · `WorldFrame`(SSE) · world `bounds`. 별도 glossary 단계.
 - **문서 결함 수정 완료(2026-06-27, scent 승격/flora 2축 잔재):** scent SPEC 이전경로 노트·fauna SPEC 소유권/import-guard·perception `§6(growth)→§6(width)`.
 - **교차:** `engine/world`(orchestrator) · env/fauna(pure Step) · space/{navmap,scent}(인덱스) · `data-contracts.md`(W8) · `world-gen.md`(W1/W9) · `resources.md` R1(WI-P3) · `live-emergence-underseeded`(WI-P0 시딩 레버, world-gen §6) · climate/flora/fauna M-staging(활성화 re-baseline).
-- **상태:** W1-W9 `RESOLVED`(사람 2026-06-27) → WI-P0~P4 SPEC 전부 작성됨. **W10–W14 `OPEN`**(2026-06-28 구현 직전 감사 `docs/world-readiness.md` surface — agent-navmap·번식·시딩밀도·시간압축·frontend렌더) → RESOLVE 후 WI-P5/P6/P7. RESOLVE는 사람만. (수치 untuned, 활성화 단계 조정.)
+- **상태:** **W1–W14 전부 `RESOLVED`**(W1-9 2026-06-27 · W10–W14 + 작은 seam 2026-06-28). W10a(agent 주관 cost 맵)만 **DEFERRED**(설계 이연, design.md §5 개정 후속). → 게이트에 OPEN 없음. 남은 = **콘텐츠 작성 + 구현**(WI-P6 respawn·P7 frontend·env/fauna 모듈·W10b 포함) + 활성화 °C 재기준. RESOLVE는 사람만(완료).

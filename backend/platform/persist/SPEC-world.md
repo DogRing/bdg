@@ -109,7 +109,7 @@ WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining,
 
 ## Open Questions
 > `docs/world-integration.md` W1-W9 RESOLVED. Remaining are wiring shapes, not mechanism choices:
-- **`world.WorldState` env-field additions (engine seam, WI-P4 prerequisite).** persist serializes
+- **`world.WorldState` env-field additions (engine seam, WI-P4 prerequisite) — ✅RESOLVED (b), 2026-06-28: the world exposes a `RenderView()` (live-key/WorldFrame projection) + full state for the blob; the god-view filter lives in ONE place (world), persist just writes.** persist serializes
   whatever `world.WorldState` exposes; the world must add `Flora`/`Animals`/`Climate` to its
   serializable state + a render-view accessor (the live-key/WorldFrame projection). Options: **(a)**
   the world exposes the raw env state on `WorldState` and persist builds both the blob + the render

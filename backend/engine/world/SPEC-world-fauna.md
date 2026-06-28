@@ -263,7 +263,7 @@ re-baseline, carcass/Butcher) is the deliberate **P_fa3** re-baseline.
 > writing this SPEC — neither a mechanism decision (no new behaviour), both small accessor/contract
 > shapes to settle before implementation:
 
-- **navmap footprint-only passability + per-cell base cost (TerrainSampler seam).** The fauna
+- **navmap footprint-only passability + per-cell base cost (TerrainSampler seam) — ✅RESOLVED (b), 2026-06-28: world joins `terrainTypes` for `TerrainAt`/`BaseCost`; navmap adds only `FootprintBlocked`. (Species cost = `Rules.TerrainCost`, W10b.)** The fauna
   `TerrainSampler` needs (1) `Passable` = footprint-block ONLY (water traversable), and (2) `Cost` =
   the cell's terrain base cost. navmap currently exposes `Passable(cell)` (terrain-impassable AND
   footprint conflated) and `StepCost(from,to)` (not a single-cell base cost). Options: **(a)** add
