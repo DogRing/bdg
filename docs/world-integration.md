@@ -94,11 +94,18 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 > 세계 SPEC 완성 후 "시나리오가 실제로 도는가/보이는가" 점검에서 드러난 **미설계 메커니즘·정책**. 게이트:
 > 사람만 RESOLVE. (수치 비율·콘텐츠 미작성은 차단이 아니라 작업 — readiness §1/§4; 아래는 *결정*이 필요한 것.)
 
-### W10 — 경로계획(navmap A*)을 *원하는가* · **🔴 차단(강/바다/경로/건물 agent 효과)** · `OPEN`
-**개념 정리(사용자 확인 2026-06-28):** "주변 칸 물체만 계산하는 균일 그리드"는 **`spatial` hash(근접)** — *이미 존재하고 agent/fauna가 씀*. `navmap`은 그것과 **별개**로 design §5가 도입한 **이동-비용장 + A* 길찾기 + 창발 길(desire-path)**. 현재 agent `MoveTo`는 유클리드라 navmap을 안 씀(=경로계획 미사용); fauna만 `TerrainSampler`로 *로컬* 지형비용을 씀. 그래서 결정은 "근접"이 아니라 **"경로계획을 할 것인가"**:
-- (a) **로컬 지형만(경로계획 없음)** — agent도 fauna처럼 *밟는 칸*의 지형 cost/passable만 로컬 샘플(못 가는 칸=슬라이드/정지), 이동=직선. **A* 없음·navmap 비용장 없음·desire-path 없음.** navmap=지형타입 격자로 축소. spatial=근접. ⚠ **design.md §5의 "길 창발"·경로비용 bindTarget 삭제 → design.md 수정 필요(인변식 변경, 승인).**
-- (b) **design §5 그대로** — navmap 비용장 + A*/Theta* + 통행→`wear`→길 창발 + 경로비용 최근접 bindTarget(신규 WI-P5: pathfind 와이어링).
-- **rec: 사용자 의도상 (a)에 가까움** — 단 길-창발(D1 파생 desire-path)을 포기하는 결정이라 **사람 확인 + design.md §5 개정 필요**. (a)면 강/바다/벽은 *로컬 회피*로만 작동(전역 우회 경로 없음 — 큰 호수를 빙 도는 똑똑한 우회는 안 됨). `[design.md §5 + engine/world; navmap 역할 결정]`
+### W10 — 지형 비용 모델 (사용자 결정 2026-06-28) — agent=이연 / animal=`RESOLVED`
+**개념 정리:** "주변 칸 물체만 계산하는 균일 그리드"는 **`spatial` hash(근접)** — *이미 존재·작동*. `navmap`은 별개(이동 비용·길). 결정을 둘로 나눔:
+
+#### W10a — agent 지형: 주관 cost 맵(메모리) · `DEFERRED (남겨둠)`
+- agent 이동 = **agent 자신의 `MoveTo`** 로; **navmap은 참고만**(전역 A* 강제 아님).
+- agent마다 **주관 cost 맵 = 메모리** — 본인이 **다녀본 길 + 시야로 본 셀**의 cost를 저장(매 틱 재계산 X — cost 계산이 드무니 메모리가 낫다). **길 창발(desire-path wear)도 이 맵에 섞어 사용.** (D8 주관성: agent는 아는 곳 cost로만 판단 — 기존 `known[]` 확장.)
+- **가능: 예**(sparse, 가본/본 셀만; 이동/지각 시 갱신). **단 설계 이연** — design.md §5를 "공유 navmap(참고+wear) + per-agent 주관 cost 오버레이(메모리) + agent-driven MoveTo"로 개정 필요(후속). `[engine/agent memory cost map + design.md §5 개정 — DEFERRED]`
+
+#### W10b — animal 지형: 종별 cost 맵 · `RESOLVED: 종별 terrain_cost`
+- **종마다 terrain cost 맵** — "수영 잘하는 동물 / 등산 잘하는 동물"; 같은 지형도 종별 비용 다름.
+- **메커니즘:** `fauna:` 콘텐츠 `terrain_cost`(terrain→mult, 부재=1.0) + `impassable`(종이 못 드는 terrain). `TerrainSampler`=종-독립 사실(`FootprintBlocked`/`TerrainAt`/`BaseCost`); 컨트롤러가 `Rules.TerrainCost(species,terrain)` 적용 → 유효비용=`BaseCost×mult`, 차단=`FootprintBlocked ∨ !passable`. 수영종=river/sea 낮음·등산종=mountain 낮음·물고기=육지 impassable.
+- ✅반영: fauna SPEC(`TerrainSampler`·`Rules.TerrainCost`·SpeciesRule) + `objects.schema.json fauna:`(`terrain_cost`/`impassable`). `[fauna+content; A* 불필요]`
 
 ### W11 — fauna 개체수 유지 = 숨겨진 respawn · `RESOLVED: (b′) 숨김 respawn (사람 2026-06-28)`
 **번식(부모→자식) 안 함.** 개체수는 **respawn으로 조절** — 단 "매번"이 아니라 **시야 밖 + 미개발 야생**에서 나타남.

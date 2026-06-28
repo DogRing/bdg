@@ -172,6 +172,11 @@
   부모/상속 없음(스탯=종 GenSpec). 같은 seed → 같은 등장(결정성). placement가 **시야밖∧미개발 후보**에서만.
 - **본다:** 개체수 조절(번식 아님), 숨김 placement. (P_fa4 birth 메커니즘은 삭제됨 — 사용자 2026-06-28.)
 
+### FA8 — 종별 지형 능력 (Per-Species Terrain Cost: 수영 vs 등산)  `BLOCKED: fauna active` · `W10b RESOLVED`
+- **초기:** 강+산을 낀 지형 + 종이 다른 동물 2(예: 수영종=river/sea mult 낮음·물고기는 육지 impassable / 등산종=mountain mult 낮음 / 평지종=둘 다 고비용).
+- **단언:** 같은 지형 위에서 **종별 `terrain_cost`로 경로/속도가 갈림** — 수영종은 강을 빠르게 가로지르고, 등산종은 산을 쉽게 오르며, 평지종은 강·산을 느리게 우회(로컬 회피)하거나 못 듦(`impassable`). 분기가 **콘텐츠 `terrain_cost`/`impassable`에서만**(per-species Go 분기 없음, D4/D10).
+- **본다:** W10b 종별 cost 맵, F35 speed×terrain, D4.
+
 ### FA7 — 무리 (Herd / Flocking)  `DEFERRED: 사회적 동물 이연(fauna §0-1)`
 - **초기:** 동종 다수.
 - **단언:** (이연) 분리/정렬/응집이 §6로 무리 창발. **현재 축소-반응 루프엔 없음**(F2 사회적 동물 후속).

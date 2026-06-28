@@ -84,15 +84,20 @@ type EnvSample struct {
 // TerrainSampler is the read-only navmap view fauna DECLARES and world ADAPTS (dependency inversion —
 // expr.Context / perception.WorldSnapshot parity); steering samples at the dynamically computed next
 // position, so it cannot be pre-injected like flora's fixed-Pos SiteInput. fauna must NOT import
-// engine/space/navmap (F35, D11 — sample only, no pathfind). (F35/R2 = option (b): {Passable, Cost}.)
-//   Passable — false ONLY for true blockers (walls / building footprints); steering must not enter.
-//   Cost     — traversal cost at p (≥ 1; high for water). WATER IS TRAVERSABLE at high cost (swimming),
-//              NOT impassable: steering MAY enter high-Cost terrain; Cost modulates the effective step
-//              (swimming is slow) via the §6 speed terrain term. Swim stamina-drain + drowning risk (the
-//              W1 animal-analog) are DEFERRED to §7/lifecycle (Out of Scope) — P1 is cost-only.
+// engine/space/navmap (F35, D11 — sample only, no pathfind). It exposes the SPECIES-INDEPENDENT terrain
+// facts; the SPECIES affinity is applied by the controller via Rules.TerrainCost (per-species cost map,
+// W10b RESOLVED 2026-06-28 — "수영 잘하는 동물 / 등산 잘하는 동물").
+//   FootprintBlocked — true ONLY for hard blockers (walls / building footprints), ALL species; steering must not enter.
+//   TerrainAt        — the terrain type id at p (D11 index read); the controller looks up the SPECIES
+//                      affinity Rules.TerrainCost(species, terrain) for the effective cost/passability.
+//   BaseCost         — the navmap base terrain cost at p (species-independent, ≥1). Effective traversal
+//                      cost = BaseCost × Rules.TerrainCost(species,terrain).mult; the §6 speed terrain
+//                      term reads it. (No global pathfinding — local sample only, F35/D11. Swim
+//                      stamina-drain + drowning risk DEFERRED to §7/lifecycle.)
 type TerrainSampler interface {
-    Passable(p core.Vec2) bool
-    Cost(p core.Vec2) float64
+    FootprintBlocked(p core.Vec2) bool
+    TerrainAt(p core.Vec2) core.Tag
+    BaseCost(p core.Vec2) float64
 }
 
 // Cadence carries the F45 adaptive per-animal cadence parameters (balance data, world-injected; NOT
@@ -172,11 +177,13 @@ type Intent struct {
 //      apparent_temp/wind), then per candidate ActionID in Rules.Candidates(species) set `is_current`
 //      (1 iff == CurrentAction, the §6 stickiness term, F30/F45) and evaluate Rules.Utility. Pick MAX;
 //      ties by sorted ActionID (D12).
-//   4. STEER (F35): speed = Rules.Speed (§6 base-stat speed + fear/fatigue modulation + terrain Cost);
+//   4. STEER (F35): speed = Rules.Speed (§6 base-stat speed + fear/fatigue modulation + terrain Cost,
+//      where terrain Cost = TerrainSampler.BaseCost × Rules.TerrainCost(species,terrain).mult — the
+//      per-species cost map, W10b: a swimmer is fast in water, a climber on mountains);
 //      direction = the resolved channel direction the chosen action seeks/avoids (Graze/Hunt→toward
 //      food/prey, Flee→away from predator, Wary→slowly away, Rest→none); NextPos = Pos + dir·speed·DT
-//      clamped by TerrainSampler (blocked only if !Passable; high-Cost water allowed, D11); NextHeading
-//      turns toward dir.
+//      clamped by TerrainSampler (blocked iff FootprintBlocked OR !TerrainCost(species,terrain).passable —
+//      so water is traversable for a swimmer, impassable for a fish-on-land; D11); NextHeading turns toward dir.
 // rng is the injected per-tick fork world supplies (per-step fork(tick), F41). Arbitration, drive
 // advance, scent read are deterministic and draw nothing; rng is drawn ONLY by a stochastic steering
 // term (a species §6 wander/jitter operand) — same seed ⇒ identical steering.
@@ -218,6 +225,8 @@ type SpeciesRule struct {
     Diet       []core.Tag                         // diet/target tags (F7)
     IsPredator bool                               // carries `threat:predator` (F8) → IsPredator
     SmellRadius, SightRadius, FovArc float64      // senses (F31/F44) → Senses
+    TerrainCost map[core.Tag]float64              // per-species terrain affinity mult (W10b); absent terrain ⇒ 1.0 → TerrainCost
+    Impassable  []core.Tag                        // terrain types this species CANNOT enter (e.g. fish→land) → TerrainCost passable=false
 }
 
 // DriveRule is one drive's compiled params (F25(c)/F43; the drive id is also its §6 Attr operand, F27).
@@ -267,6 +276,15 @@ func (r *Rules) IsPredator(sp SpeciesID) bool
 // ∝ this, F32), sight radius (the spatial predator-query radius), fov_arc (the half-angle, radians, of
 // the Heading-relative forward sight cone, F44). From the `fauna:` senses block (D10).
 func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
+
+// TerrainCost is the species' affinity for a terrain type (W10b — per-species cost map, "수영/등산"):
+// `mult` multiplies the navmap BaseCost for the effective traversal cost (steer/§6 speed); a value <1 =
+// the species is GOOD at it (a swimmer's river/sea mult is low), >1 = poor (a deer's mountain mult high);
+// absent terrain ⇒ 1.0. `passable=false` ⇒ the species CANNOT enter that terrain at all (fish on land),
+// even where FootprintBlocked is false. From the `fauna:` `terrain_cost`/`impassable` block (D4/D10). Pure.
+// The controller's effective sample: blocked = TerrainSampler.FootprintBlocked(p) OR !passable;
+// cost = TerrainSampler.BaseCost(p) × mult — this is the species-specific "cost map" over the SHARED terrain.
+func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passable bool)
 ```
 
 ## Dependencies
@@ -323,8 +341,10 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
   advanced in sorted order; `snap.Env` read by sorted animal id; `spatial.NearbyEntities` ObjectID-sorted.
 - **D11 / continuous space** — every `Pos`/`NextPos`/`Heading` is continuous; the scent grid is an
   auxiliary INDEX (read own cell + neighbors, never snapped); steering moves along a continuous vector and
-  only SAMPLES `Terrain` (no tile iteration, no pathfind, F35). **Water is traversable** (high `Cost`, not
-  `!Passable`) — steering may swim; `!Passable` blocks only true blockers (R2).
+  only SAMPLES `Terrain` (no tile iteration, no pathfind, F35). **Terrain cost is PER-SPECIES** (W10b):
+  effective cost = `BaseCost × Rules.TerrainCost(species,terrain).mult`; a cell is blocked iff
+  `FootprintBlocked` OR `!TerrainCost(species,terrain).passable`. So water is fast for a swimmer / slow for
+  a deer / impassable for a fish-on-land — the SHARED terrain, a SPECIES cost map over it. No global pathfind.
 - **D3 no FSM / no hand-drawn tree** — action choice is a flat horizon-1 `max` over §6 utility *scores*
   (F1/F26). **No** behaviour tree, **no** explicit wary→flee transition, **no** commit+interrupt machine:
   Wary vs Flee is the continuous `fear` value crossing §6 utility bands (F43); stickiness is the §6
@@ -373,11 +393,13 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
   clamped [0,1]; `scent.predator` present → `fear` SET to the wary level; `sight.predator` present → SET
   to the (higher) flee level; neither → fear decays; `thermal` stays 0 while climate is OFF. A dormant
   off-boundary tick advances ONLY accumulators + fear decay (no full sense). Table-driven.
-- [ ] **Seeded steering reproducible + water-swim cost-traversal (F35/R2/D12)** — for a species whose
+- [ ] **Seeded steering reproducible + PER-SPECIES terrain cost (F35/R2/W10b/D12)** — for a species whose
   steering has a stochastic jitter term, two `Step` runs with the same seed produce byte-identical
-  `NextPos`/`NextHeading`; a different seed differs; steering never enters a `!Passable` cell (stays/slides,
-  never teleports); **steering MAY enter high-`Cost` water (swimming) and is NOT blocked there**, but moves
-  slower (the `Cost` term reduces the effective step); Rest ⇒ `NextPos == Pos`. Table-driven.
+  `NextPos`/`NextHeading`; a different seed differs; steering never enters a `FootprintBlocked` cell nor a
+  terrain where `Rules.TerrainCost(species,terrain).passable==false` (stays/slides, never teleports);
+  **two species over the SAME terrain differ**: a swimmer (low river `mult`) crosses water fast while a
+  high-`mult` species crawls, and a fish-species (`river` passable, `soil` impassable) is blocked on land —
+  cost = `BaseCost × mult`; Rest ⇒ `NextPos == Pos`. Table-driven over species × terrain.
 - [ ] **Scent deposit/spread/read determinism + neutrality (F20–F24/F32–F34)** — delegated to the scent
   sub-SPEC ACs. Controller-side: a `Step` whose grid has a `predator` on-cell within smell radius sets the
   animal's `scent.predator` operand to 1 + a coarse `dist.predator` direction away-from-source for a
@@ -460,7 +482,7 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
 > `docs/fauna.md` §1 (F1–F46) is **ALL RESOLVED** (human-confirmed 2026-06-26 / 2026-06-27). This SPEC
 > writes from those resolutions and **invents no mechanism**. The four plumbing/naming seams the prior
 > draft surfaced are now RESOLVED and folded in (2026-06-27): **`is_current` kept** (R5/F45) →
-> `AttrOperands`; **`TerrainSampler` = {Passable, Cost}** with water cost-traversable (R2/F35); **stats =
+> `AttrOperands`; **`TerrainSampler` = {FootprintBlocked, TerrainAt, BaseCost} + per-species `Rules.TerrainCost`** (W10b 2026-06-28 — 수영/등산 cost map, fish-on-land impassable; R2/F35); **stats =
 > inline `map[core.StatID]float64`** (R3/F29, no `stats` import); **agents-as-sight = `agent.disposition`
 > §6, P_fa3** (R4/F46). The **F45 adaptive per-animal cadence** (R1) is integrated above. **None remaining
 > — no new mechanism seam.**

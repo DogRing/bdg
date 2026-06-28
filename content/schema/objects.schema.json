@@ -238,7 +238,17 @@
         "apparent_temp": { "$ref": "#/$defs/formula" },
         "speed": { "$ref": "#/$defs/formula" },
         "diet": { "$ref": "#/$defs/tagList" },
-        "senses": { "$ref": "#/$defs/senses" }
+        "senses": { "$ref": "#/$defs/senses" },
+        "terrain_cost": {
+          "description": "Per-species terrain affinity (W10b — the species 'cost map'): terrain type id → cost MULTIPLIER on the navmap BaseCost (effective steer/§6-speed cost = BaseCost × mult). <1 = good at it (a swimmer's `river`/`sea`; a climber's `mountain`), >1 = poor; an absent terrain ⇒ 1.0. Data-driven (D4/D10) — 수영/등산 잘하는 종은 콘텐츠로 표현.",
+          "type": "object",
+          "additionalProperties": { "type": "number", "exclusiveMinimum": 0 },
+          "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_]*$" }
+        },
+        "impassable": {
+          "description": "Terrain types this species CANNOT enter at all (steering blocked), even where no building footprint (e.g. a fish on `soil`/`sand`, a land animal on deep `sea`). Terrain ids ⊆ content/terrain.yaml.",
+          "$ref": "#/$defs/tagList"
+        }
       }
     },
     "faunaAction": {

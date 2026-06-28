@@ -50,9 +50,9 @@
 | 동물 **행동** | 설계 ✅ (horizon-1 utility Graze/Flee/Wary/Hunt/Rest) | **Graze/Flee/Wary 액션 미작성**, 종 §6 미작성 |
 | **날씨**(비·낮밤) | 설계 ✅ (climate rain + HourOfDay) | **climate.yaml 데이터 미작성** |
 | **온도**(연·일·체감) | 설계 ✅ (CA1-3 + F40 apparent_temp) | climate.yaml + 종 apparent_temp §6 + °C 재기준 + 연주기 시간척도 |
-| **강** | terrain ✅ (river=고비용 통과) | **W10 결정 대기**: 경로계획(a/b)에 따라 — (a)로컬이면 강은 *로컬 회피*만, (b)면 전역 우회. fauna는 이미 수영(로컬). |
-| **바다** | terrain ✅ (sea=impassable) | 동상(W10). agent는 로컬 회피 or A* 우회 — 결정에 달림. |
-| **경로**(desire-path) | navmap wear 설계 ✅ | **W10 (a)면 길 창발 삭제**(design §5 개정), (b)면 통행→wear→길 창발. |
+| **강** | terrain ✅ + **종별 cost ✅**(W10b) | **animal=종별 terrain_cost**(수영종 빠름·물고기 육지 impassable). **agent=W10a 이연**(주관맵 전엔 지형 무시 직선). |
+| **바다** | terrain ✅ (sea) | 동상: animal=종별(impassable/수영), agent=W10a 이연. |
+| **경로**(desire-path) | navmap wear 설계 ✅ | **agent 주관 cost맵(W10a)에 wear 섞어 창발** — W10a 이연이라 그때 활성. animal은 경로계획 없음(종별 로컬 cost만). |
 | **냄새** | 설계 ✅ (scent grid + wind) | scent 구동 wiring(P2 구현 전) + 발생원 `scent:*` 태그 미작성 |
 | **사냥** | 설계 ✅ (Hunt + scent + FOV) | 포식 종 미작성 + Hunt apply(P_fa2) + carcass/Butcher(P_fa3) |
 | **번식·탄생** | ✅ **respawn으로 결정**(W11) | 번식 X — 개체수 목표 미달 시 **시야밖+미개발**에 respawn. 남은=placement 알고리즘(§3b). |
@@ -65,18 +65,15 @@
 
 ## 3. ⚠ 설계 갭 (구현 전 결정/설계 필요)
 
-### 3a. 경로계획(navmap A*) — 할지 미정 (W10; 개념 정리 2026-06-28)
-- **개념 구분(중요):** "주변 칸 물체만 계산하는 균일 그리드"는 **`spatial` hash(근접 질의)** — *이미 존재·작동*
-  (perception/fauna sight). `navmap`은 **별개** 모듈로 design §5의 **이동-비용장 + A* 길찾기 + 창발 길(desire-path)**.
-  둘 다 균일 그리드·D11 인덱스지만 목적이 다름(근접  vs 경로).
-- 현재 agent `MoveTo`=유클리드 거리(`arrival_epsilon`) → navmap **경로계획 미사용**. fauna만 `TerrainSampler`로 *로컬*
-  지형비용(수영). 즉 빠진 건 *근접*이 아니라 ***전역 경로계획***.
-- **결정(W10) — 경로계획을 원하나?**
-  - **(a) 로컬 지형만(경로계획 없음, 사용자 의도에 가까움):** agent도 fauna처럼 밟는 칸의 cost/passable만 로컬 샘플
-    (못 가는 칸=슬라이드/정지), 직선 이동. A*·비용장·desire-path 없음. navmap=지형타입 격자. ⚠ **design §5 "길 창발"·
-    경로비용 bindTarget 삭제 → design.md 개정 필요(인변식, 승인).** 강/바다/벽은 *로컬 회피*만(큰 호수 빙 도는 전역 우회 X).
-  - **(b) design §5 그대로:** navmap 비용장 + A*/Theta* + `wear`→길 창발 + 경로비용 최근접 bindTarget(신규 WI-P5).
-- W1/W2/W13/W16 + 경로/강/바다(agent)는 이 결정에 달림. **사람 RESOLVE 필요(+ (a)면 design.md §5 개정).**
+### 3a. 지형 비용 모델 (W10 — 사용자 결정 2026-06-28)
+- **개념 구분:** "주변 칸 물체만 계산하는 균일 그리드"는 **`spatial` hash(근접)** — *이미 작동*. `navmap`은 별개(이동 비용·길).
+- **W10b animal = RESOLVED — 종별 cost 맵** ✅: 종마다 `terrain_cost`(terrain→mult)+`impassable`(콘텐츠). 같은 지형도
+  수영종(river/sea 낮음)·등산종(mountain 낮음)·물고기(육지 impassable)가 다름. `TerrainSampler`={FootprintBlocked,
+  TerrainAt, BaseCost}, 컨트롤러가 `Rules.TerrainCost` 적용. → fauna SPEC + objects.schema 반영됨. A* 불필요.
+- **W10a agent = DEFERRED(남겨둠)**: agent 이동=자기 `MoveTo`, navmap=참고만. agent마다 **주관 cost 맵=메모리**(다녀본 길+
+  시야 본 셀, sparse, 재계산 X) + desire-path wear 섞음(D8 주관성, `known[]` 확장). **가능하나 설계 이연** —
+  design.md §5를 "공유 navmap(참고+wear) + per-agent 주관 오버레이 + agent-driven MoveTo"로 개정 후속.
+- agent의 강/바다/경로는 W10a(주관맵) 구현 때 — 그 전엔 agent는 직선 이동(지형 무시). animal은 W10b로 즉시 지형 반영.
 
 ### 3b. 개체수 = 숨겨진 respawn (W11 RESOLVED 2026-06-28 — 번식 안 함)
 - **결정:** 부모→자식 번식 **없음.** 개체수는 **respawn으로 조절** — 단 "매번"이 아니라 **시야 밖 + 미개발 야생**에 등장.
