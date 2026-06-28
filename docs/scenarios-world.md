@@ -127,6 +127,57 @@
 
 ---
 
+## 동물 생태 (fauna) — FA1–FA7
+
+> 신규 fauna 층(`docs/fauna.md`, `docs/world-integration.md` WI-P2). 단언은 *행동 트리가 아니라*
+> **§6 utility + drives + scent에서 창발**하는지를 본다(D2/D3). 의존: fauna 활성(종 콘텐츠) +
+> climate(wind/°C) + scent 구동 + world InstallFauna. ⚠ **선행 콘텐츠 미작성**: `content/objects.yaml`에
+> fauna: 종(deer/wolf) 0개 · `Graze`/`Flee`/`Wary` 액션 0개 · `content/climate.yaml` 없음 (아래 readiness 참조).
+
+### FA1 — 초식 채식 루프 (Herbivore Graze Loop)  `BLOCKED: fauna(species)·flora(active)·actions(Graze)`
+- **초기:** 풀(grass flora) 패치 + 초식동물(deer) 2~3, `hunger` 시작값↑.
+- **단언:** `hunger`↑ → `Graze` utility가 `Rest`/wander 넘어섬 → `scent.food` 방향 steer → 도달 시 `Eat`→`hunger`↓
+  → 포만 시 wander/`Rest`. 행동이 §6 utility **max**에서만(트리·FSM 없음). hunger rate만 바꿔도 채식 빈도가 갈림.
+- **본다:** F1/F26 horizon-1 utility, F25 drives.
+
+### FA2 — 냄새+시야 사냥 (Predator Hunt via Scent + FOV)  `BLOCKED: fauna(wolf)·scent 구동·Hunt apply·climate(wind)`
+- **초기:** 포식자(wolf) 1 + 초식 몇 + 바람 방향 고정 seed.
+- **단언:** 포식자 `hunger`↑ → `scent.prey` **upwind homing**으로 접근 → 먹이가 FOV(`Heading±fov_arc`)에 들면
+  `sight.prey` → `Hunt` → 포획(상대 stat 대결, 동률 ID). 초식은 `scent.predator`→Wary, `sight.predator`→Flee로 회피.
+- **본다:** F44 2채널(omni 냄새 + FOV 시야), F33 wind, F43.
+
+### FA3 — 경계↔도망 밴드 (Wary→Flee as ONE fear value)  `BLOCKED: fauna active`
+- **초기:** 초식 1, 포식자 냄새만(원거리) vs 시야 진입(근거리) 두 케이스.
+- **단언:** `scent.predator`만 → `fear`가 Wary 밴드 → 천천히 이탈(Wary); 포식자 FOV 진입 → `fear`가 Flee 밴드 →
+  전속 도주. **단일 `fear` 값이 §6 utility 밴드를 교차**하는 창발(wary→flee FSM 전이 코드 없음, D3).
+- **본다:** F43/D3.
+
+### FA4 — 바람 타고 냄새 추적 (Downwind Scent Plume)  `BLOCKED: fauna·scent·climate(wind)`
+- **초기:** 냄새 소스 1(먹이/먹잇감), `wind.mag>0` 고정 방향, 탐색자를 풍하/풍상에 배치.
+- **단언:** scent가 풍하로 확산(`Spread`) → 풍하 동물이 더 멀리서 감지 + upwind 접근; 풍상 동물은 약하게.
+  `wind.mag==0`이면 등방 단거리. 같은 seed → 동일 plume(결정성).
+- **본다:** F33 wind diffusion, `IntensityAt` 거리감쇠.
+
+### FA5 — 낮밤·체감온도 행동 (Day/Night + Apparent-Temp)  `BLOCKED: fauna·climate active`
+- **초기:** 초식 무리, 하루(1440틱) 주기. (선택) 장기 런으로 연 °C.
+- **단언:** 밤/저온 → `apparent_temp`↓ → `thermal` drive↑ → 은신/휴식 선호; 낮/온화 → 채식 활동↑. 장기 저온
+  지속 시 '겨울' 행동이 **창발**(계절 enum 없음, F40). ⚠ **시간척도:** 일주기는 1440틱이라 단기 런서 보이나,
+  연주기(−5↔30°C)는 **172,800틱(120일)** 이라 단기 시나리오선 안 보임 → 가속-연(年) 테스트 config 필요.
+- **본다:** F40, day/night, 시간척도 한계.
+
+### FA6 — 번식·탄생 (Reproduction & Birth)  `BLOCKED: fauna P_fa4 — ⚠ MECHANISM 미설계`
+- **초기:** 성체 초식 2 + 충분한 먹이/낮은 포식압.
+- **단언:** 먹이·안전 충족 지속 → `repro_readiness` 누적 → 임계+근접+조건 → **새 개체 탄생**(부모 근처 spawn,
+  스탯 상속/변이) → 개체수가 먹이·포식압으로 자기조절(로지스틱 창발). ⚠ **현재 설계 갭:** P1은 레거시 타이머
+  `prey_respawn`(다른 곳 재생성)뿐 — **실제 부모→자식 birth 메커니즘이 미설계**(P_fa4 OPEN: 트리거 조건·
+  offspring spawn·스탯 상속/변이·짝짓기 근접). 이 시나리오는 **메커니즘 설계 선행 필요**(가장 큰 fauna 갭).
+- **본다:** F9/F39, lifecycle(사망×번식 사이클, design §7).
+
+### FA7 — 무리 (Herd / Flocking)  `DEFERRED: 사회적 동물 이연(fauna §0-1)`
+- **초기:** 동종 다수.
+- **단언:** (이연) 분리/정렬/응집이 §6로 무리 창발. **현재 축소-반응 루프엔 없음**(F2 사회적 동물 후속).
+- **본다:** D2 창발(향후).
+
 ## 의존 → 활성 순서 (재출발 로드맵과 정렬)
 1. `engine/kernel/expr` → W5·W7·W8·W12(§6 roll), W1(swim 식).
 2. climate → W2·W3·W9. flora(active)+perception → W4. decay → W9·W10.

@@ -90,6 +90,37 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 - (b) world-gen 전용 포맷 + 별 로더.
 - **rec: (a)** — world-gen.md §2가 이미 "시나리오 fixture와 통일" 명시. content/map.yaml 스키마 1개. `[platform/config 로더 + content/schema]`
 
+### — 구현 직전 감사에서 surface된 신규 OPEN (W10–W14, `docs/world-readiness.md`) —
+> 세계 SPEC 완성 후 "시나리오가 실제로 도는가/보이는가" 점검에서 드러난 **미설계 메커니즘·정책**. 게이트:
+> 사람만 RESOLVE. (수치 비율·콘텐츠 미작성은 차단이 아니라 작업 — readiness §1/§4; 아래는 *결정*이 필요한 것.)
+
+### W10 — agent 내비게이션(navmap 사용) · **🔴 차단(강/바다/경로/건물 시나리오, design §5)** · `OPEN`
+현재 agent `MoveTo`는 유클리드 거리만 씀(navmap/pathfind 미사용) → 강·바다·산·건물·길이 **agent 경로에 무효**, desire-path wear 안 쌓임. (fauna만 `TerrainSampler`로 지형 비용 사용.)
+- (a) **신규 WI-P5 "agent navigation"**: agent `MoveTo`/`bindTarget`이 `pathfind`(navmap snapshot)로 경로비용 산출 → 이동 시 `navmap.Deposit`(wear) → `bindTarget`=경로비용 최근접 → planner cost-term 반영. (design §5 전부 활성: 길 창발·"강 건너 가까운 베리 < 이쪽 길").
+- (b) P1 euclidean 유지, navmap은 fauna/terrain 표시용만 — 강/경로/건물 agent 효과 이연.
+- **rec: (a)** — design §5 핵심이라 결국 필수이나 **큰 신규 phase**(pathfind 와이어링+wear+cost-bindTarget). SPEC 미작성. `[engine/world + pathfind + planner cost; 신규 WI-P5]`
+
+### W11 — fauna 번식·탄생 메커니즘(P_fa4) · **차단(FA6 + 생태 자기조절)** · `OPEN`
+`repro_readiness`는 누적 drive뿐 — birth 트리거 없음. P1은 레거시 타이머 respawn(다른 곳 재생성)뿐, **실제 부모→자식 birth 미설계.**
+- (a) **drive-gated 출산**: readiness 임계 + 짝 근접 + 안전/먹이 조건 → offspring spawn(부모 근처, id 발급) + 스탯 상속(부모 평균 + variance, design §7 세대 상속률) + 개체수는 먹이/포식압으로 자기조절(로지스틱, 창발).
+- (b) P1 타이머 respawn 유지, 진짜 birth 이연.
+- **rec: (a)** — 생태 자기조절·세대에 필요. 단 **Tier-2/SPEC 설계 선행**(트리거·spawn·상속 OPEN). `[fauna P_fa4 — 신규 설계]`
+
+### W12 — agent 시딩 밀도 정책 · **차단(사회 창발 A–L)** · `OPEN`
+512 월드에 40 agent 균일 배치 시 간격 ≈81 ≫ sight 18 → 서로 못 봄 → 사회 시나리오 깨짐(readiness §1b).
+- (a) **마을 클러스터 시딩** — agent를 ~반경 50–60 거주 구역에 모음(world-gen WG5 + `live-emergence-underseeded`); 국소 밀도 = sight 수준. (b) 첫 시나리오는 작은 집중 맵(~160–200, bounds override). (c) 균일(현재) — 깨짐.
+- **rec: (a)** (+ 첫 fixture는 (b)) — fixture 시딩이 클러스터를 강제. `[fixture/world-gen WG5; 시딩 정책 명시]`
+
+### W13 — 계절 시간압축 config · 비차단 · `OPEN`
+연주기 = 172,800틱(10 real-day) → 계절 시나리오/라이브 관전서 안 보임(readiness §1c).
+- (a) **가속-연 테스트 config** (`DaysPerYear` 축소 또는 `YearFraction` 배속 노브). (b) 장기 배치 런만.
+- **rec: (a)** — 테스트/데모용 시간압축 노브(결정성 유지). `[worldtime/balance config 노브]`
+
+### W14 — frontend 렌더 범위 · 비차단 · `OPEN`
+현 canvas = 하드코딩 목업(가짜 강·"1000" 라벨·env 미렌더·auto-fit 카메라)(readiness §5).
+- (a) **실제 데이터로 교체**: bounds+pixelsPerUnit 카메라 · fixture terrain 렌더 · animals/flora/climate 그림 · 낮밤/날씨 앰비언트. (b) 점진(agent만 유지, env 후속).
+- **rec: (a)** — bounds 카메라 + 실제 terrain + env 엔티티부터. `[frontend render phase WI-P7; RenderConfig 사용]`
+
 ---
 
 ## 2. Phases (W RESOLVE 후 진행 — 모듈 phase 교차참조)
@@ -101,7 +132,13 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 - **WI-P4 (직렬화/스트림/생성기 — W8/W9): ✅출력 측 SPEC 작성됨.** `docs/data-contracts.md` 확장✅(§1 flora[]/animals[]/climate{} · §2 Redis animal/flora/climate/terrain/frame 키 · §4 WorldFrame + AnimalBorn/Died·PlantSpawned/Died 이벤트 · **신규 §10 env-state 직렬화 shapes** periodic-full+델타) + **`backend/platform/persist/SPEC-world.md`**✅(persist SPEC.md sub-spec 등재): env 블록=`world.WorldState`에 탑승 · Redis 렌더키(god-view 제외) · WorldFrame SSE 투영 · scent=파생 비직렬화 · **env-OFF 바이트동일**(omitempty, 기존 골든 무변). **입력 측(W9): ✅SPEC+스키마 작성됨.** `content/schema/fixture.schema.json`(통일 fixture: seed+bounds+terrain 격자+objects/agents/animals/flora/lots; absent=OFF) + **`backend/tools/worldgen/SPEC.md`**: `Generate`(author-time seeded WG1-a→Fixture, 런타임 생성 0)·`Parse/Encode`·**`Load`(run-time: fixture→navmap/climate/flora/decay.New[같은 terrainAt→t=0 격자 정합]→`world.InstallEnv/InstallFauna`+Spawn/PlaceObject, config Rules join)**. absent-block 중립. **seam:** `world.WorldState` env 필드+`RenderView()`(engine/world) · animal base-stat source(fauna GenSpec, rec=agent 패리티) · 로더 home(main이 worldgen.Load 호출). 구현 전.
   - **프론트 SSE 계약 wire 완료(2026-06-28):** `frontend/src/types.ts`(AnimalState/PlantState/ClimateState/WorldFramePayload/RenderConfig + WorldState env 필드) + `useWorld.ts` reducer **WorldFrame 핸들러**(env 머지, god-view 없음) + `frontend/SPEC.md` 계약. **tsc 통과.** 렌더(canvas 그리기)는 미구현=데이터만 입력.
 
-> W1-W9 RESOLVED(rec) → 게이트 해제. WI-P0의 `world.yaml` 데이터(✅)부터, 그다음 WI-P1→P4 순. 수치는 untuned이라 활성화 단계서 조정.
+### 신규 phase (구현 직전 감사, `docs/world-readiness.md` — W10–W14 RESOLVE 후)
+- **WI-P5 (agent navigation — W10): ⬜ SPEC 미작성.** agent `MoveTo`/`bindTarget`이 `pathfind`(navmap snapshot) 경로비용 사용 → 이동 시 `navmap.Deposit`(wear) → cost-최근접 bindTarget → planner cost-term. design §5(길 창발·강 우회) 활성. **현재 agent는 navmap 미사용(유클리드)이라 강/바다/경로/건물이 agent에 무효** — readiness §3a.
+- **WI-P6 (fauna 번식·탄생 — W11): ⬜ MECHANISM 미설계.** `repro_readiness`→birth 트리거·offspring spawn·스탯 상속(§7)·개체수 자기조절. P_fa4 Tier-2/SPEC 선행. FA6 차단 — readiness §3b.
+- **WI-P7 (frontend 렌더 — W14): ⬜.** bounds+pixelsPerUnit 카메라 · fixture terrain 렌더 · animals/flora/climate 그림 · 낮밤/날씨 앰비언트 · 하드코딩 목업(가짜 강·1000 라벨) 제거 — readiness §5.
+- **콘텐츠 작성(P1, 차단 아님 — 작업):** fauna 종 deer/wolf · Graze/Flee/Wary 액션 · `climate.yaml` · scent 발생원 태그 · 시작 fixture · agent 클러스터 시딩(W12) · 가속-연 config(W13) — readiness §4/§7.
+
+> W1-W9 RESOLVED(rec) → P0-P4 게이트 해제. **W10–W14는 OPEN**(readiness 감사 surface) — RESOLVE 후 WI-P5/P6/P7. 수치는 untuned, 활성화 단계 조정.
 
 ## 3. Notes / flags
 
@@ -110,4 +147,4 @@ agent intent와 animal intent를 어떻게 한 순서로 apply하나(둘이 Obje
 - **glossary 신규 등재 대상:** `wind.mag`(CA2) · `apparent_temp`(F40) · `scent:<channel>`/`scent.{food,prey,predator}`(F22) · fauna drive ids(hunger/fear/thermal/fatigue/repro_readiness) · `WorldFrame`(SSE) · world `bounds`. 별도 glossary 단계.
 - **문서 결함 수정 완료(2026-06-27, scent 승격/flora 2축 잔재):** scent SPEC 이전경로 노트·fauna SPEC 소유권/import-guard·perception `§6(growth)→§6(width)`.
 - **교차:** `engine/world`(orchestrator) · env/fauna(pure Step) · space/{navmap,scent}(인덱스) · `data-contracts.md`(W8) · `world-gen.md`(W1/W9) · `resources.md` R1(WI-P3) · `live-emergence-underseeded`(WI-P0 시딩 레버, world-gen §6) · climate/flora/fauna M-staging(활성화 re-baseline).
-- **상태:** W1-W9 전부 `RESOLVED`(사람 2026-06-27 "추천대로 + 수치 외부화"). 수치 = `content/world.yaml`(WI-P0서 schema+platform/config 배선). **통합 SPEC 착수 가능** — 게이트 해제. (수치는 untuned placeholder, 후속 조정 전제.)
+- **상태:** W1-W9 `RESOLVED`(사람 2026-06-27) → WI-P0~P4 SPEC 전부 작성됨. **W10–W14 `OPEN`**(2026-06-28 구현 직전 감사 `docs/world-readiness.md` surface — agent-navmap·번식·시딩밀도·시간압축·frontend렌더) → RESOLVE 후 WI-P5/P6/P7. RESOLVE는 사람만. (수치 untuned, 활성화 단계 조정.)
