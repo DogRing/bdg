@@ -299,6 +299,102 @@ object_kinds:
       terrain_cost: { river: 1.4, mountain: 1.2 }                                  # ranges water/hills better than deer (W10b)
       impassable: [ sea ]
 
+  # RABBIT — a small, twitchy herbivore prey. Same diet/tags as deer but tuned timid + FAST: high hunger
+  # (small body eats often), near-panoramic FOV, low flee threshold (bolts early), poor at water/climbing.
+  # A second prey for wolf/bear; demonstrates per-species TUNING variety over the same §6 shape (D4/D10).
+  - id: rabbit
+    mobile: true
+    tags: [ scent:prey, game ]
+    fauna:
+      actions:
+        - { action: Graze,  utility: "hunger * (0.3 + scent.food) - fear * 1.8" }   # eats often; strongly fear-suppressed
+        - { action: Wary,   utility: "fear * 1.1" }
+        - { action: Flee,   utility: "(fear - 0.5) * 6" }                           # bolts EARLY (low flee threshold)
+        - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2.5" }
+        - { action: MoveTo, utility: "0.1" }
+      drives:
+        - { id: hunger,  rate: 0.0012 }                                            # small body → eats often
+        - { id: fatigue, rate: 0.0006 }
+        - { id: fear,    decay: 0.04, wary_level: 0.6, flee_level: 1.0 }            # twitchier than deer
+        - { id: thermal }
+      apparent_temp: "temperature - wind.mag * 7 - moisture * 3"                    # small body → wind-chills fast
+      speed: "Agility * 1.6 + fear * 1.0 - fatigue * 0.4"                           # very fast sprinter
+      diet: [ forage ]
+      senses: { smell_radius: 8.0, sight_radius: 16.0, fov_arc: 1.4 }               # near-panoramic FOV ~160°
+      terrain_cost: { river: 2.5, mountain: 2.0 }                                  # poor at water + climbing (plains animal)
+      impassable: [ sea ]
+
+  # GOAT — a CLIMBER herbivore (FA8): cheap on `mountain` (terrain_cost < 1) so it ranges the highlands a
+  # plains deer avoids; calmer (flees later, mountains are its refuge) + a hardy coat (low wind chill).
+  - id: goat
+    mobile: true
+    tags: [ scent:prey, game ]
+    fauna:
+      actions:
+        - { action: Graze,  utility: "hunger * (0.3 + scent.food) - fear * 1.2" }
+        - { action: Wary,   utility: "fear * 0.9" }
+        - { action: Flee,   utility: "(fear - 0.65) * 5" }                         # flees later than deer (mountain safety)
+        - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 1.8" }
+        - { action: MoveTo, utility: "0.1" }
+      drives:
+        - { id: hunger,  rate: 0.0007 }
+        - { id: fatigue, rate: 0.0004 }
+        - { id: fear,    decay: 0.06, wary_level: 0.4, flee_level: 0.9 }
+        - { id: thermal }
+      apparent_temp: "temperature - wind.mag * 4 - moisture * 2"                    # hardy mountain coat
+      speed: "Agility * 1.1 - fatigue * 0.3"
+      diet: [ forage ]
+      senses: { smell_radius: 9.0, sight_radius: 13.0, fov_arc: 1.0 }
+      terrain_cost: { mountain: 0.6, river: 2.0, sand: 1.2 }                       # CLIMBER: cheap on mountains (FA8); poor at water
+      impassable: [ sea ]
+
+  # BEAR — an OMNIVORE apex (F7/D2): diet [game, forage] → it BOTH Hunts prey AND Grazes vegetation; which
+  # one fires is the emergent §6 max (stronger of scent.prey vs scent.food). A 2nd predator (threat:predator
+  # + scent:predator → prey now face two threats) and a CLIMBER (cheap on mountain, FA8). Big body → slow
+  # hunger, strong-not-fast, superb nose, low wind chill. No `fear` (apex).
+  - id: bear
+    mobile: true
+    tags: [ threat:predator, scent:predator ]
+    fauna:
+      actions:
+        - { action: Hunt,   utility: "hunger * (0.2 + scent.prey)" }                # hunts when prey scent dominates
+        - { action: Graze,  utility: "hunger * (0.2 + scent.food)" }                # grazes when food scent dominates (emergent omnivore)
+        - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
+        - { action: MoveTo, utility: "0.15" }
+      drives:
+        - { id: hunger,  rate: 0.0005 }                                            # large body → slow hunger
+        - { id: fatigue, rate: 0.0004 }
+        - { id: thermal }
+      apparent_temp: "temperature - wind.mag * 3 - moisture * 1"                    # large, well-insulated
+      speed: "Agility * 1.1 - fatigue * 0.4"                                        # strong, not fast
+      diet: [ game, forage ]                                                       # OMNIVORE: prey + vegetation (F7)
+      senses: { smell_radius: 14.0, sight_radius: 16.0, fov_arc: 0.9 }              # superb nose
+      terrain_cost: { mountain: 0.7, river: 1.5 }                                  # CLIMBER predator (FA8)
+      impassable: [ sea ]
+
+  # FISH — an AQUATIC prey (FA8 swimmer + impassable demo): cheap on `river`/`sea` (terrain_cost < 1) and
+  # CANNOT leave the water (`impassable` = all land terrains) — the clearest per-species cost-map case. No
+  # `hunger`/Graze/Hunt yet (aquatic foraging needs aquatic flora — DEFERRED); it drifts (MoveTo) + flees
+  # predators that wade in (bear/wolf can enter river at cost). Demonstrates terrain-confined locomotion.
+  - id: fish
+    mobile: true
+    tags: [ scent:prey, game ]
+    fauna:
+      actions:
+        - { action: Wary,   utility: "fear * 0.8" }
+        - { action: Flee,   utility: "(fear - 0.6) * 5" }
+        - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - fear * 2" }
+        - { action: MoveTo, utility: "0.2" }                                        # mostly drifts/wanders in water
+      drives:
+        - { id: fatigue, rate: 0.0004 }
+        - { id: fear,    decay: 0.06, wary_level: 0.5, flee_level: 1.0 }
+        - { id: thermal }                                                          # (no hunger drive — aquatic foraging deferred)
+      apparent_temp: "temperature - moisture * 1"                                   # in-water: negligible wind effect
+      speed: "Agility * 1.3 - fatigue * 0.3"
+      senses: { smell_radius: 7.0, sight_radius: 10.0, fov_arc: 1.2 }
+      terrain_cost: { river: 0.5, sea: 0.5 }                                       # SWIMMER: fast in water (FA8)
+      impassable: [ soil, sand, mountain, bare_rock ]                              # confined to water (FA8 impassable-on-land)
+
   - id: prey
     mobile: true              # wanders; perception + pursuit handled by engine
     harvest:
