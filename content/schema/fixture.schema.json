@@ -50,6 +50,11 @@
       "description": "Fauna placements (F18 suitability seeding). Absent/empty ⇒ fauna OFF (no InstallFauna animals → fauna-neutral). `species` ∈ content/objects.yaml fauna: blocks.",
       "items": { "$ref": "#/$defs/animalPlacement" }
     },
+    "animal_templates": {
+      "type": "object",
+      "description": "Per-species initial fauna runtime vectors. Each placed animal reads its species template so §6 combat/graze/speed formulas have real Stat and drive inputs at t=0.",
+      "additionalProperties": { "$ref": "#/$defs/animalTemplate" }
+    },
     "flora": {
       "type": "array",
       "description": "Flora placements (suitability seeding). Absent/empty ⇒ flora OFF. `species` ∈ content/objects.yaml flora: blocks. length/width default to seedling start (world.yaml sizes) when omitted.",
@@ -95,6 +100,28 @@
         "species": { "$ref": "#/$defs/identifier" },
         "pos":     { "$ref": "#/$defs/vec2" },
         "heading": { "type": "number", "description": "optional initial heading (radians); default 0." }
+      }
+    },
+    "animalTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stats"],
+      "properties": {
+        "stats": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "number" },
+          "propertyNames": { "$ref": "#/$defs/identifier" }
+        },
+        "drives": {
+          "type": "object",
+          "additionalProperties": { "type": "number" },
+          "propertyNames": { "$ref": "#/$defs/identifier" }
+        },
+        "stamina": { "type": "number", "minimum": 0 },
+        "vital": { "type": "number", "minimum": 0 },
+        "current_action": { "$ref": "#/$defs/identifier" },
+        "active_until": { "type": "integer", "minimum": 0 }
       }
     },
     "floraPlacement": {

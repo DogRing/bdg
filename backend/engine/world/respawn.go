@@ -1,0 +1,107 @@
+package world
+
+import (
+	"sort"
+
+	"github.com/dogring/bdg/engine/fauna"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+)
+
+// InstallRespawn wires optional timer-respawn-to-target (F9). templates = a canonical animal per species
+// (fixture GenSpec), targets = per-species carrying capacity (content), anchors = a per-species spawn
+// position for reviving an extinct species (fixture centroid), cadence = ticks between top-ups (balance).
+// Zero cadence or empty targets ⇒ respawn OFF (outcome-neutral).
+func (w *World) InstallRespawn(templates map[core.Tag]fauna.Animal, targets map[core.Tag]int, anchors map[core.Tag]core.Vec2, cadence core.Tick) {
+	w.respawnTemplates = templates
+	w.respawnTargets = targets
+	w.respawnAnchors = anchors
+	w.respawnCadence = cadence
+}
+
+// runRespawn tops each species up toward its target on the respawn cadence (F9 — repopulation, NOT birth).
+// New members are cloned from the species template (fresh Vital/VitalCap/Stamina) and placed near a living
+// member, or at the species anchor if extinct. Deterministic: sorted species order, seeded envFork,
+// sorted-id reinsert (D12).
+func (w *World) runRespawn() {
+	if w.respawnCadence <= 0 || len(w.respawnTargets) == 0 {
+		return
+	}
+	if int64(w.tick)%int64(w.respawnCadence) != 0 {
+		return
+	}
+
+	counts := make(map[core.Tag]int)
+	members := make(map[core.Tag][]core.Vec2)
+	for _, id := range w.animalIDs {
+		a := w.animals[id]
+		if a == nil {
+			continue
+		}
+		sp := core.Tag(a.Species)
+		counts[sp]++
+		members[sp] = append(members[sp], a.Pos)
+	}
+
+	species := make([]core.Tag, 0, len(w.respawnTargets))
+	for sp := range w.respawnTargets {
+		species = append(species, sp)
+	}
+	sort.Slice(species, func(i, j int) bool { return species[i] < species[j] })
+
+	fork := w.envFork(w.tick, "respawn")
+	spawned := false
+	for _, sp := range species {
+		tpl, ok := w.respawnTemplates[sp]
+		if !ok {
+			continue
+		}
+		deficit := w.respawnTargets[sp] - counts[sp]
+		for k := 0; k < deficit; k++ {
+			a := cloneAnimal(tpl)
+			a.ID = w.allocAnimalID()
+			a.Pos = w.respawnPos(sp, members[sp], fork)
+			a.Species = fauna.SpeciesID(sp)
+			if a.Vital <= 0 {
+				a.Vital = 1
+			}
+			a.VitalCap = 1 // fresh: no combat scars
+			if a.Stamina <= 0 {
+				a.Stamina = 1
+			}
+			a.EngagedWith = ""
+			w.animals[a.ID] = &a
+			w.animalIDs = append(w.animalIDs, a.ID)
+			w.spatial.Insert(a.ID, a.Pos)
+			members[sp] = append(members[sp], a.Pos) // a later spawn can cluster near it
+			spawned = true
+			w.emit.Emit(core.Event{
+				SchemaVersion: 1, Tick: w.tick, Type: "AnimalSpawned",
+				Payload: map[string]any{"id": string(a.ID), "species": string(sp), "reason": "respawn"},
+			})
+		}
+	}
+	if spawned {
+		sortObjectIDs(w.animalIDs)
+	}
+}
+
+// respawnPos places a new member near a living member (small seeded offset) or at the species anchor if
+// the species is extinct. Deterministic given the seeded fork.
+func (w *World) respawnPos(sp core.Tag, live []core.Vec2, fork *rng.RNG) core.Vec2 {
+	var base core.Vec2
+	switch {
+	case len(live) > 0:
+		base = live[int(fork.Float64()*float64(len(live)))%len(live)]
+	default:
+		base = w.respawnAnchors[sp] // zero Vec2 if no anchor
+	}
+	off := w.envCfg.ScentCellSize
+	if off <= 0 {
+		off = 1
+	}
+	return core.Vec2{
+		X: base.X + (fork.Float64()-0.5)*off,
+		Y: base.Y + (fork.Float64()-0.5)*off,
+	}
+}

@@ -18,9 +18,10 @@ type worldContent struct {
 	NavCfg        *navmap.Config
 	TerrainTypes  map[navmap.TerrainID]navmap.TerrainType
 	FloraRules    *flora.Rules
-	FaunaRules    *fauna.Rules
-	DecayRules    *decay.Rules
-	ScentEmitters map[core.Tag][]core.Tag
+	FaunaRules     *fauna.Rules
+	DecayRules     *decay.Rules
+	ScentEmitters  map[core.Tag][]core.Tag
+	RespawnTargets map[core.Tag]int
 }
 
 type worldDoc struct {
@@ -56,6 +57,7 @@ type worldDoc struct {
 		StaminaRecoverPerTick  float64 `yaml:"stamina_recover_per_tick"`
 		VitalRegenPerTick      float64 `yaml:"vital_regen_per_tick"`
 		VitalCapDamageFraction float64 `yaml:"vital_cap_damage_fraction"`
+		RespawnCadence         int     `yaml:"respawn_cadence"`
 	} `yaml:"cadence"`
 }
 
@@ -147,9 +149,10 @@ type objectKindDoc struct {
 		Speed        any      `yaml:"speed"`
 		AttackPower  any      `yaml:"attack_power"`
 		Hit          any      `yaml:"hit"`
-		Feed         any      `yaml:"feed"`
-		Graze        any      `yaml:"graze"`
-		Diet         []string `yaml:"diet"`
+		Feed          any      `yaml:"feed"`
+		Graze         any      `yaml:"graze"`
+		RespawnTarget int      `yaml:"respawn_target"`
+		Diet          []string `yaml:"diet"`
 		Senses       struct {
 			SmellRadius float64 `yaml:"smell_radius"`
 			SightRadius float64 `yaml:"sight_radius"`
@@ -168,6 +171,7 @@ type objectKindDoc struct {
 
 type itemKindDoc struct {
 	ID     string             `yaml:"id"`
+	Tags   []string           `yaml:"tags"`
 	Supply map[string]float64 `yaml:"supply"`
 	Decay  *struct {
 		BaseRate float64 `yaml:"baseRate"`

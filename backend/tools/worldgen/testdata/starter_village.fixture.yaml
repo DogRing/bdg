@@ -92,11 +92,19 @@ animals:
   - { id: deer_1, species: deer, pos: [86.0, 60.0], heading: 3.14 }
   - { id: deer_2, species: deer, pos: [92.0, 66.0], heading: 3.14 }
   - { id: deer_3, species: deer, pos: [80.0, 64.0], heading: 2.80 }
-  - { id: wolf_1, species: wolf, pos: [102.0, 30.0], heading: 2.03 }   # NE; faces the herd (SW) — scent homing
+  - { id: deer_4, species: deer, pos: [88.0, 68.0], heading: 3.00 }
+  - { id: deer_5, species: deer, pos: [96.0, 60.0], heading: 3.10 }
+  - { id: deer_6, species: deer, pos: [84.0, 72.0], heading: 2.90 }
+  - { id: wolf_1, species: wolf, pos: [94.0, 58.0], heading: 2.90 }   # close enough for activation smoke; predation fires without procedural placement
   # rabbits near the village fields (plains prey)
   - { id: rabbit_1, species: rabbit, pos: [58.0, 50.0] }
   - { id: rabbit_2, species: rabbit, pos: [54.0, 58.0] }
   - { id: rabbit_3, species: rabbit, pos: [62.0, 46.0] }
+  - { id: rabbit_4, species: rabbit, pos: [60.0, 54.0] }
+  - { id: rabbit_5, species: rabbit, pos: [64.0, 52.0] }
+  - { id: rabbit_6, species: rabbit, pos: [56.0, 62.0] }
+  - { id: rabbit_7, species: rabbit, pos: [66.0, 48.0] }
+  - { id: rabbit_8, species: rabbit, pos: [52.0, 54.0] }
   # goats on the NE mountains (climbers, FA8)
   - { id: goat_1, species: goat, pos: [104.0, 18.0] }
   - { id: goat_2, species: goat, pos: [112.0, 12.0] }
@@ -105,3 +113,47 @@ animals:
   # fish in the river (swimmers, confined to water, FA8)
   - { id: fish_1, species: fish, pos: [68.0, 56.0] }
   - { id: fish_2, species: fish, pos: [68.0, 88.0] }
+  - { id: fish_3, species: fish, pos: [68.0, 64.0] }
+  - { id: fish_4, species: fish, pos: [68.0, 72.0] }
+  - { id: fish_5, species: fish, pos: [68.0, 80.0] }
+  - { id: fish_6, species: fish, pos: [68.0, 96.0] }
+  - { id: fish_7, species: fish, pos: [68.0, 104.0] }
+  - { id: fish_8, species: fish, pos: [68.0, 40.0] }
+
+animal_templates:
+  deer:
+    stats: { Strength: 45, Agility: 70 }
+    drives: { hunger: 0.88, fatigue: 0.05, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  rabbit:
+    stats: { Strength: 18, Agility: 85 }
+    drives: { hunger: 0.90, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  goat:
+    stats: { Strength: 50, Agility: 62 }
+    drives: { hunger: 0.82, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  wolf:
+    stats: { Strength: 78, Agility: 82 }
+    drives: { hunger: 0.96, fatigue: 0.02, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Hunt
+  bear:
+    stats: { Strength: 92, Agility: 52 }
+    drives: { hunger: 0.90, fatigue: 0.03, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Hunt
+  fish:
+    stats: { Strength: 12, Agility: 68 }
+    drives: { fatigue: 0.03, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: MoveTo

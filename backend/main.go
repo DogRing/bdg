@@ -34,6 +34,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -41,17 +42,18 @@ import (
 
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/tom"
+	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/world"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
 	"github.com/dogring/bdg/platform/api"
 	"github.com/dogring/bdg/platform/config"
 	"github.com/dogring/bdg/platform/events"
 	"github.com/dogring/bdg/platform/persist"
+	"github.com/dogring/bdg/tools/worldgen"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
@@ -65,6 +67,7 @@ func main() {
 		agentCount   = flag.Int("agents", 3, "number of agents to spawn (ignored when -scenario is set)")
 		contentDir   = flag.String("content", envStr("CONTENT_DIR", "./content"), "path to content directory")
 		scenarioFile = flag.String("scenario", "", "optional scenario YAML: explicit agents/objects (overrides random spawn)")
+		fixtureFile  = flag.String("fixture", envStr("FIXTURE", "./tools/worldgen/testdata/starter_village.fixture.yaml"), "world fixture YAML to load when -scenario is unset")
 	)
 	flag.Parse()
 
@@ -191,33 +194,27 @@ func main() {
 	emitter := core.EventEmitter(&multiEmitter{sinks: sinks})
 
 	// ── 9. Create world (events.Emitter injected; D-inversion: engine→core←platform) ─
-	rootRNG := rng.New(*seed)
-	w := world.New(cfg.Balance.WorldConfig(), clock, rootRNG, svc, cfg.ActionsRegistry, emitter)
+	var w *world.World
+	runSeed := *seed
 
-	// ── 10. Place objects & spawn agents ─────────────────────────────────────
+	// ── 10. Load fixture or explicit scenario ────────────────────────────────
 	if *scenarioFile != "" {
+		rootRNG := rng.New(*seed)
+		w = world.New(cfg.Balance.WorldConfig(), clock, rootRNG, svc, cfg.ActionsRegistry, emitter)
 		doc, err := loadScenario(*scenarioFile)
 		fatal(err, "scenario")
 		fatal(spawnScenario(w, doc, agentCfg, *seed), "scenario spawn")
 		fmt.Fprintf(os.Stderr, "loaded scenario %s: %d agents, %d objects\n",
 			*scenarioFile, len(doc.Agents), len(doc.Objects))
 	} else {
-		placeObjects(w, rootRNG)
-		for i := range *agentCount {
-			id := core.AgentID(fmt.Sprintf("agent_%02d", i))
-			// Spawn in a COMPACT village (±5). Social needs (Comfort, and later
-			// trade/gossip/faction emergence) require agents to be within the
-			// near_other interaction radius (5 units) of each other; spreading them
-			// across the full object span left them isolated, so the Comfort need
-			// grew unbounded, dominated goal selection, and deadlocked everyone in
-			// an unreachable-goal coping loop. Keep the village dense.
-			pos := core.Vec2{
-				X: (rootRNG.Float64() - 0.5) * 10,
-				Y: (rootRNG.Float64() - 0.5) * 10,
-			}
-			w.Spawn(id, pos, agentCfg, rng.New(*seed+int64(i)+1))
-		}
-		fmt.Fprintf(os.Stderr, "spawned %d agents\n", *agentCount)
+		schemaPath := filepath.Join(*contentDir, "schema", "fixture.schema.json")
+		fx, err := worldgen.ParseFile(*fixtureFile, schemaPath)
+		fatal(err, "fixture")
+		w, err = worldgen.Load(fx, cfg, worldgen.WithEmitter(emitter))
+		fatal(err, "worldgen")
+		runSeed = fx.Seed
+		fmt.Fprintf(os.Stderr, "loaded fixture %s: %d agents, %d objects, %d flora, %d animals\n",
+			*fixtureFile, len(fx.Agents), len(fx.Objects), len(fx.Flora), len(fx.Animals))
 	}
 
 	// ── 11. Initialise run metadata (Redis meta hash + Postgres runs row) ─────
@@ -235,7 +232,7 @@ func main() {
 	}
 	if backupStore != nil {
 		if err := backupStore.UpsertRun(sigCtx, persist.RunRecord{
-			RunID: runIDc, Seed: *seed, SchemaVersion: persist.SchemaVersion,
+			RunID: runIDc, Seed: runSeed, SchemaVersion: persist.SchemaVersion,
 			StartedAt: startedAt, Status: "running", ConfigHash: cfg.ConfigHash(),
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: pg UpsertRun: %v\n", err)
@@ -273,7 +270,7 @@ func main() {
 	fmt.Fprintln(os.Stderr, "tick loop stopped; flushing final snapshot...")
 	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	flushSnapshot(flushCtx, w, runIDc, liveStore, backupStore, pgEventBuf)
-	finalizeRun(flushCtx, w, runIDc, *seed, startedAt, cfg.ConfigHash(), liveStore, backupStore)
+	finalizeRun(flushCtx, w, runIDc, runSeed, startedAt, cfg.ConfigHash(), liveStore, backupStore)
 	flushCancel()
 	if eventsEmitter != nil {
 		if e := eventsEmitter.Err(); e != nil {

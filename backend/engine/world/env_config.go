@@ -21,5 +21,6 @@ type EnvConfig struct {
 	FaunaDT         float64
 	FaunaCadence    fauna.Cadence
 	FaunaCombat     fauna.CombatParams
+	RespawnCadence  core.Tick
 	MaxSpeed        float64
 }

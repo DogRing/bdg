@@ -70,6 +70,7 @@ func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *a
 			return out, fmt.Errorf("config: objects parse: %w", err)
 		}
 		out.ScentEmitters = buildScentEmitters(objects)
+		out.RespawnTargets = buildRespawnTargets(objects)
 		ids := collectObjectIDs(objects)
 		terrainIDs := terrainIDSet(out.TerrainTypes)
 		attrs := terrainAttrSet(terrain)
@@ -140,7 +141,8 @@ func buildWorldEnv(wd worldDoc, bal *Balance) (*world.EnvConfig, *navmap.Config,
 			VitalRegenPerTick:      wd.Cadence.VitalRegenPerTick,
 			VitalCapDamageFraction: wd.Cadence.VitalCapDamageFraction,
 		},
-		MaxSpeed: wd.Motion.MaxSpeed,
+		RespawnCadence: core.Tick(wd.Cadence.RespawnCadence),
+		MaxSpeed:       wd.Motion.MaxSpeed,
 	}
 	nav := &navmap.Config{
 		CellSize: wd.Grids.NavmapCellSize,

@@ -97,6 +97,7 @@ func (w *World) Tick() {
 
 		// ── Phase 4-ENV: APPLY env modules (serial, fixed order) ──────────────
 		w.runEnvPhase()
+		w.runRespawn()
 
 		// ── Post-apply ────────────────────────────────────────────────────────
 		w.tick++

@@ -62,6 +62,7 @@ cadence:
   stamina_recover_per_tick: 0.01 # stamina regained per tick while free → recovers, re-engages (burst hunting)
   vital_regen_per_tick: 0.001    # slow vital recovery, clamped by VitalCap (FC7)
   vital_cap_damage_fraction: 0.05 # exchange damage fraction applied as scar cap damage (FC7)
+  respawn_cadence: 200            # every N ticks, top each species up toward its respawn_target (F9)
 
 # ── Sizes (W6 + flora/resource) — representative defaults ──────────────────────────────
 # Per-species values ultimately live in content/objects.yaml (flora:/fauna: blocks); these are the

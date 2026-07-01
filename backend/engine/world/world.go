@@ -115,6 +115,13 @@ type World struct {
 	scentEmitters map[core.Tag][]core.Tag
 	nextAnimalSeq int64
 
+	// Respawn (F9 timer-respawn-to-target): optional; zero cadence ⇒ off. Templates + anchors are
+	// per-run (fixture, injected by worldgen); targets are content; cadence is balance.
+	respawnTemplates map[core.Tag]fauna.Animal
+	respawnTargets   map[core.Tag]int
+	respawnAnchors   map[core.Tag]core.Vec2
+	respawnCadence   core.Tick
+
 	// Current tick state (built fresh each Tick).
 	currentSounds []perception.SoundEvent
 	currentSnap   *WorldSnapshot

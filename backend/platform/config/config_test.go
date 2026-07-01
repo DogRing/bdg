@@ -556,6 +556,10 @@ item_kinds:
         - { name: fresh }
         - { name: stale, threshold: 0.4, supply: { Satiety: 0.15 } }
         - { name: gone, threshold: 1.0 }
+  - id: carcass
+    stackable: false
+    tags: [ scent:carrion ]
+    supply: { Satiety: 0.4 }
 `
 
 const combatActionsYAML = `schema_version: 1
@@ -861,9 +865,10 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 	if len(out.TerrainTypes) != 2 || !out.TerrainTypes["soil"].Passable {
 		t.Fatalf("terrain types not built: %#v", out.TerrainTypes)
 	}
-	if len(out.ScentEmitters) != 2 ||
+	if len(out.ScentEmitters) != 3 ||
 		len(out.ScentEmitters["grass"]) != 1 || out.ScentEmitters["grass"][0] != "scent:food" ||
-		len(out.ScentEmitters["deer"]) != 1 || out.ScentEmitters["deer"][0] != "scent:prey" {
+		len(out.ScentEmitters["deer"]) != 1 || out.ScentEmitters["deer"][0] != "scent:prey" ||
+		len(out.ScentEmitters["carcass"]) != 1 || out.ScentEmitters["carcass"][0] != "scent:carrion" {
 		t.Fatalf("scent emitters not extracted from content tags: %#v", out.ScentEmitters)
 	}
 	if out.WorldEnv.FaunaCombat != (fauna.CombatParams{}) {

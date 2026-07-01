@@ -104,25 +104,31 @@ func sortedObjectKinds(in []objectKindDoc) []objectKindDoc {
 func buildScentEmitters(doc objectsDoc) map[core.Tag][]core.Tag {
 	emitters := make(map[core.Tag][]core.Tag)
 	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
-		kind := core.Tag(obj.ID)
-		seen := make(map[core.Tag]bool)
-		for _, tagText := range obj.Tags {
-			if !strings.HasPrefix(tagText, "scent:") {
-				continue
-			}
-			tag := core.Tag(tagText)
-			if seen[tag] {
-				continue
-			}
-			seen[tag] = true
-			emitters[kind] = append(emitters[kind], tag)
-		}
-		sort.Slice(emitters[kind], func(i, j int) bool { return emitters[kind][i] < emitters[kind][j] })
+		addScentEmitterTags(emitters, core.Tag(obj.ID), obj.Tags)
+	}
+	for _, item := range sortedItemKinds(doc.ItemKinds) {
+		addScentEmitterTags(emitters, core.Tag(item.ID), item.Tags)
 	}
 	if len(emitters) == 0 {
 		return nil
 	}
 	return emitters
+}
+
+func addScentEmitterTags(emitters map[core.Tag][]core.Tag, kind core.Tag, tags []string) {
+	seen := make(map[core.Tag]bool)
+	for _, tagText := range tags {
+		if !strings.HasPrefix(tagText, "scent:") {
+			continue
+		}
+		tag := core.Tag(tagText)
+		if seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		emitters[kind] = append(emitters[kind], tag)
+	}
+	sort.Slice(emitters[kind], func(i, j int) bool { return emitters[kind][i] < emitters[kind][j] })
 }
 
 func sortedItemKinds(in []itemKindDoc) []itemKindDoc {
@@ -250,6 +256,21 @@ func faunaIsPredator(obj objectKindDoc) bool {
 		}
 	}
 	return false
+}
+
+// buildRespawnTargets collects the per-species population carrying capacity for timer-respawn (F9). A
+// species with respawn_target > 0 is topped up toward that count; absent/0 ⇒ no respawn.
+func buildRespawnTargets(doc objectsDoc) map[core.Tag]int {
+	out := make(map[core.Tag]int)
+	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
+		if obj.Fauna != nil && obj.Fauna.RespawnTarget > 0 {
+			out[core.Tag(obj.ID)] = obj.Fauna.RespawnTarget
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func decayStates(item itemKindDoc, itemIDs map[core.Tag]bool) ([]decay.StateRule, error) {
