@@ -188,9 +188,13 @@ load error that builds NO partial registry (SPEC.md invariant):
 ## Fauna combat content (FC1/FC4/FC9 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
 
 Load-pipeline deltas for the combat/carcass round:
-- Parse the new per-species `fauna:` combat fields into `fauna.Rules` — `attack_power`/`hit` §6 programs
-  (compiled via `expr`; `ReadsAttrs ⊆ AttrOperands()∪drives`, now incl. `target.threat`/`scent.carrion`),
-  plus `engage_range`, `disengage_range`, engage/exchange cooldown ranges, and the `feed` value.
+- Parse the new per-species `fauna:` combat §6 programs into `fauna.Rules` — `attack_power` / `hit` /
+  `feed` (compiled via `expr`; `ReadsAttrs ⊆ AttrOperands()∪drives`, now incl. `target.threat`/
+  `scent.carrion`). Target/engage range REUSES the species `SightRadius` sense — there is **no** separate
+  `engage_range` field.
+- Parse the scalar combat balance into `EnvConfig.FaunaCombat` (`fauna.CombatParams`), MIRRORING
+  `FaunaCadence`: exchange & engage cooldown min/max, `disengage_range_factor`, `stamina_drop_threshold`,
+  `vital_regen_per_tick`, `vital_cap_damage_fraction` (from `world.yaml`).
 - Parse the `carcass` item kind's `decay:` states (fresh→rotting→bones→gone; supply = predator Feed value;
   transform = Butcher materials) into `decay.Rules`, exactly like any other decaying item.
 - `ScentEmitters` already routes the carcass `scent:carrion` tag with **NO config change** (tag-driven).

@@ -42,8 +42,8 @@ type Effect map[core.Dimension]float64
 // Mirrors a content/actions.yaml entry after platform/config has validated it against
 // content/schema/actions.schema.json. All fields are read-only after Load.
 type ActionDef struct {
-	ID       ActionID       // canonical identifier
-	Tags     []core.Tag     // drives gate visibility (engine/gates) + planner cost (D4)
+	ID       ActionID         // canonical identifier
+	Tags     []core.Tag       // drives gate visibility (engine/gates) + planner cost (D4)
 	Duration core.GameMinutes // BASE durative length in game-minutes (>= 1; 0 iff RecipeMediated)
 
 	// RecipeMediated marks a Craft-style action parameterized by a content/recipes.yaml recipe bound
@@ -76,32 +76,32 @@ type Registry struct {
 	defs      map[ActionID]ActionDef
 	sortedIDs []ActionID
 	producers map[core.Pred][]ActionID // Pred -> sorted []ActionID
-	allTags   []core.Tag              // sorted union of all tags across all actions
+	allTags   []core.Tag               // sorted union of all tags across all actions
 }
 
 // ── Internal YAML shape ────────────────────────────────────────────────────────
 
 // rawAction mirrors the YAML structure for one action entry.
 type rawAction struct {
-	ID              string              `yaml:"id"`
-	Tags            []string            `yaml:"tags"`
-	Duration        int                 `yaml:"duration"`
-	RecipeMediated  bool                `yaml:"recipe_mediated,omitempty"`
-	TargetKind      string              `yaml:"target_kind,omitempty"`
-	Requires        []string            `yaml:"requires,omitempty"`
-	RequiresAny     []string            `yaml:"requires_any,omitempty"`
-	Produces        []string            `yaml:"produces,omitempty"`
-	ProducesItem    string              `yaml:"produces_item,omitempty"`
-	ConsumesItem    string              `yaml:"consumes_item,omitempty"`
-	Effect          map[string]float64  `yaml:"effect,omitempty"`
-	EffectPerMinute map[string]float64  `yaml:"effect_per_minute,omitempty"`
-	Interruptible   *bool               `yaml:"interruptible,omitempty"`
+	ID              string             `yaml:"id"`
+	Tags            []string           `yaml:"tags"`
+	Duration        int                `yaml:"duration"`
+	RecipeMediated  bool               `yaml:"recipe_mediated,omitempty"`
+	TargetKind      string             `yaml:"target_kind,omitempty"`
+	Requires        []string           `yaml:"requires,omitempty"`
+	RequiresAny     []string           `yaml:"requires_any,omitempty"`
+	Produces        []string           `yaml:"produces,omitempty"`
+	ProducesItem    string             `yaml:"produces_item,omitempty"`
+	ConsumesItem    string             `yaml:"consumes_item,omitempty"`
+	Effect          map[string]float64 `yaml:"effect,omitempty"`
+	EffectPerMinute map[string]float64 `yaml:"effect_per_minute,omitempty"`
+	Interruptible   *bool              `yaml:"interruptible,omitempty"`
 }
 
 // rawActionsDoc matches the top-level YAML document.
 type rawActionsDoc struct {
-	SchemaVersion int          `yaml:"schema_version"`
-	Actions       []rawAction  `yaml:"actions"`
+	SchemaVersion int         `yaml:"schema_version"`
+	Actions       []rawAction `yaml:"actions"`
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────

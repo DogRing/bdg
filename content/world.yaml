@@ -52,6 +52,14 @@ cadence:
   fauna_dormant_period: 100      # F45 dormant re-arbitration period N (ID-phase spread)
   fauna_wake_cooldown: 30        # ticks an animal stays ACTIVE after a predator-scent wake
   # fauna.Step is called EVERY tick; active/dormant is internal to fauna (F45).
+  exchange_min_ticks: 10         # combat exchange cooldown lower bound (FC3)
+  exchange_max_ticks: 20         # combat exchange cooldown upper bound (FC3)
+  engage_cooldown_min_ticks: 50  # failed/initial engage cooldown lower bound (FC3)
+  engage_cooldown_max_ticks: 100 # failed/initial engage cooldown upper bound (FC3)
+  disengage_range_factor: 2.0    # disengage when target beyond this × scent_cell_size (FC6)
+  stamina_drop_threshold: 0.05   # predator disengages when stamina falls below this (FC6)
+  vital_regen_per_tick: 0.001    # slow vital recovery, clamped by VitalCap (FC7)
+  vital_cap_damage_fraction: 0.05 # exchange damage fraction applied as scar cap damage (FC7)
 
 # ── Sizes (W6 + flora/resource) — representative defaults ──────────────────────────────
 # Per-species values ultimately live in content/objects.yaml (flora:/fauna: blocks); these are the

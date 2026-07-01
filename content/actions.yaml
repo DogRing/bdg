@@ -300,7 +300,7 @@ actions:
     interruptible: true
 
   - id: Attack
-    tags: [ "uses:Strength", "effort:high", "noise:high", "violent:high",
+    tags: [ "uses:Strength", "effort:high", "noise:high", "violent:high", "combat:attack",
             "norm:transgressive", "risk:high" ]
     requires: [ near_other ]
     produces: [ has_Safety ]            # deterrence/coercion: satisfies a defensive Safety goal
@@ -328,7 +328,7 @@ actions:
     interruptible: true
 
   - id: Feed
-    tags: [ "social", "effort:low", "abstraction:med" ]
+    tags: [ "social", "effort:low", "abstraction:med", "feed:carrion" ]
     requires: [ near_other, has_food ]
     produces: [ comforted, sated ]
     duration: 8

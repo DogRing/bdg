@@ -122,43 +122,43 @@ func TestGetRoundTrip(t *testing.T) {
 			wantInterruptible: true,
 		},
 		{
-			id:               "Eat",
-			wantTags:         []core.Tag{"effort:low"},
-			wantDuration:     6,
-			wantTarget:       TargetNone,
-			wantTargetKindID: "",
-			wantProduces:     []core.Pred{"has_Satiety"},
-			wantConsumesItem: "", // P1: direct-effect Eat; item-supply chain deferred
-			wantEffectLen:    1,  // effect: { Satiety: 0.40 }
+			id:                "Eat",
+			wantTags:          []core.Tag{"effort:low"},
+			wantDuration:      6,
+			wantTarget:        TargetNone,
+			wantTargetKindID:  "",
+			wantProduces:      []core.Pred{"has_Satiety"},
+			wantConsumesItem:  "", // P1: direct-effect Eat; item-supply chain deferred
+			wantEffectLen:     1,  // effect: { Satiety: 0.40 }
 			wantInterruptible: true,
 		},
 		{
-			id:               "MoveTo",
-			wantTags:         []core.Tag{"effort:low", "noise:low", "time:by_distance", "uses:Agility"},
-			wantDuration:     1,
-			wantTarget:       TargetLocation,
-			wantTargetKindID: "",
-			wantProduces:     []core.Pred{"at_target"},
+			id:                "MoveTo",
+			wantTags:          []core.Tag{"effort:low", "noise:low", "time:by_distance", "uses:Agility"},
+			wantDuration:      1,
+			wantTarget:        TargetLocation,
+			wantTargetKindID:  "",
+			wantProduces:      []core.Pred{"at_target"},
 			wantInterruptible: true,
 		},
 		{
-			id:               "Rest",
-			wantTags:         []core.Tag{"effort:none"},
-			wantDuration:     30,
-			wantTarget:       TargetNone,
-			wantTargetKindID: "",
-			wantProduces:     []core.Pred{"has_Rest"},
+			id:                "Rest",
+			wantTags:          []core.Tag{"effort:none"},
+			wantDuration:      30,
+			wantTarget:        TargetNone,
+			wantTargetKindID:  "",
+			wantProduces:      []core.Pred{"has_Rest"},
 			wantEffectPMinLen: 1,
 			wantInterruptible: true,
 		},
 		{
-			id:               "Forage",
-			wantTags:         []core.Tag{"abstraction:low", "effort:low", "noise:low", "uses:Agility"},
-			wantDuration:     12,
-			wantTarget:       TargetObject,
-			wantTargetKindID: "berry_bush",
-			wantProduces:     []core.Pred{"has_food"},
-			wantProducesItem: "berries",
+			id:                "Forage",
+			wantTags:          []core.Tag{"abstraction:low", "effort:low", "noise:low", "uses:Agility"},
+			wantDuration:      12,
+			wantTarget:        TargetObject,
+			wantTargetKindID:  "berry_bush",
+			wantProduces:      []core.Pred{"has_food"},
+			wantProducesItem:  "berries",
 			wantInterruptible: true,
 		},
 		{
@@ -166,31 +166,31 @@ func TestGetRoundTrip(t *testing.T) {
 			// target_kind / produces_item — the bound content/recipes.yaml recipe supplies the
 			// duration + outputs, and the station is the recipe's `ambient` (not a target_kind).
 			// So Duration=0, Target=TargetNone, ProducesItem="" (recipe owns it); produces has_tool.
-			id:               "Craft",
-			wantTags:         []core.Tag{"abstraction:med", "effort:high", "noise:low", "uses:Intelligence"},
-			wantDuration:     0,
-			wantTarget:       TargetNone,
-			wantTargetKindID: "",
-			wantProduces:     []core.Pred{"has_tool"},
-			wantProducesItem: "",
+			id:                "Craft",
+			wantTags:          []core.Tag{"abstraction:med", "effort:high", "noise:low", "uses:Intelligence"},
+			wantDuration:      0,
+			wantTarget:        TargetNone,
+			wantTargetKindID:  "",
+			wantProduces:      []core.Pred{"has_tool"},
+			wantProducesItem:  "",
 			wantInterruptible: true,
 		},
 		{
-			id:               "Signal",
-			wantTags:         []core.Tag{"abstraction:med", "effort:none", "social"},
-			wantDuration:     3,
-			wantTarget:       TargetAgent,
-			wantTargetKindID: "",
-			wantProduces:     []core.Pred{"signalled"},
+			id:                "Signal",
+			wantTags:          []core.Tag{"abstraction:med", "effort:none", "social"},
+			wantDuration:      3,
+			wantTarget:        TargetAgent,
+			wantTargetKindID:  "",
+			wantProduces:      []core.Pred{"signalled"},
 			wantInterruptible: true,
 		},
 		{
-			id:               "Attack",
-			wantTags:         []core.Tag{"effort:high", "noise:high", "risk:high", "uses:Strength", "violent:high", "norm:transgressive"},
-			wantDuration:     5,
-			wantTarget:       TargetAgent,
-			wantTargetKindID: "",
-			wantProduces:     []core.Pred{"has_Safety"},
+			id:                "Attack",
+			wantTags:          []core.Tag{"combat:attack", "effort:high", "noise:high", "risk:high", "uses:Strength", "violent:high", "norm:transgressive"},
+			wantDuration:      5,
+			wantTarget:        TargetAgent,
+			wantTargetKindID:  "",
+			wantProduces:      []core.Pred{"has_Safety"},
 			wantInterruptible: false,
 		},
 	}
@@ -374,26 +374,26 @@ func TestTargetKindDerivation(t *testing.T) {
 	reg := loadTestActions(t)
 
 	tests := []struct {
-		id             ActionID
-		wantKind       TargetKind
-		wantKindID     core.Tag
+		id         ActionID
+		wantKind   TargetKind
+		wantKindID core.Tag
 	}{
-		{id: "MoveTo",       wantKind: TargetLocation, wantKindID: ""},
-		{id: "Rest",         wantKind: TargetNone,     wantKindID: ""},
-		{id: "Sleep",        wantKind: TargetNone,     wantKindID: ""},
-		{id: "Forage",       wantKind: TargetObject,   wantKindID: "berry_bush"},
-		{id: "Hunt",         wantKind: TargetObject,   wantKindID: "prey"},
-		{id: "Eat",          wantKind: TargetNone,     wantKindID: ""},
-		{id: "Drink",        wantKind: TargetObject,   wantKindID: "water_source"},
-		{id: "Craft",        wantKind: TargetNone,     wantKindID: ""}, // recipe-mediated: no target_kind (station is the recipe `ambient`, P_m3 FINAL)
-		{id: "Build",        wantKind: TargetNone,     wantKindID: ""}, // Build has requires: [at_target, has_materials] but no target_kind and produces != at_target
-		{id: "TakeShelter",  wantKind: TargetObject,   wantKindID: "shelter"},
-		{id: "PickUp",       wantKind: TargetNone,     wantKindID: ""}, // PickUp has requires: [at_target], produces: [holding] — at_target is NOT in produces
-		{id: "Signal",       wantKind: TargetAgent,    wantKindID: ""},
-		{id: "GiveItem",     wantKind: TargetAgent,    wantKindID: ""},
-		{id: "Trade",        wantKind: TargetAgent,    wantKindID: ""},
-		{id: "Take",         wantKind: TargetAgent,    wantKindID: ""}, // near_other in requires → TargetAgent
-		{id: "Attack",       wantKind: TargetAgent,    wantKindID: ""},
+		{id: "MoveTo", wantKind: TargetLocation, wantKindID: ""},
+		{id: "Rest", wantKind: TargetNone, wantKindID: ""},
+		{id: "Sleep", wantKind: TargetNone, wantKindID: ""},
+		{id: "Forage", wantKind: TargetObject, wantKindID: "berry_bush"},
+		{id: "Hunt", wantKind: TargetObject, wantKindID: "prey"},
+		{id: "Eat", wantKind: TargetNone, wantKindID: ""},
+		{id: "Drink", wantKind: TargetObject, wantKindID: "water_source"},
+		{id: "Craft", wantKind: TargetNone, wantKindID: ""}, // recipe-mediated: no target_kind (station is the recipe `ambient`, P_m3 FINAL)
+		{id: "Build", wantKind: TargetNone, wantKindID: ""}, // Build has requires: [at_target, has_materials] but no target_kind and produces != at_target
+		{id: "TakeShelter", wantKind: TargetObject, wantKindID: "shelter"},
+		{id: "PickUp", wantKind: TargetNone, wantKindID: ""}, // PickUp has requires: [at_target], produces: [holding] — at_target is NOT in produces
+		{id: "Signal", wantKind: TargetAgent, wantKindID: ""},
+		{id: "GiveItem", wantKind: TargetAgent, wantKindID: ""},
+		{id: "Trade", wantKind: TargetAgent, wantKindID: ""},
+		{id: "Take", wantKind: TargetAgent, wantKindID: ""}, // near_other in requires → TargetAgent
+		{id: "Attack", wantKind: TargetAgent, wantKindID: ""},
 	}
 
 	for _, tt := range tests {
@@ -515,9 +515,9 @@ func TestConsumptionActionNoDirectEffect(t *testing.T) {
 // AC: Semantic rejects.
 func TestSemanticRejects(t *testing.T) {
 	tests := []struct {
-		name     string
-		yaml     string
-		wantErr  string // substring in error
+		name    string
+		yaml    string
+		wantErr string // substring in error
 	}{
 		{
 			name: "duplicate id",
