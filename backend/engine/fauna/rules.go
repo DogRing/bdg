@@ -36,6 +36,8 @@ type SpeciesRule struct {
 	Drives       []DriveRule                        // drive vocabulary + params (F25(c))
 	AppTemp      *expr.Program                      // §6 apparent_temp (F40)
 	Speed        *expr.Program                      // §6 locomotion speed (F35)
+	AttackPower  *expr.Program                      // §6 damage magnitude composition (FC4)
+	Hit          *expr.Program                      // §6 hit multiplier/probability composition (FC4)
 	Diet         []core.Tag                         // diet/target tags (F7)
 	IsPredator   bool                               // carries `threat:predator` (F8)
 	SmellRadius  float64                            // smell radius (F31/F44)
@@ -55,6 +57,8 @@ const (
 	TagFleePred  core.Tag = "flee:predator" // steer away from predator (reversed dir)
 	TagWaryPred  core.Tag = "wary:predator" // steer slowly away from predator
 	TagNoLoco    core.Tag = "no:locomotion" // rest: NextPos == Pos
+	TagAttack    core.Tag = "combat:attack" // engage/exchange against a diet target
+	TagFeed      core.Tag = "feed:carrion"  // steer toward carrion scent / feed target
 )
 
 // ── internal compiled species table ───────────────────────────────────────────
@@ -66,6 +70,9 @@ type speciesData struct {
 	drives       []DriveRule // in sorted DriveID order (D12)
 	appTemp      *expr.Program
 	speed        *expr.Program
+	attackPower  *expr.Program
+	hit          *expr.Program
+	diet         []core.Tag
 	isPredator   bool
 	smellRadius  float64
 	sightRadius  float64
@@ -131,6 +138,9 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			drives:       drives,
 			appTemp:      sr.AppTemp,
 			speed:        sr.Speed,
+			attackPower:  sr.AttackPower,
+			hit:          sr.Hit,
+			diet:         cloneTags(sr.Diet),
 			isPredator:   sr.IsPredator,
 			smellRadius:  sr.SmellRadius,
 			sightRadius:  sr.SightRadius,
@@ -351,6 +361,12 @@ func cloneDrives(m map[DriveID]float64) map[DriveID]float64 {
 	for k, v := range m {
 		out[k] = v
 	}
+	return out
+}
+
+func cloneTags(in []core.Tag) []core.Tag {
+	out := append([]core.Tag(nil), in...)
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
 

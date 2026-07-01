@@ -43,6 +43,9 @@ func TestDepositReadIntensity(t *testing.T) {
 		if r.Predator.Intensity != 0 {
 			t.Fatalf("expected Predator.Intensity==0, got %v", r.Predator.Intensity)
 		}
+		if r.Carrion.Intensity != 0 {
+			t.Fatalf("expected Carrion.Intensity==0, got %v", r.Carrion.Intensity)
+		}
 	})
 
 	t.Run("larger_magnitude_strictly_greater", func(t *testing.T) {
@@ -86,10 +89,33 @@ func TestDepositReadIntensity(t *testing.T) {
 		if r.Predator.Intensity != 0 {
 			t.Fatalf("Predator contaminated by Prey deposit: %v", r.Predator.Intensity)
 		}
+		if r.Carrion.Intensity != 0 {
+			t.Fatalf("Carrion contaminated by Prey deposit: %v", r.Carrion.Intensity)
+		}
 		if r.Prey.Intensity <= 0 {
 			t.Fatalf("Prey.Intensity should be >0, got %v", r.Prey.Intensity)
 		}
 	})
+
+	t.Run("carrion_channel", func(t *testing.T) {
+		g := newGrid(t, cs)
+		g.Deposit(ChanCarrion, pos, 4.0)
+		g.Commit()
+		r := g.Read(pos, rad, Wind{})
+		if r.Carrion.Intensity <= 0 {
+			t.Fatalf("Carrion.Intensity should be >0, got %v", r.Carrion.Intensity)
+		}
+		if r.Food.Intensity != 0 || r.Prey.Intensity != 0 || r.Predator.Intensity != 0 {
+			t.Fatalf("Carrion deposit contaminated other channels: %+v", r)
+		}
+	})
+}
+
+func TestChannelAppendOrder(t *testing.T) {
+	if ChanFood != 0 || ChanPrey != 1 || ChanPredator != 2 || ChanCarrion != 3 || NumChannels != 4 {
+		t.Fatalf("channel order changed: food=%d prey=%d predator=%d carrion=%d num=%d",
+			ChanFood, ChanPrey, ChanPredator, ChanCarrion, NumChannels)
+	}
 }
 
 // ── AC: Intensity falls off with distance ─────────────────────────────────────
@@ -284,6 +310,30 @@ func TestSpreadDiffusion(t *testing.T) {
 	})
 }
 
+func TestCarrionSpreadAndRead(t *testing.T) {
+	cs := 1.0
+	src := v(5.5, 5.5)
+	g := newGrid(t, cs)
+	g.Deposit(ChanCarrion, src, 8.0)
+	g.Spread(Wind{})
+	g.Commit()
+
+	if got := g.IntensityAt(ChanCarrion, src); got <= 0 {
+		t.Fatalf("carrion source cell intensity = %v, want >0", got)
+	}
+	east := v(6.5, 5.5)
+	if got := g.IntensityAt(ChanCarrion, east); got <= 0 {
+		t.Fatalf("carrion did not spread to neighbor, got %v", got)
+	}
+	r := g.Read(east, 1.5*cs, Wind{})
+	if r.Carrion.Intensity <= 0 {
+		t.Fatalf("Carrion read intensity = %v, want >0", r.Carrion.Intensity)
+	}
+	if r.Carrion.Dir.X >= 0 {
+		t.Fatalf("Carrion gradient east of source should point west, got %+v", r.Carrion.Dir)
+	}
+}
+
 // ── AC: Read gradient (F34) ───────────────────────────────────────────────────
 
 func TestReadGradient(t *testing.T) {
@@ -345,6 +395,8 @@ func TestScentOnly(t *testing.T) {
 	_ = r.Prey.Dir
 	_ = r.Predator.Intensity
 	_ = r.Predator.Dir
+	_ = r.Carrion.Intensity
+	_ = r.Carrion.Dir
 	// No r.Food.Range, r.Predator.Heading, etc. — if those existed this would not compile.
 }
 
@@ -404,10 +456,10 @@ func TestEmptyGridNeutrality(t *testing.T) {
 
 	for _, p := range []core.Vec2{v(0, 0), v(100, -50), v(-3.7, 8.1)} {
 		r := g.Read(p, 5.0, Wind{Dir: 0.5, Mag: 0.3})
-		if r.Food.Intensity != 0 || r.Prey.Intensity != 0 || r.Predator.Intensity != 0 {
+		if r.Food.Intensity != 0 || r.Prey.Intensity != 0 || r.Predator.Intensity != 0 || r.Carrion.Intensity != 0 {
 			t.Fatalf("empty grid: non-zero reading at %v: %+v", p, r)
 		}
-		if r.Food.Dir != (core.Vec2{}) || r.Prey.Dir != (core.Vec2{}) {
+		if r.Food.Dir != (core.Vec2{}) || r.Prey.Dir != (core.Vec2{}) || r.Carrion.Dir != (core.Vec2{}) {
 			t.Fatalf("empty grid: non-zero Dir at %v", p)
 		}
 		if ia := g.IntensityAt(ChanFood, p); ia != 0 {
@@ -442,6 +494,7 @@ func runScenario() [32]byte {
 		g.Deposit(ChanFood, v(2.0, 2.0), 3.0+float64(tick)*0.5)
 		g.Deposit(ChanPrey, v(4.0, 0.0), 2.0)
 		g.Deposit(ChanPredator, v(0.0, 4.0), 1.5)
+		g.Deposit(ChanCarrion, v(-2.0, 2.0), 1.0+float64(tick)*0.25)
 		if tick%2 == 0 {
 			g.Spread(wind)
 		}
@@ -452,6 +505,7 @@ func runScenario() [32]byte {
 			writeF64(g.IntensityAt(ChanFood, p))
 			writeF64(g.IntensityAt(ChanPrey, p))
 			writeF64(g.IntensityAt(ChanPredator, p))
+			writeF64(g.IntensityAt(ChanCarrion, p))
 			r := g.Read(p, 3.0, wind)
 			writeF64(r.Food.Intensity)
 			writeF64(r.Food.Dir.X)
@@ -462,6 +516,9 @@ func runScenario() [32]byte {
 			writeF64(r.Predator.Intensity)
 			writeF64(r.Predator.Dir.X)
 			writeF64(r.Predator.Dir.Y)
+			writeF64(r.Carrion.Intensity)
+			writeF64(r.Carrion.Dir.X)
+			writeF64(r.Carrion.Dir.Y)
 		}
 	}
 	var digest [32]byte

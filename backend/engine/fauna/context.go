@@ -29,16 +29,17 @@ import (
 // estimate in world units: high intensity → near 0, absent → smellRadius.
 // dist.predator: Euclidean distance to nearest FOV predator (or sightRadius).
 type animalContext struct {
-	animal      *Animal
-	drives      map[DriveID]float64 // may be pre- or post-update drives (caller sets)
-	reading     scent.Reading       // scent reading at Pos (Step 1)
-	sightPred   float64             // 1.0 if predator in FOV, else 0.0 (Step 1)
-	distPred    float64             // distance to nearest FOV predator (or sightRadius)
-	smellRadius float64             // from Rules.Senses; used for dist.{food,prey}
-	sightRadius float64             // from Rules.Senses; used as sentinel for dist.predator
-	env         EnvSample           // injected climate sample (world-provided)
-	appTemp     float64             // pre-computed apparent_temp (to avoid circular eval)
-	isCurrent   bool                // set per-candidate in scoring loop (is_current operand)
+	animal       *Animal
+	drives       map[DriveID]float64 // may be pre- or post-update drives (caller sets)
+	reading      scent.Reading       // scent reading at Pos (Step 1)
+	sightPred    float64             // 1.0 if predator in FOV, else 0.0 (Step 1)
+	distPred     float64             // distance to nearest FOV predator (or sightRadius)
+	smellRadius  float64             // from Rules.Senses; used for dist.{food,prey}
+	sightRadius  float64             // from Rules.Senses; used as sentinel for dist.predator
+	env          EnvSample           // injected climate sample (world-provided)
+	appTemp      float64             // pre-computed apparent_temp (to avoid circular eval)
+	targetThreat float64             // candidate target danger for combat utility (FC2)
+	isCurrent    bool                // set per-candidate in scoring loop (is_current operand)
 }
 
 // Stat resolves a base-attribute stat id to its value from Animal.Stats.
@@ -59,6 +60,8 @@ func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 		return c.reading.Prey.Intensity, true
 	case "scent.predator":
 		return c.reading.Predator.Intensity, true
+	case "scent.carrion":
+		return c.reading.Carrion.Intensity, true
 
 	// Coarse distance estimates derived from scent intensity (D11 — no snap).
 	// Formula: smellRadius / (1 + intensity).
@@ -75,6 +78,10 @@ func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 	// Sight predator presence (1.0 / 0.0) from the FOV spatial query (F44).
 	case "sight.predator":
 		return c.sightPred, true
+
+	// Combat candidate target danger (FC2).
+	case "target.threat":
+		return c.targetThreat, true
 
 	// Apparent temperature (pre-computed from AppTemp program, F40).
 	case "apparent_temp":

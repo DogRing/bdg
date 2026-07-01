@@ -599,6 +599,81 @@ func TestOwnerAgnosticSortedOrderDeterminism(t *testing.T) {
 	}
 }
 
+func TestWithLotInsertsSortedAndPure(t *testing.T) {
+	kind := decay.KindID("carcass")
+	prev := decay.New([]decay.Lot{
+		freshLot("lot_a", kind, 1),
+		freshLot("lot_z", kind, 1),
+	})
+	next := prev.WithLot(lotWithAge("lot_m", kind, 2, 0.25))
+
+	prevLots := prev.Lots()
+	if len(prevLots) != 2 || prevLots[0].ID != "lot_a" || prevLots[1].ID != "lot_z" {
+		t.Fatalf("prev State mutated or misordered: %+v", prevLots)
+	}
+	nextLots := next.Lots()
+	want := []core.ObjectID{"lot_a", "lot_m", "lot_z"}
+	if len(nextLots) != len(want) {
+		t.Fatalf("next lots len=%d, want %d: %+v", len(nextLots), len(want), nextLots)
+	}
+	for i, id := range want {
+		if nextLots[i].ID != id {
+			t.Fatalf("next lot[%d].ID=%q, want %q; lots=%+v", i, nextLots[i].ID, id, nextLots)
+		}
+	}
+	if nextLots[1].Kind != kind || nextLots[1].Qty != 2 || nextLots[1].DecayAge != 0.25 {
+		t.Fatalf("inserted lot changed: %+v", nextLots[1])
+	}
+}
+
+func TestWithLotDuplicatePanics(t *testing.T) {
+	s := decay.New([]decay.Lot{freshLot("lot_a", "carcass", 1)})
+	defer func() {
+		if recover() == nil {
+			t.Fatal("WithLot did not panic on duplicate ObjectID")
+		}
+	}()
+	_ = s.WithLot(freshLot("lot_a", "carcass", 1))
+}
+
+func TestWithLotInjectedLotDecaysOnStep(t *testing.T) {
+	kind := decay.KindID("carcass")
+	rules := decay.NewRules(map[decay.KindID]decay.KindRule{
+		kind: makeKind(1.0, constAccel(t, 1.0), []decay.StateRule{
+			{Threshold: 0},
+			{Threshold: 3, Transform: []decay.TransformRule{{Item: "bone", Qty: 1}}},
+			{Threshold: 9},
+		}),
+	})
+	prev := decay.New([]decay.Lot{freshLot("lot_a", kind, 1)})
+	injected := lotWithAge("lot_b", kind, 2, 1)
+	withInjected := prev.WithLot(injected)
+
+	next, deltas := decay.Step(
+		withInjected,
+		envMany("lot_a", neutralEnv(), "lot_b", neutralEnv()),
+		2,
+		rules,
+		testRNG(),
+	)
+	nextLots := next.Lots()
+	if len(nextLots) != 2 {
+		t.Fatalf("next lots len=%d, want 2: %+v", len(nextLots), nextLots)
+	}
+	if nextLots[1].ID != "lot_b" || abs64(nextLots[1].DecayAge-3) > 1e-12 {
+		t.Fatalf("injected lot did not decay like an existing lot: %+v", nextLots[1])
+	}
+	if len(deltas.Transitioned) != 1 || deltas.Transitioned[0].ID != "lot_b" || deltas.Transitioned[0].State != 1 {
+		t.Fatalf("injected lot transition missing/wrong: %+v", deltas.Transitioned)
+	}
+	if len(deltas.Transformed) != 1 ||
+		deltas.Transformed[0].SourceID != "lot_b" ||
+		deltas.Transformed[0].Item != "bone" ||
+		deltas.Transformed[0].Qty != 2 {
+		t.Fatalf("injected lot transform missing/wrong: %+v", deltas.Transformed)
+	}
+}
+
 // ── AC-9: Determinism golden (D12) ──────────────────────────────────────────
 
 // digestStep produces a deterministic hash of one step's outputs.

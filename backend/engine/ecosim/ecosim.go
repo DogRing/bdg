@@ -251,14 +251,15 @@ func (w *WorldState) buildSnapshot() *fauna.Snapshot {
 	animals := make([]fauna.Animal, len(w.Animals))
 	copy(animals, w.Animals)
 	return &fauna.Snapshot{
-		Animals: animals,
-		Scent:   w.ScentGrid,
-		Spatial: w.SpatHash,
-		Terrain: NavAdapter{Nav: w.Nav},
-		Env:     w.buildEnvSamples(),
-		Tick:    w.Tick,
-		Cadence: faunaCadence,
-		DT:      FaunaDT,
+		Animals:       animals,
+		Scent:         w.ScentGrid,
+		Spatial:       w.SpatHash,
+		Terrain:       NavAdapter{Nav: w.Nav},
+		Env:           w.buildEnvSamples(),
+		Tick:          w.Tick,
+		Cadence:       faunaCadence,
+		ScentCellSize: ScentCell,
+		DT:            FaunaDT,
 	}
 }
 

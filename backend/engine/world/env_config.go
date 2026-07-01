@@ -20,5 +20,6 @@ type EnvConfig struct {
 	ScentSpread     int
 	FaunaDT         float64
 	FaunaCadence    fauna.Cadence
+	FaunaCombat     fauna.CombatParams
 	MaxSpeed        float64
 }

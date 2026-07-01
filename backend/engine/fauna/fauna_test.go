@@ -90,32 +90,37 @@ func makeSnap(animals []fauna.Animal, sg *scent.Grid, sp *spatial.SpatialHash,
 		terrain = openTerrain
 	}
 	return &fauna.Snapshot{
-		Animals: animals,
-		Scent:   sg,
-		Spatial: sp,
-		Terrain: terrain,
-		Env:     env,
-		Tick:    tick,
-		Cadence: defaultCadence(),
-		DT:      1.0,
+		Animals:       animals,
+		Scent:         sg,
+		Spatial:       sp,
+		Terrain:       terrain,
+		Env:           env,
+		Tick:          tick,
+		Cadence:       defaultCadence(),
+		ScentCellSize: 1.0,
+		DT:            1.0,
 	}
 }
 
 // ── fixture rule builder ──────────────────────────────────────────────────────
 
 const (
-	spHerb    fauna.SpeciesID = "herb"
-	spPred    fauna.SpeciesID = "pred"
-	spSwimmer fauna.SpeciesID = "swimmer"
-	spFish    fauna.SpeciesID = "fish"
+	spHerb       fauna.SpeciesID = "herb"
+	spPred       fauna.SpeciesID = "pred"
+	spSwimmer    fauna.SpeciesID = "swimmer"
+	spFish       fauna.SpeciesID = "fish"
+	spCombatPred fauna.SpeciesID = "combat_pred"
+	spCombatPrey fauna.SpeciesID = "combat_prey"
 
-	actGraze actions.ActionID = "Graze"
-	actFlee  actions.ActionID = "Flee"
-	actWary  actions.ActionID = "Wary"
-	actRest  actions.ActionID = "Rest"
-	actHunt  actions.ActionID = "Hunt"
-	actA     actions.ActionID = "ActionA"
-	actB     actions.ActionID = "ActionB"
+	actGraze  actions.ActionID = "Graze"
+	actFlee   actions.ActionID = "Flee"
+	actWary   actions.ActionID = "Wary"
+	actRest   actions.ActionID = "Rest"
+	actHunt   actions.ActionID = "Hunt"
+	actAttack actions.ActionID = "Attack"
+	actFeed   actions.ActionID = "Feed"
+	actA      actions.ActionID = "ActionA"
+	actB      actions.ActionID = "ActionB"
 )
 
 func herbRules(t *testing.T) fauna.SpeciesRule {
@@ -802,6 +807,7 @@ func TestContextBridge(t *testing.T) {
 	want := map[core.Tag]bool{
 		"is_current": true, "scent.food": true, "dist.predator": true,
 		"sight.predator": true, "apparent_temp": true, "wind.dir": true,
+		"scent.carrion": true, "target.threat": true,
 	}
 	opSet := make(map[core.Tag]bool, len(ops))
 	for _, op := range ops {
@@ -979,7 +985,7 @@ func TestDeterminismGolden(t *testing.T) {
 // ── AC: No wall-clock / no global rand / no forbidden imports ─────────────────
 
 func TestNoForbiddenImports(t *testing.T) {
-	implFiles := []string{"fauna.go", "rules.go", "context.go", "step.go"}
+	implFiles := []string{"fauna.go", "rules.go", "rules_combat.go", "context.go", "step.go", "combat.go", "cheap.go"}
 
 	forbiddenImports := map[string]string{
 		"time":         "wall-clock import",
@@ -1024,7 +1030,7 @@ func TestNoHardcodedIDs(t *testing.T) {
 	// or drive names that should come from content/Rules (D10).
 	// Context.go and rules.go contain the module's own VOCABULARY (AttrOperands,
 	// steer-channel tags) — those are checked via AttrOperands() and constants.
-	implFiles := []string{"fauna.go", "rules.go", "context.go", "step.go"}
+	implFiles := []string{"fauna.go", "rules.go", "rules_combat.go", "context.go", "step.go", "combat.go", "cheap.go"}
 
 	// Species names that must NOT appear as literals in implementation logic.
 	forbiddenSpecies := []string{`"deer"`, `"wolf"`, `"rabbit"`, `"goat"`, `"bear"`, `"fish_species"`}

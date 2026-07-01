@@ -39,6 +39,7 @@ const (
 	ChanFood     Channel = iota // edible-flora / food scent (herbivore → Graze); tag scent:food
 	ChanPrey                    // prey-animal scent (carnivore → Hunt);           tag scent:prey
 	ChanPredator                // predator scent (early-warning → Wary + F45);    tag scent:predator
+	ChanCarrion                 // carcass/rot scent (scavenger/predator → Feed);  tag scent:carrion
 	NumChannels  = iota         // count (array width); not a Channel value
 )
 
@@ -318,17 +319,19 @@ func (g *Grid) Read(pos core.Vec2, smellRadius float64, wind Wind) Reading {
 		Food:     chanReading(ChanFood),
 		Prey:     chanReading(ChanPrey),
 		Predator: chanReading(ChanPredator),
+		Carrion:  chanReading(ChanCarrion),
 	}
 }
 
 // ── Public result types ───────────────────────────────────────────────────────
 
 // Reading is the per-channel scent result at one position. The parent fills §6
-// operands from it (scent.food/prey/predator = Intensity; steer dir per channel).
+// operands from it (scent.food/prey/predator/carrion = Intensity; steer dir per channel).
 type Reading struct {
 	Food     ChannelReading
 	Prey     ChannelReading
 	Predator ChannelReading // Intensity → scent.predator (early-warning/Wary); NOT sight.predator (F44)
+	Carrion  ChannelReading // Intensity → scent.carrion (carcass/rot homing)
 }
 
 // ChannelReading is one channel's intensity + gradient direction at a read position.

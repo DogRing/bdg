@@ -132,7 +132,7 @@ The `(KR: …)` hints cross-reference the Korean input docs (`PRD.md`, `design.m
 | Concept | Canonical | Notes |
 |---------|-----------|-------|
 | Scent field | `scent.Grid` | Shared uniform multi-channel auxiliary index (spatial/navmap kin, `engine/space`), world-owned; per-cell per-channel SCALAR intensity (F21 revised). Derived state (rebuilt from emitters on resume, NOT serialized). |
-| Scent channel | `Channel` | `ChanFood`/`ChanPrey`/`ChanPredator` (fixed order, append-only). §6 operands `scent.food`/`scent.prey`/`scent.predator` (scalar). |
+| Scent channel | `Channel` | `ChanFood`/`ChanPrey`/`ChanPredator`/`ChanCarrion` (fixed order, append-only). §6 operands `scent.food`/`scent.prey`/`scent.predator`/`scent.carrion` (scalar). |
 | Scent emitter tag | `scent:<channel>` | The tag a flora/fauna/decay kind carries so `world` deposits its magnitude into that channel (shared with `perception.Smell`, D4/D10 — "what is smelly" authored once). |
 | Scent ops | `Deposit`/`Spread`/`Commit`/`Read`/`IntensityAt` | world drives deposit (predator every tick, food/prey bulk) + `Spread(Wind)` (tick%Ns diffusion) + `Commit` (next-tick latency). `Read`→per-channel intensity+gradient; `IntensityAt`=O(1) own-cell wake probe (F45). |
 

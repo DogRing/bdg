@@ -128,6 +128,29 @@ func New(lots []Lot) *State {
 	return &State{lots: sorted, idx: idx}
 }
 
+// WithLot returns a NEW State with lot inserted into the sorted Lot set. It is the
+// runtime injection path for newly spawned perishable lots; New remains init-only.
+// Panics on duplicate ObjectID because world owns lot id allocation.
+func (s *State) WithLot(lot Lot) *State {
+	insertAt := sort.Search(len(s.lots), func(i int) bool {
+		return s.lots[i].ID >= lot.ID
+	})
+	if insertAt < len(s.lots) && s.lots[insertAt].ID == lot.ID {
+		panic("decay.State.WithLot: duplicate lot id " + string(lot.ID))
+	}
+
+	nextLots := make([]Lot, len(s.lots)+1)
+	copy(nextLots, s.lots[:insertAt])
+	nextLots[insertAt] = lot
+	copy(nextLots[insertAt+1:], s.lots[insertAt:])
+
+	idx := make(map[core.ObjectID]int, len(nextLots))
+	for i, l := range nextLots {
+		idx[l.ID] = i
+	}
+	return &State{lots: nextLots, idx: idx}
+}
+
 // ── Snapshot / serialization (data-contracts §8) ─────────────────────────────
 
 // Lots returns the live Lot set in D12-sorted (ascending ObjectID) order, for the

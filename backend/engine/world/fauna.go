@@ -57,14 +57,16 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 		}
 	}
 	return &fauna.Snapshot{
-		Animals: animals,
-		Scent:   w.scent,
-		Spatial: w.spatial,
-		Terrain: worldTerrainSampler{nav: w.nav},
-		Env:     w.buildFaunaEnvSamples(),
-		Tick:    w.tick,
-		Cadence: w.envCfg.FaunaCadence,
-		DT:      w.envCfg.FaunaDT,
+		Animals:       animals,
+		Scent:         w.scent,
+		Spatial:       w.spatial,
+		Terrain:       worldTerrainSampler{nav: w.nav},
+		Env:           w.buildFaunaEnvSamples(),
+		Tick:          w.tick,
+		Cadence:       w.envCfg.FaunaCadence,
+		Combat:        w.envCfg.FaunaCombat,
+		ScentCellSize: w.envCfg.ScentCellSize,
+		DT:            w.envCfg.FaunaDT,
 	}
 }
 

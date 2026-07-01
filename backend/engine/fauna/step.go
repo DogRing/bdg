@@ -55,7 +55,7 @@ func Step(snap *Snapshot, rules *Rules, r *rng.RNG) []Intent {
 			}
 		}
 
-		isActive := isPred || predBit || (snap.Tick <= a.ActiveUntil)
+		isActive := isPred || predBit || a.EngagedWith != "" || (snap.Tick <= a.ActiveUntil)
 
 		// DORMANT: check re-arbitration gate.
 		isReArb := false
@@ -97,6 +97,7 @@ func fullPipeline(
 	// Sight: spatial forward-FOV predator query (F44(c-ii) / D11 / D12).
 	// NearbyEntities is ObjectID-sorted (D12). Agents NOT classified in P_fa1 (F46).
 	sightPred, distPred, nearPredPos := sightQuery(a, snap, rules, sightRadius, fovArc)
+	target := combatTarget(a, snap, rules, sightRadius)
 
 	// ── Step 2: DRIVES (F25(c)) ───────────────────────────────────────────────
 	// Pre-compute AppTemp once (uses stats + climate only; no circular dep on drives).
@@ -105,50 +106,68 @@ func fullPipeline(
 
 	// Build context for DriveUpdate with PRE-update drives.
 	dCtx := &animalContext{
-		animal:      &a,
-		drives:      a.Drives,
-		reading:     reading,
-		sightPred:   sightPred,
-		distPred:    distPred,
-		smellRadius: smellRadius,
-		sightRadius: sightRadius,
-		env:         env,
-		appTemp:     appTemp,
+		animal:       &a,
+		drives:       a.Drives,
+		reading:      reading,
+		sightPred:    sightPred,
+		distPred:     distPred,
+		smellRadius:  smellRadius,
+		sightRadius:  sightRadius,
+		env:          env,
+		appTemp:      appTemp,
+		targetThreat: target.threat,
 	}
 	newDrives := rules.DriveUpdate(a.Species, a.Drives, dCtx, snap.DT)
 
 	// ── Step 3: SCORE (F1/F26) ────────────────────────────────────────────────
 	// Build §6 context with POST-update drives (SPEC: "build the §6 Context once").
 	sCtx := &animalContext{
-		animal:      &a,
-		drives:      newDrives,
-		reading:     reading,
-		sightPred:   sightPred,
-		distPred:    distPred,
-		smellRadius: smellRadius,
-		sightRadius: sightRadius,
-		env:         env,
-		appTemp:     appTemp,
+		animal:       &a,
+		drives:       newDrives,
+		reading:      reading,
+		sightPred:    sightPred,
+		distPred:     distPred,
+		smellRadius:  smellRadius,
+		sightRadius:  sightRadius,
+		env:          env,
+		appTemp:      appTemp,
+		targetThreat: target.threat,
 	}
 
 	bestAction, _ := scoreAction(a, rules, sCtx)
 
+	combat := resolveCombat(a, target, bestAction, snap, rules, sCtx, r)
+
 	// ── Step 4: STEER (F35) ───────────────────────────────────────────────────
-	// Stochastic wander draw (once per ACTIVE/re-arb animal, in sorted ID order, D12).
-	wander := r.NormFloat64() * defaultWanderAngle
+	wander := 0.0
+	if combat.engagedWith == "" {
+		// Stochastic wander draw (once per ACTIVE/re-arb animal that locomotes, in sorted ID order, D12).
+		wander = r.NormFloat64() * defaultWanderAngle
+	}
 
 	nextPos, nextHeading := steerFull(a, env, bestAction, reading, nearPredPos, sightPred,
 		snap, rules, sCtx, wander, smellRadius, sightRadius)
+	if combat.engagedWith != "" {
+		nextPos = a.Pos
+		nextHeading = a.Heading
+	}
 
 	return Intent{
-		Animal:      a.ID,
-		Action:      bestAction,
-		Target:      "",
-		NextPos:     nextPos,
-		NextHeading: nextHeading,
-		Drives:      newDrives,
-		Stamina:     a.Stamina,
-		ActiveUntil: newActiveUntil,
+		Animal:               a.ID,
+		Action:               bestAction,
+		Target:               combat.target,
+		NextPos:              nextPos,
+		NextHeading:          nextHeading,
+		Drives:               newDrives,
+		Stamina:              a.Stamina,
+		Vital:                regenVital(a, snap.DT, snap.Combat),
+		VitalCap:             effectiveVitalCap(a),
+		ActiveUntil:          newActiveUntil,
+		EngagedWith:          combat.engagedWith,
+		NextExchangeTick:     combat.nextExchangeTick,
+		EngageCooldownUntil:  combat.engageCooldownUntil,
+		Damage:               combat.damage,
+		TargetVitalCapDamage: combat.targetVitalCapDamage,
 	}
 }
 
@@ -340,6 +359,10 @@ func baseSteerDir(
 		if reading.Prey.Intensity > 0 {
 			return reading.Prey.Dir
 		}
+	case TagFeed:
+		if reading.Carrion.Intensity > 0 {
+			return reading.Carrion.Dir
+		}
 	case TagFleePred, TagWaryPred:
 		// Flee / wary: away from predator. Sight has priority over scent.
 		if sightPred > 0 && nearPredPos != nil {
@@ -358,66 +381,4 @@ func baseSteerDir(
 	}
 	// Default: continue along current Heading.
 	return core.Vec2{X: math.Cos(a.Heading), Y: math.Sin(a.Heading)}
-}
-
-// ── Cheap path (DORMANT, off-boundary) ───────────────────────────────────────
-
-func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick) Intent {
-	// Drive advance: only accumulators + fear decay (no full sense, no sight query).
-	newDrives := rules.cheapDriveAdvance(a.Species, a.Drives, snap.DT)
-
-	// Cheap steer: continue along Heading. Evaluate speed with minimal context.
-	env := snap.Env[a.ID] // already validated in Step (panic path is before cheapPath)
-	appTemp := computeAppTemp(a, env, rules)
-	sCtx := &animalContext{
-		animal:  &a,
-		drives:  newDrives,
-		reading: scent.Reading{}, // zero sense on cheap path
-		env:     env,
-		appTemp: appTemp,
-	}
-
-	speed := rules.Speed(a.Species, sCtx)
-	if speed < 0 {
-		speed = 0
-	}
-
-	// Direction: current heading.
-	dir := core.Vec2{X: math.Cos(a.Heading), Y: math.Sin(a.Heading)}
-
-	var nextPos core.Vec2
-	var nextHeading float64
-	if speed <= 0 {
-		nextPos = a.Pos
-		nextHeading = a.Heading
-	} else {
-		tentative := a.Pos.Add(dir.Scale(speed * snap.DT))
-		terrain := snap.Terrain.TerrainAt(tentative)
-		mult, passable := rules.TerrainCost(a.Species, terrain)
-		blocked := snap.Terrain.FootprintBlocked(tentative) || !passable
-		if blocked {
-			nextPos = a.Pos
-			nextHeading = a.Heading
-		} else {
-			baseCost := snap.Terrain.BaseCost(tentative)
-			effectiveCost := baseCost * mult
-			if effectiveCost < 1 {
-				effectiveCost = 1
-			}
-			effectiveSpeed := speed / effectiveCost
-			nextPos = a.Pos.Add(dir.Scale(effectiveSpeed * snap.DT))
-			nextHeading = a.Heading
-		}
-	}
-
-	return Intent{
-		Animal:      a.ID,
-		Action:      a.CurrentAction, // held (dormant off-boundary)
-		Target:      "",
-		NextPos:     nextPos,
-		NextHeading: nextHeading,
-		Drives:      newDrives,
-		Stamina:     a.Stamina,
-		ActiveUntil: newActiveUntil,
-	}
 }

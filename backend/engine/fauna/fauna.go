@@ -51,16 +51,20 @@ type DriveID = core.Tag
 // NOT an FSM state (D3). ActiveUntil is the tick THROUGH which a predator-scent
 // wake keeps the animal ACTIVE (the F45 cooldown); 0 ⇒ no cooldown running.
 type Animal struct {
-	ID            core.ObjectID
-	Species       SpeciesID
-	Pos           core.Vec2               // continuous (D11)
-	Stats         map[core.StatID]float64 // open base-attribute vector, READ-ONLY (D7)
-	Drives        map[DriveID]float64     // open drive vector ∈ [0,1] (F29(ii))
-	Stamina       float64
-	Vital         float64          // single vital (F3); world owns death (§7)
-	Heading       float64          // steering direction (radians); FOV reference axis (F44)
-	CurrentAction actions.ActionID // last chosen action — §6 stickiness operand, NOT FSM (F30/D3)
-	ActiveUntil   core.Tick        // F45 wake-cooldown horizon; 0 = none. world commits it.
+	ID                  core.ObjectID
+	Species             SpeciesID
+	Pos                 core.Vec2               // continuous (D11)
+	Stats               map[core.StatID]float64 // open base-attribute vector, READ-ONLY (D7)
+	Drives              map[DriveID]float64     // open drive vector ∈ [0,1] (F29(ii))
+	Stamina             float64
+	Vital               float64          // single vital (F3); world owns death (§7)
+	VitalCap            float64          // upper bound for Vital regen after combat scars; 0 means full cap
+	Heading             float64          // steering direction (radians); FOV reference axis (F44)
+	CurrentAction       actions.ActionID // last chosen action — §6 stickiness operand, NOT FSM (F30/D3)
+	ActiveUntil         core.Tick        // F45 wake-cooldown horizon; 0 = none. world commits it.
+	EngagedWith         core.ObjectID    // combat partner; empty means free
+	NextExchangeTick    core.Tick        // next tick an engaged attack may propose damage
+	EngageCooldownUntil core.Tick        // next tick an engage attempt may be made
 }
 
 // EnvSample is the per-animal exogenous climate world samples injected each tick.
@@ -97,19 +101,34 @@ type Cadence struct {
 	WakeCooldown  core.Tick // ≥ 0; ticks an animal stays ACTIVE after a predator-scent wake
 }
 
+// CombatParams carries balance-authored combat timing/range/regeneration values.
+// Zero values are neutral until platform/config wires real content values.
+type CombatParams struct {
+	ExchangeMinTicks       int
+	ExchangeMaxTicks       int
+	EngageCooldownMinTicks int
+	EngageCooldownMaxTicks int
+	DisengageRangeFactor   float64 // multiplied by Snapshot.ScentCellSize
+	StaminaDropThreshold   float64
+	VitalRegenPerTick      float64
+	VitalCapDamageFraction float64
+}
+
 // Snapshot is the read-only world view the controller scores over (the read phase;
 // parallel-safe — each animal's evaluation reads only immutable/snapshot state, D12
 // plan phase). A missing live-animal entry in Env is a world-contract bug (panic,
 // mirrors flora's missing SiteInput).
 type Snapshot struct {
-	Animals []Animal
-	Scent   *scent.Grid
-	Spatial *spatial.SpatialHash
-	Terrain TerrainSampler
-	Env     map[core.ObjectID]EnvSample // per-animal; missing entry ⇒ panic
-	Tick    core.Tick
-	Cadence Cadence
-	DT      float64 // locomotion time-step magnitude for one tick (world/balance)
+	Animals       []Animal
+	Scent         *scent.Grid
+	Spatial       *spatial.SpatialHash
+	Terrain       TerrainSampler
+	Env           map[core.ObjectID]EnvSample // per-animal; missing entry ⇒ panic
+	Tick          core.Tick
+	Cadence       Cadence
+	Combat        CombatParams
+	ScentCellSize float64
+	DT            float64 // locomotion time-step magnitude for one tick (world/balance)
 }
 
 // Intent is the controller's per-animal output (ONE per animal, F1/F41). world
@@ -117,14 +136,21 @@ type Snapshot struct {
 // proposed Drives are the PASSIVE per-tick evolution (F25(c)); the action's own
 // drive Effect is layered by world when it enacts the action.
 type Intent struct {
-	Animal      core.ObjectID
-	Action      actions.ActionID    // max-utility action (ACTIVE/re-eval) or held CurrentAction (dormant)
-	Target      core.ObjectID       // resolved target for targeted action; empty in P_fa1
-	NextPos     core.Vec2           // steered next position (continuous, D11); == Pos if Rest/blocked
-	NextHeading float64             // steered next heading (radians)
-	Drives      map[DriveID]float64 // passive per-tick drive evolution (F25(c)); world commits it
-	Stamina     float64             // proposed next stamina
-	ActiveUntil core.Tick           // updated F45 wake-cooldown horizon; world commits it
+	Animal               core.ObjectID
+	Action               actions.ActionID    // max-utility action (ACTIVE/re-eval) or held CurrentAction (dormant)
+	Target               core.ObjectID       // resolved target for targeted action; empty in P_fa1
+	NextPos              core.Vec2           // steered next position (continuous, D11); == Pos if Rest/blocked
+	NextHeading          float64             // steered next heading (radians)
+	Drives               map[DriveID]float64 // passive per-tick drive evolution (F25(c)); world commits it
+	Stamina              float64             // proposed next stamina
+	Vital                float64             // proposed self vital regen, clamped by VitalCap
+	VitalCap             float64             // proposed self vital cap
+	ActiveUntil          core.Tick           // updated F45 wake-cooldown horizon; world commits it
+	EngagedWith          core.ObjectID       // proposed combat partner; empty means disengaged/free
+	NextExchangeTick     core.Tick           // proposed next exchange tick
+	EngageCooldownUntil  core.Tick           // proposed next engage attempt tick
+	Damage               float64             // damage world applies to Target; 0 means no exchange this tick
+	TargetVitalCapDamage float64             // permanent VitalCap reduction world applies to Target
 }
 
 // ── AttrOperands ─────────────────────────────────────────────────────────────
@@ -147,10 +173,12 @@ func AttrOperands() []core.Tag {
 		"dist.prey",
 		"is_current",
 		"moisture",
+		"scent.carrion",
 		"scent.food",
 		"scent.predator",
 		"scent.prey",
 		"sight.predator",
+		"target.threat",
 		"temperature",
 		"wind.dir",
 		"wind.mag",
