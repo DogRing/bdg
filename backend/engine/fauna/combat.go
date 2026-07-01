@@ -42,7 +42,7 @@ func combatTarget(a Animal, snap *Snapshot, rules *Rules, targetRange float64) c
 		if targetID != "" && other.ID != targetID {
 			continue
 		}
-		if targetID == "" && (!dietMatches(other, diet) || dist > targetRange) {
+		if targetID == "" && (!rules.dietMatches(diet, other.Species) || dist > targetRange) {
 			continue
 		}
 		threat := 0.0
@@ -60,10 +60,21 @@ func combatTarget(a Animal, snap *Snapshot, rules *Rules, targetRange float64) c
 	return best
 }
 
-func dietMatches(target Animal, diet []core.Tag) bool {
-	for _, tag := range diet {
-		if tag == core.Tag(target.Species) {
-			return true
+// dietMatches reports whether the TARGET species carries any of the diet tags (D10 tag-driven — a wolf's
+// diet [game] matches a deer that carries the `game` content tag). The engine reads the target's kind tags
+// from Rules (populated by config from objects.yaml), NOT the SpeciesID, so adding a new prey needs no
+// engine change — just the tag. A wolf diet listing a species id (e.g. "deer") still works iff that id is
+// also authored as one of the species' tags.
+func (r *Rules) dietMatches(diet []core.Tag, targetSp SpeciesID) bool {
+	sd, ok := r.species[targetSp]
+	if !ok {
+		return false
+	}
+	for _, d := range diet {
+		for _, tag := range sd.tags {
+			if d == tag {
+				return true
+			}
 		}
 	}
 	return false

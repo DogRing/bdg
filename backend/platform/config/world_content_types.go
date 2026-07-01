@@ -146,6 +146,7 @@ type objectKindDoc struct {
 		AttackPower  any      `yaml:"attack_power"`
 		Hit          any      `yaml:"hit"`
 		Feed         any      `yaml:"feed"`
+		Graze        any      `yaml:"graze"`
 		Diet         []string `yaml:"diet"`
 		Senses       struct {
 			SmellRadius float64 `yaml:"smell_radius"`

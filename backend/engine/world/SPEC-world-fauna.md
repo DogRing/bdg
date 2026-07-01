@@ -306,6 +306,9 @@ World-side of the combat loop (world = sole mutator + owns death, F3):
   `scentChannelFromTag` (this is the only engine edit that channel needs — the point of tag-driven).
 - **Feed (FC8):** a `Feed` intent consumes carcass supply → reduces the predator's `hunger` drive by the
   carcass's per-state food value (size-proportional). Coexists with the agent-side `Butcher` (materials).
+- **Graze (herbivore feeding):** a `seek:food` (Graze) intent, when the animal is within one scent cell of a
+  `scent:food` flora object (`applyAnimalGraze`), reduces its `hunger` by the species `Graze` §6. The mirror
+  of Feed for herbivores; flora is not depleted in P1. No food source in reach ⇒ no-op (hunger keeps rising).
 - **Regen (FC7):** slow Vital regen toward `VitalCap` applied by world in the animal commit (balance rate).
 
 ## Notes

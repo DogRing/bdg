@@ -65,6 +65,48 @@ func (w *World) applyAnimalFeed(predator *fauna.Animal, intent fauna.Intent) {
 	w.consumeCarcass(id)
 }
 
+// applyAnimalGraze is the herbivore analog of applyAnimalFeed: when a grazing animal (a seek:food action)
+// has reached an edible-flora source, it crops it — reducing hunger by the species' §6 graze value. The
+// food source must be within reach (one scent cell) so the deer only eats where food actually is (mirrors
+// Feed requiring a nearby carcass). Flora is not depleted in P1.
+func (w *World) applyAnimalGraze(a *fauna.Animal) {
+	if a == nil || !w.nearForageFlora(a) {
+		return
+	}
+	mult := w.faunaRules.Graze(a.Species, animalFeedContext{animal: a})
+	if mult <= 0 {
+		return
+	}
+	if a.Drives == nil {
+		a.Drives = make(map[fauna.DriveID]float64)
+	}
+	a.Drives["hunger"] = clamp01(a.Drives["hunger"] - mult)
+}
+
+// nearForageFlora reports whether an edible-flora object (a scent:food emitter) is within grazing reach.
+func (w *World) nearForageFlora(a *fauna.Animal) bool {
+	reach := w.envCfg.ScentCellSize
+	for _, id := range w.objectIDs {
+		obj, ok := w.objects[id]
+		if !ok || !w.kindEmitsFood(obj.Kind) {
+			continue
+		}
+		if a.Pos.Distance(obj.Pos) <= reach {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *World) kindEmitsFood(kind core.Tag) bool {
+	for _, tag := range w.scentEmitters[kind] {
+		if tag == "scent:food" {
+			return true
+		}
+	}
+	return false
+}
+
 func (w *World) resolveFeedCarcass(predator *fauna.Animal, preferred core.ObjectID) (core.ObjectID, bool) {
 	if preferred != "" && w.isCarcassObject(preferred) {
 		return preferred, true

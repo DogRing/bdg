@@ -572,6 +572,11 @@ actions:
     produces: [ sated ]
     duration: 8
     interruptible: true
+  - id: Graze
+    tags: [ "seek:food" ]
+    produces: [ grazed ]
+    duration: 10
+    interruptible: true
 `
 
 const combatObjectsYAML = `schema_version: 1
@@ -590,13 +595,21 @@ object_kinds:
       attack_power: "Strength + target.threat"
       hit: "Agility"
       feed: "scent.carrion + hunger"
-      diet: [ deer ]
+      diet: [ game ]
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 3.14 }
       terrain_cost: { sand: 1.2 }
       impassable: []
   - id: deer
     mobile: true
-    tags: [ scent:prey ]
+    tags: [ scent:prey, game ]
+    fauna:
+      actions:
+        - { action: Graze, utility: "hunger" }
+      drives:
+        - { id: hunger, rate: 0.0008 }
+      apparent_temp: "temperature"
+      speed: 0
+      senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 3.14 }
 item_kinds:
   - id: bones
     stackable: true

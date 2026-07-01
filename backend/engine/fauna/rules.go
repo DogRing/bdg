@@ -39,7 +39,9 @@ type SpeciesRule struct {
 	AttackPower  *expr.Program                      // §6 damage magnitude composition (FC4)
 	Hit          *expr.Program                      // §6 hit multiplier/probability composition (FC4)
 	Feed         *expr.Program                      // §6 carcass feed value composition (FC8)
+	Graze        *expr.Program                      // §6 herbivore graze hunger-recovery factor (parallels Feed)
 	Diet         []core.Tag                         // diet/target tags (F7)
+	Tags         []core.Tag                         // this kind's own content tags — what another animal's Diet matches against (D10)
 	IsPredator   bool                               // carries `threat:predator` (F8)
 	SmellRadius  float64                            // smell radius (F31/F44)
 	SightRadius  float64                            // sight radius (F44)
@@ -74,7 +76,9 @@ type speciesData struct {
 	attackPower  *expr.Program
 	hit          *expr.Program
 	feed         *expr.Program
+	graze        *expr.Program
 	diet         []core.Tag
+	tags         []core.Tag
 	isPredator   bool
 	smellRadius  float64
 	sightRadius  float64
@@ -143,7 +147,9 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			attackPower:  sr.AttackPower,
 			hit:          sr.Hit,
 			feed:         sr.Feed,
+			graze:        sr.Graze,
 			diet:         cloneTags(sr.Diet),
+			tags:         cloneTags(sr.Tags),
 			isPredator:   sr.IsPredator,
 			smellRadius:  sr.SmellRadius,
 			sightRadius:  sr.SightRadius,

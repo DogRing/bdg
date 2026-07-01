@@ -93,7 +93,7 @@ actions:
   # Graze — herbivore feeding: seek + crop vegetation. The controller steers toward the scent.food
   # gradient; at a forage source the world applies hunger↓ (P_fa2). Combined seek+feed (FA1 Graze loop).
   - id: Graze
-    tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low" ]
+    tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low", "seek:food" ]  # seek:food → herbivore homes to food scent + crops it (world reduces hunger by graze §6)
     produces: [ grazed ]
     duration: 10
     interruptible: true

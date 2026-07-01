@@ -233,6 +233,16 @@ func faunaDiet(obj objectKindDoc) []core.Tag {
 	return diet
 }
 
+// faunaTags copies the kind's own content tags so fauna.Rules can match another animal's Diet against them
+// (D10 tag-driven diet, e.g. wolf diet [game] matches a deer carrying the `game` tag).
+func faunaTags(obj objectKindDoc) []core.Tag {
+	tags := make([]core.Tag, len(obj.Tags))
+	for i, t := range obj.Tags {
+		tags[i] = core.Tag(t)
+	}
+	return tags
+}
+
 func faunaIsPredator(obj objectKindDoc) bool {
 	for _, tag := range obj.Tags {
 		if tag == "threat:predator" {

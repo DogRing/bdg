@@ -515,6 +515,12 @@ section is the **fauna-module interface delta only** (behaviour/why → 클러�
   `disengage_range` (~2·cellSize) — this is where scenario #8 ("predator stops when its stamina drops first")
   emerges. While engaged, locomotion is suppressed (FC13). **Death (Vital≤0) + carcass creation are the
   WORLD's** (SPEC-world-fauna; F3 "world owns death") — fauna only PROPOSES the damage intent + engage state.
+- **Feeding & diet (D10 tag-driven, F7).** A predator's `Diet` matches the TARGET's OWN content tags, NOT its
+  SpeciesID: `SpeciesRule.Tags` carries each kind's tags (config-populated from `objects.yaml`), and
+  `combatTarget` engages a candidate iff `diet ∩ target.Tags ≠ ∅` (e.g. wolf `diet:[game]` matches a deer
+  carrying the `game` tag). The herbivore side mirrors Feed: a `seek:food` (Graze) action, when the animal
+  has reached a `scent:food` flora, crops it — the world reduces hunger by the species' `Graze` §6
+  (`Rules.Graze`, parallels `Rules.Feed`). Absent `Graze`/`Tags` ⇒ outcome-neutral.
 
 ## Notes
 - `Step` deliberately mirrors `flora.Step`/`decay.Step`: pure read → return per-entity delta/intent →

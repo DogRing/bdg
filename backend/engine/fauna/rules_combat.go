@@ -56,6 +56,23 @@ func (r *Rules) Feed(sp SpeciesID, ctx expr.Context) float64 {
 	return v
 }
 
+// Graze evaluates the species' §6 herbivore graze hunger-recovery program (parallels Feed). Returns 0 when
+// absent so non-grazing content remains outcome-neutral.
+func (r *Rules) Graze(sp SpeciesID, ctx expr.Context) float64 {
+	if r == nil {
+		return 0
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.graze == nil {
+		return 0
+	}
+	v := sd.graze.EvalNumber(ctx)
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // Diet returns the species' diet/target tags in sorted order.
 func (r *Rules) Diet(sp SpeciesID) []core.Tag {
 	if r == nil {

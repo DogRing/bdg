@@ -188,10 +188,12 @@ load error that builds NO partial registry (SPEC.md invariant):
 ## Fauna combat content (FC1/FC4/FC9 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
 
 Load-pipeline deltas for the combat/carcass round:
-- Parse the new per-species `fauna:` combat §6 programs into `fauna.Rules` — `attack_power` / `hit` /
-  `feed` (compiled via `expr`; `ReadsAttrs ⊆ AttrOperands()∪drives`, now incl. `target.threat`/
+- Parse the new per-species `fauna:` combat/feeding §6 programs into `fauna.Rules` — `attack_power` / `hit` /
+  `feed` / `graze` (compiled via `expr`; `ReadsAttrs ⊆ AttrOperands()∪drives`, now incl. `target.threat`/
   `scent.carrion`). Target/engage range REUSES the species `SightRadius` sense — there is **no** separate
   `engage_range` field.
+- Populate `SpeciesRule.Tags` from the kind's own `objects.yaml` tags (D10 tag-driven diet — a predator's
+  `Diet` matches a target's `Tags`, e.g. wolf `[game]` ↔ deer tag `game`).
 - Parse the scalar combat balance into `EnvConfig.FaunaCombat` (`fauna.CombatParams`), MIRRORING
   `FaunaCadence`: exchange & engage cooldown min/max, `disengage_range_factor`, `stamina_drop_threshold`,
   `vital_regen_per_tick`, `vital_cap_damage_fraction` (from `world.yaml`).

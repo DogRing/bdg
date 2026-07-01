@@ -42,6 +42,7 @@ func combatRules(t *testing.T) *fauna.Rules {
 			Drives:       []fauna.DriveRule{{ID: "hunger", Rate: 0}},
 			AppTemp:      mustNum(t, "0"),
 			Speed:        mustNum(t, "0"),
+			Tags:         []core.Tag{core.Tag(spCombatPrey)}, // predator diet matches this (D10 tag-driven)
 			IsPredator:   false,
 			SmellRadius:  5,
 			SightRadius:  5,

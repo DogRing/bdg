@@ -270,6 +270,7 @@ object_kinds:
         - { id: thermal }                                                          # DERIVED from apparent_temp (F40); no rate
       apparent_temp: "temperature - wind.mag * 6 - moisture * 3"                    # °C felt: wind-chill + wet (CA3 °C); P1 climate-OFF ⇒ neutral
       speed: "Agility * 1.2 + fear * 0.8 - fatigue * 0.4 - thermal * 0.6"           # base Agility; fear→faster, fatigue/thermal→slower (체온→운동능력; thermal from apparent_temp F40, 0 under climate-OFF)
+      graze: "0.06 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora (world applyAnimalGraze; parallels predator feed)
       diet: [ forage ]                                                             # grazes objects carrying `forage` (grass/berry_shrub)
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }             # wide FOV ~120° (prey vigilance, F44)
       terrain_cost: { river: 1.8, mountain: 1.6 }                                  # fords water / climbs poorly (W10b); absent terrain ⇒ 1.0
@@ -324,6 +325,7 @@ object_kinds:
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 7 - moisture * 3"                    # small body → wind-chills fast
       speed: "Agility * 1.6 + fear * 1.0 - fatigue * 0.4 - thermal * 0.7"           # very fast sprinter; small body → strong thermal penalty (F40)
+      graze: "0.07 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       diet: [ forage ]
       senses: { smell_radius: 8.0, sight_radius: 16.0, fov_arc: 1.4 }               # near-panoramic FOV ~160°
       terrain_cost: { river: 2.5, mountain: 2.0 }                                  # poor at water + climbing (plains animal)
@@ -348,6 +350,7 @@ object_kinds:
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 4 - moisture * 2"                    # hardy mountain coat
       speed: "Agility * 1.1 - fatigue * 0.3 - thermal * 0.3"                        # hardy mountain coat → small thermal penalty (F40)
+      graze: "0.05 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       diet: [ forage ]
       senses: { smell_radius: 9.0, sight_radius: 13.0, fov_arc: 1.0 }
       terrain_cost: { mountain: 0.6, river: 2.0, sand: 1.2 }                       # CLIMBER: cheap on mountains (FA8); poor at water
