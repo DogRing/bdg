@@ -512,8 +512,10 @@ section is the **fauna-module interface delta only** (behaviour/why → 클러�
   a successful engage sets `EngagedWith` on BOTH animals; every `[10,20]`-tick exchange (seeded `envFork`)
   proposes `attack_power×hit` damage to the target (prey never retaliates; predator↔predator both attack).
   Engage-ATTEMPT cooldown `[50,100]` ticks. Disengage when predator stamina drops OR the target is beyond
-  `disengage_range` (~2·cellSize) — this is where scenario #8 ("predator stops when its stamina drops first")
-  emerges. While engaged, locomotion is suppressed (FC13). **Death (Vital≤0) + carcass creation are the
+  `disengage_range` (~2·cellSize). Stamina DRAINS `CombatParams.StaminaDrainPerTick` while engaged and
+  recovers `StaminaRecoverPerTick` while free (balance), so a predator tires mid-hunt → disengages →
+  recovers → re-engages (burst pursuit): this is where scenario #8 ("predator stops when its stamina drops
+  first") emerges. While engaged, locomotion is suppressed (FC13). **Death (Vital≤0) + carcass creation are the
   WORLD's** (SPEC-world-fauna; F3 "world owns death") — fauna only PROPOSES the damage intent + engage state.
 - **Feeding & diet (D10 tag-driven, F7).** A predator's `Diet` matches the TARGET's OWN content tags, NOT its
   SpeciesID: `SpeciesRule.Tags` carries each kind's tags (config-populated from `objects.yaml`), and

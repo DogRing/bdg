@@ -64,6 +64,8 @@
         "engage_cooldown_max_ticks": { "type": "integer", "minimum": 0, "description": "combat engage-attempt cooldown upper bound (fauna.CombatParams)" },
         "disengage_range_factor": { "type": "number", "minimum": 0, "description": "combat disengage range factor multiplied by scent_cell_size" },
         "stamina_drop_threshold": { "type": "number", "minimum": 0, "description": "combat disengage stamina threshold" },
+        "stamina_drain_per_tick": { "type": "number", "minimum": 0, "description": "stamina spent per tick while engaged in combat" },
+        "stamina_recover_per_tick": { "type": "number", "minimum": 0, "description": "stamina regained per tick while not engaged" },
         "vital_regen_per_tick": { "type": "number", "minimum": 0, "description": "combat vital regeneration rate per tick" },
         "vital_cap_damage_fraction": { "type": "number", "minimum": 0, "description": "fraction of exchange damage applied as vital-cap scar" }
       }

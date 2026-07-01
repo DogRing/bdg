@@ -52,6 +52,8 @@ type worldDoc struct {
 		EngageCooldownMaxTicks int     `yaml:"engage_cooldown_max_ticks"`
 		DisengageRangeFactor   float64 `yaml:"disengage_range_factor"`
 		StaminaDropThreshold   float64 `yaml:"stamina_drop_threshold"`
+		StaminaDrainPerTick    float64 `yaml:"stamina_drain_per_tick"`
+		StaminaRecoverPerTick  float64 `yaml:"stamina_recover_per_tick"`
 		VitalRegenPerTick      float64 `yaml:"vital_regen_per_tick"`
 		VitalCapDamageFraction float64 `yaml:"vital_cap_damage_fraction"`
 	} `yaml:"cadence"`

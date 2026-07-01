@@ -58,6 +58,8 @@ cadence:
   engage_cooldown_max_ticks: 100 # failed/initial engage cooldown upper bound (FC3)
   disengage_range_factor: 2.0    # disengage when target beyond this × scent_cell_size (FC6)
   stamina_drop_threshold: 0.05   # predator disengages when stamina falls below this (FC6)
+  stamina_drain_per_tick: 0.02   # stamina spent per tick while engaged → predator tires + stops (#8)
+  stamina_recover_per_tick: 0.01 # stamina regained per tick while free → recovers, re-engages (burst hunting)
   vital_regen_per_tick: 0.001    # slow vital recovery, clamped by VitalCap (FC7)
   vital_cap_damage_fraction: 0.05 # exchange damage fraction applied as scar cap damage (FC7)
 

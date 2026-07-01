@@ -159,3 +159,23 @@ func regenVital(a Animal, dt float64, params CombatParams) float64 {
 	}
 	return v
 }
+
+// nextStamina drains stamina per tick while ENGAGED in combat and recovers it while free (FC6 / scenario
+// #8 — "the predator stops when its stamina drops first"). Once stamina falls to StaminaDropThreshold the
+// existing resolveCombat disengage fires; it then recovers and can re-engage → burst-style pursuit. Rates
+// are balance data (CombatParams); zero ⇒ neutral (stamina unchanged, as before).
+func nextStamina(a Animal, engaged bool, dt float64, params CombatParams) float64 {
+	s := a.Stamina
+	if engaged {
+		s -= params.StaminaDrainPerTick * dt
+	} else {
+		s += params.StaminaRecoverPerTick * dt
+	}
+	if s > 1 {
+		return 1
+	}
+	if s < 0 {
+		return 0
+	}
+	return s
+}

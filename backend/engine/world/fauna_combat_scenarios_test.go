@@ -215,3 +215,66 @@ func TestGrazingReducesHungerAtForageFlora(t *testing.T) {
 		t.Fatalf("hunger dropped with NO forage flora in reach (grazing should need food): %.3f", got)
 	}
 }
+
+// TestCombatScenarioStaminaDisengage verifies scenario #8: a predator that engages spends stamina each
+// tick, and once it drops below the threshold it DISENGAGES (stops) — so a weak-hitting predator tires
+// out and the prey survives. Requires the stamina-drain producer (CombatParams.StaminaDrainPerTick).
+func TestCombatScenarioStaminaDisengage(t *testing.T) {
+	fx := newFixtureSeeded(t, 840)
+	installCombatActionRegistry(t, fx)
+	cfg := scenarioCombatCfg()
+	cfg.FaunaCombat.StaminaDrainPerTick = 0.3   // tires quickly while engaged
+	cfg.FaunaCombat.StaminaRecoverPerTick = 0.0 // no recovery → stays disengaged once tired
+	cfg.FaunaCombat.StaminaDropThreshold = 0.5
+
+	rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {
+			Utilities:   map[actions.ActionID]*expr.Program{"Forage": testNumProgram(t, "1")},
+			Drives:      []fauna.DriveRule{{ID: "hunger", Rate: 0.01}},
+			Speed:       testNumProgram(t, "0"),
+			Tags:        []core.Tag{"game"},
+			SmellRadius: 5, SightRadius: 5, FovArc: 3.14,
+		},
+		"wolf": {
+			Utilities:   map[actions.ActionID]*expr.Program{"Attack": testNumProgram(t, "1")},
+			Drives:      []fauna.DriveRule{{ID: "hunger", Rate: 0.02}},
+			Speed:       testNumProgram(t, "0"),
+			AttackPower: testNumProgram(t, "0.05"), // weak → cannot kill before tiring
+			Hit:         testNumProgram(t, "1"),
+			Diet:        []core.Tag{"game"},
+			IsPredator:  true,
+			SmellRadius: 5, SightRadius: 5, FovArc: 3.14,
+			SteerChannel: map[actions.ActionID]core.Tag{"Attack": fauna.TagAttack},
+		},
+	})
+	wolf := testAnimal("an:wolf", "wolf", core.Vec2{X: 1, Y: 1})
+	wolf.Drives = map[fauna.DriveID]float64{"hunger": 0.9}
+	wolf.Stamina = 1
+	deer := testAnimal("an:deer", "deer", core.Vec2{X: 2, Y: 1})
+	deer.Vital = 1
+	deer.VitalCap = 1
+	fx.world.InstallFauna(cfg, rules, testScentEmitters(), []fauna.Animal{deer, wolf})
+
+	engagedAtSomePoint, disengagedWhileDeerAlive := false, false
+	for range 15 {
+		fx.world.Tick()
+		w := fx.world.animals["an:wolf"]
+		d := fx.world.animals["an:deer"]
+		if w != nil && w.EngagedWith != "" {
+			engagedAtSomePoint = true
+		}
+		if w != nil && engagedAtSomePoint && w.EngagedWith == "" && d != nil {
+			disengagedWhileDeerAlive = true // tired out and stopped before killing
+		}
+	}
+	if !engagedAtSomePoint {
+		t.Fatalf("predator never engaged (setup issue)")
+	}
+	if !disengagedWhileDeerAlive {
+		t.Fatalf("predator never disengaged from stamina drain (scenario #8 not firing); wolf stamina=%.3f",
+			fx.world.animals["an:wolf"].Stamina)
+	}
+	if d := fx.world.animals["an:deer"]; d == nil {
+		t.Fatalf("prey died despite the predator tiring out (weak attack should not kill)")
+	}
+}
