@@ -87,7 +87,7 @@ func (w *World) runRespawn() {
 }
 
 // respawnPos places a new member near a living member (small seeded offset) or at the species anchor if
-// the species is extinct. Deterministic given the seeded fork.
+// the species is extinct. Deterministic given the seeded fork; kept inside the world bounds.
 func (w *World) respawnPos(sp core.Tag, live []core.Vec2, fork *rng.RNG) core.Vec2 {
 	var base core.Vec2
 	switch {
@@ -100,8 +100,29 @@ func (w *World) respawnPos(sp core.Tag, live []core.Vec2, fork *rng.RNG) core.Ve
 	if off <= 0 {
 		off = 1
 	}
-	return core.Vec2{
+	return w.clampToBounds(core.Vec2{
 		X: base.X + (fork.Float64()-0.5)*off,
 		Y: base.Y + (fork.Float64()-0.5)*off,
+	})
+}
+
+// clampToBounds keeps a position inside the world's [Min,Max] rectangle so animals (fleeing prey, roaming
+// predators) cannot wander off-map. No-op if bounds are not configured (Max ≤ Min).
+func (w *World) clampToBounds(p core.Vec2) core.Vec2 {
+	if w.envCfg.Max.X <= w.envCfg.Min.X || w.envCfg.Max.Y <= w.envCfg.Min.Y {
+		return p
 	}
+	if p.X < w.envCfg.Min.X {
+		p.X = w.envCfg.Min.X
+	}
+	if p.X > w.envCfg.Max.X {
+		p.X = w.envCfg.Max.X
+	}
+	if p.Y < w.envCfg.Min.Y {
+		p.Y = w.envCfg.Min.Y
+	}
+	if p.Y > w.envCfg.Max.Y {
+		p.Y = w.envCfg.Max.Y
+	}
+	return p
 }

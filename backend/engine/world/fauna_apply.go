@@ -126,8 +126,9 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	if a == nil {
 		return
 	}
-	w.spatial.Move(a.ID, intent.NextPos)
-	a.Pos = intent.NextPos
+	pos := w.clampToBounds(intent.NextPos)
+	w.spatial.Move(a.ID, pos)
+	a.Pos = pos
 	a.Heading = intent.NextHeading
 	a.Drives = cloneFaunaDrives(intent.Drives)
 	a.Stamina = intent.Stamina
