@@ -25,7 +25,7 @@ seed: 20260628
 # ── Bounds (W1) — overrides content/world.yaml's 512² default for this small starter run ──
 bounds:
   min: [0.0, 0.0]
-  max: [128.0, 128.0]
+  max: [192.0, 192.0]
 
 # ── Terrain layout (navmap base layer + climate t=0) — 16 cols × 16 rows, row-major ──────
 terrain:
@@ -52,73 +52,73 @@ terrain:
 
 # ── Placed objects (ore_node / water_source / shelter / station) ─────────────────────────
 objects:
-  - { id: shelter_0, kind: shelter,      pos: [40.0, 44.0] }            # village shelter (cluster center)
-  - { id: bench_0,   kind: tool_bench,   pos: [44.0, 46.0] }            # crafting station (station:bench)
-  - { id: spring_0,  kind: water_source, pos: [66.0, 48.0] }            # on the river (col 8) — drinking water
-  - { id: ore_0,     kind: ore_node,     pos: [104.0, 12.0], remaining: 8 }  # on the NE mountain (Mine target)
+  - { id: shelter_0, kind: shelter,      pos: [60.0, 66.0] }            # village shelter (cluster center)
+  - { id: bench_0,   kind: tool_bench,   pos: [66.0, 69.0] }            # crafting station (station:bench)
+  - { id: spring_0,  kind: water_source, pos: [99.0, 72.0] }            # on the river (col 8) — drinking water
+  - { id: ore_0,     kind: ore_node,     pos: [156.0, 18.0], remaining: 8 }  # on the NE mountain (Mine target)
 
 # ── Agents — CLUSTERED on soil around (40,44), all within ~16 units (W12 social-proximity) ─
 # RealStats are sampled from the GenSpec at Spawn (not here). Tight cluster ⇒ neighbours fall inside
 # sight radius (18) so the social/emergence layer can actually plan (live-emergence lever).
 agents:
-  - { id: villager_1, pos: [36.0, 40.0] }
-  - { id: villager_2, pos: [44.0, 40.0] }
-  - { id: villager_3, pos: [40.0, 48.0] }
-  - { id: villager_4, pos: [48.0, 46.0] }
-  - { id: villager_5, pos: [34.0, 50.0] }
-  - { id: villager_6, pos: [46.0, 52.0] }
-  - { id: villager_7, pos: [52.0, 42.0] }
-  - { id: villager_8, pos: [38.0, 54.0] }
+  - { id: villager_1, pos: [54.0, 60.0] }
+  - { id: villager_2, pos: [66.0, 60.0] }
+  - { id: villager_3, pos: [60.0, 72.0] }
+  - { id: villager_4, pos: [72.0, 69.0] }
+  - { id: villager_5, pos: [51.0, 75.0] }
+  - { id: villager_6, pos: [69.0, 78.0] }
+  - { id: villager_7, pos: [78.0, 63.0] }
+  - { id: villager_8, pos: [57.0, 81.0] }
 
 # ── Flora (suitability-seeded plants) — DORMANT unless flora is active ────────────────────
 # Grass = the deer pasture (east) + a little near the village; berry_shrub = mature food bushes. Lengths
 # set to a mature stage so they bear/emit scent:food immediately (else they start as seedlings).
 flora:
-  - { id: grass_1, species: grass, pos: [86.0, 58.0], length: 0.3, width: 0.2 }   # east pasture (deer graze)
-  - { id: grass_2, species: grass, pos: [94.0, 64.0], length: 0.3, width: 0.2 }
-  - { id: grass_3, species: grass, pos: [82.0, 68.0], length: 0.3, width: 0.2 }
-  - { id: grass_4, species: grass, pos: [98.0, 56.0], length: 0.3, width: 0.2 }
-  - { id: grass_5, species: grass, pos: [90.0, 72.0], length: 0.3, width: 0.2 }
-  - { id: grass_6, species: grass, pos: [50.0, 46.0], length: 0.3, width: 0.2 }   # near village
-  - { id: grass_7, species: grass, pos: [56.0, 52.0], length: 0.3, width: 0.2 }
-  - { id: grass_8, species: grass, pos: [100.0, 28.0], length: 0.3, width: 0.2 }  # mountain-base pasture (goat grazes, then climbs)
-  - { id: shrub_1, species: berry_shrub, pos: [58.0, 40.0], length: 1.0, width: 0.8 }  # mature (stage 2) → berries
-  - { id: shrub_2, species: berry_shrub, pos: [52.0, 60.0], length: 1.0, width: 0.8 }
+  - { id: grass_1, species: grass, pos: [129.0, 87.0], length: 0.3, width: 0.2 }   # east pasture (deer graze)
+  - { id: grass_2, species: grass, pos: [141.0, 96.0], length: 0.3, width: 0.2 }
+  - { id: grass_3, species: grass, pos: [123.0, 102.0], length: 0.3, width: 0.2 }
+  - { id: grass_4, species: grass, pos: [147.0, 84.0], length: 0.3, width: 0.2 }
+  - { id: grass_5, species: grass, pos: [135.0, 108.0], length: 0.3, width: 0.2 }
+  - { id: grass_6, species: grass, pos: [75.0, 69.0], length: 0.3, width: 0.2 }   # near village
+  - { id: grass_7, species: grass, pos: [84.0, 78.0], length: 0.3, width: 0.2 }
+  - { id: grass_8, species: grass, pos: [150.0, 42.0], length: 0.3, width: 0.2 }  # mountain-base pasture (goat grazes, then climbs)
+  - { id: shrub_1, species: berry_shrub, pos: [87.0, 60.0], length: 1.0, width: 0.8 }  # mature (stage 2) → berries
+  - { id: shrub_2, species: berry_shrub, pos: [78.0, 90.0], length: 1.0, width: 0.8 }
 
 # ── Animals (fauna) — DORMANT unless InstallFauna runs (empty ⇒ fauna OFF) ────────────────
 # A deer herd grazing the east pasture + a single wolf ranging the NE. Stats sampled from the per-species
 # GenSpec at spawn. heading is the initial steering/FOV axis (radians); the wolf faces SW toward the herd.
 animals:
-  - { id: deer_1, species: deer, pos: [86.0, 60.0], heading: 3.14 }
-  - { id: deer_2, species: deer, pos: [92.0, 66.0], heading: 3.14 }
-  - { id: deer_3, species: deer, pos: [80.0, 64.0], heading: 2.80 }
-  - { id: deer_4, species: deer, pos: [88.0, 68.0], heading: 3.00 }
-  - { id: deer_5, species: deer, pos: [96.0, 60.0], heading: 3.10 }
-  - { id: deer_6, species: deer, pos: [84.0, 72.0], heading: 2.90 }
-  - { id: wolf_1, species: wolf, pos: [94.0, 58.0], heading: 2.90 }   # close enough for activation smoke; predation fires without procedural placement
+  - { id: deer_1, species: deer, pos: [129.0, 90.0], heading: 3.14 }
+  - { id: deer_2, species: deer, pos: [138.0, 99.0], heading: 3.14 }
+  - { id: deer_3, species: deer, pos: [120.0, 96.0], heading: 2.80 }
+  - { id: deer_4, species: deer, pos: [132.0, 102.0], heading: 3.00 }
+  - { id: deer_5, species: deer, pos: [144.0, 90.0], heading: 3.10 }
+  - { id: deer_6, species: deer, pos: [126.0, 108.0], heading: 2.90 }
+  - { id: wolf_1, species: wolf, pos: [141.0, 87.0], heading: 2.90 }   # close enough for activation smoke; predation fires without procedural placement
   # rabbits near the village fields (plains prey)
-  - { id: rabbit_1, species: rabbit, pos: [58.0, 50.0] }
-  - { id: rabbit_2, species: rabbit, pos: [54.0, 58.0] }
-  - { id: rabbit_3, species: rabbit, pos: [62.0, 46.0] }
-  - { id: rabbit_4, species: rabbit, pos: [60.0, 54.0] }
-  - { id: rabbit_5, species: rabbit, pos: [64.0, 52.0] }
-  - { id: rabbit_6, species: rabbit, pos: [56.0, 62.0] }
-  - { id: rabbit_7, species: rabbit, pos: [66.0, 48.0] }
-  - { id: rabbit_8, species: rabbit, pos: [52.0, 54.0] }
+  - { id: rabbit_1, species: rabbit, pos: [87.0, 75.0] }
+  - { id: rabbit_2, species: rabbit, pos: [81.0, 87.0] }
+  - { id: rabbit_3, species: rabbit, pos: [93.0, 69.0] }
+  - { id: rabbit_4, species: rabbit, pos: [90.0, 81.0] }
+  - { id: rabbit_5, species: rabbit, pos: [96.0, 78.0] }
+  - { id: rabbit_6, species: rabbit, pos: [84.0, 93.0] }
+  - { id: rabbit_7, species: rabbit, pos: [99.0, 72.0] }
+  - { id: rabbit_8, species: rabbit, pos: [78.0, 81.0] }
   # goats on the NE mountains (climbers, FA8)
-  - { id: goat_1, species: goat, pos: [104.0, 18.0] }
-  - { id: goat_2, species: goat, pos: [112.0, 12.0] }
+  - { id: goat_1, species: goat, pos: [156.0, 27.0] }
+  - { id: goat_2, species: goat, pos: [168.0, 18.0] }
   # a bear ranging the NE woods below the mountains (omnivore apex; 2nd predator)
-  - { id: bear_1, species: bear, pos: [104.0, 36.0], heading: 2.20 }
+  - { id: bear_1, species: bear, pos: [156.0, 54.0], heading: 2.20 }
   # fish in the river (swimmers, confined to water, FA8)
-  - { id: fish_1, species: fish, pos: [68.0, 56.0] }
-  - { id: fish_2, species: fish, pos: [68.0, 88.0] }
-  - { id: fish_3, species: fish, pos: [68.0, 64.0] }
-  - { id: fish_4, species: fish, pos: [68.0, 72.0] }
-  - { id: fish_5, species: fish, pos: [68.0, 80.0] }
-  - { id: fish_6, species: fish, pos: [68.0, 96.0] }
-  - { id: fish_7, species: fish, pos: [68.0, 104.0] }
-  - { id: fish_8, species: fish, pos: [68.0, 40.0] }
+  - { id: fish_1, species: fish, pos: [102.0, 84.0] }
+  - { id: fish_2, species: fish, pos: [102.0, 132.0] }
+  - { id: fish_3, species: fish, pos: [102.0, 96.0] }
+  - { id: fish_4, species: fish, pos: [102.0, 108.0] }
+  - { id: fish_5, species: fish, pos: [102.0, 120.0] }
+  - { id: fish_6, species: fish, pos: [102.0, 144.0] }
+  - { id: fish_7, species: fish, pos: [102.0, 156.0] }
+  - { id: fish_8, species: fish, pos: [102.0, 60.0] }
 
 animal_templates:
   deer:

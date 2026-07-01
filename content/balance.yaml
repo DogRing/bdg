@@ -17,7 +17,7 @@ world:
   tick_minutes: 1                 # 1 tick = 1 game-minute (engine/worldtime)
   real_scale: 12                  # 24 game-hours = 2 real-hours
   day_minutes: 1440               # 24 * 60
-  spatial_hash_cell: 8.0          # spatial-hash cell edge (world units); ~ avg perception radius
+  spatial_hash_cell: 12.0         # spatial-hash cell edge (world units); ~ avg perception radius (192 world / 12 = 16 cells)
   # reliance_threshold RETIRED in P6 → see politics.role_convergence_threshold
   outcome_difficulty_base: 50.0   # Real Stat level at which an action succeeds with neutral effort
   backup_every_ticks: 60          # emit SnapshotReady every N ticks (platform/persist handles the write)

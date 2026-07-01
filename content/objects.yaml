@@ -273,7 +273,7 @@ object_kinds:
       graze: "0.06 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora (world applyAnimalGraze; parallels predator feed)
       diet: [ forage ]                                                             # grazes objects carrying `forage` (grass/berry_shrub)
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }             # wide FOV ~120° (prey vigilance, F44)
-      respawn_target: 6                                                            # herd carrying capacity (F9 timer-respawn)
+      respawn_target: 16                                                           # herd carrying capacity (F9 timer-respawn)
       terrain_cost: { river: 1.8, mountain: 1.6 }                                  # fords water / climbs poorly (W10b); absent terrain ⇒ 1.0
       impassable: [ sea ]                                                          # cannot enter deep sea (per-species block; sea also globally impassable)
 
@@ -289,7 +289,7 @@ object_kinds:
       actions:
         - { action: Hunt,   utility: "hunger * (0.3 + scent.prey)" }                # hungry → home on prey scent (upwind, FA2)
         - { action: Attack, utility: "hunger * (0.8 + scent.prey) - dist.prey * 0.05 - target.threat * 0.7" } # close prey → engage; predator targets damped by threat cost
-        - { action: Feed,   utility: "hunger * scent.carrion" }                     # committed carrion scent → feed after a kill
+        - { action: Feed,   utility: "hunger * scent.carrion * 4" }                     # committed carrion scent → feed after a kill
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
         - { action: MoveTo, utility: "0.15" }                                       # range/wander baseline
       drives:
@@ -297,13 +297,13 @@ object_kinds:
         - { id: fatigue, rate: 0.0005 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 5 - moisture * 2"
-      speed: "Agility * 0.0038 - fatigue * 0.1 - thermal * 0.0013"                  # faster than deer (pursuit); thermal stress → slower (F40)
+      speed: "Agility * 0.0058 - fatigue * 0.1 - thermal * 0.0013"                  # faster than deer (pursuit); thermal stress → slower (F40)
       attack_power: "Strength * 0.006"                                              # §6 damage magnitude from base stat composition (FC4)
       hit: "0.55 + Agility * 0.0045"                                                # §6 hit multiplier/probability proxy; target defense deferred to content operands
       feed: "0.35 + hunger * 0.45"                                                  # carcass supply → hunger recovery factor (FC8)
       diet: [ game ]                                                               # hunts animals carrying `game` (deer)
-      senses: { smell_radius: 12.0, sight_radius: 20.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
-      respawn_target: 1                                                            # apex predator — sparse (F9)
+      senses: { smell_radius: 20.0, sight_radius: 34.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
+      respawn_target: 3                                                            # apex predator — sparse (F9)
       terrain_cost: { river: 1.4, mountain: 1.2 }                                  # ranges water/hills better than deer (W10b)
       impassable: [ sea ]
 
@@ -330,7 +330,7 @@ object_kinds:
       graze: "0.07 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       diet: [ forage ]
       senses: { smell_radius: 8.0, sight_radius: 16.0, fov_arc: 1.4 }               # near-panoramic FOV ~160°
-      respawn_target: 8                                                            # prolific prey (F9)
+      respawn_target: 20                                                           # prolific prey (F9)
       terrain_cost: { river: 2.5, mountain: 2.0 }                                  # poor at water + climbing (plains animal)
       impassable: [ sea ]
 
@@ -356,7 +356,7 @@ object_kinds:
       graze: "0.05 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       diet: [ forage ]
       senses: { smell_radius: 9.0, sight_radius: 13.0, fov_arc: 1.0 }
-      respawn_target: 2                                                            # small mountain band (F9)
+      respawn_target: 6                                                            # small mountain band (F9)
       terrain_cost: { mountain: 0.6, river: 2.0, sand: 1.2 }                       # CLIMBER: cheap on mountains (FA8); poor at water
       impassable: [ sea ]
 
@@ -371,7 +371,7 @@ object_kinds:
       actions:
         - { action: Hunt,   utility: "hunger * (0.2 + scent.prey)" }                # hunts when prey scent dominates
         - { action: Attack, utility: "hunger * (0.9 + scent.prey) - dist.prey * 0.04 - target.threat * 0.5" } # strong predator, still threat-damped
-        - { action: Feed,   utility: "hunger * scent.carrion" }                     # scavenges/feeds from committed carcass scent
+        - { action: Feed,   utility: "hunger * scent.carrion * 4" }                     # scavenges/feeds from committed carcass scent
         - { action: Graze,  utility: "hunger * (0.2 + scent.food)" }                # grazes when food scent dominates (emergent omnivore)
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
         - { action: MoveTo, utility: "0.15" }
@@ -380,13 +380,13 @@ object_kinds:
         - { id: fatigue, rate: 0.0004 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 3 - moisture * 1"                    # large, well-insulated
-      speed: "Agility * 0.0028 - fatigue * 0.1 - thermal * 0.0006"                  # strong, not fast; well-insulated → smallest thermal penalty (F40)
+      speed: "Agility * 0.0075 - fatigue * 0.1 - thermal * 0.0006"                  # strong, not fast; well-insulated → smallest thermal penalty (F40)
       attack_power: "Strength * 0.008"                                              # heavier hit than wolf (FC4)
       hit: "0.5 + Agility * 0.0035"                                                 # less agile but still stat-composed
       feed: "0.4 + hunger * 0.4"                                                    # larger predator extracts more recovery from a carcass
       diet: [ game, forage ]                                                       # OMNIVORE: prey + vegetation (F7)
-      senses: { smell_radius: 14.0, sight_radius: 16.0, fov_arc: 0.9 }              # superb nose
-      respawn_target: 1                                                            # apex omnivore — sparse (F9)
+      senses: { smell_radius: 22.0, sight_radius: 30.0, fov_arc: 0.9 }              # superb nose
+      respawn_target: 3                                                            # apex omnivore — sparse (F9)
       terrain_cost: { mountain: 0.7, river: 1.5 }                                  # CLIMBER predator (FA8)
       impassable: [ sea ]
 
@@ -410,7 +410,7 @@ object_kinds:
       apparent_temp: "temperature - moisture * 1"                                   # in-water: negligible wind effect
       speed: "Agility * 0.0033 - fatigue * 0.08 - thermal * 0.0013"                 # cold-blooded → water temperature swings movement (F40)
       senses: { smell_radius: 7.0, sight_radius: 10.0, fov_arc: 1.2 }
-      respawn_target: 8                                                            # shoal in the river (F9)
+      respawn_target: 20                                                           # shoal in the river (F9)
       terrain_cost: { river: 0.5, sea: 0.5 }                                       # SWIMMER: fast in water (FA8)
       impassable: [ soil, sand, mountain, bare_rock ]                              # confined to water (FA8 impassable-on-land)
 

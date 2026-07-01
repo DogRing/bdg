@@ -24,11 +24,11 @@ schema_version: 1
 # (climate CellAt / navmap cell index), never an agent's position.
 bounds:
   min: [0.0, 0.0]
-  max: [512.0, 512.0]            # 512×512 village world (40 agents @ village_size; sight 18, smell 10)
+  max: [192.0, 192.0]            # headless default; the starter fixture (192×192) overrides. 192/12 = 16×16 navmap cells
 
 # ── Grids (W2) — auxiliary index cell sizes over the same continuous space ────────────
 grids:
-  navmap_cell_size: 8.0          # = balance.yaml world.spatial_hash_cell (KEEP IN SYNC); 512/8 = 64×64 cells
+  navmap_cell_size: 12.0         # = balance.yaml world.spatial_hash_cell (KEEP IN SYNC); fixture 192/12 = 16×16 cells
   climate_grid_cols: 16          # coarse climate grid; 512/16 = 32-unit climate cells
   climate_grid_rows: 16          #   ⇒ one climate cell = 4×4 navmap cells (32/8); world owns GridCell→[]navmap.Cell
   scent_cell_size: 10.0          # W3 floor: MUST be ≥ motion.max_speed × cadence.scent_spread (= 1.4×6 = 8.4 ✓);

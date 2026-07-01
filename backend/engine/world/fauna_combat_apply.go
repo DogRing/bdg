@@ -38,6 +38,16 @@ func (w *World) applyAnimalAttack(attacker *fauna.Animal, intent fauna.Intent) {
 	target.NextExchangeTick = intent.NextExchangeTick
 	target.EngageCooldownUntil = intent.EngageCooldownUntil
 	if target.Vital <= 0 {
+		// The killer eats its fresh kill immediately: the carcass Feed action rarely fires in time because
+		// the predator resumes hunting the next prey before the carrion scent registers, so a successful
+		// KILL directly nourishes the attacker (hunger ↓ by its feed §6). The carcass still forms for
+		// scavengers (FC8/FC9). Data-driven (D10 via feed §6); no-op if the attacker has no hunger drive.
+		if attacker.Drives != nil {
+			if _, ok := attacker.Drives["hunger"]; ok {
+				gain := w.faunaRules.Feed(attacker.Species, animalFeedContext{animal: attacker})
+				attacker.Drives["hunger"] = clamp01(attacker.Drives["hunger"] - gain)
+			}
+		}
 		w.killAnimal(target.ID)
 	}
 }
