@@ -177,7 +177,7 @@ type Intent struct {
 //      apparent_temp/wind), then per candidate ActionID in Rules.Candidates(species) set `is_current`
 //      (1 iff == CurrentAction, the §6 stickiness term, F30/F45) and evaluate Rules.Utility. Pick MAX;
 //      ties by sorted ActionID (D12).
-//   4. STEER (F35): speed = Rules.Speed (§6 base-stat speed + fear/fatigue modulation + terrain Cost,
+//   4. STEER (F35): speed = Rules.Speed (§6 base-stat speed + fear/fatigue/thermal modulation + terrain Cost,
 //      where terrain Cost = TerrainSampler.BaseCost × Rules.TerrainCost(species,terrain).mult — the
 //      per-species cost map, W10b: a swimmer is fast in water, a climber on mountains);
 //      direction = the resolved channel direction the chosen action seeks/avoids (Graze/Hunt→toward
@@ -265,7 +265,12 @@ func (r *Rules) DriveUpdate(sp SpeciesID, cur map[DriveID]float64, ctx expr.Cont
 func (r *Rules) AppTemp(sp SpeciesID, ctx expr.Context) float64
 
 // Speed evaluates the species' §6 locomotion speed Program (base = §6(base stats); modulated by
-// fear/fatigue drive terms + terrain Cost, F35(a)+(c)+R2) → world units per DT. Pure, no RNG.
+// drive terms — fear/fatigue AND **thermal** (body-temperature stress → slower locomotion; the
+// `thermal` drive is derived from `apparent_temp`, F40, so weather/wind alters movement ability once
+// climate is ON; P1 climate-OFF ⇒ thermal 0 ⇒ neutral) — plus terrain Cost, F35(a)+(c)+R2) → world
+// units per DT. Which drives a species' speed §6 reads is open content (D4/D10 — a §6 over the base
+// stats + any drive operand), never a fixed Go whitelist; the fear/fatigue/thermal set is the authored
+// content convention, not an engine constraint. Pure, no RNG.
 func (r *Rules) Speed(sp SpeciesID, ctx expr.Context) float64
 
 // IsPredator reports whether the species carries the `threat:predator` tag (F8) — used to classify

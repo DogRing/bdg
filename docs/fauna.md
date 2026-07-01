@@ -121,7 +121,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 | **F32** | (a) `cellSize`∝sense반경(balance), 셀=uint8 채널 비트셋 |
 | **F33** | (a) 고정순서 stencil bulk(`tick%Ns`) + **next-tick(1틱) 지연**; ⚠ **predator 채널은 매 틱 source 셀 침착**(확산만 bulk — §1.1 막판회피 일관) |
 | **F34** | (c) 바람 있으면 upwind, 중립이면 이웃-on coarse — **F44로 scent-only 한정**(food/prey homing + predator 조기경보/Wary) |
-| **F35** | (a)+(c) §6(base stat) 기본속도 + fear/fatigue 변조; navmap `Passable`/`TerrainAt` 샘플만(pathfind 없음, D11) |
+| **F35** | (a)+(c) §6(base stat) 기본속도 + fear/fatigue **+ thermal** 변조(체온 스트레스→감속, thermal=f(apparent_temp F40); speed §6가 읽는 drive는 열린 content D4/D10 — 고정 화이트리스트 아님); navmap `Passable`/`TerrainAt` 샘플만(pathfind 없음, D11) |
 | **F36** | (a) P1=`engine/fauna` 서브모듈 소유 → 나중 `engine/space` 승격 |
 | **F37** | (a) 종 products→파라미터화 `carcass` kind + `raw_meat` decay lot(Dm4); 미식→`rotten_matter`(W10) |
 | **F38** | (a) Mine/Fell 평행 non-recipe extract, `tool:cutting` gate, §6(Dexterity,`tool:cutting.quality`) yield; agent action |

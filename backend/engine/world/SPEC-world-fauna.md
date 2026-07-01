@@ -12,7 +12,7 @@ scent field** (`engine/space/scent`) into the world tick loop. It adds: the **li
 planning), the **combined agent+animal apply** in ONE sorted-ObjectID stream (F41 / W5), the
 **scent deposit/spread/commit** driving in the Phase 4-ENV sub-phase (the WI-P1 step 4 placeholder),
 and the world-side **adapters** fauna declares — `EnvSample` (climate `CellAt`/`Wind` → animal
-Context) and `TerrainSampler` (navmap → `{Passable, Cost}`). The world stays the **sole mutator**
+Context) and `TerrainSampler` (navmap → `{FootprintBlocked, TerrainAt, BaseCost}`). The world stays the **sole mutator**
 of animal state (move/heading/drives/stamina/vital/death, D12).
 
 It depends on WI-P1: animals read the **navmap** (TerrainSampler) and **climate** (EnvSample) that
@@ -88,7 +88,7 @@ called **every tick** (active/dormant is internal to fauna, F45). The world buil
 snap.Animals = w.animals in sorted ObjectID order (copied; Step never mutates)
 snap.Scent   = w.scent                                   // READ side only (committed buffer, next-tick latency)
 snap.Spatial = w.spatial                                 // shared proximity index (F44 sight query)
-snap.Terrain = terrainSampler{ nav: w.nav, types: w.terrainTypes }   // adapter, below
+snap.Terrain = terrainSampler{ nav: w.nav }              // adapter, below (navmap exposes FootprintBlocked/TerrainAt/BaseCost)
 snap.Env     = buildEnvSamples()                         // per-animal climate sample, below
 snap.Tick    = w.tick
 snap.Cadence = cfg.FaunaCadence                          // F45 dormant period / wake cooldown
@@ -116,16 +116,20 @@ buildEnvSamples(): for each animal a (sorted ObjectID):
     // operands temperature/moisture/wind.dir/wind.mag (fauna AttrOperands).
 ```
 
-### `TerrainSampler` adapter (navmap → {Passable, Cost})
+### `TerrainSampler` adapter (navmap → fauna's 3-method `{FootprintBlocked, TerrainAt, BaseCost}`)
+fauna declares `TerrainSampler interface { FootprintBlocked(p)bool; TerrainAt(p)Tag; BaseCost(p)float64 }`
+(W10b — species affinity is applied controller-side via `Rules.TerrainCost(species,terrain)`, NOT here).
+The world adapter wraps the navmap accessors (D11 index read — continuous `p` → cell, never a snap):
 ```
-terrainSampler.Passable(p) = !w.nav.FootprintBlocked(w.nav.CellOf(p))   // TRUE blockers only (walls/footprints)
-terrainSampler.Cost(p)     = w.terrainTypes[ w.nav.TerrainAt(w.nav.CellOf(p)) ].BaseCost   // ≥1; high for water
+terrainSampler.FootprintBlocked(p) = w.nav.FootprintBlocked(w.nav.CellOf(p))   // walls/footprints only (HARD blockers, all species)
+terrainSampler.TerrainAt(p)        = w.nav.TerrainAt(w.nav.CellOf(p))          // terrain type id (controller looks up Rules.TerrainCost)
+terrainSampler.BaseCost(p)         = w.nav.BaseCost(w.nav.CellOf(p))           // ≥1, override-aware; high for water
 ```
-Per fauna R2/F35 **water is traversable at high Cost, NOT `!Passable`** — only footprints/walls are
-`!Passable`. navmap's existing `Passable(cell)` conflates terrain-impassable (deep water) with
-footprint-block, so the adapter needs a **footprint-only** passability + a **per-cell base cost**
-(see Open Questions — a small navmap accessor or the world's `terrainTypes` join). D11 index read
-(continuous `p` → cell), never a snap.
+Per fauna R2/F35/W10b **water is traversable at high cost, NOT a hard blocker** — only footprints/walls
+are `FootprintBlocked`. The controller's effective sample: blocked = `FootprintBlocked(p)` OR
+`!Rules.TerrainCost(species,terrain).passable`; effective cost = `BaseCost(p) ×
+Rules.TerrainCost(species,terrain).mult`. navmap exposes `FootprintBlocked`/`BaseCost` directly (see the
+RESOLVED note in Open Questions), so the world does NOT re-join `terrainTypes` for the base cost.
 
 ---
 
@@ -211,9 +215,11 @@ re-baseline, carcass/Butcher) is the deliberate **P_fa3** re-baseline.
 - [ ] **EnvSample from climate** — `Env[a.ID]` = `climate.CellAt(a.Pos)` temperature(°C)/moisture +
   `climate.Wind()`; climate OFF ⇒ neutral Env (Wind{0,0}); two animals in one climate cell get equal
   Env. Table-driven.
-- [ ] **TerrainSampler semantics (R2/F35)** — `Passable(p)` is false ONLY for footprint-blocked cells
-  (walls), TRUE for deep-water terrain (traversable); `Cost(p)` is the terrain's base cost (≥1, high
-  for water). A water cell is `Passable:true` with high `Cost`; a wall footprint is `Passable:false`.
+- [ ] **TerrainSampler semantics (R2/F35/W10b)** — `FootprintBlocked(p)` is true ONLY for footprint
+  cells (walls), false for deep-water terrain (traversable); `BaseCost(p)` is the terrain's base cost
+  (≥1, high for water, override-aware); `TerrainAt(p)` returns the cell's terrain id. A water cell is
+  `!FootprintBlocked` with high `BaseCost`; a wall footprint is `FootprintBlocked`. (Species passability/
+  affinity is applied controller-side via `Rules.TerrainCost`, not in the adapter.)
 - [ ] **Combined agent+animal apply (F41/W5)** — agent and animal intents apply in ONE
   lexicographically-sorted id stream; an agent↔animal conflict over one resource resolves by the
   relevant stat, ties by id; shuffling collection order yields byte-identical post-apply state.
@@ -263,15 +269,18 @@ re-baseline, carcass/Butcher) is the deliberate **P_fa3** re-baseline.
 > writing this SPEC — neither a mechanism decision (no new behaviour), both small accessor/contract
 > shapes to settle before implementation:
 
-- **navmap footprint-only passability + per-cell base cost (TerrainSampler seam) — ✅RESOLVED (b), 2026-06-28: world joins `terrainTypes` for `TerrainAt`/`BaseCost`; navmap adds only `FootprintBlocked`. (Species cost = `Rules.TerrainCost`, W10b.)** The fauna
-  `TerrainSampler` needs (1) `Passable` = footprint-block ONLY (water traversable), and (2) `Cost` =
-  the cell's terrain base cost. navmap currently exposes `Passable(cell)` (terrain-impassable AND
-  footprint conflated) and `StepCost(from,to)` (not a single-cell base cost). Options: **(a)** add
-  `navmap.FootprintBlocked(cell) bool` + `navmap.BaseCost(cell) float64` accessors (small, pure);
-  **(b)** the world joins `nav.TerrainAt(cell)` → its `terrainTypes[id].BaseCost` (world holds the
-  types table it gave `navmap.New`) and adds only `FootprintBlocked`. **rec: (b)** — keeps navmap a
-  cost field, world owns the TerrainID→attrs/cost join (parity with the WI-P1 TerrainAttrs seam); only
-  one tiny `FootprintBlocked` accessor is new. **Flag to navmap owner before WI-P2 impl.**
+- **navmap footprint-only passability + per-cell base cost (TerrainSampler seam) — ✅RESOLVED (a) as
+  BUILT, 2026-06-29: `engine/space/navmap` exposes BOTH `FootprintBlocked(cell) bool` AND
+  `BaseCost(cell) float64` (now in `navmap/SPEC.md` Public Interface + tested). The TerrainSampler
+  adapter calls them directly (above); the world does NOT re-join `terrainTypes` for the base cost.**
+  This supersedes the prior `rec:(b)` (world-join) note: option (a) was the listed alternative and is
+  what the implemented navmap provides — it is cleaner because `navmap.BaseCost` is **override-aware**
+  (reflects `SetTerrain` transitions without the world re-implementing the override lookup) and keeps
+  navmap self-contained for its consumers. (Species affinity stays controller-side via
+  `Rules.TerrainCost`, W10b.) Background: the fauna `TerrainSampler` needs footprint-only passability
+  (water traversable) + a per-cell terrain base cost; navmap's `Passable(cell)` conflates
+  terrain-impassable with footprint-block, so `FootprintBlocked` separates them and `BaseCost` gives
+  the single-cell terrain cost `StepCost(from,to)` did not expose.
 - **Animal id allocation convention (shared id space, W5).** Animals + agents share one string id
   space for the combined apply sort. Options: **(a)** a distinct animal id prefix (`an:<n>`) minted by
   `w.allocObjectID`; **(b)** a single global counter with no prefix (rely on uniqueness). **rec: (a)**

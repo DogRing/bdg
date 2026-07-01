@@ -50,6 +50,32 @@ func (m *NavMap) TerrainAt(c Cell) TerrainID
 func (m *NavMap) StepCost(from, to Cell) float64       // base × wear-multiplier × geometric length; +Inf if impassable
 func (m *NavMap) RequiredTags(c Cell) []core.Tag       // capability/action tags to enter c (terrain)
 
+// FootprintBlocked reports whether c carries a building/wall footprint — a HARD blocker for ALL
+// species, independent of terrain. Unlike Passable (terrain-impassable OR footprint, conflated), this
+// isolates the footprint layer so a consumer can treat deep water as traversable-at-high-cost (NOT
+// !Passable) while walls stay impassable. Required by the fauna `TerrainSampler` (R2/F35/W10b — water =
+// 수영 가능, 고비용; only footprints block); see `engine/world/SPEC-world-fauna.md`.
+func (m *NavMap) FootprintBlocked(c Cell) bool
+
+// BaseCost returns c's current terrain base cost (≥1; the terrain layer's BaseCost INCLUDING any
+// SetTerrain override — override-aware), WITHOUT the wear multiplier or footprint. The fauna
+// `TerrainSampler` reads it as the per-species effective-cost base (effective cost = BaseCost ×
+// Rules.TerrainCost(species,terrain).mult, W10b). Out-of-bounds returns 0 (callers bound-check;
+// StepCost still returns +Inf for OOB via Passable). This is the per-cell single read the world
+// previously had to reconstruct via TerrainAt→terrainTypes join — navmap owns it (cleaner + override-aware).
+func (m *NavMap) BaseCost(c Cell) float64
+
+// CellCenter maps a Cell back to its continuous world-coordinate centre (the inverse of CellOf up to
+// quantisation). navmap is the geometry authority (it owns CellSize + bounds, not otherwise public);
+// `engine/space/pathfind` calls it to turn a cell path into continuous `Vec2` waypoints. Pure read,
+// no bound-check (D11 — an index→coordinate read, never a snap of an agent position).
+func (m *NavMap) CellCenter(c Cell) core.Vec2
+
+// MinCostFactor returns a guaranteed lower bound on a cell's effective cost per unit geometric length
+// (= cfg.WearCostMin; valid because BaseCost ≥ 1 and wear-multiplier ∈ [WearCostMin,1]). pathfind uses
+// it for an admissible A* heuristic + EstimateCost (so EstimateCost ≤ true Path cost). Pure read.
+func (m *NavMap) MinCostFactor() float64
+
 // ── Mutations (apply phase only; serial, world-owned) ─────────────────────────────
 func (m *NavMap) Deposit(cells []Cell, amount float64) // add wear along a traversed path
 func (m *NavMap) Decay()                               // one fixed-order pass; drops fully-faded cells
@@ -131,6 +157,8 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
 - [ ] **SetTerrain unknown id panics** — `SetTerrain([c], "nope")` for an id absent from `types` panics (content-contract guard).
 - [ ] **Determinism (golden)** — same `(Config, terrain, deposit/decay/SetTerrain sequence)` ⇒ byte-identical `ActiveWear()` + `TerrainOverrides()` ordering and values; no map-iteration leakage.
 - [ ] **Bounds** — cells outside `[MinX,MaxX]×[MinY,MaxY]` are impassable.
+- [ ] **FootprintBlocked isolates the footprint layer** — `FootprintBlocked` is true ONLY for stamped wall/building cells and false for deep-water (`Passable:false`) terrain; a water cell is `!FootprintBlocked` yet `!Passable` (so the fauna `TerrainSampler` treats it as traversable-at-high-cost, not a wall). Table-driven.
+- [ ] **BaseCost is the override-aware per-cell terrain cost** — `BaseCost(c)` equals the cell's terrain `BaseCost` (≥1), updates after `SetTerrain` (override-aware), is independent of wear and footprint stamps, and returns 0 out-of-bounds. Table-driven.
 
 ## Out of Scope
 - Path search itself → `engine/space/pathfind`.

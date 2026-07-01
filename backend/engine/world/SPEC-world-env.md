@@ -110,7 +110,9 @@ Phase 4-ENV (NEW, env installed only):
                                                                         // die→remove, grow→update morphology
   3. DECAY    (if w.tick % envCfg.DecayStep == 0):
        env := buildDecayEnv()                                           // climate temperature/moisture per lot
-       nextD, dd := decay.Step(decayState, env, decayRules, envFork(tick,"decay"))
+       // decay.Step takes elapsedTicks (the cadence interval) as its 3rd arg — pass DecayStep
+       // (Step runs every DecayStep ticks, so elapsedTicks == envCfg.DecayStep). See engine/env/decay SPEC.
+       nextD, dd := decay.Step(decayState, env, int64(envCfg.DecayStep), decayRules, envFork(tick,"decay"))
        decayState = nextD
        applyDecayDeltas(dd)                                             // aged/transitioned/transformed/gone
   4. (SCENT deposit/spread/commit → SPEC-world-fauna.md WI-P2)

@@ -31,30 +31,25 @@ current `content/` keeps loading unchanged.
 | file | schema | builds | status |
 |------|--------|--------|--------|
 | `world.yaml` | `world.schema.json` ✅ | `world.EnvConfig` + `climate.Config` geometry + `navmap.Config` + scent cellSize + `fauna.Cadence`/DT | schema ✅ |
-| `climate.yaml` | `climate.schema.json` | `climate.Rules` (transition table) + `climate.Config` rates | ⚠ schema PRE-CA1-3 (below) |
+| `climate.yaml` | `climate.schema.json` ✅ | `climate.Rules` (transition table) + `climate.Config` rates | schema ✅ (CA1-3 updated 2026-06; °C, annual, wind) |
 | `objects.yaml` `flora:` | `objects.schema.json` (`flora:` ✅) | `flora.Rules` (per-species §6) | schema ✅ |
-| `objects.yaml` `fauna:` | `objects.schema.json` (`fauna:` ❌) | `fauna.Rules` (per-species §6 + senses + drives) | ⚠ schema MISSING (below) |
+| `objects.yaml` `fauna:` | `objects.schema.json` (`fauna:` ✅) | `fauna.Rules` (per-species §6 + senses + drives) | schema ✅ (authored 2026-06) |
 | `objects.yaml` `decay:` | `objects.schema.json` (`decay:` ✅) | `decay.Rules` | schema ✅ |
-| `terrain.yaml` | `terrain.schema.json` ❌ | `map[TerrainID]navmap.TerrainType` + the §5 attribute presets | ⚠ file+schema MISSING |
+| `terrain.yaml` | `terrain.schema.json` ✅ | `map[TerrainID]navmap.TerrainType` + the §5 attribute presets | file+schema ✅ (exist) |
 
-**Schema work this phase requires (enumerated, D10):**
-1. `world.schema.json` — **written** (`content/schema/world.schema.json`).
-2. `objects.schema.json` **`fauna:` block** — MISSING. Must mirror the `fauna:` species shape
-   (`backend/engine/fauna/SPEC.md` `Rules`): candidate `actions[]` + per-action `utility` §6 string,
-   `drives[]` (ids + rate/level params), `apparent_temp` §6, `speed` §6, `threat:` tags, diet/target
-   tags, `senses{smell_radius,sight_radius,fov_arc}`. (`flora:` block already exists as the template.)
-3. `climate.schema.json` **CA1-3 update** — the shipped schema is PRE-CA1/CA2/CA3: `grid.initial_temperature`
-   is clamped `[0,1]` (must become **°C**, no clamp), and the `balance` block lacks the annual-cycle
-   constants (`annual_mid`/`annual_amp`/`annual_phase`, CA1) and the wind params (`wind_*`, CA2). Update
-   the schema to the climate SPEC `Config` (`backend/engine/env/climate/SPEC.md`); the `when:` temperature
-   thresholds become °C (the °C re-baseline, climate SPEC FLAG).
-4. `terrain.yaml` + `terrain.schema.json` — the terrain type catalog (base material → `BaseCost`/
-   `Passable`/`RequiredTags` + the §5 attribute preset vector). Needed by navmap + the climate/flora
-   terrain operands. (Layout/placement is the fixture; this is the TYPE table.)
+**Schema work this phase requires — ALL DONE as of 2026-06 (verify, do NOT re-author):**
+1. ✅ `world.schema.json` — written (`content/schema/world.schema.json`).
+2. ✅ `objects.schema.json` **`fauna:` block** — AUTHORED (`$defs/fauna`): candidate `actions[]` +
+   per-action `utility` §6, `drives[]` (ids + rate/level params), `apparent_temp` §6, `speed` §6,
+   `threat:`/`scent:` tags, diet, `senses{smell_radius,sight_radius,fov_arc}`, `terrain_cost`/`impassable`.
+3. ✅ `climate.schema.json` **CA1-3** — UPDATED: `initial_temperature` is °C (no clamp), `balance`
+   carries `annual_mid`/`annual_amp`/`annual_phase` (CA1) + `wind_*` (CA2) + per-°C `evap_temp_scale`.
+4. ✅ `terrain.yaml` + `terrain.schema.json` — EXIST (the terrain type catalog: base material →
+   `BaseCost`/`Passable`/`RequiredTags` + §5 attribute presets).
 
-> 2-4 are **content/schema authoring**, much of it tied to each subsystem's activation (the actual
-> tuned `fauna:` species data + `climate.yaml` °C thresholds are authored at P_fa3 / the climate
-> M-phase). WI-P0 specifies the SHAPES + the loader; the DATA lands with activation.
+> The SCHEMAS (shapes) are in place. What remains is the **tuned DATA at each subsystem's activation**
+> (the final `fauna:` species values, the `climate.yaml` °C `when:` thresholds re-based to actual °C —
+> the G4 re-baseline in `docs/activation-gate.md`) + the loader CODE itself (this module's implementation).
 
 ## Build outputs (new `Registries` fields + accessors)
 
@@ -184,11 +179,10 @@ load error that builds NO partial registry (SPEC.md invariant):
   knobs), different packages. Options: **(a)** keep both (package-qualified); **(b)** rename
   `world.EnvConfig` → `world.EnvSetup`/`world.EnvParams`. **rec: (a)** for now (no Go conflict),
   rename only if it reads confusingly in the composition layer. Non-blocking.
-- **`terrain.yaml` ownership (file + schema MISSING).** The terrain type catalog (base material →
-  cost/passable/§5 attrs) is referenced by navmap, climate, flora, resources, world-gen but does not
-  exist yet. rec: author `terrain.yaml` + `terrain.schema.json` as part of WI-P0/world-gen (it is the
-  shared terrain vocabulary, D10). Flag — it blocks navmap/flora terrain operands at IMPLEMENT time,
-  not this SPEC.
+- **`terrain.yaml` ownership — RESOLVED 2026-06 (file + schema EXIST).** `content/terrain.yaml` +
+  `content/schema/terrain.schema.json` are authored (the shared terrain type catalog: base material →
+  cost/passable/§5 attrs, referenced by navmap/climate/flora/resources/world-gen). Implementation reads
+  the §5 attribute preset vector from it for the `SiteInput.TerrainAttrs` seam (`SPEC-world-env.md` G13).
 
 ## Notes
 
