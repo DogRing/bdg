@@ -12,12 +12,12 @@ import (
 )
 
 type worldContent struct {
-	WorldEnv      *world.EnvConfig
-	ClimateCfg    *climate.Config
-	ClimateRules  *climate.Rules
-	NavCfg        *navmap.Config
-	TerrainTypes  map[navmap.TerrainID]navmap.TerrainType
-	FloraRules    *flora.Rules
+	WorldEnv       *world.EnvConfig
+	ClimateCfg     *climate.Config
+	ClimateRules   *climate.Rules
+	NavCfg         *navmap.Config
+	TerrainTypes   map[navmap.TerrainID]navmap.TerrainType
+	FloraRules     *flora.Rules
 	FaunaRules     *fauna.Rules
 	DecayRules     *decay.Rules
 	ScentEmitters  map[core.Tag][]core.Tag
@@ -145,15 +145,15 @@ type objectKindDoc struct {
 			WaryLevel float64 `yaml:"wary_level"`
 			FleeLevel float64 `yaml:"flee_level"`
 		} `yaml:"drives"`
-		ApparentTemp any      `yaml:"apparent_temp"`
-		Speed        any      `yaml:"speed"`
-		AttackPower  any      `yaml:"attack_power"`
-		Hit          any      `yaml:"hit"`
+		ApparentTemp  any      `yaml:"apparent_temp"`
+		Speed         any      `yaml:"speed"`
+		AttackPower   any      `yaml:"attack_power"`
+		Hit           any      `yaml:"hit"`
 		Feed          any      `yaml:"feed"`
 		Graze         any      `yaml:"graze"`
 		RespawnTarget int      `yaml:"respawn_target"`
 		Diet          []string `yaml:"diet"`
-		Senses       struct {
+		Senses        struct {
 			SmellRadius float64 `yaml:"smell_radius"`
 			SightRadius float64 `yaml:"sight_radius"`
 			FovArc      float64 `yaml:"fov_arc"`
