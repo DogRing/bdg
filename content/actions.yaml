@@ -102,7 +102,7 @@ actions:
   # speed program amplifies with fear; the controller steers directly away from the predator. Short
   # bursts (re-arbitrated each ACTIVE tick). NOT a wary→flee FSM transition — one continuous fear (D3).
   - id: Flee
-    tags: [ "uses:Agility", "effort:high", "noise:med" ]
+    tags: [ "uses:Agility", "effort:high", "noise:med", "flee:predator" ]  # flee:predator → steer directly AWAY from predator (fauna homing, reversed)
     produces: [ fled ]
     duration: 3
     interruptible: true
@@ -111,7 +111,7 @@ actions:
   # SCENT (scent.predator → fear in the Wary band, F43). Distinct from Flee ONLY by which fear §6 band
   # the single fear value crosses (emergent, not coded, D3). Slow away-from-scent movement.
   - id: Wary
-    tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low" ]
+    tags: [ "uses:Agility", "effort:low", "noise:low", "abstraction:low", "wary:predator" ]  # wary:predator → drift slowly AWAY from predator scent
     produces: [ evaded ]
     duration: 5
     interruptible: true
@@ -128,7 +128,7 @@ actions:
 
   - id: Hunt
     tags: [ "uses:Strength", "uses:Agility", "effort:high", "noise:high",
-            "risk:med", "violent:low", "abstraction:med" ]
+            "risk:med", "violent:low", "abstraction:med", "seek:prey" ]  # seek:prey → predator homes toward prey scent (pursuit from a distance, FA2)
     target_kind: prey
     requires: [ at_target ]
     produces: [ has_food ]

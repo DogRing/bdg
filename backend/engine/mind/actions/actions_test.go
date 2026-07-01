@@ -112,7 +112,7 @@ func TestGetRoundTrip(t *testing.T) {
 			id: "Hunt",
 			wantTags: []core.Tag{
 				"abstraction:med", "effort:high", "noise:high",
-				"risk:med", "uses:Agility", "uses:Strength", "violent:low",
+				"risk:med", "seek:prey", "uses:Agility", "uses:Strength", "violent:low",
 			},
 			wantDuration:      35,
 			wantTarget:        TargetObject,
