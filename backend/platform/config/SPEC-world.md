@@ -185,6 +185,17 @@ load error that builds NO partial registry (SPEC.md invariant):
   cost/passable/§5 attrs, referenced by navmap/climate/flora/resources/world-gen). Implementation reads
   the §5 attribute preset vector from it for the `SiteInput.TerrainAttrs` seam (`SPEC-world-env.md` G13).
 
+## Fauna combat content (FC1/FC4/FC9 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
+
+Load-pipeline deltas for the combat/carcass round:
+- Parse the new per-species `fauna:` combat fields into `fauna.Rules` — `attack_power`/`hit` §6 programs
+  (compiled via `expr`; `ReadsAttrs ⊆ AttrOperands()∪drives`, now incl. `target.threat`/`scent.carrion`),
+  plus `engage_range`, `disengage_range`, engage/exchange cooldown ranges, and the `feed` value.
+- Parse the `carcass` item kind's `decay:` states (fresh→rotting→bones→gone; supply = predator Feed value;
+  transform = Butcher materials) into `decay.Rules`, exactly like any other decaying item.
+- `ScentEmitters` already routes the carcass `scent:carrion` tag with **NO config change** (tag-driven).
+- Cross-check the new operands at load exactly like the existing fauna operands (fail-closed on unknown).
+
 ## Notes
 
 - This sub-spec mirrors SPEC.md's existing contract (schema-validate → engine build → cross-check →

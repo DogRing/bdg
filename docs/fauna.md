@@ -368,6 +368,32 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
 - **F21 개정(이진→스칼라 강도):** 셀당 채널별 `float64≥0` 농도(magnitude 비례·거리/바람 falloff). `Deposit(ch,pos,intensity)`·`Spread`=농도 diffusion·`Read`=Intensity+gradient·`IntensityAt`(F45 wake=intensity>threshold). `scent.<ch>` operand=**스칼라**(이진 아님). perception.Smell strength와 개념 통일.
 - **glossary 추가:** `scent:food`/`scent:prey`/`scent:predator`(/`scent:carrion`) 발생원 태그.
 
+### 클러스터 9 — 포식 전투 & 사체(Combat & Predation) — 사람 확정 (2026-07-01)
+> F7(창발 eat/death)·F11(carcass=decay lot)·F22(채널 확장)을 **구체 전투 메커니즘**으로 정련. 기존엔 "Hunt→즉사"로
+> 추상화돼 있어 **공격 액션·공격력·교전(engaged) 상태가 없었다** — 이 클러스터가 그 갭을 메운다. 대상 SPEC:
+> `engine/fauna/SPEC.md`(코어) + `SPEC-world-fauna.md`(apply/사망/feed) + scent/decay SPEC(소폭). **구현 = 우리 빌드
+> 순서 phase 6b**(활성화 phase 6과 독립). D2/D3/D4/D7/D10/D12 가드는 §3 준용.
+- **FC1 전투 액션 = 신규 공유 2개** `Attack`+`Feed`(접근=기존 `TagSteerPrey` steer, 신규 아님). `Attack`=engage+exchange 겸용(쿨다운 게이트), `Feed`=carcass 소비(hunger↓, **durative**). 둘 다 `actions.yaml` 공유 엔트리 → horizon-1 utility로 선택(D3, 손그림 FSM 금지). 골든 churn → P_fa3 활성 시(F28/F43 동형).
+- **FC2 대상/포식자끼리** — 표적 = attacker `diet` 멤버(F7 tag). **포식자↔포식자는 hunger 극단일 때만**: 별도 코드 규칙이 아니라 `Attack` utility가 hunger를 **fight-cost/위험**과 저울질(D2/D4 창발). 신규 operand **`target.threat`**(표적 위험도, 반격 예상) 노출 → 평소 predator 표적은 utility 낮음, hunger↑가 극복.
+- **FC3 타이밍** — engage **시도 쿨다운 [50,100]틱**(lock 전), 성공 시 engaged; **exchange 쿨다운 [10,20]틱**마다 데미지. 둘 다 seeded `envFork` 범위추출(balance min/max). 하드타이머 아님 — 쿨다운-게이트 utility.
+- **FC4 공격력/명중 = §6(D4/D7)** — `attack_power = f(Strength…)`, `hit = f(공격 Agility vs 방어 Agility)`(스탯 조합, 개별 스킬 저장 금지 — 매 틱 base 합성). 데미지 → 표적 Vital↓. content §6(speed/apparent_temp 동형).
+- **FC5 반격** — prey 반격 없음(자기 Vital만↓); 포식자↔포식자(FC2)는 양쪽 각자 `Attack`.
+- **FC6 이탈(disengage)** — 포식자 **stamina 저하** OR 표적이 **`disengage_range`(~2 셀 = 2×navmap cellSize) 이상** 벌어지면 lock 해제. **시나리오 #8("포식자 스태미나가 먼저 떨어지면 멈춤")이 여기서 창발**(utility/거리 파생, FSM 아님).
+- **FC7 Vital 재생/흉터** — 느린 재생(balance `vital_regen`), **완전 회복 불가**: 누적 피해가 **max Vital에 영구 소량 페널티**. 신규 Animal 상태 `VitalCap`(≤1.0, 전투마다 소량↓); 재생은 `VitalCap`까지만.
+- **FC8 Feed/포식** — 표적 Vital=0 → 사망 → carcass(FC9). 포식자 `Feed`(durative) = carcass supply에서 hunger↓, **회복량 = 먹이 체격 비례**(content/§6). F11의 agent-`Butcher`(재료)와 **공존**(같은 carcass: predator=Feed/hunger, agent=Butcher/재료).
+- **FC9 사체 = decay lot (F11 풀버전 확정)** — 사망 → `carcass` 객체 + **owner-agnostic decay lot(Dm4)** **런타임 생성**. decay 상태 fresh→rotting→bones→gone, 각 supply(Feed 먹이값)+transform(bones/hide/sinew, W7/W8). 미소비분 부패(W10). ⚠ **decay 모듈에 런타임 lot 추가 API 필요**(현 `New(lots)` init 전용 — §modification).
+- **FC10 carrion 냄새 (F22 채널 확장 확정)** — carcass = `scent:carrion` 태그 → world가 `ChanCarrion` 침착(**tag-driven 경로가 그대로 처리**; scent 모듈에 `ChanCarrion`+`Reading.Carrion` 추가). scavenger/포식자가 `scent.carrion` operand로 homing(선택 거동).
+- **FC11 공포 연동(창발)** — kill 목격/carrion 근접(피 냄새) → 주변 prey `fear`↑(F43 채널). content §6.
+- **FC12 상태/결정성(D12)** — 신규 `fauna.Animal` 필드 `EngagedWith`·`NextExchangeTick`·`EngageCooldownUntil`·`VitalCap` + 직렬화(`state.go`). 교전=양방향 관계 → 한 apply에서 두 동물 **일관 갱신·id순**, 같은표적 충돌은 기존 combined-conflict 재사용. 모든 랜덤=seeded `envFork`.
+- **FC13 전투 중 이동** — engaged면 locomotion 억제(제자리 육박); prey는 fear로 **이탈(거리 벌리기)만** 시도.
+
+> **⚠ 이 클러스터가 요구하는 phase 1~5(빌드 완료 모듈) 수정 — 검증 결과 (2026-07-01):**
+> - **scent**(`engine/space/scent`): `ChanCarrion` 추가(enum + `Reading.Carrion` + `Sense` 매핑). 현 `NumChannels=3`→4.
+> - **decay**(`engine/env/decay`): **런타임 lot 추가 API**(현재 `New(lots)` init 전용, `Step`도 신규-lot 입력 없음) — 사망 시 carcass lot 주입 경로. carcass item kind decay states(content).
+> - **world**(`engine/world`): `applyAnimalIntent`에 **cross-animal 데미지 apply**(현재는 행위 주체만 변경); 사망→carcass(decay lot+object) 생성; `Feed`→hunger; engaged 양방향 갱신; `scentChannelFromTag`에 `carrion` case 추가; carcass를 `decayEnvInputs`에 편입.
+> - **config**(`platform/config`): `fauna:` 블록 전투 §6 필드(attack/hit/engage/feed) + `target.threat`를 `AttrOperands`에; carcass decay states 파싱. (`ScentEmitters`는 `scent:carrion`을 자동 처리 — 무변경.)
+> - **fauna**(`engine/fauna`): 위 FC1~FC13 코어(신규 액션·engaged 상태·operand·disengage·§6) — 최대 변경.
+
 ---
 
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `flora.md §2`/`climate.md §2` 양식)

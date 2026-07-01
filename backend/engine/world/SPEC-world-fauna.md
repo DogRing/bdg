@@ -292,6 +292,22 @@ re-baseline, carcass/Butcher) is the deliberate **P_fa3** re-baseline.
 
 ---
 
+## Combat, death & carcass apply (FC8/FC9/FC12 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
+
+World-side of the combat loop (world = sole mutator + owns death, F3):
+- **Cross-animal damage (FC12):** `applyAnimalIntent` gains a targeted-damage path — an `Attack` intent
+  reduces the TARGET animal's Vital by the exchange damage (today it only mutates the acting animal).
+  `EngagedWith`/`NextExchangeTick`/`EngageCooldownUntil` are updated on BOTH animals in one apply, in
+  sorted-id order (D12); same-target contention reuses the existing combined-conflict resolver.
+- **Death → carcass (FC9):** when a prey's Vital≤0, in addition to `removeAnimal` + `AnimalDied`, world
+  spawns a `carcass` world object AND a runtime decay lot via **`decay.State.WithLot`** (the new decay
+  API), tracks it in `decayLotPos`, and feeds it into `decayEnvInputs`. The carcass carries the
+  `scent:carrion` tag → routed to `ChanCarrion` by the SAME tag-driven deposit: add a `carrion` case to
+  `scentChannelFromTag` (this is the only engine edit that channel needs — the point of tag-driven).
+- **Feed (FC8):** a `Feed` intent consumes carcass supply → reduces the predator's `hunger` drive by the
+  carcass's per-state food value (size-proportional). Coexists with the agent-side `Butcher` (materials).
+- **Regen (FC7):** slow Vital regen toward `VitalCap` applied by world in the animal commit (balance rate).
+
 ## Notes
 - **fauna.Step plans, world applies (F41).** The split — fauna emits intents in the plan phase, the
   world applies them in the SAME combined sorted stream as agents — is what keeps "world = sole

@@ -15,19 +15,24 @@
 
 ## Order & parallelism
 ```
-3. platform/config WI-P0        (needs the env-module NewRules — all present)
+3. platform/config WI-P0        (needs the env-module NewRules — all present)      [DONE]
         ↓
-4. world WI-P1  InstallEnv       (needs config + climate/flora/decay + navmap)
+4. world WI-P1  InstallEnv       (needs config + climate/flora/decay + navmap)     [DONE]
         ↓
-5. world WI-P2  InstallFauna      (needs fauna + scent + WI-P1)
+5. world WI-P2  InstallFauna     (needs fauna + scent + WI-P1)                      [DONE +FIX]
         ↓
-6. fixture/world-gen + main       (ACTIVATION: place G5 species; deliberate golden re-baseline)
+6. COMBAT module mods  (leaf-first, OFF-neutral — goldens hold; docs/fauna.md 클러스터 9 / FC1–FC13)
+     6a scent +ChanCarrion · 6b decay +WithLot · 6c fauna Attack/Feed+engaged+operands
+     6d config combat fields · 6e world damage/carcass/feed apply · 6f content (species STILL unplaced)
         ↓
-7. persist + api WI-P4            (env serialize + real WorldFrame SSE; delete the mock)
+7. fixture/world-gen + main       (ACTIVATION: place G5 + combat content; ONE golden re-baseline;
+                                   end-to-end predation verified HERE)
         ↓
-8. frontend ecosystem rendering   (∥ can start once WorldFrame shape is fixed in 7)
+8. persist + api WI-P4            (env serialize + real WorldFrame SSE; delete the mock)
         ↓
-9. balance tuning + FA1–FA8 scenario tests   (verifies "the desired scenarios")
+9. frontend ecosystem rendering   (∥ can start once WorldFrame shape is fixed in 8)
+        ↓
+10. balance tuning + FA1–FA8 scenario tests   (verifies "the desired scenarios" incl. predation)
 ```
 Each phase: **implement task → review task (paste the Review prompt, referencing `docs/code_review.md`)
 → fix loop → next phase.** Do not start a phase while its dependency is unmerged/red.
@@ -306,41 +311,144 @@ Return the `=== CODEX REVIEW ===` block, with `INTEGRATION_CONTRACT` covering sc
 
 ---
 
-## Phase 6 — fixture / world-gen loader + main wiring (ACTIVATION)
+## Phase 6 — Combat module mods (leaf-first, OFF-neutral; `docs/fauna.md` 클러스터 9 / FC1–FC13)
 
-**Files:** `backend/tools/worldgen` (extend `Load`) + `backend/main.go` (wire Load + InstallEnv/
-InstallFauna + Spawn) + the starter fixture content + re-baselined goldens. Driven by
-`@docs/world-gen.md` + `content/schema/fixture.schema.json` + the WI-P1/P2 install signatures.
+**The predation/combat feature — built BEFORE activation so activation turns on a COMPLETE ecosystem once.**
+Engage → exchange → kill → feed, across the built modules. **CRITICAL LEVER:** every sub-step ships with
+species STILL UNPLACED (no combat animals installed) ⇒ existing **world scenario goldens stay
+byte-identical**; only each module's OWN unit tests + the ecosim/scent goldens re-baseline where the mechanic
+is exercised (deliberate). Do the sub-steps **leaf-first** (deps below). End-to-end predation ("wolf kills
+deer → feeds → carcass rots → carrion") is verified at **Phase 7 activation**, not here. The 5 SPECs are
+already reworked (each sub-step names its authoritative SPEC).
 
-### Implement
-- **Goal:** Activate the ecosystem: load a fixture (terrain layout + placed plants + placed animals),
-  build `navmap`/`climate`/`flora`/`decay` states, call `world.InstallEnv` + `world.InstallFauna`, and
-  Spawn agents — so a live run has weather, growing flora, and moving fauna.
-- **Context:** `@docs/world-gen.md`, `@content/schema/fixture.schema.json`, the WI-P1/P2
-  `InstallEnv`/`InstallFauna` signatures, `@docs/activation-gate.md` (decisions are ACCEPTED). Existing
-  fixtures live in `backend/engine/world/testdata/fixtures` + `content/`.
-- **Constraints:** Follow `AGENTS.md` + the accepted G5/G4 decisions: place **deer×6, rabbit×8, goat×2,
-  wolf×1, bear×1, fish×8** (prey near grass/`scent:food`, wolf/bear central, fish in the river, goat
-  near the mountain); climate ON with the G4 band (`AnnualMid 12.5`/`AnnualAmp 17.5`); flora Rules ON
-  with the starter plants; order = env first then fauna. Population maintenance = **W11 respawn-to-target
-  (no birth)**. This flips env/fauna goldens OFF→ON — that is a **deliberate activation re-baseline**,
-  not a regression: regenerate the affected goldens and **eyeball them for sanity**, don't just
-  regenerate-to-pass. Flip the corresponding `docs/activation-gate.md` / SPEC Open-Question entries to
-  RESOLVED as you go.
-- **Done when:** `go build ./...` + `go test ./... -count=2` green with the re-baselined goldens stable
-  across two runs; `main.go` runs a few hundred ticks headless without panic; your summary lists WHICH
-  goldens were re-baselined and why. STOP and ask if a placement/balance choice is unclear beyond the
-  accepted G5/G4.
+### 6a — scent: +ChanCarrion   `@backend/engine/space/scent/SPEC.md`
+Goal: APPEND `ChanCarrion` after `ChanPredator` (NumChannels 3→4) + `Reading.Carrion` + Sense mapping.
+Constraints: APPEND only — the existing 3 channels keep their index (no food/prey/predator churn); D12.
+Done when: scent unit tests cover the 4th channel (deposit/spread/read); `go test ./engine/space/scent/ -count=2`.
 
-### Review
-Apply `@docs/code_review.md` + special attention: (1) the golden re-baseline is **deliberate + sane**
-(the diffs reflect real activation, not a masked bug); (2) determinism holds post-activation
-(`-count=2`, fresh process); (3) the G5 placement + G4 band match `docs/activation-gate.md`;
-(4) no invented mechanism (only accepted decisions were used).
+### 6b — decay: +`State.WithLot`   `@backend/engine/env/decay/SPEC.md`
+Goal: add `(s *State) WithLot(lot Lot) *State` — PURE runtime lot injection (carcass on death), keeps the
+ObjectID-sorted invariant, panics on dup id. `New` stays init-only; `Step` signature unchanged.
+Done when: unit test — WithLot inserts sorted + is pure (prev unchanged), then `Step` decays it like any lot;
+`go test ./engine/env/decay/ -count=2`.
+
+### 6c — fauna: combat core   `@backend/engine/fauna/SPEC.md` §Combat & Predation (+ 클러스터 9)
+Goal: FC1–FC13 fauna side — SHARED actions `Attack`+`Feed` (utility-scored, no FSM, D3); `Animal` fields
+`EngagedWith`/`NextExchangeTick`/`EngageCooldownUntil`/`VitalCap` (+serialize); operands `target.threat` +
+`scent.carrion` in `AttrOperands()`; per-species `attack_power`/`hit` §6 (stat compositions, D4/D7, no stored
+skill); engage(50–100)/exchange(10–20) cooldowns via seeded fork; disengage on predator stamina-drop OR
+target beyond `disengage_range` (~2·cell); locomotion suppressed while engaged. Fauna only PROPOSES the
+damage intent + engage state (world owns death, F3).
+Constraints: no species content yet ⇒ module stays outcome-neutral. Predator↔predator ONLY via utility cost
+(`target.threat`) — NO special-case rule (gate). import guard (no world/agent). Determinism throughout.
+Done when: unit tests — utility picks Attack when a diet target is in range + hungry; engage/exchange/disengage
+timing (seeded); `VitalCap` regen cap; operand cross-check; `go test ./engine/fauna/ -count=2`.
+
+### 6d — config: combat content parse   `@backend/platform/config/SPEC-world.md` §Fauna combat content
+Goal: parse the new fauna combat §6 fields (`attack_power`/`hit`/`engage_range`/`disengage_range`/cooldowns/
+`feed`) into `fauna.Rules`; cross-check `ReadsAttrs ⊆ AttrOperands()∪drives` (incl. `target.threat`/
+`scent.carrion`); parse the `carcass` item's decay states. `ScentEmitters` already handles `scent:carrion`.
+Done when: config tests — combat fields compile, unknown operand rejected, carcass decay states loaded;
+`go test ./platform/config/ -count=2`.
+
+### 6e — world: combat apply   `@backend/engine/world/SPEC-world-fauna.md` §Combat, death & carcass apply
+Goal: `applyAnimalIntent` cross-animal damage (Attack → target Vital↓; engage state on BOTH, id-sorted);
+death→carcass (spawn object + `decay.State.WithLot` lot, track in `decayLotPos`, feed `decayEnvInputs`);
+`Feed`→hunger from carcass supply; `scentChannelFromTag` +`carrion` case; slow Vital regen toward `VitalCap`.
+Constraints: all OFF-neutral when no combat animals installed. Determinism (combined sorted apply, seeded fork).
+Done when: world unit tests — targeted damage, death→carcass+lot, Feed→hunger, carrion deposit, regen-cap;
+`go test ./engine/world/ ./engine/ecosim/ -count=2` (ecosim/scent golden re-baseline ONLY from the new channel
+width / carrion — verify it is that + call it out).
+
+### 6f — content: combat data (species STILL unplaced)   `content/{actions,objects,balance}.yaml`
+Goal: `actions.yaml` Attack+Feed (tags/uses/effect/duration); `objects.yaml` per-predator combat §6 + a
+`carcass` item (`scent:carrion` + decay states + Butcher yields); `balance.yaml` vital_regen, injury/`VitalCap`
+penalty, `disengage_range` (~2·cell), cooldown ranges, fear-on-witness. **Do NOT place species / install them
+here** → world scenario goldens byte-unchanged.
+Done when: `config.Load` parses it all; `go build ./... && go test ./... -count=2` green; world scenario
+goldens byte-unchanged.
+
+### Review (all 6a–6f)
+Apply `@docs/code_review.md`. Per sub-step: (1) SPEC-faithful interface; (2) **OFF-neutrality** — existing
+world scenario goldens byte-unchanged (only the sub-step's own + ecosim/scent goldens shift, deliberately);
+(3) determinism `-count=2`; (4) **no invented mechanism** beyond 클러스터 9 (predator↔predator via cost only;
+world owns death; APPEND-only channel); (5) tag-driven carrion (`scentChannelFromTag` single case + content
+tag — no bespoke path). Return the `=== CODEX REVIEW ===` block.
 
 ---
 
-## Phase 7 — `platform/persist` + `platform/api` WI-P4 (env serialize + real WorldFrame)
+## Phase 7 — activation: `worldgen.Load` + main wiring (env+fauna+combat go LIVE)
+
+**SCOPE = ACTIVATION (with combat).** Turn the WI-P0/P1/P2 + Phase-6 combat wiring ON in a live run. The
+combat mechanic (predator engages/kills prey → feeds → carcass rots → carrion) is now BUILT (Phase 6) and IS
+exercised here — this is where end-to-end predation is verified. **Population respawn is still OUT of scope**
+(a later phase); with predation + no respawn the population declines over a long run — that is EXPECTED, do
+NOT "fix" it or add respawn (gate).
+
+**Files:** `backend/tools/worldgen` (implement the run-time `Load` path per its SPEC) + `backend/main.go`
+(call `worldgen.Load` instead of the ad-hoc `placeObjects` starter) + a starter fixture (reuse/extend
+`backend/engine/world/testdata/fixtures/*.yaml` + `content/schema/fixture.schema.json`) + a headless
+smoke test. Driven by `@backend/tools/worldgen/SPEC.md` + the WI-P1/P2 install signatures +
+`@docs/activation-gate.md` (G5/G4 ACCEPTED).
+
+### Implement
+- **Goal:** Make a live `main.go` run actually have weather, growing/dying flora, and moving/sensing
+  fauna — by implementing `worldgen.Load(fixture, *config.LoadOutput) → constructed *world.World` and
+  calling it from `main.go`. This closes **gap-A**: TODAY `InstallEnv`/`InstallFauna` have ZERO non-test
+  callers and `main.go` builds no env states, so a live run silently takes the dormant/mock path.
+- **Context:** the activation contract is `@backend/tools/worldgen/SPEC.md` ("Fixture → env states →
+  `world.InstallEnv`/`InstallFauna` + Spawn/PlaceObject"). `config.Load` already returns the compiled
+  Rules + cfgs: `WorldEnv (*world.EnvConfig)`, `NavCfg`, `TerrainTypes`, `ClimateCfg`, `ClimateRules`,
+  `FloraRules`, `DecayRules`, `FaunaRules`, `ScentEmitters`. Constructors:
+    - `navmap.New(cfg navmap.Config, terrainAt func(core.Vec2) navmap.TerrainID, types map[TerrainID]TerrainType)`
+    - `climate.New(cfg climate.Config, terrainAt func(core.Vec2) navTerrainID)`
+    - `flora.New(plants []flora.Plant)` ; `decay.New(lots []decay.Lot)` (start EMPTY)
+    - the scent grid is created INSIDE `InstallFauna` — do NOT build it in worldgen.
+  Install signatures: `w.InstallEnv(envCfg, nav, climate, ClimateRules, flora, FloraRules, decay,
+  DecayRules)` then `w.InstallFauna(envCfg, FaunaRules, ScentEmitters, animals)`. `@docs/activation-gate.md`
+  placements (ACCEPTED): **deer×6, rabbit×8, goat×2, wolf×1, bear×1, fish×8**; climate band G4
+  (`AnnualMid 12.5`/`AnnualAmp 17.5`).
+- **Constraints:** Follow `AGENTS.md` + the gate.
+  1. **worldgen.Load** — parse+validate the fixture; build the terrain layout into a `terrainAt` closure
+     (a MINIMAL layout is fine: mostly grassland + a river strip + a mountain patch — just enough to
+     exercise water/mountain terrain cost and the fish-in-river / goat-near-mountain placements);
+     construct nav / climate / flora(initial plants from the fixture) / decay(empty). `envCfg` is simply
+     `*LoadOutput.WorldEnv`. Call **InstallEnv FIRST, then InstallFauna** (accepted order). Also
+     `PlaceObject` the initial flora as world objects (SPEC-world-env: flora plants are world objects, so
+     agents/perception see them) and `Spawn` the agents.
+  2. **main.go** — replace the ad-hoc `placeObjects(berry_bush/water_source/shelter)` starter with a
+     `worldgen.Load` call over the starter fixture; keep the existing agent spawn if the fixture doesn't
+     own agents. **Runtime generation = 0 (D12): main only LOADS a fixture, never generates** — do NOT
+     implement the procedural WG1-a generator here (Load path only; a hand-authored starter fixture is
+     fine).
+  3. Do NOT touch the WorldFrame mock in `tick.go` (phase 8/9). Predation is ALREADY built (Phase 6) —
+     place the combat-capable G5 so it happens; do NOT add RESPAWN (a later phase). Determinism: injected
+     seeded rng throughout; fixture load is pure; no map-iteration for logic.
+- **Done when:** a HEADLESS SMOKE TEST constructs the world via `worldgen.Load` and runs a few hundred
+  ticks with NO panic, and ASSERTS the ecosystem is genuinely LIVE (not the dormant path): at least one
+  animal moved, the flora world-object count changed (growth/death/propagation), climate temperature varied
+  across a day, AND predation fired end-to-end (a predator engaged a prey → prey Vital dropped/died → a
+  `carcass` appeared → `ChanCarrion` deposited). `go build ./...` + `go test ./... -count=2` green and stable
+  across two runs. The report states that population decline (predation + no respawn yet) is expected. STOP
+  and ask if terrain-layout or a placement choice is unclear beyond accepted G5/G4.
+
+### Review
+Apply `@docs/code_review.md` + focus:
+(1) **gap-A closed** — `InstallEnv` AND `InstallFauna` now have a real non-test caller
+    (`worldgen.Load` ← `main.go`); a live run takes the `faunaInstalled()==true` path, not the
+    mock/dormant path.
+(2) env-first-then-fauna order; `envCfg` = `*WorldEnv`; `ScentEmitters` threaded into `InstallFauna`;
+    initial flora both in `flora.State` AND as world objects.
+(3) the smoke test genuinely proves LIVE (asserts movement + flora-count change + temp variation + a
+    predation event: kill → carcass → carrion), not just "no panic".
+(4) predation FIRES end-to-end from the placed G5; **respawn NOT added** (later phase); WorldFrame mock
+    untouched; no procedural generator (Load only). Gate respected.
+(5) determinism across two fresh processes; runtime generation = 0.
+Return the `=== CODEX REVIEW ===` block.
+
+---
+
+## Phase 8 — `platform/persist` + `platform/api` WI-P4 (env serialize + real WorldFrame)
 
 **Files:** `backend/platform/persist/*` (serialize `animals[]`/`flora[]`/`climate` + deltas),
 `backend/platform/api/*` (real `WorldFrame` SSE), and **DELETE** the mock in
@@ -370,7 +478,7 @@ neutrality.
 
 ---
 
-## Phase 8 — `frontend` ecosystem rendering
+## Phase 9 — `frontend` ecosystem rendering
 
 **Files:** `frontend/src/utils/canvasRenderer.ts` (+`drawAnimals`/`drawFlora`/`drawAmbient`),
 `frontend/src/components/WorldCanvas.tsx` (accept animals/flora/climate), `frontend/src/App.tsx` (pass
@@ -401,7 +509,7 @@ render; (2) one shared transform (agents/animals/flora align); (3) no god-view; 
 
 ---
 
-## Phase 9 — balance tuning + FA1–FA8 scenario tests (verify the desired scenarios)
+## Phase 10 — balance tuning + FA1–FA8 scenario tests (verify the desired scenarios)
 
 **Files:** `backend/engine/world/scenario_*_test.go` (new FA scenario tests) + tuned `content/*.yaml`
 (fauna/flora §6 coefficients, `balance.yaml`, G5 population targets) + re-baselined goldens. Driven by

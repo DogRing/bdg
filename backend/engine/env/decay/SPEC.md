@@ -87,6 +87,14 @@ type State struct{ /* opaque; see Owned Data. Holds the Lot set in ObjectID orde
 // exist, where) is world's, not this module's. Pure; no RNG draw at construction.
 func New(lots []Lot) *State
 
+// WithLot returns a NEW State with `lot` inserted into the sorted Lot set — the RUNTIME lot-injection
+// path (FC9, docs/fauna.md 클러스터 9): a predator kill / any animal death spawns a fresh `carcass`
+// perishable lot MID-RUN, which the next Step then decays like any other lot (fresh→rotting→bones→gone,
+// its states supplying the predator Feed value + Butcher transforms). Pure: prev is unchanged; the
+// returned State keeps the ObjectID-sorted invariant (D12). Panics on duplicate ObjectID (world owns id
+// allocation). This is the ONLY runtime add path — New stays init-only, Step's signature is unchanged.
+func (s *State) WithLot(lot Lot) *State
+
 // ── The pure transform world calls (mirrors flora.Step) ────────────────────────────
 
 // Step advances the whole decay field ONE decay step (= N ticks; world owns the multi-rate cadence

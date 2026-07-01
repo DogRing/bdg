@@ -32,16 +32,21 @@ package scent
 import "github.com/dogring/bdg/engine/kernel/core"
 
 // Channel selects one scent layer (F22 — multi-channel; one scalar intensity per channel per cell). The
-// constant order is FIXED (array index / determinism, D12); a new channel (later phase, e.g. carrion)
-// appends, never re-orders. Each channel is fed by entities carrying the matching `scent:<channel>` tag.
+// constant order is FIXED (array index / determinism, D12); a new channel APPENDS, never re-orders. Each
+// channel is fed by entities carrying the matching `scent:<channel>` tag.
 type Channel uint8
 
 const (
     ChanFood     Channel = iota // edible-flora / food scent (herbivore homing → Graze); tag scent:food
     ChanPrey                    // prey-animal scent (carnivore homing → Hunt);          tag scent:prey
-    ChanPredator               // predator scent (early-warning → Wary + F45 wake);       tag scent:predator
-    NumChannels  = iota         // count (array width)
+    ChanPredator                // predator scent (early-warning → Wary + F45 wake);      tag scent:predator
+    ChanCarrion                 // carcass/rot scent (scavenger/predator homing → Feed, FC10); tag scent:carrion
+    NumChannels  = iota         // count (array width) — now 4
 )
+// FC10 (docs/fauna.md 클러스터 9): ChanCarrion added for the combat/carcass round. Reading (below) gains a
+// Carrion ChannelReading and Sense maps it; the world's tag-driven deposit routes scent:carrion here with
+// ZERO further engine change (that is why classification is tag-driven). Appended AFTER ChanPredator so the
+// existing 3 channels keep their index (no golden churn on food/prey/predator).
 
 // Wind is the local wind VALUE world injects from climate (operands wind.dir / wind.mag, CA2). Dir = the
 // direction the wind BLOWS TOWARD (radians); Mag = strength (≥ 0). P1 climate OFF ⇒ Wind{0,0} ⇒ spread
@@ -109,6 +114,7 @@ type Reading struct {
     Food     ChannelReading
     Prey     ChannelReading
     Predator ChannelReading // Intensity → scent.predator (early-warning/Wary); see Read note re: sight
+    Carrion  ChannelReading // Intensity → scent.carrion (scavenger/predator homing → Feed, FC10)
 }
 
 // ChannelReading is one channel's intensity + gradient direction at a read position.

@@ -492,6 +492,30 @@ func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passa
 > §6, P_fa3** (R4/F46). The **F45 adaptive per-animal cadence** (R1) is integrated above. **None remaining
 > — no new mechanism seam.**
 
+## Combat & Predation (FC1–FC13 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
+
+Refines the F7 "Hunt→death" abstraction into an explicit **engage → exchange → kill → feed** loop. This
+section is the **fauna-module interface delta only** (behaviour/why → 클러스터 9):
+
+- **Actions (FC1):** two new SHARED `actions.yaml` entries scored by the SAME horizon-1 utility (D3, no
+  FSM): `Attack` (engage + damage exchange, cooldown-gated) and `Feed` (durative carcass consumption →
+  hunger↓). Approach stays the existing `TagSteerPrey` steer. Steer/utility tags parallel Graze/Flee/Wary.
+- **Animal state (FC7/FC12):** add to `Animal` — `EngagedWith core.ObjectID` (combat partner; "" = free),
+  `NextExchangeTick core.Tick`, `EngageCooldownUntil core.Tick`, `VitalCap float64` (≤1; each fight lowers
+  it a little ⇒ Vital regens only up to `VitalCap` = "no full recovery", FC7). All serialized (F17).
+- **Operands (FC2/FC10):** add to `AttrOperands()` — `target.threat` (candidate target's expected
+  retaliation/danger ⇒ predator↔predator emerges ONLY when hunger overrides cost, D2/D4) and `scent.carrion`
+  (new scent channel, scavenge homing). `platform/config` cross-checks these like every other operand.
+- **§6 formulas (FC4, content, D4/D7):** per-species `attack_power` + `hit` (stat compositions, e.g.
+  Strength / Agility-vs-Agility) — NO stored skill; recomputed from current base stats each exchange.
+- **Engage/exchange/disengage (FC3/FC5/FC6/FC13):** utility picks `Attack` when a `diet` target is in range;
+  a successful engage sets `EngagedWith` on BOTH animals; every `[10,20]`-tick exchange (seeded `envFork`)
+  proposes `attack_power×hit` damage to the target (prey never retaliates; predator↔predator both attack).
+  Engage-ATTEMPT cooldown `[50,100]` ticks. Disengage when predator stamina drops OR the target is beyond
+  `disengage_range` (~2·cellSize) — this is where scenario #8 ("predator stops when its stamina drops first")
+  emerges. While engaged, locomotion is suppressed (FC13). **Death (Vital≤0) + carcass creation are the
+  WORLD's** (SPEC-world-fauna; F3 "world owns death") — fauna only PROPOSES the damage intent + engage state.
+
 ## Notes
 - `Step` deliberately mirrors `flora.Step`/`decay.Step`: pure read → return per-entity delta/intent →
   `world` applies. Keeps `world` the single mutator (D12) and adds no cycle (F5/F41 — dependency-inverted
