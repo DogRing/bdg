@@ -211,9 +211,9 @@ func (a *Agent) accrueResentment(triggers []core.AgentID, statsReg *stats.Regist
 				AgentID:       a.ID,
 				Type:          "BeliefUpdated",
 				Payload: map[string]any{
-					"subject":  string(triggerID),
-					"field":    "Affinity",
-					"delta":    affinityDelta,
+					"subject":    string(triggerID),
+					"field":      "Affinity",
+					"delta":      affinityDelta,
 					"resentment": a.Resentment,
 				},
 			})
@@ -221,6 +221,7 @@ func (a *Agent) accrueResentment(triggers []core.AgentID, statsReg *stats.Regist
 	}
 
 }
+
 // Note: the Aggression-Drift threshold check was moved to updateResentment (§B-drift
 // gap-closure) so it fires every tick, not only on trigger ticks.
 

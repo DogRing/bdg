@@ -92,6 +92,29 @@ func (s *WorldSnapshot) IsOpaque(id core.ObjectID) bool {
 	return false
 }
 
+// ShadeOccluders projects flora shade parameters into the perception-facing type.
+func (s *WorldSnapshot) ShadeOccluders(center core.Vec2, radius float64) []perception.ShadeOccluder {
+	if s.w.floraState == nil {
+		return nil
+	}
+	entities := s.w.spatial.NearbyEntities(center, radius)
+	out := make([]perception.ShadeOccluder, 0, len(entities))
+	for _, e := range entities {
+		shade, ok := s.w.floraState.ShadeOf(e.ID)
+		if !ok || shade.Radius <= 0 || shade.Opacity <= 0 {
+			continue
+		}
+		out = append(out, perception.ShadeOccluder{
+			ID:      shade.ID,
+			Pos:     shade.Pos,
+			Radius:  shade.Radius,
+			Opacity: shade.Opacity,
+		})
+	}
+	// NearbyEntities is already sorted by ObjectID; retain that order.
+	return out
+}
+
 // resolveTags returns the tags for an entity (object or agent), sorted (D12).
 // For agents, the returned set always includes "agent"; it also includes:
 //   - "has_items" when the agent's Inventory is non-empty (lets replan inject owned_by_other)

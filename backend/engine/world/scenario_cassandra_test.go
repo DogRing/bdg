@@ -24,18 +24,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/values"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // ── Cassandra fixture YAML ────────────────────────────────────────────────────
@@ -219,13 +219,13 @@ func TestCassandra_FaminePushesToTheft(t *testing.T) {
 
 		// Cassandra: near Peasant, stockpile in inventory (has_items → owned_by_other).
 		cassandra := fx.world.Spawn("cassandra", core.Vec2{X: 1, Y: 0}, cfg, rng.New(10))
-		cassandra.Inventory["berries"] = 8 // triggers has_items tag in snapshot
+		cassandra.Inventory["berries"] = 8          // triggers has_items tag in snapshot
 		cassandra.NeedIntensities["Satiety"] = 0.10 // well-fed (provisioned)
 
 		// Peasant: critical Satiety → urgency ≈ 0.909 > 0.70; Honesty in urgency-relief zone.
 		peasant := fx.world.Spawn("peasant", core.Vec2{X: 0, Y: 0}, cfg, rng.New(20))
-		seedToM(peasant, "Honesty", 0.48)    // 0.40 < 0.48 < 0.55 → base blocked, urgency-relief passes
-		seedToM(peasant, "Aggression", 0.20) // below 0.65 (base) and 0.50 (urgency branch)
+		seedToM(peasant, "Honesty", 0.48)         // 0.40 < 0.48 < 0.55 → base blocked, urgency-relief passes
+		seedToM(peasant, "Aggression", 0.20)      // below 0.65 (base) and 0.50 (urgency branch)
 		peasant.NeedIntensities["Satiety"] = 0.50 // critical: urgency = (0.50/0.55)/1.0 ≈ 0.909
 
 		for range 40 {
@@ -274,8 +274,8 @@ func TestCassandra_HonestPeasant_StarvesDignified(t *testing.T) {
 
 		// Very honest Peasant: both urgency-relief conditions blocked.
 		peasant := fx.world.Spawn("peasant", core.Vec2{X: 0, Y: 0}, cfg, rng.New(20))
-		seedToM(peasant, "Honesty", 0.80)    // > 0.55 → urgency-relief Honesty branch BLOCKED
-		seedToM(peasant, "Aggression", 0.20) // < 0.50 → urgency-relief Aggression branch BLOCKED
+		seedToM(peasant, "Honesty", 0.80)         // > 0.55 → urgency-relief Honesty branch BLOCKED
+		seedToM(peasant, "Aggression", 0.20)      // < 0.50 → urgency-relief Aggression branch BLOCKED
 		peasant.NeedIntensities["Satiety"] = 0.50 // critical urgency ≈ 0.909
 
 		for range 40 {

@@ -5,8 +5,8 @@ import (
 
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
-	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 )
 
@@ -124,10 +124,10 @@ func TestApplyVoteSignal_BroadcastsToAllAgents(t *testing.T) {
 
 // agentFixture is a lightweight world with config for vote signal tests.
 type agentFixture struct {
-	world    *World
-	statReg  *stats.Registry
-	rootRNG  *rng.RNG
-	emit     *recordingEmitter
+	world   *World
+	statReg *stats.Registry
+	rootRNG *rng.RNG
+	emit    *recordingEmitter
 }
 
 func newAgentFixture(t *testing.T) *agentFixture {

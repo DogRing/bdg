@@ -4,12 +4,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"
 )

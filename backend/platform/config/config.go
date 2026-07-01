@@ -18,12 +18,19 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/dogring/bdg/engine/env/climate"
+	"github.com/dogring/bdg/engine/env/decay"
+	"github.com/dogring/bdg/engine/env/flora"
+	"github.com/dogring/bdg/engine/fauna"
+	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/values"
+	"github.com/dogring/bdg/engine/space/navmap"
+	"github.com/dogring/bdg/engine/world"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,13 +40,23 @@ import (
 // owns it; Load never retains or mutates it after returning. Load is deterministic:
 // given the same directory contents, two calls produce identical output.
 type LoadOutput struct {
-	StatsRegistry   *stats.Registry
-	NeedsRegistry   *needs.Registry
-	ActionsRegistry *actions.Registry
-	GatesRegistry   *gates.Registry
-	ValuesConfig    *values.Config
+	StatsRegistry    *stats.Registry
+	NeedsRegistry    *needs.Registry
+	ActionsRegistry  *actions.Registry
+	GatesRegistry    *gates.Registry
+	ValuesConfig     *values.Config
 	PerceptionConfig perception.PerceptionConfig
-	Balance         Balance // parsed balance.yaml, exposed as typed fields
+	Balance          Balance // parsed balance.yaml, exposed as typed fields
+
+	WorldEnv      *world.EnvConfig
+	ClimateCfg    *climate.Config
+	ClimateRules  *climate.Rules
+	NavCfg        *navmap.Config
+	TerrainTypes  map[navmap.TerrainID]navmap.TerrainType
+	FloraRules    *flora.Rules
+	FaunaRules    *fauna.Rules
+	DecayRules    *decay.Rules
+	ScentEmitters map[core.Tag][]core.Tag
 
 	// configHash is the SHA-256 of the canonical content fingerprint.
 	configHash string
@@ -50,6 +67,10 @@ type LoadOutput struct {
 // filename order, each prefixed by its filename. Deterministic across processes
 // given identical file contents (no path, no mtime, no map iteration).
 func (o *LoadOutput) ConfigHash() string { return o.configHash }
+
+type Registries = LoadOutput
+
+func LoadContent(contentDir string) (*Registries, error) { return Load(contentDir) }
 
 // ── Balance ───────────────────────────────────────────────────────────────────
 
@@ -155,10 +176,10 @@ type Balance struct {
 	} `yaml:"social"`
 
 	Threats struct {
-		SafetyThreatThreshold float64   `yaml:"safety_threat_threshold"`
-		PerThreatIntensity    float64   `yaml:"per_threat_intensity"`
-		SafetyDecay           float64   `yaml:"safety_decay"`
-		HostileTags           []string  `yaml:"hostile_tags"`
+		SafetyThreatThreshold float64  `yaml:"safety_threat_threshold"`
+		PerThreatIntensity    float64  `yaml:"per_threat_intensity"`
+		SafetyDecay           float64  `yaml:"safety_decay"`
+		HostileTags           []string `yaml:"hostile_tags"`
 	} `yaml:"threats"`
 
 	Politics struct {
@@ -205,9 +226,9 @@ type Balance struct {
 
 	// ForwardSim from balance.yaml.
 	ForwardSim struct {
-		HorizonMinutes          int `yaml:"horizon_minutes"`
-		HorizonPerIntelligence  int `yaml:"horizon_per_intelligence"`
-		StepMinutes             int `yaml:"step_minutes"`
+		HorizonMinutes         int `yaml:"horizon_minutes"`
+		HorizonPerIntelligence int `yaml:"horizon_per_intelligence"`
+		StepMinutes            int `yaml:"step_minutes"`
 	} `yaml:"forward_sim"`
 
 	// Salience from balance.yaml.
@@ -255,6 +276,12 @@ func Load(contentDir string) (*LoadOutput, error) {
 		"gates.yaml":   filepath.Join(contentDir, "gates.yaml"),
 		"balance.yaml": filepath.Join(contentDir, "balance.yaml"),
 	}
+	optionalPaths := map[string]string{
+		"climate.yaml": filepath.Join(contentDir, "climate.yaml"),
+		"objects.yaml": filepath.Join(contentDir, "objects.yaml"),
+		"terrain.yaml": filepath.Join(contentDir, "terrain.yaml"),
+		"world.yaml":   filepath.Join(contentDir, "world.yaml"),
+	}
 
 	raw := make(map[string][]byte, len(paths))
 	// Read files in deterministic order (D12): sorted filenames.
@@ -271,6 +298,23 @@ func Load(contentDir string) (*LoadOutput, error) {
 		}
 		raw[fn] = data
 	}
+	optionalNames := make([]string, 0, len(optionalPaths))
+	for fn := range optionalPaths {
+		optionalNames = append(optionalNames, fn)
+	}
+	sort.Strings(optionalNames)
+	for _, fn := range optionalNames {
+		data, err := os.ReadFile(optionalPaths[fn])
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("config: read %s: %w", fn, err)
+		}
+		raw[fn] = data
+		filenames = append(filenames, fn)
+	}
+	sort.Strings(filenames)
 
 	// ── 2. Schema-validate each file ────────────────────────────────────────────
 	schemaDir := filepath.Join(contentDir, "schema")
@@ -280,6 +324,10 @@ func Load(contentDir string) (*LoadOutput, error) {
 		"actions.yaml": filepath.Join(schemaDir, "actions.schema.json"),
 		"gates.yaml":   filepath.Join(schemaDir, "gates.schema.json"),
 		"balance.yaml": filepath.Join(schemaDir, "balance.schema.json"),
+		"climate.yaml": filepath.Join(schemaDir, "climate.schema.json"),
+		"objects.yaml": filepath.Join(schemaDir, "objects.schema.json"),
+		"terrain.yaml": filepath.Join(schemaDir, "terrain.schema.json"),
+		"world.yaml":   filepath.Join(schemaDir, "world.schema.json"),
 	}
 
 	for _, fn := range filenames {
@@ -343,6 +391,11 @@ func Load(contentDir string) (*LoadOutput, error) {
 		return nil, fmt.Errorf("config: balance parse: %w", err)
 	}
 
+	worldRegs, err := buildWorldContent(raw, statReg, actReg, &bal)
+	if err != nil {
+		return nil, err
+	}
+
 	// ── 7. Compute ConfigHash ────────────────────────────────────────────────────
 	hash, err := computeConfigHash(raw)
 	if err != nil {
@@ -350,14 +403,23 @@ func Load(contentDir string) (*LoadOutput, error) {
 	}
 
 	return &LoadOutput{
-		StatsRegistry:     statReg,
-		NeedsRegistry:     needReg,
-		ActionsRegistry:   actReg,
-		GatesRegistry:     gateReg,
-		ValuesConfig:      valCfg,
-		PerceptionConfig:  perceptCfg,
-		Balance:           bal,
-		configHash:        hash,
+		StatsRegistry:    statReg,
+		NeedsRegistry:    needReg,
+		ActionsRegistry:  actReg,
+		GatesRegistry:    gateReg,
+		ValuesConfig:     valCfg,
+		PerceptionConfig: perceptCfg,
+		Balance:          bal,
+		WorldEnv:         worldRegs.WorldEnv,
+		ClimateCfg:       worldRegs.ClimateCfg,
+		ClimateRules:     worldRegs.ClimateRules,
+		NavCfg:           worldRegs.NavCfg,
+		TerrainTypes:     worldRegs.TerrainTypes,
+		FloraRules:       worldRegs.FloraRules,
+		FaunaRules:       worldRegs.FaunaRules,
+		DecayRules:       worldRegs.DecayRules,
+		ScentEmitters:    worldRegs.ScentEmitters,
+		configHash:       hash,
 	}, nil
 }
 

@@ -9,14 +9,20 @@ package world
 import (
 	"sort"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
+	"github.com/dogring/bdg/engine/env/climate"
+	"github.com/dogring/bdg/engine/env/decay"
+	"github.com/dogring/bdg/engine/env/flora"
+	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
-	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
-	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/mind/perception"
+	"github.com/dogring/bdg/engine/mind/tom"
+	"github.com/dogring/bdg/engine/space/navmap"
+	"github.com/dogring/bdg/engine/space/scent"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // ── Config ─────────────────────────────────────────────────────────────────────
@@ -25,14 +31,14 @@ import (
 // content/balance.yaml world.* via platform/config). The world hardcodes NO
 // numeric constant (D10).
 type Config struct {
-	SpatialHashCell            float64
-	RoleConvergenceThreshold   float64 // balance.yaml politics.role_convergence_threshold; supersedes the retired world.reliance_threshold
-	OutcomeDifficultyBase      float64
-	BackupEveryTicks           int
-	MoveSpeedPerTick           float64 // fraction of remaining distance covered per tick (0,1]
-	ArrivalEpsilon             float64 // locomotion (MoveTo/Approach) completes when within this distance of Intent.Move
-	PlanInterval               int     // plan_interval: agents per planning slice; 1 = all agents plan every tick. Higher spreads planner load across ticks.
-	PruneThreshold             int     // prune_threshold: max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune.
+	SpatialHashCell          float64
+	RoleConvergenceThreshold float64 // balance.yaml politics.role_convergence_threshold; supersedes the retired world.reliance_threshold
+	OutcomeDifficultyBase    float64
+	BackupEveryTicks         int
+	MoveSpeedPerTick         float64 // fraction of remaining distance covered per tick (0,1]
+	ArrivalEpsilon           float64 // locomotion (MoveTo/Approach) completes when within this distance of Intent.Move
+	PlanInterval             int     // plan_interval: agents per planning slice; 1 = all agents plan every tick. Higher spreads planner load across ticks.
+	PruneThreshold           int     // prune_threshold: max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune.
 }
 
 // DefaultConfig returns the canonical Config from content/balance.yaml world.*.
@@ -88,6 +94,27 @@ type World struct {
 	actReg  *actions.Registry
 	emit    core.EventEmitter
 
+	envCfg       EnvConfig
+	nav          *navmap.NavMap
+	climateState *climate.State
+	climateRules *climate.Rules
+	floraState   *flora.State
+	floraRules   *flora.Rules
+	decayState   *decay.State
+	decayRules   *decay.Rules
+
+	terrainAttrs     map[navmap.TerrainID]map[core.Tag]float64
+	decayLotPos      map[core.ObjectID]core.Vec2
+	decayStorageMult map[core.ObjectID]float64
+	nextObjectSeq    int64
+
+	animals       map[core.ObjectID]*fauna.Animal
+	animalIDs     []core.ObjectID
+	faunaRules    *fauna.Rules
+	scent         *scent.Grid
+	scentEmitters map[core.Tag][]core.Tag
+	nextAnimalSeq int64
+
 	// Current tick state (built fresh each Tick).
 	currentSounds []perception.SoundEvent
 	currentSnap   *WorldSnapshot
@@ -134,19 +161,22 @@ func New(
 	emit core.EventEmitter,
 ) *World {
 	w := &World{
-		tick:          0,
-		agents:        make(map[core.AgentID]*agent.Agent),
-		agentIDs:      nil,
-		objects:       make(map[core.ObjectID]objectRecord),
-		objectIDs:     nil,
-		knownObjects:  make(map[core.AgentID]map[core.ObjectID]agent.KnownObject),
-		spatial:       spatial.New(cfg.SpatialHashCell),
-		rootRNG:       root,
-		clock:         clock,
-		cfg:           cfg,
-		svc:           svc,
-		actReg:        actReg,
-		emit:          emit,
+		tick:               0,
+		agents:             make(map[core.AgentID]*agent.Agent),
+		agentIDs:           nil,
+		objects:            make(map[core.ObjectID]objectRecord),
+		objectIDs:          nil,
+		knownObjects:       make(map[core.AgentID]map[core.ObjectID]agent.KnownObject),
+		spatial:            spatial.New(cfg.SpatialHashCell),
+		rootRNG:            root,
+		clock:              clock,
+		cfg:                cfg,
+		svc:                svc,
+		actReg:             actReg,
+		emit:               emit,
+		terrainAttrs:       make(map[navmap.TerrainID]map[core.Tag]float64),
+		decayLotPos:        make(map[core.ObjectID]core.Vec2),
+		decayStorageMult:   make(map[core.ObjectID]float64),
 		pendingOffers:      make(map[core.AgentID]pendingOffer),
 		resentmentTriggers: make(map[core.AgentID][]core.AgentID),
 		emergedRoles:       make(map[core.Function]core.AgentID),

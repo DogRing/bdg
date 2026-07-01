@@ -25,7 +25,7 @@ import (
 )
 
 func TestScenarioC_DeceptiveTrade(t *testing.T) {
-	const seed  = int64(99)
+	const seed = int64(99)
 	const ticks = 10
 
 	// A claims meat worth 0.80; actual supply is 0.20.
@@ -79,7 +79,7 @@ func TestScenarioC_DeceptiveTrade(t *testing.T) {
 	}
 
 	worldA, res := run()
-	worldB, _   := run()
+	worldB, _ := run()
 
 	// 1. Direction assertion: B's ToM[A].Honesty must have dropped.
 	if res.bHonestyAfter >= res.bHonestyBefore {

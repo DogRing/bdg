@@ -41,10 +41,10 @@ var _ core.EventEmitter = (*recordingEmitter)(nil)
 
 // reputationGossipPayload is the payload of a ReputationGossip event.
 type reputationGossipPayload struct {
-	About  core.AgentID
-	From   core.AgentID
-	Stat   core.StatID
-	Delta  float64
+	About core.AgentID
+	From  core.AgentID
+	Stat  core.StatID
+	Delta float64
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,268 @@
+package config
+
+import (
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/dogring/bdg/engine/env/decay"
+	"github.com/dogring/bdg/engine/fauna"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/expr"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/mind/stats"
+	"github.com/dogring/bdg/engine/space/navmap"
+)
+
+func parseNumericFormula(label string, v any, statReg *stats.Registry, allowedAttrs map[core.Tag]bool) (*expr.Program, error) {
+	text, err := formulaText(v)
+	if err != nil {
+		return nil, fmt.Errorf("config: %s formula: %w", label, err)
+	}
+	prog, err := expr.Parse(text, expr.KindNum, statSet{statReg}, expr.BasePreds())
+	if err != nil {
+		return nil, fmt.Errorf("config: %s formula: %w", label, err)
+	}
+	if err := checkProgramAttrs(label, prog, allowedAttrs); err != nil {
+		return nil, err
+	}
+	if preds := prog.ReadsPreds(); len(preds) > 0 {
+		return nil, fmt.Errorf("config: %s formula predicates are not allowed", label)
+	}
+	return prog, nil
+}
+
+func formulaText(v any) (string, error) {
+	switch x := v.(type) {
+	case string:
+		return x, nil
+	case int:
+		return strconv.Itoa(x), nil
+	case int64:
+		return strconv.FormatInt(x, 10), nil
+	case float64:
+		return strconv.FormatFloat(x, 'g', 17, 64), nil
+	case float32:
+		return strconv.FormatFloat(float64(x), 'g', 9, 32), nil
+	default:
+		return "", fmt.Errorf("unsupported formula value %T", v)
+	}
+}
+
+func checkProgramAttrs(label string, prog *expr.Program, allowed map[core.Tag]bool) error {
+	for _, attr := range prog.ReadsAttrs() {
+		if !allowed[attr] {
+			return fmt.Errorf("config: %s unknown operand %q", label, attr)
+		}
+	}
+	return nil
+}
+
+func containsTag(tags []core.Tag, needle core.Tag) bool {
+	for _, tag := range tags {
+		if tag == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func checkAscending(label string, xs []float64, allowEqualFirstZero bool) error {
+	for i := 1; i < len(xs); i++ {
+		if xs[i] <= xs[i-1] {
+			if allowEqualFirstZero && i == 1 && xs[0] == 0 && xs[1] > xs[0] {
+				continue
+			}
+			return fmt.Errorf("config: %s must be strictly ascending", label)
+		}
+	}
+	return nil
+}
+
+func checkObjectTerrainRefs(doc objectsDoc, terrain map[core.Tag]bool) error {
+	if len(terrain) == 0 {
+		return nil
+	}
+	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
+		if obj.Source != nil && obj.Source.DepletedTerrain != "" {
+			id := core.Tag(obj.Source.DepletedTerrain)
+			if !terrain[id] {
+				return fmt.Errorf("config: object %s source depleted_terrain unknown terrain %q", obj.ID, id)
+			}
+		}
+	}
+	return nil
+}
+
+func sortedObjectKinds(in []objectKindDoc) []objectKindDoc {
+	out := append([]objectKindDoc(nil), in...)
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func buildScentEmitters(doc objectsDoc) map[core.Tag][]core.Tag {
+	emitters := make(map[core.Tag][]core.Tag)
+	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
+		kind := core.Tag(obj.ID)
+		seen := make(map[core.Tag]bool)
+		for _, tagText := range obj.Tags {
+			if !strings.HasPrefix(tagText, "scent:") {
+				continue
+			}
+			tag := core.Tag(tagText)
+			if seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			emitters[kind] = append(emitters[kind], tag)
+		}
+		sort.Slice(emitters[kind], func(i, j int) bool { return emitters[kind][i] < emitters[kind][j] })
+	}
+	if len(emitters) == 0 {
+		return nil
+	}
+	return emitters
+}
+
+func sortedItemKinds(in []itemKindDoc) []itemKindDoc {
+	out := append([]itemKindDoc(nil), in...)
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func tagSet(tags ...core.Tag) map[core.Tag]bool {
+	out := make(map[core.Tag]bool, len(tags))
+	for _, t := range tags {
+		out[t] = true
+	}
+	return out
+}
+
+func cloneTagSet(in map[core.Tag]bool) map[core.Tag]bool {
+	out := make(map[core.Tag]bool, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func terrainIDSet(types map[navmap.TerrainID]navmap.TerrainType) map[core.Tag]bool {
+	out := make(map[core.Tag]bool, len(types))
+	for id := range types {
+		out[core.Tag(id)] = true
+	}
+	return out
+}
+
+func terrainAttrSet(td terrainDoc) map[core.Tag]bool {
+	out := make(map[core.Tag]bool)
+	for _, t := range td.Terrains {
+		for attr := range t.Attrs {
+			out[core.Tag(attr)] = true
+		}
+	}
+	return out
+}
+
+func buildFaunaDrives(obj objectKindDoc, baseAllowed map[core.Tag]bool) ([]fauna.DriveRule, map[core.Tag]bool) {
+	allowed := cloneTagSet(baseAllowed)
+	drives := make([]fauna.DriveRule, 0, len(obj.Fauna.Drives))
+	for _, d := range obj.Fauna.Drives {
+		id := core.Tag(d.ID)
+		allowed[id] = true
+		drives = append(drives, fauna.DriveRule{ID: fauna.DriveID(id), Rate: d.Rate, Decay: d.Decay, WaryLevel: d.WaryLevel, FleeLevel: d.FleeLevel})
+	}
+	return drives, allowed
+}
+
+func buildFaunaUtilities(
+	obj objectKindDoc,
+	actReg *actions.Registry,
+	parse func(string, any) (*expr.Program, error),
+) (map[actions.ActionID]*expr.Program, map[actions.ActionID]core.Tag, error) {
+	utilities := make(map[actions.ActionID]*expr.Program, len(obj.Fauna.Actions))
+	steer := make(map[actions.ActionID]core.Tag)
+	for _, a := range obj.Fauna.Actions {
+		id := actions.ActionID(a.Action)
+		if !actReg.Has(id) {
+			return nil, nil, fmt.Errorf("config: fauna %s unknown action %q", obj.ID, id)
+		}
+		prog, err := parse("utility "+a.Action, a.Utility)
+		if err != nil {
+			return nil, nil, err
+		}
+		utilities[id] = prog
+		if def, ok := actReg.Get(id); ok {
+			for _, tag := range def.Tags {
+				switch tag {
+				case fauna.TagSteerFood, fauna.TagSteerPrey, fauna.TagFleePred, fauna.TagWaryPred, fauna.TagNoLoco:
+					steer[id] = tag
+				}
+			}
+		}
+	}
+	return utilities, steer, nil
+}
+
+func faunaTerrain(obj objectKindDoc, terrainIDs map[core.Tag]bool) (map[core.Tag]float64, []core.Tag, error) {
+	tc := make(map[core.Tag]float64, len(obj.Fauna.TerrainCost))
+	for k, v := range obj.Fauna.TerrainCost {
+		t := core.Tag(k)
+		if len(terrainIDs) > 0 && !terrainIDs[t] {
+			return nil, nil, fmt.Errorf("config: fauna %s terrain_cost unknown terrain %q", obj.ID, t)
+		}
+		tc[t] = v
+	}
+	imp := make([]core.Tag, len(obj.Fauna.Impassable))
+	for i, k := range obj.Fauna.Impassable {
+		t := core.Tag(k)
+		if len(terrainIDs) > 0 && !terrainIDs[t] {
+			return nil, nil, fmt.Errorf("config: fauna %s impassable unknown terrain %q", obj.ID, t)
+		}
+		imp[i] = t
+	}
+	return tc, imp, nil
+}
+
+func faunaDiet(obj objectKindDoc) []core.Tag {
+	diet := make([]core.Tag, len(obj.Fauna.Diet))
+	for i, d := range obj.Fauna.Diet {
+		diet[i] = core.Tag(d)
+	}
+	return diet
+}
+
+func faunaIsPredator(obj objectKindDoc) bool {
+	for _, tag := range obj.Tags {
+		if tag == "threat:predator" {
+			return true
+		}
+	}
+	return false
+}
+
+func decayStates(item itemKindDoc, itemIDs map[core.Tag]bool) ([]decay.StateRule, error) {
+	states := make([]decay.StateRule, 0, len(item.Decay.States))
+	thresholds := make([]float64, 0, len(item.Decay.States))
+	for _, st := range item.Decay.States {
+		thresholds = append(thresholds, st.Threshold)
+		supply := make(map[core.Dimension]float64, len(st.Supply))
+		for k, v := range st.Supply {
+			supply[core.Dimension(k)] = v
+		}
+		transforms := make([]decay.TransformRule, 0, len(st.Transform))
+		for _, tr := range st.Transform {
+			target := core.Tag(tr.Item)
+			if !itemIDs[target] {
+				return nil, fmt.Errorf("config: decay %s transform unknown item %q", item.ID, target)
+			}
+			transforms = append(transforms, decay.TransformRule{Item: decay.KindID(target), Qty: tr.Qty})
+		}
+		states = append(states, decay.StateRule{Threshold: st.Threshold, Supply: supply, Transform: transforms})
+	}
+	if err := checkAscending("decay "+item.ID+" thresholds", thresholds, true); err != nil {
+		return nil, err
+	}
+	return states, nil
+}

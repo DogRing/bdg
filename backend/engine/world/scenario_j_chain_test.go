@@ -38,18 +38,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/values"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // -- Production chain action YAML ------------------------------------------------
@@ -57,10 +57,11 @@ import (
 // Each role action produces has_Satiety directly (one-step goal satisfaction).
 // Object prerequisites use target_kind (enforced at execution time, not planning time).
 // The planner selects the cheapest reachable plan:
-//   ChopWood: 0.80 (effort:high, no MoveTo needed)
-//   [MoveTo, MakeTool/Cook]: 0.20+0.50 = 0.70
-//   [MoveTo, Hunt]: 0.20+0.80 = 1.00
-//   [Take, Eat]: 0.20+0.20 = 0.40 (cheapest, but conscience-gated)
+//
+//	ChopWood: 0.80 (effort:high, no MoveTo needed)
+//	[MoveTo, MakeTool/Cook]: 0.20+0.50 = 0.70
+//	[MoveTo, Hunt]: 0.20+0.80 = 1.00
+//	[Take, Eat]: 0.20+0.20 = 0.40 (cheapest, but conscience-gated)
 const chainActionsYAML = `schema_version: 1
 actions:
   - id: ChopWood
@@ -109,13 +110,15 @@ actions:
 // -- Gate YAML: capability + stamina + conscience --------------------------------
 
 // Four gate families:
-//   strength_action: blocks uses:Strength actions when ToM[self][Strength] < 0.60
-//   intel_action:    blocks uses:Intelligence actions when ToM[self][Intel] < 0.60
-//   stamina_ok:      hard-blocks needs_stamina actions when body Stamina < 0.25
-//   conscience:      blocks norm:transgressive; matches robinHoodGatesYAML conscience model
+//
+//	strength_action: blocks uses:Strength actions when ToM[self][Strength] < 0.60
+//	intel_action:    blocks uses:Intelligence actions when ToM[self][Intel] < 0.60
+//	stamina_ok:      hard-blocks needs_stamina actions when body Stamina < 0.25
+//	conscience:      blocks norm:transgressive; matches robinHoodGatesYAML conscience model
 //
 // conscience allows Take when: Honesty<0.40 OR Aggression>=0.65 OR
-//   (urgency>0.70 AND (Honesty<0.55 OR Aggression>=0.50))
+//
+//	(urgency>0.70 AND (Honesty<0.55 OR Aggression>=0.50))
 const chainGatesYAML = `schema_version: 3
 gates:
   - id: strength_action
@@ -350,9 +353,10 @@ func TestChain_DCrimeBypass(t *testing.T) {
 // -- Test 3: Stamina gate hard-blocks A's production role ------------------------
 
 // TestChain_StaminaBottleneck verifies:
-//   A. With Stamina=1.0: A plans ChopWood (stamina_ok gate passes AND cheaper than [MoveTo,Hunt])
-//   B. With Stamina=0.0: stamina_ok gate FAILS -> ChopWood invisible; A falls back to Hunt.
-//      Gate is a hard-block (UrgencyThreshold=2.0, no relaxation).
+//
+//	A. With Stamina=1.0: A plans ChopWood (stamina_ok gate passes AND cheaper than [MoveTo,Hunt])
+//	B. With Stamina=0.0: stamina_ok gate FAILS -> ChopWood invisible; A falls back to Hunt.
+//	   Gate is a hard-block (UrgencyThreshold=2.0, no relaxation).
 //
 // In a live sim, A switching from ChopWood to Hunt means no new log_piles accumulate.
 // Over time this cascades: B can't MakeTool -> no tool_caches -> C can't Hunt -> no
@@ -403,10 +407,11 @@ func TestChain_StaminaBottleneck(t *testing.T) {
 // -- Test 4: Full cascade — A's bottleneck drives D to crime ---------------------
 
 // TestChain_FullCascadeToCrime verifies the end-to-end supply chain collapse:
-//   A (Stamina=0.0): stamina gate hard-blocks ChopWood -> A falls back to Hunt
-//   C (has buffered meat inventory from before collapse): C is near D and holds meat
-//   D (Honesty=0.48, urgency~=0.909, C nearby with meat): conscience passes ->
-//     [Take,Eat] (cost=0.40) < [MoveTo,Cook] (cost=0.70) -> D plans crime
+//
+//	A (Stamina=0.0): stamina gate hard-blocks ChopWood -> A falls back to Hunt
+//	C (has buffered meat inventory from before collapse): C is near D and holds meat
+//	D (Honesty=0.48, urgency~=0.909, C nearby with meat): conscience passes ->
+//	  [Take,Eat] (cost=0.40) < [MoveTo,Cook] (cost=0.70) -> D plans crime
 //
 // The cascade narrative: A's stamina failure (production role disrupted) eventually
 // drains the meat_stock buffer. D, seeing C's buffered meat and facing starvation,

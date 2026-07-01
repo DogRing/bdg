@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"
@@ -369,13 +369,13 @@ func TestFunctionForGoal_MapsCorrectly(t *testing.T) {
 	//   {ID: FuncKnowledge, Dim: "Knowledge", Stats: ["Intelligence"]}
 
 	tests := []struct {
-		dim      core.Dimension
-		wantID   core.Function
-		wantOK   bool
+		dim    core.Dimension
+		wantID core.Function
+		wantOK bool
 	}{
 		{"Safety", core.FuncSafety, true},
 		{"Knowledge", core.FuncKnowledge, true},
-		{"Satiety", "", false},  // not in Functions table
+		{"Satiety", "", false}, // not in Functions table
 		{"", "", false},
 	}
 

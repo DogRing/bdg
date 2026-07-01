@@ -130,9 +130,9 @@ func TestScenarioE_FamineShiftsPowerToSage(t *testing.T) {
 	// Sage gains Knowledge majority: score = 0.5 × 90/100 = 0.45 > Tyrant = 0.15.
 	for _, vid := range villagerIDs {
 		v, _ := fx.world.AgentOf(vid)
-		v.ToM.AdjustRelyOn(tyrantID, core.FuncSafety, -1.0)   // fully clear Safety reliance
-		v.ToM.AdjustRelyOn(sageID, core.FuncSafety, -1.0)     // sage not needed for safety either
-		v.ToM.AdjustRelyOn(sageID, core.FuncKnowledge, 0.85)  // famine → knowledge/provision
+		v.ToM.AdjustRelyOn(tyrantID, core.FuncSafety, -1.0)    // fully clear Safety reliance
+		v.ToM.AdjustRelyOn(sageID, core.FuncSafety, -1.0)      // sage not needed for safety either
+		v.ToM.AdjustRelyOn(sageID, core.FuncKnowledge, 0.85)   // famine → knowledge/provision
 		v.ToM.AdjustRelyOn(tyrantID, core.FuncKnowledge, 0.05) // tyrant is not wise
 	}
 
@@ -185,8 +185,8 @@ func TestScenarioE_DualRoleCoexist(t *testing.T) {
 	// All 4 villagers: Safety → Tyrant, Knowledge → Sage.
 	for _, vid := range villagerIDs {
 		v, _ := fx.world.AgentOf(vid)
-		v.ToM.AdjustRelyOn(tyrantID, core.FuncSafety, 0.85)    // Strength=85 → Safety provider
-		v.ToM.AdjustRelyOn(sageID, core.FuncKnowledge, 0.85)   // Intelligence=90 → Knowledge provider
+		v.ToM.AdjustRelyOn(tyrantID, core.FuncSafety, 0.85)  // Strength=85 → Safety provider
+		v.ToM.AdjustRelyOn(sageID, core.FuncKnowledge, 0.85) // Intelligence=90 → Knowledge provider
 		v.ToM.AdjustRelyOn(sageID, core.FuncSafety, 0.05)
 		v.ToM.AdjustRelyOn(tyrantID, core.FuncKnowledge, 0.05)
 	}

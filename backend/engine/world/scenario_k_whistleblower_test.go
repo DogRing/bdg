@@ -41,18 +41,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/values"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // -- YAML definitions ------------------------------------------------------------
@@ -247,14 +247,14 @@ func TestWhistleblower_ToMCollapseAfterCrime(t *testing.T) {
 
 // TestWhistleblower_SilenceVsGossip verifies three Witness personas:
 //
-//   A. FEARFUL (Honesty=0.65, Strength=0.10): courage gate fails on both branches
-//      → Gossip invisible (hard-block, UrgencyThreshold=2.0) → plans StayQuiet
+//	A. FEARFUL (Honesty=0.65, Strength=0.10): courage gate fails on both branches
+//	   → Gossip invisible (hard-block, UrgencyThreshold=2.0) → plans StayQuiet
 //
-//   B. BRAVE (Honesty=0.65, Strength=0.50): second branch passes (0.65≥0.60 AND 0.50≥0.30)
-//      → Gossip visible (cost=0.0) < StayQuiet (cost=0.50) → plans Gossip
+//	B. BRAVE (Honesty=0.65, Strength=0.50): second branch passes (0.65≥0.60 AND 0.50≥0.30)
+//	   → Gossip visible (cost=0.0) < StayQuiet (cost=0.50) → plans Gossip
 //
-//   C. VERY HONEST (Honesty=0.85, Strength=0.10): first branch passes (0.85≥0.80)
-//      → Gossip visible despite physical weakness → plans Gossip
+//	C. VERY HONEST (Honesty=0.85, Strength=0.10): first branch passes (0.85≥0.80)
+//	   → Gossip visible despite physical weakness → plans Gossip
 //
 // A Villager is spawned near the Witness in all sub-cases so that near_other is
 // in SatisfiedFacts (someone to gossip to). Without near_other, Gossip is
@@ -315,7 +315,7 @@ func TestWhistleblower_SilenceVsGossip(t *testing.T) {
 			veryHonest.Plan.Actions, veryHonest.Coping)
 	}
 
-	t.Logf("Courage bifurcation: Honesty=0.65+Str=0.10 → StayQuiet; "+
+	t.Logf("Courage bifurcation: Honesty=0.65+Str=0.10 → StayQuiet; " +
 		"Honesty=0.65+Str=0.50 → Gossip; Honesty=0.85+Str=0.10 → Gossip (conscience override)")
 
 	if dA, dB := worldDigest(worldA), worldDigest(worldA2); dA != dB {
@@ -333,11 +333,11 @@ func TestWhistleblower_SilenceVsGossip(t *testing.T) {
 // then assert that gossip-recipients' beliefs go DOWN relative to their own prior,
 // while V3 (isolated) stays exactly at its pre-gossip value.
 //
-//   Witness → V1 (1-hop): V1's belief drops toward Witness's incriminating evidence
-//   V1 → V2 (2-hop): V2's belief also drops, shifted toward V1's already-lower belief
-//   V3 (no gossip): belief is identical to pre-gossip snapshot (no mutation)
-//   V3 > V1_after > V2_after... OR V3 > V2_after, V3 > V1_after (order depends on
-//     whether V1's shift was stronger than V2's via attenuation)
+//	Witness → V1 (1-hop): V1's belief drops toward Witness's incriminating evidence
+//	V1 → V2 (2-hop): V2's belief also drops, shifted toward V1's already-lower belief
+//	V3 (no gossip): belief is identical to pre-gossip snapshot (no mutation)
+//	V3 > V1_after > V2_after... OR V3 > V2_after, V3 > V1_after (order depends on
+//	  whether V1's shift was stronger than V2's via attenuation)
 //
 // GossipUpdate: shifts listener's belief toward source.Mean weighted by trustWeight=0.70.
 // Because Witness's belief is LOWER than villagers' prior, gossip always reduces beliefs.
@@ -430,7 +430,8 @@ func TestWhistleblower_GossipPropagation(t *testing.T) {
 // TestWhistleblower_RebellionEmergence verifies the full power-shift cascade:
 //
 // Phase 1 (Tyrant's rule): 4 villagers all rely on Tyrant for Safety →
-//   relianceScan emits RoleEmerged(tyrant, Safety) [tyrant holds the role]
+//
+//	relianceScan emits RoleEmerged(tyrant, Safety) [tyrant holds the role]
 //
 // Phase 2 (Gossip reaches 3 of 4):
 //   - V1, V2, V3: receive 1-hop gossip → Tyrant's credibility collapses in their ToM
@@ -512,8 +513,8 @@ func TestWhistleblower_RebellionEmergence(t *testing.T) {
 	// V1, V2, V3 shift their Safety reliance from Tyrant to Rebel.
 	for _, vid := range gossipRecipients {
 		v := villagers[vid]
-		v.ToM.AdjustRelyOn(tyrantID, core.FuncSafety, -1.0)  // remove Tyrant reliance
-		v.ToM.AdjustRelyOn(rebelID, core.FuncSafety, 0.85)   // transfer to rebel
+		v.ToM.AdjustRelyOn(tyrantID, core.FuncSafety, -1.0) // remove Tyrant reliance
+		v.ToM.AdjustRelyOn(rebelID, core.FuncSafety, 0.85)  // transfer to rebel
 	}
 	// Witness also shifts (direct evidence is most damning).
 	witness.ToM.AdjustRelyOn(tyrantID, core.FuncSafety, -1.0)

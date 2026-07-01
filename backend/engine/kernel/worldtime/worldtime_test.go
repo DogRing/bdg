@@ -91,14 +91,14 @@ func TestClock_Accessors_HandComputed(t *testing.T) {
 	// - t=172800  -> first tick of year 1 (day 120, min 0, hour 0, season 0)
 
 	cases := []struct {
-		name           string
-		t              core.Tick
-		wantMin        core.GameMinutes
-		wantMinOfDay   int64
-		wantHour       int
-		wantDay        int64
-		wantSeason     int
-		wantYear       int64
+		name         string
+		t            core.Tick
+		wantMin      core.GameMinutes
+		wantMinOfDay int64
+		wantHour     int
+		wantDay      int64
+		wantSeason   int
+		wantYear     int64
 	}{
 		{"t=0 (epoch)", 0, 0, 0, 0, 0, 0, 0},
 		{"t=1439 (end day 0)", 1439, 1439, 1439, 23, 0, 0, 0},

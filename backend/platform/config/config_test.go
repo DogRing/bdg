@@ -400,6 +400,157 @@ const testBalanceSchema = `{
   }
 }`
 
+const testWorldSchema = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "bounds", "grids", "motion", "cadence"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "bounds": { "type": "object", "required": ["min", "max"] },
+    "grids": { "type": "object", "required": ["navmap_cell_size", "climate_grid_cols", "climate_grid_rows", "scent_cell_size"] },
+    "motion": { "type": "object", "required": ["fauna_dt", "max_speed"] },
+    "cadence": { "type": "object", "required": ["climate_step", "flora_step", "decay_step", "scent_spread", "fauna_dormant_period", "fauna_wake_cooldown"] }
+  }
+}`
+
+const testClimateSchema = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "init", "transitions", "balance"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "init": { "type": "object" },
+    "transitions": { "type": "array" },
+    "balance": { "type": "object" }
+  }
+}`
+
+const testTerrainSchema = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "terrains"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "terrains": { "type": "array" }
+  }
+}`
+
+const testObjectsSchema = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "object_kinds": { "type": "array" },
+    "item_kinds": { "type": "array" }
+  }
+}`
+
+const validWorldYAML = `schema_version: 1
+bounds: { min: [0.0, 0.0], max: [64.0, 64.0] }
+grids:
+  navmap_cell_size: 8.0
+  climate_grid_cols: 4
+  climate_grid_rows: 4
+  scent_cell_size: 8.4
+motion:
+  fauna_dt: 1.0
+  max_speed: 1.4
+cadence:
+  climate_step: 60
+  flora_step: 60
+  decay_step: 60
+  scent_spread: 6
+  fauna_dormant_period: 100
+  fauna_wake_cooldown: 30
+`
+
+const validClimateYAML = `schema_version: 1
+init:
+  initial_moisture: 0.5
+  initial_temperature: 12.5
+transitions:
+  - { from: soil, to: sand, when: "moisture < 0.15" }
+balance:
+  rain_prob_per_hour: 0.0042
+  rain_hard_cap_hours: 720
+  rain_dur_min_hours: 2
+  rain_dur_max_hours: 12
+  moisture_rain_rate: 0.08
+  evap_base_rate: 0.01
+  evap_temp_scale: 0.0015
+  annual_mid: 12.5
+  annual_amp: 17.5
+  annual_phase: 0.0
+  temp_day_peak: 6.0
+  temp_night_low: -6.0
+  temp_rain_drop: 3.0
+  wind_prevailing_dir: 1.5708
+  wind_dir_drift: 0.15
+  wind_dir_reversion: 0.05
+  wind_mag_mean: 0.30
+  wind_mag_noise: 0.10
+`
+
+const validTerrainYAML = `schema_version: 1
+terrains:
+  - id: soil
+    base_cost: 1.0
+    passable: true
+    attrs: { moisture: 0.5, slope: 0.1, salinity: 0.0 }
+  - id: sand
+    base_cost: 1.3
+    passable: true
+    attrs: { moisture: 0.2, slope: 0.1, salinity: 0.1 }
+`
+
+const validObjectsWorldYAML = `schema_version: 1
+object_kinds:
+  - id: grass
+    mobile: false
+    tags: [ scent:food, forage ]
+    flora:
+      suitability: "moisture*0.5 + (1 - slope)*0.5"
+      length_rate: 0.05
+      width_rate: 0.04
+      stages: [0.1, 0.3]
+      yield_stage: 1
+      propagate_stage: 1
+      shade: { radius: "width * 0.05", opacity: "width * 0.02" }
+      propagation: { radius: 3.0, chance: 0.30 }
+      death_threshold: 0.10
+      death_hysteresis: 3
+    harvest:
+      yields:
+        - { item: berries, chance: "0.5", qty: [1, 2] }
+  - id: deer
+    mobile: true
+    tags: [ scent:prey, game ]
+    fauna:
+      actions:
+        - { action: Forage, utility: "hunger * (0.3 + scent.food)" }
+      drives:
+        - { id: hunger, rate: 0.0008 }
+        - { id: thermal }
+      apparent_temp: "temperature - wind.mag * 6 - moisture * 3"
+      speed: "Agility * 1.2 - thermal * 0.6"
+      diet: [ forage ]
+      senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }
+      terrain_cost: { sand: 1.2 }
+      impassable: []
+item_kinds:
+  - id: berries
+    stackable: true
+    supply: { Satiety: 0.25 }
+    decay:
+      baseRate: 1.0
+      accel: "0.5 + temperature*1.0 + moisture*0.5"
+      states:
+        - { name: fresh }
+        - { name: stale, threshold: 0.4, supply: { Satiety: 0.15 } }
+        - { name: gone, threshold: 1.0 }
+`
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 // writeTestContent writes the test YAML and schema files to a temp directory
@@ -427,6 +578,44 @@ func writeTestContent(t *testing.T, contentFiles, schemaFiles map[string]string)
 	}
 
 	return contentDir
+}
+
+func baseContentFiles() map[string]string {
+	return map[string]string{
+		"stats.yaml":   validStatsYAML,
+		"needs.yaml":   validNeedsYAML,
+		"actions.yaml": validActionsYAML,
+		"gates.yaml":   validGatesYAML,
+		"balance.yaml": validBalanceYAML,
+	}
+}
+
+func baseSchemaFiles() map[string]string {
+	return map[string]string{
+		"stats.schema.json":   testStatsSchema,
+		"needs.schema.json":   testNeedsSchema,
+		"actions.schema.json": testActionsSchema,
+		"gates.schema.json":   testGatesSchema,
+		"balance.schema.json": testBalanceSchema,
+	}
+}
+
+func worldContentFiles() map[string]string {
+	files := baseContentFiles()
+	files["world.yaml"] = validWorldYAML
+	files["climate.yaml"] = validClimateYAML
+	files["terrain.yaml"] = validTerrainYAML
+	files["objects.yaml"] = validObjectsWorldYAML
+	return files
+}
+
+func worldSchemaFiles() map[string]string {
+	files := baseSchemaFiles()
+	files["world.schema.json"] = testWorldSchema
+	files["climate.schema.json"] = testClimateSchema
+	files["terrain.schema.json"] = testTerrainSchema
+	files["objects.schema.json"] = testObjectsSchema
+	return files
 }
 
 // TestLoadValidContent verifies that Load returns a fully populated LoadOutput
@@ -472,6 +661,11 @@ func TestLoadValidContent(t *testing.T) {
 	}
 	if out.ConfigHash() == "" {
 		t.Error("ConfigHash is empty")
+	}
+	if out.WorldEnv != nil || out.ClimateCfg != nil || out.NavCfg != nil ||
+		out.ClimateRules != nil || out.FloraRules != nil || out.FaunaRules != nil ||
+		out.DecayRules != nil || out.TerrainTypes != nil || out.ScentEmitters != nil {
+		t.Fatal("optional world/env fields should be nil when files are absent")
 	}
 
 	// Verify ConfigHash is deterministic.
@@ -544,6 +738,157 @@ func TestLoadValidContent(t *testing.T) {
 	}
 }
 
+func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
+	dir := writeTestContent(t, worldContentFiles(), worldSchemaFiles())
+	out, err := LoadContent(dir)
+	if err != nil {
+		t.Fatalf("LoadContent world content: %v", err)
+	}
+	if out.WorldEnv == nil || out.ClimateCfg == nil || out.NavCfg == nil {
+		t.Fatalf("world geometry configs were not built")
+	}
+	if out.WorldEnv.Min.X != 0 || out.WorldEnv.Max.X != 64 || out.WorldEnv.ScentCellSize != 8.4 {
+		t.Fatalf("WorldEnv mapping wrong: %+v", *out.WorldEnv)
+	}
+	if out.ClimateCfg.GridCols != 4 || out.ClimateCfg.InitTemperature != 12.5 {
+		t.Fatalf("ClimateCfg mapping wrong: %+v", *out.ClimateCfg)
+	}
+	if out.NavCfg.CellSize != 8.0 || out.NavCfg.MaxY != 64 {
+		t.Fatalf("NavCfg mapping wrong: %+v", *out.NavCfg)
+	}
+	if out.ClimateRules == nil || out.FloraRules == nil || out.FaunaRules == nil || out.DecayRules == nil {
+		t.Fatalf("compiled rules missing: climate=%v flora=%v fauna=%v decay=%v", out.ClimateRules, out.FloraRules, out.FaunaRules, out.DecayRules)
+	}
+	if len(out.TerrainTypes) != 2 || !out.TerrainTypes["soil"].Passable {
+		t.Fatalf("terrain types not built: %#v", out.TerrainTypes)
+	}
+	if len(out.ScentEmitters) != 2 ||
+		len(out.ScentEmitters["grass"]) != 1 || out.ScentEmitters["grass"][0] != "scent:food" ||
+		len(out.ScentEmitters["deer"]) != 1 || out.ScentEmitters["deer"][0] != "scent:prey" {
+		t.Fatalf("scent emitters not extracted from content tags: %#v", out.ScentEmitters)
+	}
+}
+
+func TestWorldContentValidationFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		data    string
+		wantErr string
+	}{
+		{
+			name: "world schema",
+			file: "world.yaml",
+			data: `schema_version: 1
+grids:
+  navmap_cell_size: 8.0
+  climate_grid_cols: 4
+  climate_grid_rows: 4
+  scent_cell_size: 8.4
+motion: { fauna_dt: 1.0, max_speed: 1.4 }
+cadence:
+  climate_step: 60
+  flora_step: 60
+  decay_step: 60
+  scent_spread: 6
+  fauna_dormant_period: 100
+  fauna_wake_cooldown: 30
+`,
+			wantErr: "schema world.yaml",
+		},
+		{
+			name:    "scent floor",
+			file:    "world.yaml",
+			data:    strings.Replace(validWorldYAML, "scent_cell_size: 8.4", "scent_cell_size: 8.39", 1),
+			wantErr: "scent_cell_size",
+		},
+		{
+			name:    "grid sync",
+			file:    "world.yaml",
+			data:    strings.Replace(validWorldYAML, "navmap_cell_size: 8.0", "navmap_cell_size: 4.0", 1),
+			wantErr: "grid sync",
+		},
+		{
+			name:    "bounds",
+			file:    "world.yaml",
+			data:    strings.Replace(validWorldYAML, "max: [64.0, 64.0]", "max: [0.0, 64.0]", 1),
+			wantErr: "bounds",
+		},
+		{
+			name:    "fauna operand",
+			file:    "objects.yaml",
+			data:    strings.Replace(validObjectsWorldYAML, "hunger * (0.3 + scent.food)", "hunger + scent.foood", 1),
+			wantErr: "fauna deer utility Forage",
+		},
+		{
+			name:    "fauna action",
+			file:    "objects.yaml",
+			data:    strings.Replace(validObjectsWorldYAML, "action: Forage", "action: MissingAction", 1),
+			wantErr: "unknown action",
+		},
+		{
+			name:    "flora operand",
+			file:    "objects.yaml",
+			data:    strings.Replace(validObjectsWorldYAML, "moisture*0.5 + (1 - slope)*0.5", "bad_attr + moisture", 1),
+			wantErr: "flora grass suitability",
+		},
+		{
+			name:    "flora propagation radius neighbor count",
+			file:    "objects.yaml",
+			data:    strings.Replace(validObjectsWorldYAML, "propagation: { radius: 3.0, chance: 0.30 }", "propagation: { radius: \"neighbor_count + 1\", chance: 0.30 }", 1),
+			wantErr: "flora grass propagation.radius must not read neighbor_count",
+		},
+		{
+			name:    "climate operand",
+			file:    "climate.yaml",
+			data:    strings.Replace(validClimateYAML, "moisture < 0.15", "humidity < 0.15", 1),
+			wantErr: "climate transition 0",
+		},
+		{
+			name:    "climate terrain",
+			file:    "climate.yaml",
+			data:    strings.Replace(validClimateYAML, "to: sand", "to: bog", 1),
+			wantErr: "unknown to terrain",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := worldContentFiles()
+			files[tt.file] = tt.data
+			dir := writeTestContent(t, files, worldSchemaFiles())
+			out, err := LoadContent(dir)
+			if err == nil {
+				t.Fatal("expected load error")
+			}
+			if out != nil {
+				t.Fatal("expected no partial registry on error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error %q does not contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestConfigHashIncludesWorldFiles(t *testing.T) {
+	dir1 := writeTestContent(t, worldContentFiles(), worldSchemaFiles())
+	out1, err := LoadContent(dir1)
+	if err != nil {
+		t.Fatalf("LoadContent dir1: %v", err)
+	}
+	files2 := worldContentFiles()
+	files2["world.yaml"] = strings.Replace(validWorldYAML, "fauna_dt: 1.0", "fauna_dt: 1.00", 1)
+	dir2 := writeTestContent(t, files2, worldSchemaFiles())
+	out2, err := LoadContent(dir2)
+	if err != nil {
+		t.Fatalf("LoadContent dir2: %v", err)
+	}
+	if out1.ConfigHash() == out2.ConfigHash() {
+		t.Fatal("ConfigHash did not change after world.yaml byte change")
+	}
+}
+
 // TestLoadInvalidStatsYAML verifies that a malformed stats.yaml fails.
 func TestLoadInvalidStatsYAML(t *testing.T) {
 	contentFiles := map[string]string{
@@ -561,8 +906,8 @@ stats:
 		"balance.yaml": validBalanceYAML,
 	}
 	schemaFiles := map[string]string{
-		"stats.schema.json": testStatsSchema,
-		"needs.schema.json": testNeedsSchema,
+		"stats.schema.json":   testStatsSchema,
+		"needs.schema.json":   testNeedsSchema,
 		"actions.schema.json": testActionsSchema,
 		"gates.schema.json":   testGatesSchema,
 		"balance.schema.json": testBalanceSchema,
@@ -581,7 +926,7 @@ stats:
 // TestLoadInvalidNeedsMissingField verifies schema enforcement for needs.
 func TestLoadInvalidNeedsMissingField(t *testing.T) {
 	contentFiles := map[string]string{
-		"stats.yaml":   validStatsYAML,
+		"stats.yaml": validStatsYAML,
 		"needs.yaml": `schema_version: 1
 needs:
   - id: Satiety
@@ -651,8 +996,8 @@ world:
 // field gets caught by schema validation.
 func TestLoadInvalidActionsMissingID(t *testing.T) {
 	contentFiles := map[string]string{
-		"stats.yaml":   validStatsYAML,
-		"needs.yaml":   validNeedsYAML,
+		"stats.yaml": validStatsYAML,
+		"needs.yaml": validNeedsYAML,
 		"actions.yaml": `schema_version: 1
 actions:
   - tags: [ "test:valid" ]  # missing required "id" field

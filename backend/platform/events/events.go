@@ -30,6 +30,7 @@ const (
 	TypeCopingEntered    = "CopingEntered"
 	TypeRoleEmerged      = "RoleEmerged"
 	TypeTickDone         = "TickDone"
+	TypeWorldFrame       = "WorldFrame"
 	TypeSnapshotReady    = "SnapshotReady"
 )
 

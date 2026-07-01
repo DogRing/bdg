@@ -214,6 +214,12 @@ func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64
 func (r *Rules) LengthRate(sp SpeciesID, in SiteInput) float64
 func (r *Rules) WidthRate(sp SpeciesID, in SiteInput) float64
 
+// PropRadius evaluates the species' §6 propagation-radius formula using the same SiteInput+Plant
+// context Step uses before seed dispersal. world uses this accessor to build SiteInput.NeighborCount
+// with the same radius that propagation itself uses. PropRadius formulas must not read
+// `neighbor_count`; platform/config rejects that circular dependency at load time.
+func (r *Rules) PropRadius(sp SpeciesID, plant Plant, in SiteInput) float64
+
 // Stage maps a continuous Length (HEIGHT = maturity proxy) to the species' DERIVED discrete
 // stage index (0 = seedling …) via the species' stage thresholds over length (RESOLVED 1b
 // option c + §1 refinement — stages are a data threshold over the height axis, not stored, and

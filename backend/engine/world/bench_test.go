@@ -4,18 +4,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/values"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // BenchmarkWorld_200Agents_1440Ticks measures wall-clock time and allocations
@@ -153,7 +153,7 @@ gates:
 		agentCfg := agent.DefaultConfig()
 		for j := 0; j < 200; j++ {
 			id := core.AgentID(benchAgentID(j))
-			pos := core.Vec2{X: float64(j % 20) * 5.0, Y: float64(j / 20) * 5.0}
+			pos := core.Vec2{X: float64(j%20) * 5.0, Y: float64(j/20) * 5.0}
 			spawnRNG := rng.New(int64(j + 1000))
 			w.Spawn(id, pos, agentCfg, spawnRNG)
 		}

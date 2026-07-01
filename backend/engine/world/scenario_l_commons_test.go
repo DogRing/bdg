@@ -46,26 +46,27 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/values"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // -- YAML definitions ------------------------------------------------------------
 
 // commonsActionsYAML: commons intact — three tiers of food acquisition:
-//   Take_Portion: sustainable, high moral effort cost, no prerequisites
-//   Loot_All:     destroys commons, low effort — but conscience-gated
-//   Take_From_Other: inter-agent robbery — conscience-gated AND requires victims nearby
+//
+//	Take_Portion: sustainable, high moral effort cost, no prerequisites
+//	Loot_All:     destroys commons, low effort — but conscience-gated
+//	Take_From_Other: inter-agent robbery — conscience-gated AND requires victims nearby
 const commonsActionsYAML = `schema_version: 1
 actions:
   - id: Take_Portion
@@ -109,10 +110,11 @@ actions:
 
 // commonsGatesYAML: conscience gate identical to Robin Hood / chain scenarios.
 // Conscience opens when:
-//   Honesty < 0.40 (extreme dishonesty, always criminal)
-//   Aggression >= 0.65 (extreme aggression, always criminal)
-//   urgency > 0.70 AND (Honesty < 0.55 OR Aggression >= 0.50)
-//   (= medium dishonesty + economic frustration = situational criminal)
+//
+//	Honesty < 0.40 (extreme dishonesty, always criminal)
+//	Aggression >= 0.65 (extreme aggression, always criminal)
+//	urgency > 0.70 AND (Honesty < 0.55 OR Aggression >= 0.50)
+//	(= medium dishonesty + economic frustration = situational criminal)
 const commonsGatesYAML = robinHoodGatesYAML
 
 // -- Fixture ---------------------------------------------------------------------
@@ -224,7 +226,7 @@ func TestCommons_OrderInAbundance(t *testing.T) {
 			id := core.AgentID(fmt.Sprintf("villager%d", i))
 			pos := core.Vec2{X: float64(i * 20)} // 20 units apart — no near_other
 			a := fx.world.Spawn(id, pos, cfg, rng.New(int64(100+i)))
-			seedCommons(a, 0.70, 0.20) // high Honesty, low Aggression
+			seedCommons(a, 0.70, 0.20)          // high Honesty, low Aggression
 			a.NeedIntensities["Satiety"] = 0.25 // urgency = 0.455 < 0.70 (gate closed)
 			agents[i] = a
 		}
@@ -268,10 +270,10 @@ func TestCommons_OrderInAbundance(t *testing.T) {
 //
 // This models the initial defection event in the tragedy of the commons:
 //   - Defector: intensity=0.45 → urgency=0.818 > 0.70
-//               Honesty=0.44 (<0.55) → urgency branch opens conscience gate
-//               Cost(Loot_All=0.20) < Cost(Take_Portion=0.80) → defector picks Loot_All
+//     Honesty=0.44 (<0.55) → urgency branch opens conscience gate
+//     Cost(Loot_All=0.20) < Cost(Take_Portion=0.80) → defector picks Loot_All
 //   - Orderly:  intensity=0.25 → urgency=0.455 < 0.70 → conscience gate closed
-//               Only Take_Portion available → orderly agents plan [Take_Portion]
+//     Only Take_Portion available → orderly agents plan [Take_Portion]
 //
 // The defector's advantage is that Loot_All provides 1.0 Satiety (vs 0.55 for Take_Portion)
 // at lower effort cost. Once the gate opens, defection is economically dominant.
@@ -285,7 +287,7 @@ func TestCommons_SingleDefector(t *testing.T) {
 	// Defector: near-threshold satiety (82% of way to comfort level) + moderate dishonesty.
 	// Economic frustration: "I'm almost comfortable, just need this one big grab."
 	defector := fx.world.Spawn("defector", core.Vec2{X: 0}, cfg, rng.New(200))
-	seedCommons(defector, 0.44, 0.44) // Honesty=0.44 (<0.55), Aggression=0.44 (<0.50)
+	seedCommons(defector, 0.44, 0.44)          // Honesty=0.44 (<0.55), Aggression=0.44 (<0.50)
 	defector.NeedIntensities["Satiety"] = 0.45 // urgency=0.818 > 0.70 → gate OPENS
 
 	// Orderly villagers: lower satiety → lower urgency → conscience gate stays shut.
@@ -294,7 +296,7 @@ func TestCommons_SingleDefector(t *testing.T) {
 		id := core.AgentID(fmt.Sprintf("orderly%d", i))
 		pos := core.Vec2{X: float64((i + 1) * 20)} // 20+ units from defector AND each other
 		a := fx.world.Spawn(id, pos, cfg, rng.New(int64(201+i)))
-		seedCommons(a, 0.70, 0.20) // Honesty=0.70 (≥0.55) — urgency branch can never open
+		seedCommons(a, 0.70, 0.20)          // Honesty=0.70 (≥0.55) — urgency branch can never open
 		a.NeedIntensities["Satiety"] = 0.25 // urgency=0.455 < 0.70
 		orderly[i] = a
 	}
@@ -435,11 +437,13 @@ func TestCommons_CascadeCollapse(t *testing.T) {
 // TestCommons_PhaseTransition demonstrates the full "all against all" phase transition:
 //
 // BEFORE COLLAPSE: 10 agents, commons intact, all at intensity=0.25 → urgency=0.455 <0.70
-//   All conscience gates CLOSED → all plan [Take_Portion]. Orderly state.
+//
+//	All conscience gates CLOSED → all plan [Take_Portion]. Orderly state.
 //
 // AFTER COLLAPSE: Same agent profiles, no Take_Portion. Agents at intensity=0.45:
-//   7 agents (Honesty=0.50, below 0.55): conscience opens at urgency=0.818 → Take_From_Other
-//   3 agents (Honesty=0.70, above 0.55): conscience closed → coping → helpless bystanders
+//
+//	7 agents (Honesty=0.50, below 0.55): conscience opens at urgency=0.818 → Take_From_Other
+//	3 agents (Honesty=0.70, above 0.55): conscience closed → coping → helpless bystanders
 //
 // The 70% criminalization rate shows how the structural removal of one legal option
 // creates the Hobbesian war of all against all. The remaining 30% don't turn criminal
@@ -449,8 +453,8 @@ func TestCommons_CascadeCollapse(t *testing.T) {
 // STRUCTURAL (determined by the missing action, not by moral character change).
 func TestCommons_PhaseTransition(t *testing.T) {
 	const nAgents = 10
-	const nCriminals = 7  // Honesty=0.50 (<0.55): gate opens at urgency=0.818
-	const nCopers = 3     // Honesty=0.70 (≥0.55): gate stays closed regardless
+	const nCriminals = 7 // Honesty=0.50 (<0.55): gate opens at urgency=0.818
+	const nCopers = 3    // Honesty=0.70 (≥0.55): gate stays closed regardless
 
 	cfg := robinHoodAgentConfig()
 

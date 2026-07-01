@@ -99,6 +99,16 @@ func (c Clock) Year(t core.Tick) int64 {
 	return day / daysPerYear
 }
 
+// YearFraction returns the continuous position within the current year in [0,1).
+func (c Clock) YearFraction(t core.Tick) float64 {
+	minutes := int64(c.Minutes(t))
+	minutesPerYear := c.cfg.DayMinutes * c.cfg.DaysPerSeason * c.cfg.SeasonsPerYear
+	if minutesPerYear <= 0 {
+		return 0
+	}
+	return float64(minutes%minutesPerYear) / float64(minutesPerYear)
+}
+
 // Calendar bundles all derived fields for a Tick (one struct, for logging / events / render).
 type Calendar struct {
 	Minute    core.GameMinutes // absolute game-minute count

@@ -11,8 +11,8 @@ import (
 	"math"
 	"sort"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/space/spatial"
 	"gopkg.in/yaml.v3"
 )
@@ -52,16 +52,21 @@ type SoundEvent struct {
 	Distance float64
 }
 
-// WorldSnapshot is a read-only view over entity positions, tags, and opacity for the CURRENT
-// tick. The world (engine/world) implements it; perception only reads it (dependency inversion —
-// perception does not import engine/world). EntitiesInRadius is the proximity candidate source,
-// backed by the spatial hash (D11). Tags / IsOpaque resolve per-entity attributes the spatial
-// hash does not store. Implementations MUST return EntitiesInRadius sorted by ascending ObjectID
-// (the spatial-hash contract, engine/spatial/SPEC.md) so this module's re-sorts are stable.
+// ShadeOccluder is one flora-shade caster the world exposes for line-of-sight attenuation.
+type ShadeOccluder struct {
+	ID      core.ObjectID
+	Pos     core.Vec2
+	Radius  float64
+	Opacity float64
+}
+
+// WorldSnapshot is a read-only view over entity positions, tags, opacity, and flora shade for the
+// CURRENT tick. The world (engine/world) implements it; perception only reads it.
 type WorldSnapshot interface {
 	EntitiesInRadius(center core.Vec2, radius float64) []PerceivedEntity
 	Tags(id core.ObjectID) []core.Tag
 	IsOpaque(id core.ObjectID) bool
+	ShadeOccluders(center core.Vec2, radius float64) []ShadeOccluder
 }
 
 // Sensor evaluates the three senses against a WorldSnapshot. It is created once (per agent or

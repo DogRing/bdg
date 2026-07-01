@@ -3,14 +3,14 @@ package world
 import (
 	"sort"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
-	"github.com/dogring/bdg/engine/mind/planner"
 	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/mind/planner"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // ── WorldState: serializable snapshot for resume (testing.md §1) ────────────────
@@ -49,23 +49,23 @@ type tomDigestEntry struct {
 
 // agentDigest is one agent's full public state for capture/restore.
 type agentDigest struct {
-	ID              core.AgentID               `json:"id"`
-	Pos             core.Vec2                  `json:"pos"`
-	RealStats       stats.Stats                `json:"real_stats"`
-	Stamina         float64                    `json:"stamina"`
-	Mood            float64                    `json:"mood"`
-	Adrenaline      float64                    `json:"adrenaline"`
-	NeedIntensities map[core.Dimension]float64 `json:"need_intensities"`
-	Inventory       map[core.Tag]int           `json:"inventory"`
-	Goal            core.Dimension             `json:"goal"`
-	PlanActions     []string                   `json:"plan_actions"` // ActionIDs in plan (serialized)
-	PlanHorizon     int                        `json:"plan_horizon"`
-	PlanIdx         int                        `json:"plan_idx"`
-	Elapsed         core.GameMinutes           `json:"elapsed"`
-	Coping          agent.CopingState          `json:"coping"`
-	Latent          []agent.LatentGoal         `json:"latent"`
+	ID              core.AgentID                 `json:"id"`
+	Pos             core.Vec2                    `json:"pos"`
+	RealStats       stats.Stats                  `json:"real_stats"`
+	Stamina         float64                      `json:"stamina"`
+	Mood            float64                      `json:"mood"`
+	Adrenaline      float64                      `json:"adrenaline"`
+	NeedIntensities map[core.Dimension]float64   `json:"need_intensities"`
+	Inventory       map[core.Tag]int             `json:"inventory"`
+	Goal            core.Dimension               `json:"goal"`
+	PlanActions     []string                     `json:"plan_actions"` // ActionIDs in plan (serialized)
+	PlanHorizon     int                          `json:"plan_horizon"`
+	PlanIdx         int                          `json:"plan_idx"`
+	Elapsed         core.GameMinutes             `json:"elapsed"`
+	Coping          agent.CopingState            `json:"coping"`
+	Latent          []agent.LatentGoal           `json:"latent"`
 	SelfEstStats    map[core.StatID]tom.StatDist `json:"self_est_stats"`
-	AgentCfg        agent.Config               `json:"agent_cfg"`
+	AgentCfg        agent.Config                 `json:"agent_cfg"`
 }
 
 // knownDigest carries one agent's known-object set.

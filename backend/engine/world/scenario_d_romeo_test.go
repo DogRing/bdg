@@ -30,19 +30,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // ── Romeo/Juliet fixture ──────────────────────────────────────────────────────
@@ -114,9 +114,10 @@ actions:
 // Body scalars (Urgency, Stamina, Mood, Adrenaline) are always [0,1].
 //
 // Gate logic:
-//   Honesty < 40    → base barrier (very dishonest, no conscience)
-//   Aggression ≥ 65 → base barrier (very aggressive)
-//   Urgency > 0.70 AND (Honesty < 55 OR Aggression ≥ 50) → urgency-relief branch
+//
+//	Honesty < 40    → base barrier (very dishonest, no conscience)
+//	Aggression ≥ 65 → base barrier (very aggressive)
+//	Urgency > 0.70 AND (Honesty < 55 OR Aggression ≥ 50) → urgency-relief branch
 const romeoGatesYAML = `schema_version: 3
 gates:
   - id: conscience
@@ -259,10 +260,11 @@ func seedJulietSuffering(observer *agent.Agent, julietID core.AgentID) {
 // self-need — whereas Mercutio (low Affinity) cannot plan Take at the same level.
 //
 // Urgency math (with BondAffinityGain=0.625, MaxPossiblePriority=2.5):
-//   Romeo.appraiseOthers: Juliet suffering≈0.80, Safety weight=1.40, bondMult=1.5
-//     → priority = 1.0 × 1.40 × 1.5 = 2.10 → urgency = 2.10/2.5 = 0.84 > 0.70 ✓
-//   Mercutio.appraiseOthers: Juliet filtered (Affinity=0.1 < MinCareThreshold=0.30)
-//     → maxOther = 0 → urgency = selfPriority/2.5 ≈ 0.25 < 0.70 → conscience blocks ✓
+//
+//	Romeo.appraiseOthers: Juliet suffering≈0.80, Safety weight=1.40, bondMult=1.5
+//	  → priority = 1.0 × 1.40 × 1.5 = 2.10 → urgency = 2.10/2.5 = 0.84 > 0.70 ✓
+//	Mercutio.appraiseOthers: Juliet filtered (Affinity=0.1 < MinCareThreshold=0.30)
+//	  → maxOther = 0 → urgency = selfPriority/2.5 ≈ 0.25 < 0.70 → conscience blocks ✓
 func TestScenarioD_RomeoUrgencyBoostsConscienceBypass(t *testing.T) {
 	const seed = int64(4001)
 	const ticks = 40
@@ -303,7 +305,7 @@ func TestScenarioD_RomeoUrgencyBoostsConscienceBypass(t *testing.T) {
 		}
 		seedJulietSuffering(mercutio, juliet.ToM.SelfID())
 		mercutio.ToM.AdjustAffinity(juliet.ToM.SelfID(), 0.1) // < MinCareThreshold(0.30)
-		mercutio.NeedIntensities["Satiety"] = 0.35             // same self-need as Romeo
+		mercutio.NeedIntensities["Satiety"] = 0.35            // same self-need as Romeo
 
 		for range ticks {
 			fx.world.Tick()

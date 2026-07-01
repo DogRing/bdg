@@ -34,6 +34,9 @@ Numerics (scent cell, `scent_spread`, motion DT, fauna cadence) come from `conte
   `content/world.yaml grids.scent_cell_size`. Fed by world from `scent:<channel>`-tagged emitters
   (flora/fauna/decay), read by fauna (+ later perception). DERIVED state — rebuilt from emitter
   positions on resume, not separately serialized (scent SPEC).
+- `scentEmitters map[core.Tag][]core.Tag` — content-extracted kind id → sorted `scent:<channel>`
+  tags. The world resolves known tag tokens to scent channels; unknown future tokens are skipped
+  deterministically until their channel exists.
 - `faunaRules *fauna.Rules` — compiled per-species table (`content/objects.yaml fauna:` via expr).
 - `faunaCfg` — the `EnvConfig` fauna/scent extension (below).
 
@@ -59,7 +62,7 @@ type EnvConfig struct {
 // no scent deposit/spread/commit runs, and the world behaves byte-identically (fauna-OFF neutrality,
 // fauna SPEC — the legacy `prey` timer-respawn object is untouched, W7). Animals may be empty (the
 // scent grid + plan call exist but produce nothing = neutral).
-func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, animals []fauna.Animal)
+func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitters map[core.Tag][]core.Tag, animals []fauna.Animal)
 // (cfg is the SAME EnvConfig from InstallEnv, now carrying the fauna/scent fields; the world builds
 //  scent.New(cfg.ScentCellSize) and seeds the animal set + spatial-hash entries for each animal.)
 ```

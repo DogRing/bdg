@@ -4,17 +4,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // ── Scenario B: starving pauper — theft becomes visible when urgency accumulates ──
@@ -357,7 +357,7 @@ func setupScenarioF(t *testing.T, perceivedIntel float64) (*Agent, *stats.Regist
 	selfToM := tom.NewToM("test_agent", realStats, 0.5, rng.New(rngSeed), statReg, cfg.Rates)
 
 	agent := New("test_agent", core.Vec2{}, realStats, selfToM, cfg)
-	agent.Goal = "Craft"       // unreachable goal (no tool_bench known)
+	agent.Goal = "Craft" // unreachable goal (no tool_bench known)
 	agent.Coping = Idle
 
 	// Priorities with Craft as the (dead-end) top goal.

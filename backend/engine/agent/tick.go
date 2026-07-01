@@ -5,10 +5,10 @@ import (
 	"sort"
 
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"
@@ -57,9 +57,9 @@ func (a *Agent) Tick(world WorldView, now core.Tick, rng *rng.RNG, svc Services,
 			AgentID:       a.ID,
 			Type:          "GoalSelected",
 			Payload: map[string]any{
-				"dimension":  string(a.Cfg.SafetyDim),
-				"priority":   1.0,
-				"eff_value":  1.0,
+				"dimension": string(a.Cfg.SafetyDim),
+				"priority":  1.0,
+				"eff_value": 1.0,
 			},
 		})
 	}

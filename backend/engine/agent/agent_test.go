@@ -4,17 +4,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // ── Test helpers ───────────────────────────────────────────────────────────────
@@ -228,10 +228,10 @@ type mockWorldView struct {
 	knownObjs       []KnownObject
 	beliefs         map[core.AgentID]tom.Belief
 	triggers        []core.AgentID
-	placeQuality    func(core.ObjectID) float64      // overrides for PlaceQuality queries
-	agentIDs        []core.AgentID                   // P6: agent IDs for reliance/vote queries
-	incomingSignals map[core.AgentID][]core.Signal   // P6: signals addressed to each agent
-	entityTags      map[core.ObjectID][]core.Tag     // P6 BLOCKER-1: per-entity tag overrides for Sight
+	placeQuality    func(core.ObjectID) float64    // overrides for PlaceQuality queries
+	agentIDs        []core.AgentID                 // P6: agent IDs for reliance/vote queries
+	incomingSignals map[core.AgentID][]core.Signal // P6: signals addressed to each agent
+	entityTags      map[core.ObjectID][]core.Tag   // P6 BLOCKER-1: per-entity tag overrides for Sight
 }
 
 func (m *mockWorldView) EntitiesInRadius(center core.Vec2, radius float64) []perception.PerceivedEntity {
@@ -249,6 +249,10 @@ func (m *mockWorldView) Tags(id core.ObjectID) []core.Tag {
 
 func (m *mockWorldView) IsOpaque(id core.ObjectID) bool {
 	return false
+}
+
+func (m *mockWorldView) ShadeOccluders(center core.Vec2, radius float64) []perception.ShadeOccluder {
+	return nil
 }
 
 func (m *mockWorldView) SoundEvents() []perception.SoundEvent {
@@ -278,7 +282,6 @@ func (m *mockWorldView) PlaceQuality(placeID core.ObjectID) float64 {
 	}
 	return 1.0 // default: pristine
 }
-
 
 func (m *mockWorldView) MemberNeedIntensities() map[core.AgentID]map[core.Dimension]float64 {
 	return nil // mock: no collective member data by default
@@ -379,7 +382,7 @@ func TestAppraise(t *testing.T) {
 	agent := New("agent_1", core.Vec2{}, realStats, selfToM, cfg)
 
 	// Set intensities: Satiety is very high (hungry), Rest is low.
-	agent.NeedIntensities["Satiety"] = 0.50  // near threshold 0.55
+	agent.NeedIntensities["Satiety"] = 0.50   // near threshold 0.55
 	agent.NeedIntensities["Hydration"] = 0.25 // comfortably below threshold 0.50
 	agent.NeedIntensities["Rest"] = 0.10      // well below threshold 0.45
 
@@ -410,10 +413,10 @@ func TestMediateGoal_Stickiness(t *testing.T) {
 	cfg.GoalDeadband = 0.08
 
 	agent := &Agent{
-		ID:    "test",
-		Cfg:   cfg,
-		Goal:  "Satiety",
-		Plan:  planner.Plan{Actions: []actions.ActionID{"Eat"}},
+		ID:   "test",
+		Cfg:  cfg,
+		Goal: "Satiety",
+		Plan: planner.Plan{Actions: []actions.ActionID{"Eat"}},
 	}
 
 	// Create priorities where Hydration slightly beats Satiety.

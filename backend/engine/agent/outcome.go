@@ -22,8 +22,8 @@ import (
 // It runs in the world's serial, fixed-AgentID apply phase (D12), AFTER all Tick
 // intents are collected, so no two agents' updates interleave nondeterministically.
 func (a *Agent) ApplyOutcome(outcome ActionOutcome, now core.Tick, rng *rng.RNG, cfg Config, reg *stats.Registry, emit core.EventEmitter) {
-	_ = rng  // reserved for future disposition-perturbed responses
-	_ = reg  // reserved for stat range clamping during evidence fold
+	_ = rng // reserved for future disposition-perturbed responses
+	_ = reg // reserved for stat range clamping during evidence fold
 
 	// ── 1. Handle durative action completion / interruption ──────────────────
 	if outcome.Completed || outcome.Status == Interrupted {

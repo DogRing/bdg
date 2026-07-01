@@ -169,6 +169,19 @@ func (r *Rules) WidthRate(sp SpeciesID, in SiteInput) float64 {
 	return evalNum(sr.WidthRate, floraContext{site: in})
 }
 
+// PropRadius evaluates the species' §6 propagation-radius formula using the same context
+// Step uses before seed dispersal. Returns 0 for an unknown species or nil PropRadius program.
+func (r *Rules) PropRadius(sp SpeciesID, plant Plant, in SiteInput) float64 {
+	if r == nil {
+		return 0
+	}
+	sr, ok := r.bySpecies[sp]
+	if !ok {
+		return 0
+	}
+	return evalNum(sr.PropRadius, floraContext{site: in, plant: plant})
+}
+
 // Stage maps continuous Length (HEIGHT = maturity proxy) to the species' DERIVED discrete
 // stage index via the species' stage thresholds over length (RESOLVED 1b option c + §1).
 // Returns 0 (seedling) for an unknown species or a length below all thresholds.

@@ -22,7 +22,7 @@ import (
 )
 
 func TestScenarioA_HungryHunter(t *testing.T) {
-	const seed  = int64(42)
+	const seed = int64(42)
 	const ticks = 25
 
 	run := func() (*World, *agent.Agent) {
@@ -50,7 +50,7 @@ func TestScenarioA_HungryHunter(t *testing.T) {
 	}
 
 	worldA, hunterA := run()
-	worldB, _       := run()
+	worldB, _ := run()
 
 	// 1. Direction assertion: Satiety must have DECREASED (agent ate).
 	const initialSatiety = 0.8

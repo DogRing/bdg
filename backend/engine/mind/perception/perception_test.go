@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/space/spatial"
 )
 
@@ -75,6 +75,10 @@ func (m *mockWorldSnapshot) IsOpaque(id core.ObjectID) bool {
 		return e.opaque
 	}
 	return false
+}
+
+func (m *mockWorldSnapshot) ShadeOccluders(center core.Vec2, radius float64) []ShadeOccluder {
+	return nil
 }
 
 // ── Test config for all tests ───────────────────────────────────────────────────────────────
@@ -247,9 +251,9 @@ func TestSight_RadiusBound(t *testing.T) {
 func TestSight_Ordering(t *testing.T) {
 	world := newMockWorldSnapshot()
 	// Entities at various distances, inserted in shuffled order.
-	world.add("C", core.Vec2{X: 5, Y: 0}, nil, false)  // d=5
-	world.add("A", core.Vec2{X: 3, Y: 0}, nil, false)  // d=3
-	world.add("B", core.Vec2{X: 3, Y: 0}, nil, false)  // d=3 (tie with A)
+	world.add("C", core.Vec2{X: 5, Y: 0}, nil, false) // d=5
+	world.add("A", core.Vec2{X: 3, Y: 0}, nil, false) // d=3
+	world.add("B", core.Vec2{X: 3, Y: 0}, nil, false) // d=3 (tie with A)
 
 	idx := spatial.New(8.0)
 	idx.Insert("C", core.Vec2{X: 5, Y: 0})
@@ -443,10 +447,10 @@ func TestHearing_Ordering(t *testing.T) {
 	observer := core.Vec2{X: 0, Y: 0}
 
 	events := []SoundEvent{
-		{SourceID: "C", ActionID: "A", Pos: core.Vec2{X: 10, Y: 0}},  // d=10
-		{SourceID: "A", ActionID: "A", Pos: core.Vec2{X: 5, Y: 0}},   // d=5
-		{SourceID: "B", ActionID: "A", Pos: core.Vec2{X: 5, Y: 0}},   // d=5 (tie)
-		{SourceID: "D", ActionID: "A", Pos: core.Vec2{X: 20, Y: 0}},  // beyond range
+		{SourceID: "C", ActionID: "A", Pos: core.Vec2{X: 10, Y: 0}}, // d=10
+		{SourceID: "A", ActionID: "A", Pos: core.Vec2{X: 5, Y: 0}},  // d=5
+		{SourceID: "B", ActionID: "A", Pos: core.Vec2{X: 5, Y: 0}},  // d=5 (tie)
+		{SourceID: "D", ActionID: "A", Pos: core.Vec2{X: 20, Y: 0}}, // beyond range
 	}
 
 	heard := sensor.Hearing(observer, events)

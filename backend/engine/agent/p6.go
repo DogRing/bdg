@@ -119,7 +119,7 @@ func (a *Agent) emitVoteIfEligible(now core.Tick, world WorldView, combinedPrior
 		Tick:  now,
 		Signal: &Signal{
 			Kind:      SignalKind("Vote"),
-			Toward:    "",           // broadcast — no specific receiver
+			Toward:    "", // broadcast — no specific receiver
 			Valence:   0.5,
 			Intensity: relyStrength,
 			Function:  fn,

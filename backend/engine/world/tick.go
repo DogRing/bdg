@@ -4,11 +4,11 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
-	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 )
@@ -78,6 +78,8 @@ func (w *World) Tick() {
 
 	wg.Wait()
 
+	animalIntents := w.planFaunaIntents()
+
 	// ── Phase 3: COLLECT (stable-sort by AgentID, D12) ────────────────────
 	sort.SliceStable(allIntents, func(i, j int) bool {
 		return string(allIntents[i].Agent) < string(allIntents[j].Agent)
@@ -89,6 +91,25 @@ func (w *World) Tick() {
 
 	// Collect sound events emitted this tick.
 	var newSounds []perception.SoundEvent
+
+	if w.faunaInstalled() {
+		w.applyCombinedIntents(allIntents, animalIntents, applySeed, &newSounds)
+
+		// ── Phase 4-ENV: APPLY env modules (serial, fixed order) ──────────────
+		w.runEnvPhase()
+
+		// ── Post-apply ────────────────────────────────────────────────────────
+		w.tick++
+		w.currentSounds = newSounds
+		w.resentmentTriggers = w.conflictResentmentTriggers(allIntents, w.buildConflictGroups(allIntents))
+		w.relianceScan()
+		w.pruneToMBeliefs()
+		w.emitTickDone()
+		if w.cfg.BackupEveryTicks > 0 && int(w.tick)%w.cfg.BackupEveryTicks == 0 {
+			w.emitSnapshotReady()
+		}
+		return
+	}
 
 	// Track conflicting targets: target → []intentIndex.
 	conflictGroups := w.buildConflictGroups(allIntents)
@@ -124,6 +145,9 @@ func (w *World) Tick() {
 			a.ApplyOutcome(outcome, w.tick, fork, a.Cfg, w.svc.Stats, w.emit)
 		}
 	}
+
+	// ── Phase 4-ENV: APPLY env modules (serial, fixed order) ──────────────
+	w.runEnvPhase()
 
 	// ── Post-apply ────────────────────────────────────────────────────────
 	w.tick++
@@ -572,9 +596,9 @@ func (w *World) applyVoteSignal(senderID core.AgentID, sig *agent.Signal, tick c
 		AgentID:       senderID,
 		Type:          "VoteEmitted",
 		Payload: map[string]any{
-			"voter":  string(senderID),
-			"target": string(votedHolder),
-			"function": string(fn),
+			"voter":     string(senderID),
+			"target":    string(votedHolder),
+			"function":  string(fn),
 			"intensity": sig.Intensity,
 		},
 	})
@@ -648,6 +672,67 @@ func (w *World) emitTickDone() {
 			"agent_count":  len(w.agents),
 			"intent_count": 0, // filled by caller
 			"agents":       agents,
+		},
+	})
+
+	// --- MOCK ENV FOR FRONTEND TESTING ---
+	// Will be replaced by actual env state later.
+	hour := w.clock.HourOfDay(w.tick)
+	dayNight := "day"
+	if hour < 6 || hour > 18 {
+		dayNight = "night"
+	}
+
+	windMag := 0.0
+	if w.tick%100 < 50 {
+		windMag = 0.5
+	}
+	raining := false
+	if w.tick%200 > 150 {
+		raining = true
+	}
+
+	animals := []map[string]any{
+		{
+			"id":      "deer_1",
+			"pos":     map[string]any{"x": 200.0, "y": 300.0 + float64(w.tick%100)},
+			"species": "deer",
+			"action":  "graze",
+			"heading": 1.57,
+			"stamina": 1.0,
+		},
+		{
+			"id":      "wolf_1",
+			"pos":     map[string]any{"x": 600.0 - float64(w.tick%200), "y": 600.0},
+			"species": "wolf",
+			"action":  "hunt",
+			"heading": 3.14,
+			"stamina": 0.8,
+		},
+	}
+
+	flora := []map[string]any{
+		{"id": "oak_1", "pos": map[string]any{"x": 150, "y": 150}, "stage": 3, "width": 10, "species": "oak"},
+		{"id": "bush_1", "pos": map[string]any{"x": 170, "y": 140}, "stage": 2, "width": 5, "species": "bush"},
+	}
+
+	w.emit.Emit(core.Event{
+		SchemaVersion: 1,
+		Tick:          w.tick,
+		AgentID:       "",
+		Type:          "WorldFrame",
+		Payload: map[string]any{
+			"tick":          int64(w.tick),
+			"hour_of_day":   hour,
+			"day_night":     dayNight,
+			"temperature":   15.0 + float64(hour-12),
+			"apparent_temp": 15.0 + float64(hour-12) - windMag*5,
+			"raining":       raining,
+			"wind":          map[string]any{"dir": 1.0, "mag": windMag},
+			"agents":        agents,
+			"animals":       animals,
+			"flora_delta":   flora,
+			"terrain_delta": []any{},
 		},
 	})
 }

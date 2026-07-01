@@ -3,8 +3,8 @@ package agent
 import (
 	"sort"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
@@ -47,15 +47,15 @@ type Agent struct {
 	Cfg Config
 
 	// Deliberation state across ticks.
-	Goal    core.Dimension  // the currently-pursued goal Dimension (empty = none raised)
-	Plan    planner.Plan    // the active durative plan (ordered ActionIDs being executed)
-	PlanIdx int             // index of the action currently executing within Plan.Actions
+	Goal    core.Dimension   // the currently-pursued goal Dimension (empty = none raised)
+	Plan    planner.Plan     // the active durative plan (ordered ActionIDs being executed)
+	PlanIdx int              // index of the action currently executing within Plan.Actions
 	Elapsed core.GameMinutes // game-minutes the current action has been running (durative progress)
 
-	Coping     CopingState   // where the agent sits in the coping cascade (design 3)
-	FailStreak int           // P3: consecutive failed re-plans; resets on any plan/action success
-	Latent     []LatentGoal  // unmet goals stored below the surface (Longing/Latent), feed Resentment
-	Resentment float64       // P3: accrues while Latent on trigger events; drives Aggression/Affinity drift (D2)
+	Coping     CopingState  // where the agent sits in the coping cascade (design 3)
+	FailStreak int          // P3: consecutive failed re-plans; resets on any plan/action success
+	Latent     []LatentGoal // unmet goals stored below the surface (Longing/Latent), feed Resentment
+	Resentment float64      // P3: accrues while Latent on trigger events; drives Aggression/Affinity drift (D2)
 }
 
 // Config (every rate from content/balance.yaml; no hardcoded constant, D10)
@@ -134,27 +134,27 @@ type Config struct {
 	SafetyThreatThreshold float64 // balance.yaml threats.safety_threat_threshold
 
 	// P6 BLOCKER-1: threat perception tags and Safety-dimension config
-	ThreatTags          []core.Tag      // balance.yaml threats.hostile_tags — tags that trigger defensive Safety goal insertion
-	SafetyDim           core.Dimension  // content/needs.yaml Safety dimension id, resolved by platform/config
+	ThreatTags          []core.Tag     // balance.yaml threats.hostile_tags — tags that trigger defensive Safety goal insertion
+	SafetyDim           core.Dimension // content/needs.yaml Safety dimension id, resolved by platform/config
 	RestDim             core.Dimension // content/needs.yaml Rest dimension id, resolved by platform/config; replaces hardcoded "Rest" literal (D10)
 	ThreatPerThreatGain float64        // balance.yaml threats.per_threat_intensity — Safety intensity added per perceived threat
 	ThreatSafetyDecay   float64        // balance.yaml threats.safety_decay — Safety intensity removed per tick with no threat
 
 	// D10: stat IDs resolved from the stats registry (no hardcoded glossary literals in engine code).
-	IntelligenceStatID    core.StatID // capability stat for Intelligence lookups
-	VindictivenessStatID  core.StatID // disposition stat for Vindictiveness lookups
-	AggressionStatID      core.StatID // disposition stat for Aggression lookups
+	IntelligenceStatID   core.StatID // capability stat for Intelligence lookups
+	VindictivenessStatID core.StatID // disposition stat for Vindictiveness lookups
+	AggressionStatID     core.StatID // disposition stat for Aggression lookups
 
 	// P6: function→dimension→stat-set table (injected, D7/D10).
 	// Replaces the hardcoded goalToFunction mapping.
 	Functions []FunctionSpec // content: function id → (goal Dimension, capability stat-set)
 
 	// P6: reliance + vote policy thresholds
-	RelyCostThreshold    float64 // balance.yaml politics.rely_cost_threshold — plan cost above which a Function counts self-unsolvable
-	RelyOnDelta          float64 // balance.yaml politics.relyon_delta — δ added to RelyOn on self-failure
-	VoteRelyThreshold    float64 // balance.yaml politics.vote_rely_threshold — private reliance strength that licenses a Vote
-	UrgencyThreshold     float64 // balance.yaml politics.urgency_threshold — combined-urgency proxy above which a Vote is cast (§H)
-	VoteRelyOnDelta      float64 // balance.yaml politics.vote_relyon_delta — δ a heard Vote folds into RelyOn
+	RelyCostThreshold float64 // balance.yaml politics.rely_cost_threshold — plan cost above which a Function counts self-unsolvable
+	RelyOnDelta       float64 // balance.yaml politics.relyon_delta — δ added to RelyOn on self-failure
+	VoteRelyThreshold float64 // balance.yaml politics.vote_rely_threshold — private reliance strength that licenses a Vote
+	UrgencyThreshold  float64 // balance.yaml politics.urgency_threshold — combined-urgency proxy above which a Vote is cast (§H)
+	VoteRelyOnDelta   float64 // balance.yaml politics.vote_relyon_delta — δ a heard Vote folds into RelyOn
 
 	// P6: influence weighting for incoming signals
 	InfluenceWeight float64 // balance.yaml politics.influence_weight — signalWeight = trust·(1 + influence_weight·Influence)

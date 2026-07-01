@@ -6,8 +6,8 @@
 package agent
 
 import (
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/tom"
 )
@@ -44,12 +44,12 @@ const (
 // mutates shared state itself.
 type Intent struct {
 	Kind   IntentKind
-	Agent  core.AgentID      // the acting agent (world sorts/applies by this, D12)
-	Action actions.ActionID  // the atomic action to start/continue (empty for IntentSignal/None)
-	Target core.ObjectID     // object/agent the action acts on (empty if none)
-	Move   core.Vec2         // destination for a movement action (zero-value unless a move)
-	Signal *Signal           // non-nil only for IntentSignal (interaction payload)
-	Tick   core.Tick         // the tick this intent was produced on (for the why-trace / ordering)
+	Agent  core.AgentID     // the acting agent (world sorts/applies by this, D12)
+	Action actions.ActionID // the atomic action to start/continue (empty for IntentSignal/None)
+	Target core.ObjectID    // object/agent the action acts on (empty if none)
+	Move   core.Vec2        // destination for a movement action (zero-value unless a move)
+	Signal *Signal          // non-nil only for IntentSignal (interaction payload)
+	Tick   core.Tick        // the tick this intent was produced on (for the why-trace / ordering)
 }
 
 // Signal is one interaction the agent emits toward another (glossary §Social: Signal{
@@ -59,7 +59,7 @@ type Intent struct {
 // P6: Function field added for SignalVote delegation signals.
 // P6: Target field added — the voted holder for Vote signals (empty otherwise).
 type Signal struct {
-	Kind         SignalKind    // assertion | request | threat | offer | vote
+	Kind         SignalKind // assertion | request | threat | offer | vote
 	Toward       core.AgentID
 	Valence      float64       // signed stance in [-1,1]
 	ClaimedValue float64       // the value the emitter CLAIMS
@@ -91,12 +91,12 @@ const (
 type ActionOutcome struct {
 	Action    actions.ActionID
 	Status    OutcomeStatus
-	Completed bool                     // true iff this was the final tick of the durative action
-	StatsUsed []core.StatID            // the stat(s) the action exercised
-	Expected  float64                  // the agent's pre-action expected progress, in [0,1]
-	Actual    float64                  // the realized progress, in [0,1]
+	Completed bool                       // true iff this was the final tick of the durative action
+	StatsUsed []core.StatID              // the stat(s) the action exercised
+	Expected  float64                    // the agent's pre-action expected progress, in [0,1]
+	Actual    float64                    // the realized progress, in [0,1]
 	Effect    map[core.Dimension]float64 // realized need deltas applied
-	Evidence  []tom.StatEvidence       // direct-observation evidence to fold into ToM[self] (D8)
+	Evidence  []tom.StatEvidence         // direct-observation evidence to fold into ToM[self] (D8)
 }
 
 // ── FunctionSpec (P6 — injected Function→Dimension→Stats mapping, D7/D10) ────────
@@ -130,12 +130,12 @@ type LatentGoal struct {
 type WorldView interface {
 	perception.WorldSnapshot // EntitiesInRadius / Tags / IsOpaque
 
-	SoundEvents() []perception.SoundEvent                   // tick-scoped sound events for Hearing
-	KnownObjects(self core.AgentID) []KnownObject            // objects this agent knows, AgentID-stable order
-	BeliefOf(self, subject core.AgentID) (tom.Belief, bool) // another agent's belief, for gossip folding
-	HasPendingOffer(receiver core.AgentID) bool              // true if another agent has sent an unresolved Offer to receiver
-	ResentmentTriggers(self core.AgentID) []core.AgentID     // NEW P3: agents who rejected/beat self this tick, AgentID-stable order
-	PlaceQuality(placeID core.ObjectID) float64              // quality of a place ∈ [0,1]; 1 = pristine (no obstruction), 0 = fully blocked
+	SoundEvents() []perception.SoundEvent                               // tick-scoped sound events for Hearing
+	KnownObjects(self core.AgentID) []KnownObject                       // objects this agent knows, AgentID-stable order
+	BeliefOf(self, subject core.AgentID) (tom.Belief, bool)             // another agent's belief, for gossip folding
+	HasPendingOffer(receiver core.AgentID) bool                         // true if another agent has sent an unresolved Offer to receiver
+	ResentmentTriggers(self core.AgentID) []core.AgentID                // NEW P3: agents who rejected/beat self this tick, AgentID-stable order
+	PlaceQuality(placeID core.ObjectID) float64                         // quality of a place ∈ [0,1]; 1 = pristine (no obstruction), 0 = fully blocked
 	MemberNeedIntensities() map[core.AgentID]map[core.Dimension]float64 // NEW P5: need intensities for all other agents in the village; caller MUST NOT mutate the returned map; returns nil if world doesn't track this
 	AgentIDs() []core.AgentID                                           // NEW P6: all agent IDs in the village (excluding self), sorted (D12)
 	IncomingSignals(self core.AgentID) []core.Signal                    // NEW P6: signals addressed to self this tick (for vote/hearsay processing)

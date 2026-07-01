@@ -34,18 +34,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/planner"
-	"github.com/dogring/bdg/engine/kernel/rng"
-	"github.com/dogring/bdg/engine/space/spatial"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/values"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // prime zone constants.
@@ -289,7 +289,7 @@ func TestGentrify_StrongAgentEconomicallyDisplacesWeak(t *testing.T) {
 //   - No berry_bushes within SightRadius of the periphery zone (distance=30, SightRadius=18)
 //   - Victim (Honesty=0.80) holds food — honest but can't defend it
 //   - Thief  (Honesty=0.48) has critical Satiety: urgency = 0.50/0.55 ~= 0.909 > 0.70
-//                            AND Honesty=0.48 < 0.55 => conscience urgency-relief fires
+//     AND Honesty=0.48 < 0.55 => conscience urgency-relief fires
 //
 // This models why slum zones develop crime: desperation, not moral failure, is the driver.
 // The honest slum dweller (Honesty=0.80) does NOT plan crime even at the same urgency.
@@ -306,7 +306,7 @@ func TestGentrify_SlumCrimeSurgeAtPeriphery(t *testing.T) {
 		victim := fx.world.Spawn("victim", core.Vec2{X: gPeripheryDist + 1, Y: 0}, cfg, rng.New(30))
 		seedToM(victim, "Honesty", 0.80)
 		seedToM(victim, "Aggression", 0.10)
-		victim.Inventory["berries"] = 5       // has food => owned_by_other fires for thief
+		victim.Inventory["berries"] = 5 // has food => owned_by_other fires for thief
 		victim.NeedIntensities["Satiety"] = 0.10
 
 		// Thief: in-between Honesty. |31-30|=1.0 < interactionRadius=5.0 => near_other.

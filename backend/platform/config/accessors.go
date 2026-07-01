@@ -6,12 +6,12 @@ package config
 import (
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/worldtime"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/planner"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/world"
-	"github.com/dogring/bdg/engine/kernel/worldtime"
 )
 
 // AgentConfig builds agent.Config from the Balance fields.
@@ -35,7 +35,7 @@ func (b *Balance) AgentConfig(needReg *needs.Registry, statReg *stats.Registry) 
 
 	// Resolve stat IDs from the stats registry (D10: no hardcoded StatID literals in engine code).
 	intelSID := resolveStatByKind(statReg, stats.Capability)
-	vindSID := resolveStatByKind(statReg, stats.Disposition) // first disposition
+	vindSID := resolveStatByKind(statReg, stats.Disposition)       // first disposition
 	aggrSID := resolveSecondStatByKind(statReg, stats.Disposition) // second disposition
 
 	// Resolve ThreatTags from hostile_tags strings.
@@ -74,9 +74,9 @@ func (b *Balance) AgentConfig(needReg *needs.Registry, statReg *stats.Registry) 
 		AggressionDrift: b.Resentment.AggressionDrift,
 
 		// planning (cross-tick)
-		Stickiness:   b.Planning.Stickiness,
-		GoalDeadband: b.Planning.GoalDeadband,
-		BudgetBase:   b.Planning.BudgetBase,
+		Stickiness:            b.Planning.Stickiness,
+		GoalDeadband:          b.Planning.GoalDeadband,
+		BudgetBase:            b.Planning.BudgetBase,
 		BudgetPerIntelligence: b.Planning.BudgetPerIntelligence,
 
 		// ToM rates
@@ -129,12 +129,12 @@ func (b *Balance) AgentConfig(needReg *needs.Registry, statReg *stats.Registry) 
 		ThreatSafetyDecay:     b.Threats.SafetyDecay,
 
 		// P6: politics
-		RelyCostThreshold:    b.Politics.RelyCostThreshold,
-		RelyOnDelta:          b.Politics.RelyOnDelta,
-		VoteRelyThreshold:    b.Politics.VoteRelyThreshold,
-		UrgencyThreshold:     b.Politics.VoteUrgencyThreshold,
-		VoteRelyOnDelta:      b.Politics.VoteRelyOnDelta,
-		InfluenceWeight:      b.Politics.InfluenceWeight,
+		RelyCostThreshold: b.Politics.RelyCostThreshold,
+		RelyOnDelta:       b.Politics.RelyOnDelta,
+		VoteRelyThreshold: b.Politics.VoteRelyThreshold,
+		UrgencyThreshold:  b.Politics.VoteUrgencyThreshold,
+		VoteRelyOnDelta:   b.Politics.VoteRelyOnDelta,
+		InfluenceWeight:   b.Politics.InfluenceWeight,
 	}
 }
 
@@ -166,10 +166,10 @@ func (b *Balance) PlannerConfig() planner.PlannerConfig {
 			MaxActions: b.Planner.Budget.MaxActions,
 			MaxNodes:   b.Planner.Budget.MaxNodes,
 		},
-		BaseHorizonTicks:    b.Planner.BaseHorizonTicks,
-		UrgencyThreshold:    b.Planner.UrgencyThreshold,
-		TagCosts:            stringToTagMap(b.Planner.TagCosts),
-		LookaheadThreshold:  b.Intelligence.LookaheadThreshold,
+		BaseHorizonTicks:   b.Planner.BaseHorizonTicks,
+		UrgencyThreshold:   b.Planner.UrgencyThreshold,
+		TagCosts:           stringToTagMap(b.Planner.TagCosts),
+		LookaheadThreshold: b.Intelligence.LookaheadThreshold,
 	}
 }
 

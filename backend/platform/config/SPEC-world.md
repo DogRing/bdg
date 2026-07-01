@@ -69,6 +69,7 @@ type Registries struct {
     FloraRules   *flora.Rules               // compiled per-species flora §6 (objects.yaml flora:)
     FaunaRules   *fauna.Rules               // compiled per-species fauna §6 (objects.yaml fauna:)
     DecayRules   *decay.Rules               // compiled decay table (objects.yaml decay:)
+    ScentEmitters map[core.Tag][]core.Tag    // object kind id → sorted raw `scent:<channel>` tags; world resolves known tokens
 }
 ```
 

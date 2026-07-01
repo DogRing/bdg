@@ -39,9 +39,10 @@ const (
 // through a gossip chain but weakens with each hop (trustWeight dampening).
 //
 // Chain: A defrauds B → B's estimate drops (direct victim)
-//        B gossips to D (trustWeight=0.7) → D's estimate drops less
-//        D gossips to F (trustWeight=0.5) → F's estimate drops even less
-//        E never hears → E's estimate unchanged (non-witness isolation)
+//
+//	B gossips to D (trustWeight=0.7) → D's estimate drops less
+//	D gossips to F (trustWeight=0.5) → F's estimate drops even less
+//	E never hears → E's estimate unchanged (non-witness isolation)
 func TestScenarioC_GossipChainDampens(t *testing.T) {
 	const seed = int64(3001)
 	const ticks = 5

@@ -193,12 +193,116 @@ cell set.
   scent deposit/spread/commit driving incl. post-move positions + next-tick latency; disjoint fork;
   scent-cell floor; determinism golden). Verify: `go test ./engine/world/ -count=2`, `go vet`,
   `gofmt -l`, `go build ./...`.
+- **ALSO (small carried-over fix from phase 4, keep it isolated from the fauna wiring):** world evaluates
+  `flora.Rules.PropRadius` to size the NeighborCount query WHILE `SiteInput.NeighborCount` is still 0
+  (chicken-and-egg), so a `PropRadius` §6 that references `neighbor_count` would diverge from the value
+  `flora.Step` later uses. Guard it: (a) in `platform/config` `buildFloraRules`, REJECT at load time if a
+  species' `PropRadius` program's `ReadsAttrs()` contains `neighbor_count` (descriptive error naming the
+  species), and (b) add a one-line note to `flora/SPEC.md` `PropRadius` that it must not read
+  `neighbor_count`. Add a config test for the rejection. This is 3 small edits; do not entangle it with
+  the fauna/scent work.
 
 ### Review
-Apply `@docs/code_review.md`. Focus: (1) fauna-OFF neutrality; (2) the combined apply is ONE sorted-id
-stream (agents+animals) with conflict ties by id — shuffling collection order yields identical state;
-(3) scent deposits use POST-move positions + Commit gives next-tick latency; (4) the adapters match
-fauna's declared `EnvSample`/`TerrainSampler` shapes; (5) disjoint `envFork(tick,"fauna")`.
+Apply `@docs/code_review.md`. Run the BROADER verify (config was touched too, and the implement report
+omitted vet/gofmt): `go test ./... -count=2`, `go vet ./...`, `gofmt -l` on the changed dirs (must be
+empty), `go build ./...`. Report each explicitly.
+
+Focus: (1) fauna-OFF neutrality — with `InstallFauna` not called the existing world scenario suite +
+snapshot are byte-unchanged; (2) the combined apply is ONE lexicographically-sorted id stream
+(agents+animals) with conflict ties by id — shuffling collection order yields byte-identical post-apply
+state; (3) scent deposits use POST-move positions + Commit gives next-tick latency (deposit at T visible
+at T+1); (4) the adapters match fauna's declared `EnvSample`/`TerrainSampler` shapes; (5) disjoint
+`envFork(tick,"fauna")`, independent of agent count; (6) the carried-over guard: `platform/config`
+rejects a `PropRadius` §6 that reads `neighbor_count` (with a test), and `flora/SPEC.md` documents it.
+
+ALSO scrutinize the DEVIATION the implement report flagged:
+(7) **SCENT EMITTER CLASSIFICATION** — `SPEC-world-fauna.md` says the deposit channel comes from the
+    emitter's `scent:<channel>` content TAG (D4/D10 — "which kind carries which channel is content, not
+    engine logic"), because that lets future emitters (carrion via decay, etc.) work with no engine
+    change. The implementation instead classifies predator/prey via `fauna.Rules` (IsPredator) and food
+    via live flora state, because world object/animal records don't yet carry the content tags.
+    Determine: (a) does it deposit the CORRECT channels for the current species+flora (predator→
+    ChanPredator, prey→ChanPrey, edible flora→ChanFood), deterministically? (b) Is the hardcoded
+    channel↔source mapping a D10/D2 violation, or an acceptable documented INTERIM? (c) What is the
+    proper fix (world object/animal records carry their kind's `scent:<channel>` tags, or a
+    kind→tags registry lookup, so classification is tag-driven)? Recommend: keep as a DOCUMENTED interim
+    ONLY IF it is clearly marked + tracked and does not block the tag-driven path; otherwise NEEDS_FIX.
+    Flag it either way in FINDINGS/NOTES.
+
+---
+
+## Phase 5-FIX — tag-driven scent emitter classification + AC regression tests
+
+**Resolves the phase-5 review NEEDS_FIX.** Files: `backend/platform/config/` (extract per-kind
+`scent:<channel>` tags into a registry on `LoadOutput`) + `backend/engine/world/fauna.go` (deposit by
+that registry, not `IsPredator`/live-flora) + `backend/engine/world/fauna_test.go` (2 regression tests +
+thread the registry through the install calls). Driven by `@backend/engine/world/SPEC-world-fauna.md`
+(scent emitter classification: L167 "for each `scent:<channel>`-tagged emitter", L185 "emitter
+classification is the world's read of content `scent:<channel>` tags — content, not engine logic",
+L243/251).
+
+### Implement
+- **Goal:** Make scent DEPOSIT CHANNEL selection tag-driven, exactly as the SPEC mandates, replacing the
+  interim engine-side classification (`fauna.Rules.IsPredator` for predator/prey + "all live flora =
+  food"). Add the two missing determinism regression tests.
+- **Context:** The content is ALREADY tagged (`content/objects.yaml`: predators `scent:predator`, prey
+  `scent:prey`, edible flora `scent:food`; note `oak`/`wildflower` are flora WITHOUT `scent:food`).
+  `platform/config` already parses each kind's tags (see `faunaIsPredator` reading `obj.Tags`). World
+  records already carry the emitter kind — `fauna.Animal.Species` and `flora.Plant.Species` — so NO new
+  record field is needed, only a kind→channels registry keyed by species/kind id. `scent.Channel`
+  constants live in `@backend/engine/space/scent` (ChanPredator/ChanPrey/ChanFood; carrion is a future
+  channel).
+- **Constraints:** Follow `AGENTS.md` + the gate. This is CONFORMING the code to the SPEC (not inventing
+  a mechanism, not weakening the SPEC).
+  1. **config** — in `buildWorldContent`, build `map[core.Tag][]core.Tag` = kind id → its `scent:*` tags
+     (parse every object kind's `Tags`, keep the `scent:`-prefixed ones, sorted + deduped). Expose it on
+     `worldContent` and `LoadOutput` as `ScentEmitters`. Keep config a DUMB tag extractor — do NOT import
+     or map to the `scent` enum in config.
+  2. **world** — store the registry (set via the install path; nil/empty ⇒ NO deposits ⇒ fauna-OFF stays
+     byte-identical). Add a tiny token→`scent.Channel` resolver IN world (`predator`→ChanPredator,
+     `prey`→ChanPrey, `food`→ChanFood; unknown token ⇒ skip deterministically — that is exactly what lets
+     a future `scent:carrion` tag no-op cleanly until P_fa3 defines the channel, with zero engine edit).
+  3. `runScentEnv` / `depositFloraFoodScent` — select channels from `ScentEmitters[kind]`, NOT from
+     `IsPredator` / live-flora state. Keep the SPEC's per-channel cadence (predator EVERY tick, prey/food
+     on `tick % ScentSpread`): cadence is engine policy keyed by CHANNEL; the tag only decides WHICH
+     channel a kind emits. Keep the existing magnitude derivation (`animalScentMagnitude`/
+     `floraScentMagnitude`) UNCHANGED — only channel selection becomes tag-driven (scope guard). Iterate
+     emitters in sorted id order (D12).
+  4. Do NOT weaken `SPEC-world-fauna.md`; the code now conforms to it as written.
+- **Behavior change (intended, not a pure refactor):** for the current G5 content the predator/prey
+  channels are UNCHANGED (every animal is correctly tagged), but the FOOD channel now EXCLUDES non-edible
+  flora — `oak`/`wildflower` (no `scent:food`) will stop emitting food scent, which the old "all live
+  flora" path wrongly deposited. So if the determinism golden digest shifts, it MUST be only because such
+  non-edible flora dropped out of the food channel — verify that is the sole cause and update the golden
+  intentionally (call it out in the report).
+- **Done when:** deposits are driven purely by content `scent:<channel>` tags; existing scent tests pass
+  (updated to pass the registry through install); and TWO new regression tests exist —
+  - **shuffle-invariance:** apply the SAME agent+animal intent set through `applyCombinedIntents` in two
+    DIFFERENT collection orders (e.g. given vs reversed) on two identical fixtures → `worldDigest` +
+    `animalDigest` byte-identical.
+  - **plan-before-commit latency:** a scent deposited+committed at the END of tick T is NOT visible to the
+    fauna plan snapshot built DURING tick T (plan runs before the scent sub-phase) and IS visible at T+1
+    (F33 next-tick latency).
+  Verify: `go test ./... -count=2`, `go vet ./...`, `gofmt -l` (changed dirs empty), `go build ./...`.
+
+### Review
+Apply `@docs/code_review.md`. Verify `go test ./... -count=2`, `go vet ./...`, `gofmt -l`, `go build
+./...` — report each. Focus:
+(1) DEPOSIT is now tag-driven — `runScentEnv`/`depositFloraFoodScent` no longer branch on `IsPredator` or
+    treat all flora as food; the channel comes from `ScentEmitters[species]`. A hypothetical `scent:carrion`
+    tag would route to a carrion deposit with NO engine edit (or no-op cleanly until the channel exists).
+(2) Correctness of the intended behavior change — predator/prey channels UNCHANGED for G5 content; the food
+    channel now excludes `scent:food`-less flora (`oak`/`wildflower`). If the golden shifted, confirm that
+    is the ONLY cause (a legitimate correctness fix), not a determinism regression.
+(3) fauna-OFF neutrality preserved — nil/empty registry ⇒ no deposits ⇒ the world scenario suite + snapshot
+    are byte-unchanged.
+(4) config stays free of the `scent` enum; `ScentEmitters` is sorted + deduped (D12); the world
+    token→Channel resolver skips unknown tokens deterministically.
+(5) both regression tests genuinely exercise the invariants — the shuffle test actually permutes INPUT
+    order (not just the tie case), and the latency test asserts the plan at T cannot see T's committed
+    deposit.
+Return the `=== CODEX REVIEW ===` block, with `INTEGRATION_CONTRACT` covering scent classification vs
+`SPEC-world-fauna`.
 
 ---
 

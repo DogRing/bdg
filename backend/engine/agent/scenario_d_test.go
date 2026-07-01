@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/dogring/bdg/engine/kernel/core"
-	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"

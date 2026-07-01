@@ -31,8 +31,8 @@ import (
 
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/kernel/core"
-	"github.com/dogring/bdg/engine/mind/planner"
 	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/planner"
 	"github.com/dogring/bdg/engine/mind/tom"
 )
 

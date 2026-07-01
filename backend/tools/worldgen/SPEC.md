@@ -88,7 +88,7 @@ type GenConfig struct{ /* opaque: noise/octaves, sea_level, river_accum_threshol
 // climate.New(reg.ClimateCfg, terrainAt) [SAME terrainAt ⇒ grids agree at t=0], flora.New(fx.Flora→
 // plants), decay.New(fx.Lots→lots), the fauna.Animal set (fx.Animals), then calls
 // w.InstallEnv(reg.WorldEnv, nav, climate, reg.ClimateRules, flora, reg.FloraRules, decay,
-// reg.DecayRules) and (iff Animals non-empty) w.InstallFauna(reg.WorldEnv, reg.FaunaRules, animals);
+// reg.DecayRules) and (iff Animals non-empty) w.InstallFauna(reg.WorldEnv, reg.FaunaRules, reg.ScentEmitters, animals);
 // finally w.Spawn(agent) for each AgentPlacement (RealStats SAMPLED from the GenSpec via rng) and
 // w.PlaceObject for each ObjectPlacement (Remaining for ore_node). bounds = fx.Bounds ?? reg.WorldEnv.
 // rng is the run's root (the fixture Seed seeds it). When a block is absent, that subsystem stays OFF
