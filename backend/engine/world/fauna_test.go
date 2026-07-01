@@ -7,6 +7,7 @@ import (
 
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/env/climate"
+	"github.com/dogring/bdg/engine/env/decay"
 	"github.com/dogring/bdg/engine/env/flora"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
@@ -62,11 +63,75 @@ func testAnimal(id core.ObjectID, species fauna.SpeciesID, pos core.Vec2) fauna.
 func testScentEmitters() map[core.Tag][]core.Tag {
 	return map[core.Tag][]core.Tag{
 		"deer":       {"scent:prey"},
+		"carcass":    {"scent:carrion"},
 		"grass":      {"scent:food"},
 		"future":     {"scent:carrion"},
 		"wolf":       {"scent:predator"},
 		"wildflower": nil,
 	}
+}
+
+func testCombatFaunaRules(t *testing.T) *fauna.Rules {
+	t.Helper()
+	return fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {
+			Utilities:   map[actions.ActionID]*expr.Program{"Forage": testNumProgram(t, "1")},
+			Drives:      []fauna.DriveRule{{ID: "hunger"}},
+			Speed:       testNumProgram(t, "0"),
+			SmellRadius: 5,
+			SightRadius: 5,
+			FovArc:      3.14,
+		},
+		"wolf": {
+			Utilities: map[actions.ActionID]*expr.Program{
+				"Attack": testNumProgram(t, "1"),
+				"Feed":   testNumProgram(t, "1"),
+			},
+			Drives:      []fauna.DriveRule{{ID: "hunger"}},
+			Speed:       testNumProgram(t, "0"),
+			IsPredator:  true,
+			Feed:        testNumProgram(t, "0.5"),
+			SmellRadius: 5,
+			SightRadius: 5,
+			FovArc:      3.14,
+		},
+	})
+}
+
+func installCombatActionRegistry(t *testing.T, fx *testFixture) {
+	t.Helper()
+	reg, err := actions.Load(strings.NewReader(`schema_version: 1
+actions:
+  - id: Forage
+    tags: [effort:med, uses:Agility]
+    duration: 12
+    produces: [has_food]
+  - id: Attack
+    tags: [effort:med, uses:Agility, combat:attack]
+    duration: 1
+    produces: [near_other]
+  - id: Feed
+    tags: [effort:low, feed:carrion]
+    duration: 1
+    produces: [has_food]
+`))
+	if err != nil {
+		t.Fatalf("actions.Load combat registry: %v", err)
+	}
+	fx.world.actReg = reg
+	fx.actReg = reg
+	fx.svc.Actions = reg
+	fx.world.svc.Actions = reg
+}
+
+func installCombatFauna(t *testing.T, fx *testFixture, animals []fauna.Animal) {
+	t.Helper()
+	installCombatActionRegistry(t, fx)
+	cfg := testEnvConfig()
+	cfg.ScentCellSize = 5
+	cfg.ScentSpread = 1
+	cfg.FaunaDT = 1
+	fx.world.InstallFauna(cfg, testCombatFaunaRules(t), testScentEmitters(), animals)
 }
 
 func TestFaunaOffAndInstalledEmptyNeutrality(t *testing.T) {
@@ -196,6 +261,245 @@ func TestAnimalApplyMoveEffectAndDeath(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("AnimalDied event not emitted")
+	}
+}
+
+func TestAnimalAttackAppliesTargetDamageAndMutualEngage(t *testing.T) {
+	fx := newFixtureSeeded(t, 331)
+	wolf := testAnimal("an:wolf", "wolf", core.Vec2{X: 1, Y: 1})
+	deer := testAnimal("an:deer", "deer", core.Vec2{X: 2, Y: 1})
+	deer.Vital = 0.9
+	deer.VitalCap = 1
+	installCombatFauna(t, fx, []fauna.Animal{deer, wolf})
+
+	fx.world.applyAnimalIntent(fauna.Intent{
+		Animal:               "an:wolf",
+		Action:               "Attack",
+		Target:               "an:deer",
+		NextPos:              wolf.Pos,
+		Drives:               wolf.Drives,
+		Stamina:              0.7,
+		Vital:                0.8,
+		VitalCap:             1,
+		EngagedWith:          "an:deer",
+		NextExchangeTick:     12,
+		EngageCooldownUntil:  30,
+		Damage:               0.25,
+		TargetVitalCapDamage: 0.1,
+	})
+
+	gotWolf := fx.world.animals["an:wolf"]
+	gotDeer := fx.world.animals["an:deer"]
+	if gotWolf.EngagedWith != "an:deer" || gotDeer.EngagedWith != "an:wolf" {
+		t.Fatalf("mutual engage not set: wolf=%q deer=%q", gotWolf.EngagedWith, gotDeer.EngagedWith)
+	}
+	if gotDeer.NextExchangeTick != 12 || gotDeer.EngageCooldownUntil != 30 {
+		t.Fatalf("target engage timing not committed: %+v", gotDeer)
+	}
+	if gotDeer.Vital != 0.65 || gotDeer.VitalCap != 0.9 {
+		t.Fatalf("target vital/cap = %.2f/%.2f, want 0.65/0.90", gotDeer.Vital, gotDeer.VitalCap)
+	}
+	if gotWolf.Vital != 0.8 {
+		t.Fatalf("actor proposed vital not committed: %.2f", gotWolf.Vital)
+	}
+}
+
+// Regression: a fresh attack must engage the VICTIM regardless of sorted-id order. The victim's own
+// same-tick intent (EngagedWith:"") must NOT clobber the attacker's cross-written mutual lock. Pre the
+// two-pass apply this failed when attacker.id < victim.id (attacker applied first, then the victim's own
+// commit reset EngagedWith to ""). Both orderings must now leave the victim engaged.
+func TestCombatMutualEngageSurvivesVictimOwnCommit(t *testing.T) {
+	check := func(t *testing.T, wolfID, deerID core.ObjectID) {
+		fx := newFixtureSeeded(t, 424)
+		wolf := testAnimal(wolfID, "wolf", core.Vec2{X: 1, Y: 1})
+		deer := testAnimal(deerID, "deer", core.Vec2{X: 2, Y: 1})
+		deer.Vital = 0.9
+		deer.VitalCap = 1
+		installCombatFauna(t, fx, []fauna.Animal{deer, wolf})
+
+		attack := fauna.Intent{
+			Animal: wolfID, Action: "Attack", Target: deerID,
+			NextPos: wolf.Pos, Stamina: 0.7, Vital: 0.8, VitalCap: 1,
+			EngagedWith: deerID, NextExchangeTick: 12, EngageCooldownUntil: 30,
+			Damage: 0.2,
+		}
+		// The victim's OWN intent this tick: it did NOT plan to engage (fresh attack).
+		victim := fauna.Intent{
+			Animal: deerID, Action: "Forage",
+			NextPos: deer.Pos, Stamina: 1, Vital: 0.9, VitalCap: 1,
+			EngagedWith: "",
+		}
+		// Slice order is irrelevant (applyCombinedIntents sorts by id); the id VALUES drive the order.
+		fx.world.applyCombinedIntents(nil, []fauna.Intent{attack, victim}, 2000, nil)
+
+		gotDeer := fx.world.animals[deerID]
+		if gotDeer == nil {
+			t.Fatalf("victim %s unexpectedly removed", deerID)
+		}
+		if gotDeer.EngagedWith != wolfID {
+			t.Fatalf("victim engage clobbered by own commit: got %q want %q (attacker=%s victim=%s)",
+				gotDeer.EngagedWith, wolfID, wolfID, deerID)
+		}
+	}
+	t.Run("attacker_id_lt_victim", func(t *testing.T) { check(t, "an:a_wolf", "an:z_deer") })
+	t.Run("attacker_id_gt_victim", func(t *testing.T) { check(t, "an:z_wolf", "an:a_deer") })
+}
+
+func TestAnimalDeathSpawnsCarcassDecayLotAndCarrionScent(t *testing.T) {
+	fx := newFixtureSeeded(t, 332)
+	wolf := testAnimal("an:wolf", "wolf", core.Vec2{X: 1, Y: 1})
+	deer := testAnimal("an:deer", "deer", core.Vec2{X: 6, Y: 1})
+	deer.Vital = 0.2
+	installCombatFauna(t, fx, []fauna.Animal{deer, wolf})
+	fx.world.decayRules = decay.NewRules(map[decay.KindID]decay.KindRule{
+		"carcass": {
+			BaseRate: 1,
+			Accel:    testNumProgram(t, "1"),
+			States: []decay.StateRule{
+				{Threshold: 0, Supply: map[core.Dimension]float64{"Satiety": 0.8}},
+				{Threshold: 10},
+			},
+		},
+	})
+
+	fx.world.applyAnimalIntent(fauna.Intent{
+		Animal:               "an:wolf",
+		Action:               "Attack",
+		Target:               "an:deer",
+		NextPos:              wolf.Pos,
+		Drives:               wolf.Drives,
+		Stamina:              1,
+		Vital:                1,
+		VitalCap:             1,
+		EngagedWith:          "an:deer",
+		Damage:               0.3,
+		TargetVitalCapDamage: 0.05,
+	})
+
+	if _, ok := fx.world.animals["an:deer"]; ok {
+		t.Fatalf("dead target animal still present")
+	}
+	var carcassID core.ObjectID
+	for _, id := range fx.world.objectIDs {
+		obj := fx.world.objects[id]
+		if obj.Kind == "carcass" {
+			carcassID = id
+			if obj.Pos != deer.Pos {
+				t.Fatalf("carcass pos = %+v, want %+v", obj.Pos, deer.Pos)
+			}
+		}
+	}
+	if carcassID == "" {
+		t.Fatalf("death did not spawn carcass object")
+	}
+	foundLot := false
+	for _, lot := range fx.world.decayState.Lots() {
+		if lot.ID == carcassID && lot.Kind == "carcass" {
+			foundLot = true
+		}
+	}
+	if !foundLot {
+		t.Fatalf("death did not inject carcass decay lot %q", carcassID)
+	}
+	if _, ok := fx.world.decayEnvInputs()[carcassID]; !ok {
+		t.Fatalf("carcass lot missing from decayEnvInputs")
+	}
+	fx.world.runScentEnv()
+	if got := fx.world.scent.IntensityAt(scent.ChanCarrion, deer.Pos); got <= 0 {
+		t.Fatalf("carcass did not deposit carrion scent")
+	}
+}
+
+func TestAnimalFeedReducesHungerFromCarcassSupply(t *testing.T) {
+	fx := newFixtureSeeded(t, 333)
+	wolf := testAnimal("an:wolf", "wolf", core.Vec2{X: 2, Y: 2})
+	wolf.Drives["hunger"] = 0.9
+	installCombatFauna(t, fx, []fauna.Animal{wolf})
+	fx.world.PlaceObject("obj:carcass", "carcass", core.Vec2{X: 2.5, Y: 2}, map[core.Dimension]float64{"Satiety": 0.8})
+	fx.world.decayState = decay.New([]decay.Lot{{ID: "obj:carcass", Kind: "carcass", Qty: 1}})
+	fx.world.decayLotPos["obj:carcass"] = core.Vec2{X: 2.5, Y: 2}
+	fx.world.decayRules = decay.NewRules(map[decay.KindID]decay.KindRule{
+		"carcass": {
+			BaseRate: 1,
+			Accel:    testNumProgram(t, "1"),
+			States:   []decay.StateRule{{Threshold: 0, Supply: map[core.Dimension]float64{"Satiety": 0.8}}},
+		},
+	})
+
+	fx.world.applyAnimalIntent(fauna.Intent{
+		Animal:   "an:wolf",
+		Action:   "Feed",
+		Target:   "obj:carcass",
+		NextPos:  wolf.Pos,
+		Drives:   map[fauna.DriveID]float64{"hunger": 0.9},
+		Stamina:  1,
+		Vital:    1,
+		VitalCap: 1,
+	})
+
+	if got := fx.world.animals["an:wolf"].Drives["hunger"]; got != 0.5 {
+		t.Fatalf("hunger after feed = %.2f, want 0.50", got)
+	}
+	if _, ok := fx.world.objects["obj:carcass"]; ok {
+		t.Fatalf("consumed carcass object still present")
+	}
+	for _, lot := range fx.world.decayState.Lots() {
+		if lot.ID == "obj:carcass" {
+			t.Fatalf("consumed carcass decay lot still present")
+		}
+	}
+}
+
+func TestScentChannelFromTagCarrion(t *testing.T) {
+	ch, ok := scentChannelFromTag("scent:carrion")
+	if !ok || ch != scent.ChanCarrion {
+		t.Fatalf("scent:carrion mapped to channel=%d ok=%v, want ChanCarrion/true", ch, ok)
+	}
+}
+
+func TestAnimalVitalRegenCommitRespectsVitalCap(t *testing.T) {
+	fx := newFixtureSeeded(t, 334)
+	wolf := testAnimal("an:wolf", "wolf", core.Vec2{})
+	wolf.Vital = 0.4
+	wolf.VitalCap = 0.6
+	installCombatFauna(t, fx, []fauna.Animal{wolf})
+
+	fx.world.applyAnimalIntent(fauna.Intent{
+		Animal:   "an:wolf",
+		Action:   "Forage",
+		NextPos:  wolf.Pos,
+		Drives:   wolf.Drives,
+		Stamina:  1,
+		Vital:    0.6,
+		VitalCap: 0.6,
+	})
+	got := fx.world.animals["an:wolf"]
+	if got.Vital != 0.6 || got.VitalCap != 0.6 {
+		t.Fatalf("vital regen commit = %.2f/%.2f, want 0.60/0.60", got.Vital, got.VitalCap)
+	}
+}
+
+func TestTwoPredatorsSameTargetConflictDeterministic(t *testing.T) {
+	run := func(shuffle bool) string {
+		fx := newFixtureSeeded(t, 335)
+		low := testAnimal("an:a", "wolf", core.Vec2{X: 1})
+		high := testAnimal("an:b", "wolf", core.Vec2{X: 2})
+		deer := testAnimal("an:target", "deer", core.Vec2{X: 3})
+		low.Stats["Agility"] = 70
+		high.Stats["Agility"] = 60
+		installCombatFauna(t, fx, []fauna.Animal{low, high, deer})
+		intents := []fauna.Intent{
+			{Animal: "an:a", Action: "Attack", Target: "an:target", NextPos: low.Pos, Drives: low.Drives, Stamina: 1, Vital: 1, VitalCap: 1, EngagedWith: "an:target", Damage: 0.2},
+			{Animal: "an:b", Action: "Attack", Target: "an:target", NextPos: high.Pos, Drives: high.Drives, Stamina: 1, Vital: 1, VitalCap: 1, EngagedWith: "an:target", Damage: 0.4},
+		}
+		if shuffle {
+			intents[0], intents[1] = intents[1], intents[0]
+		}
+		fx.world.applyCombinedIntents(nil, intents, 2000, nil)
+		return animalDigest(fx.world.animals, fx.world.animalIDs)
+	}
+	if a, b := run(false), run(true); a != b {
+		t.Fatalf("same-target predator conflict changed with collection order\nA:\n%s\nB:\n%s", a, b)
 	}
 }
 

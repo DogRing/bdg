@@ -237,6 +237,9 @@
         },
         "apparent_temp": { "$ref": "#/$defs/formula" },
         "speed": { "$ref": "#/$defs/formula" },
+        "attack_power": { "$ref": "#/$defs/scalarOrFormula" },
+        "hit": { "$ref": "#/$defs/scalarOrFormula" },
+        "feed": { "$ref": "#/$defs/scalarOrFormula" },
         "diet": { "$ref": "#/$defs/tagList" },
         "senses": { "$ref": "#/$defs/senses" },
         "terrain_cost": {

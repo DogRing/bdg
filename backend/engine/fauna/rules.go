@@ -38,6 +38,7 @@ type SpeciesRule struct {
 	Speed        *expr.Program                      // §6 locomotion speed (F35)
 	AttackPower  *expr.Program                      // §6 damage magnitude composition (FC4)
 	Hit          *expr.Program                      // §6 hit multiplier/probability composition (FC4)
+	Feed         *expr.Program                      // §6 carcass feed value composition (FC8)
 	Diet         []core.Tag                         // diet/target tags (F7)
 	IsPredator   bool                               // carries `threat:predator` (F8)
 	SmellRadius  float64                            // smell radius (F31/F44)
@@ -72,6 +73,7 @@ type speciesData struct {
 	speed        *expr.Program
 	attackPower  *expr.Program
 	hit          *expr.Program
+	feed         *expr.Program
 	diet         []core.Tag
 	isPredator   bool
 	smellRadius  float64
@@ -140,6 +142,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			speed:        sr.Speed,
 			attackPower:  sr.AttackPower,
 			hit:          sr.Hit,
+			feed:         sr.Feed,
 			diet:         cloneTags(sr.Diet),
 			isPredator:   sr.IsPredator,
 			smellRadius:  sr.SmellRadius,

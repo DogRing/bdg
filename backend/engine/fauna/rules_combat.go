@@ -39,6 +39,23 @@ func (r *Rules) Hit(sp SpeciesID, ctx expr.Context) float64 {
 	return v
 }
 
+// Feed evaluates the species' §6 carcass feed-value program. Returns 0 when
+// absent so non-combat content remains outcome-neutral.
+func (r *Rules) Feed(sp SpeciesID, ctx expr.Context) float64 {
+	if r == nil {
+		return 0
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.feed == nil {
+		return 0
+	}
+	v := sd.feed.EvalNumber(ctx)
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // Diet returns the species' diet/target tags in sorted order.
 func (r *Rules) Diet(sp SpeciesID) []core.Tag {
 	if r == nil {

@@ -40,12 +40,20 @@ type worldDoc struct {
 		MaxSpeed float64 `yaml:"max_speed"`
 	} `yaml:"motion"`
 	Cadence struct {
-		ClimateStep        int `yaml:"climate_step"`
-		FloraStep          int `yaml:"flora_step"`
-		DecayStep          int `yaml:"decay_step"`
-		ScentSpread        int `yaml:"scent_spread"`
-		FaunaDormantPeriod int `yaml:"fauna_dormant_period"`
-		FaunaWakeCooldown  int `yaml:"fauna_wake_cooldown"`
+		ClimateStep            int     `yaml:"climate_step"`
+		FloraStep              int     `yaml:"flora_step"`
+		DecayStep              int     `yaml:"decay_step"`
+		ScentSpread            int     `yaml:"scent_spread"`
+		FaunaDormantPeriod     int     `yaml:"fauna_dormant_period"`
+		FaunaWakeCooldown      int     `yaml:"fauna_wake_cooldown"`
+		ExchangeMinTicks       int     `yaml:"exchange_min_ticks"`
+		ExchangeMaxTicks       int     `yaml:"exchange_max_ticks"`
+		EngageCooldownMinTicks int     `yaml:"engage_cooldown_min_ticks"`
+		EngageCooldownMaxTicks int     `yaml:"engage_cooldown_max_ticks"`
+		DisengageRangeFactor   float64 `yaml:"disengage_range_factor"`
+		StaminaDropThreshold   float64 `yaml:"stamina_drop_threshold"`
+		VitalRegenPerTick      float64 `yaml:"vital_regen_per_tick"`
+		VitalCapDamageFraction float64 `yaml:"vital_cap_damage_fraction"`
 	} `yaml:"cadence"`
 }
 
@@ -135,6 +143,9 @@ type objectKindDoc struct {
 		} `yaml:"drives"`
 		ApparentTemp any      `yaml:"apparent_temp"`
 		Speed        any      `yaml:"speed"`
+		AttackPower  any      `yaml:"attack_power"`
+		Hit          any      `yaml:"hit"`
+		Feed         any      `yaml:"feed"`
 		Diet         []string `yaml:"diet"`
 		Senses       struct {
 			SmellRadius float64 `yaml:"smell_radius"`

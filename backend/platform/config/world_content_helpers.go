@@ -196,7 +196,7 @@ func buildFaunaUtilities(
 		if def, ok := actReg.Get(id); ok {
 			for _, tag := range def.Tags {
 				switch tag {
-				case fauna.TagSteerFood, fauna.TagSteerPrey, fauna.TagFleePred, fauna.TagWaryPred, fauna.TagNoLoco:
+				case fauna.TagSteerFood, fauna.TagSteerPrey, fauna.TagFleePred, fauna.TagWaryPred, fauna.TagNoLoco, fauna.TagAttack, fauna.TagFeed:
 					steer[id] = tag
 				}
 			}

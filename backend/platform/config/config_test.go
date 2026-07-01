@@ -1,10 +1,17 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dogring/bdg/engine/fauna"
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/space/scent"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 // ── Test data ─────────────────────────────────────────────────────────────────
@@ -551,6 +558,85 @@ item_kinds:
         - { name: gone, threshold: 1.0 }
 `
 
+const combatActionsYAML = `schema_version: 1
+actions:
+  - id: Attack
+    tags: [ "combat:attack" ]
+    requires: [ near_other ]
+    produces: [ struck ]
+    duration: 5
+    interruptible: false
+  - id: Feed
+    tags: [ "feed:carrion" ]
+    requires: [ near_carcass ]
+    produces: [ sated ]
+    duration: 8
+    interruptible: true
+`
+
+const combatObjectsYAML = `schema_version: 1
+object_kinds:
+  - id: wolf
+    mobile: true
+    tags: [ scent:predator, threat:predator ]
+    fauna:
+      actions:
+        - { action: Attack, utility: "hunger + target.threat" }
+        - { action: Feed, utility: "hunger + scent.carrion" }
+      drives:
+        - { id: hunger, rate: 0.0008 }
+      apparent_temp: "temperature"
+      speed: 0
+      attack_power: "Strength + target.threat"
+      hit: "Agility"
+      feed: "scent.carrion + hunger"
+      diet: [ deer ]
+      senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 3.14 }
+      terrain_cost: { sand: 1.2 }
+      impassable: []
+  - id: deer
+    mobile: true
+    tags: [ scent:prey ]
+item_kinds:
+  - id: bones
+    stackable: true
+    supply: { Satiety: 0.0 }
+  - id: carcass
+    stackable: false
+    tags: [ scent:carrion ]
+    supply: { Satiety: 0.8 }
+    decay:
+      baseRate: 1.0
+      accel: "0.5 + temperature*0.01 + moisture*0.1"
+      states:
+        - { name: fresh }
+        - { name: rotting, threshold: 0.5, supply: { Satiety: 0.4 } }
+        - { name: bones, threshold: 0.9, transform: [ { item: bones, qty: 1 } ] }
+        - { name: gone, threshold: 1.0 }
+`
+
+type testExprCtx struct {
+	attrs map[core.Tag]float64
+	stats map[core.StatID]float64
+}
+
+func (c testExprCtx) Attr(id core.Tag) (float64, bool) {
+	v, ok := c.attrs[id]
+	return v, ok
+}
+
+func (c testExprCtx) Stat(id core.StatID) float64 {
+	return c.stats[id]
+}
+
+func (c testExprCtx) Pred(string, core.Tag) bool { return false }
+
+type configMockTerrain struct{}
+
+func (configMockTerrain) FootprintBlocked(core.Vec2) bool { return false }
+func (configMockTerrain) TerrainAt(core.Vec2) core.Tag    { return "soil" }
+func (configMockTerrain) BaseCost(core.Vec2) float64      { return 1 }
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 // writeTestContent writes the test YAML and schema files to a temp directory
@@ -766,6 +852,147 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 		len(out.ScentEmitters["grass"]) != 1 || out.ScentEmitters["grass"][0] != "scent:food" ||
 		len(out.ScentEmitters["deer"]) != 1 || out.ScentEmitters["deer"][0] != "scent:prey" {
 		t.Fatalf("scent emitters not extracted from content tags: %#v", out.ScentEmitters)
+	}
+	if out.WorldEnv.FaunaCombat != (fauna.CombatParams{}) {
+		t.Fatalf("absent combat params should stay neutral zeroes: %+v", out.WorldEnv.FaunaCombat)
+	}
+	ctx := testExprCtx{stats: map[core.StatID]float64{"Strength": 1, "Agility": 1}}
+	if got := out.FaunaRules.AttackPower("deer", ctx); got != 0 {
+		t.Fatalf("absent attack_power = %v, want 0", got)
+	}
+	if got := out.FaunaRules.Hit("deer", ctx); got != 1 {
+		t.Fatalf("absent hit = %v, want 1", got)
+	}
+	if got := out.FaunaRules.Feed("deer", ctx); got != 0 {
+		t.Fatalf("absent feed = %v, want 0", got)
+	}
+}
+
+func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
+	files := worldContentFiles()
+	files["world.yaml"] = strings.Replace(validWorldYAML, "  fauna_wake_cooldown: 30\n", `  fauna_wake_cooldown: 30
+  exchange_min_ticks: 10
+  exchange_max_ticks: 20
+  engage_cooldown_min_ticks: 50
+  engage_cooldown_max_ticks: 100
+  disengage_range_factor: 2.0
+  stamina_drop_threshold: 0.05
+  vital_regen_per_tick: 0.001
+  vital_cap_damage_fraction: 0.05
+`, 1)
+	dir := writeTestContent(t, files, worldSchemaFiles())
+	out, err := LoadContent(dir)
+	if err != nil {
+		t.Fatalf("LoadContent combat params: %v", err)
+	}
+	got := out.WorldEnv.FaunaCombat
+	want := fauna.CombatParams{
+		ExchangeMinTicks:       10,
+		ExchangeMaxTicks:       20,
+		EngageCooldownMinTicks: 50,
+		EngageCooldownMaxTicks: 100,
+		DisengageRangeFactor:   2.0,
+		StaminaDropThreshold:   0.05,
+		VitalRegenPerTick:      0.001,
+		VitalCapDamageFraction: 0.05,
+	}
+	if got != want {
+		t.Fatalf("FaunaCombat = %+v, want %+v", got, want)
+	}
+}
+
+func TestFaunaCombatContentCompilesAndCrossChecks(t *testing.T) {
+	files := worldContentFiles()
+	files["actions.yaml"] = combatActionsYAML
+	files["objects.yaml"] = combatObjectsYAML
+	dir := writeTestContent(t, files, worldSchemaFiles())
+	out, err := LoadContent(dir)
+	if err != nil {
+		t.Fatalf("LoadContent combat content: %v", err)
+	}
+	ctx := testExprCtx{
+		attrs: map[core.Tag]float64{"target.threat": 0.25, "scent.carrion": 0.7, "hunger": 0.2},
+		stats: map[core.StatID]float64{"Strength": 0.6, "Agility": 0.8},
+	}
+	if got := out.FaunaRules.AttackPower("wolf", ctx); math.Abs(got-0.85) > 1e-12 {
+		t.Fatalf("AttackPower = %v, want 0.85", got)
+	}
+	if got := out.FaunaRules.Hit("wolf", ctx); math.Abs(got-0.8) > 1e-12 {
+		t.Fatalf("Hit = %v, want 0.8", got)
+	}
+	if got := out.FaunaRules.Feed("wolf", ctx); math.Abs(got-0.9) > 1e-12 {
+		t.Fatalf("Feed = %v, want 0.9", got)
+	}
+
+	animals := []fauna.Animal{
+		{
+			ID: "wolf_1", Species: "wolf", Pos: core.Vec2{}, Stats: map[core.StatID]float64{"Strength": 0.6, "Agility": 0.8},
+			Drives: map[fauna.DriveID]float64{"hunger": 0.8}, Stamina: 1, Vital: 1, CurrentAction: "Feed",
+		},
+		{ID: "deer_1", Species: "deer", Pos: core.Vec2{X: 1}, Stats: map[core.StatID]float64{}, Drives: map[fauna.DriveID]float64{}, Stamina: 1, Vital: 1},
+	}
+	snap := &fauna.Snapshot{
+		Animals: animals,
+		Scent:   scent.New(1),
+		Spatial: spatial.New(8),
+		Terrain: configMockTerrain{},
+		Env: map[core.ObjectID]fauna.EnvSample{
+			"wolf_1": {},
+			"deer_1": {},
+		},
+		Tick:          10,
+		Cadence:       fauna.Cadence{DormantPeriod: 10, WakeCooldown: 5},
+		Combat:        fauna.CombatParams{ExchangeMinTicks: 10, ExchangeMaxTicks: 10, EngageCooldownMinTicks: 50, EngageCooldownMaxTicks: 50, DisengageRangeFactor: 2},
+		ScentCellSize: 1,
+		DT:            1,
+	}
+	intents := fauna.Step(snap, out.FaunaRules, rng.New(1))
+	var wolfIntent fauna.Intent
+	for _, it := range intents {
+		if it.Animal == "wolf_1" {
+			wolfIntent = it
+		}
+	}
+	if wolfIntent.Action != "Attack" || wolfIntent.Target != "deer_1" || wolfIntent.EngagedWith != "deer_1" {
+		t.Fatalf("combat action tag not wired through config: %+v", wolfIntent)
+	}
+}
+
+func TestFaunaCombatUnknownOperandRejected(t *testing.T) {
+	files := worldContentFiles()
+	files["actions.yaml"] = combatActionsYAML
+	files["objects.yaml"] = strings.Replace(combatObjectsYAML, `attack_power: "Strength + target.threat"`, `attack_power: "Strength + target.threaat"`, 1)
+	dir := writeTestContent(t, files, worldSchemaFiles())
+	out, err := LoadContent(dir)
+	if err == nil {
+		t.Fatal("expected combat operand error, got nil")
+	}
+	if out != nil {
+		t.Fatal("expected no partial registry on combat operand failure")
+	}
+	if !strings.Contains(err.Error(), "fauna wolf attack_power") || !strings.Contains(err.Error(), "target.threaat") {
+		t.Fatalf("error %q does not name species/formula/operand", err)
+	}
+}
+
+func TestCarcassDecayStatesLoaded(t *testing.T) {
+	files := worldContentFiles()
+	files["actions.yaml"] = combatActionsYAML
+	files["objects.yaml"] = combatObjectsYAML
+	dir := writeTestContent(t, files, worldSchemaFiles())
+	out, err := LoadContent(dir)
+	if err != nil {
+		t.Fatalf("LoadContent carcass decay: %v", err)
+	}
+	if out.DecayRules == nil {
+		t.Fatal("DecayRules nil")
+	}
+	if got := out.DecayRules.StateAt("carcass", 0.6); got != 1 {
+		t.Fatalf("carcass state at 0.6 = %d, want rotting index 1", got)
+	}
+	supply := out.DecayRules.SupplyAt("carcass", 1)
+	if supply["Satiety"] != 0.4 {
+		t.Fatalf("carcass rotting supply = %#v, want Satiety 0.4", supply)
 	}
 }
 

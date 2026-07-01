@@ -44,6 +44,7 @@ func (w *World) applyCombinedIntents(
 	})
 
 	conflicts := combinedConflictGroups(combined)
+	// Pass 1: agents + each animal's OWN-state commit (fixed sorted order, D12).
 	for i := range combined {
 		item := combined[i]
 		loser := combinedConflictLoser(i, combined, conflicts, w)
@@ -52,8 +53,21 @@ func (w *World) applyCombinedIntents(
 			continue
 		}
 		if item.animal != nil && !loser {
-			w.applyAnimalIntent(*item.animal)
+			w.commitAnimalOwnState(*item.animal)
 		}
+	}
+	// Pass 2: animal combat cross-writes (attack/feed) + death, AFTER every own-state commit — so an
+	// attacker's mutual-engage/damage write to its target is never clobbered by the target's own commit.
+	// The mutual lock is thus order-independent (deterministic; the D12 sorted apply order is unchanged).
+	for i := range combined {
+		item := combined[i]
+		if item.animal == nil {
+			continue
+		}
+		if combinedConflictLoser(i, combined, conflicts, w) {
+			continue
+		}
+		w.applyAnimalCombat(*item.animal)
 	}
 }
 
@@ -95,7 +109,19 @@ func (w *World) applyCombinedAgentIntent(intent agent.Intent, conflictLoser bool
 	}
 }
 
+// applyAnimalIntent applies one animal intent in isolation (own state then combat) — the single-animal
+// path used by focused tests. The combined tick apply uses the two-pass commitAnimalOwnState /
+// applyAnimalCombat split (applyCombinedIntents) so cross-animal engage/damage writes survive every
+// own-state commit regardless of sorted-id order.
 func (w *World) applyAnimalIntent(intent fauna.Intent) {
+	w.commitAnimalOwnState(intent)
+	w.applyAnimalCombat(intent)
+}
+
+// commitAnimalOwnState commits an animal's OWN proposed state from its intent (movement, drives, stamina,
+// vital, engage bookkeeping, action effect). Cross-animal effects (attack/feed) + death are deferred to
+// applyAnimalCombat so they run after every own-state commit (see applyCombinedIntents pass 1/2).
+func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	a := w.animals[intent.Animal]
 	if a == nil {
 		return
@@ -105,20 +131,32 @@ func (w *World) applyAnimalIntent(intent fauna.Intent) {
 	a.Heading = intent.NextHeading
 	a.Drives = cloneFaunaDrives(intent.Drives)
 	a.Stamina = intent.Stamina
+	w.commitAnimalVital(a, intent)
 	a.ActiveUntil = intent.ActiveUntil
 	a.CurrentAction = intent.Action
+	a.EngagedWith = intent.EngagedWith
+	a.NextExchangeTick = intent.NextExchangeTick
+	a.EngageCooldownUntil = intent.EngageCooldownUntil
 	w.layerAnimalActionEffect(a, intent.Action)
+}
+
+// applyAnimalCombat applies an animal's CROSS-animal combat effects (attack damage + mutual engage, feed)
+// and its own death. Runs in the second apply pass: because every animal's own state is already committed,
+// an attacker's write to its target's engage/vital is never clobbered by the target's own commit, so the
+// mutual lock is order-independent (deterministic).
+func (w *World) applyAnimalCombat(intent fauna.Intent) {
+	a := w.animals[intent.Animal]
+	if a == nil {
+		return
+	}
+	if w.isAttackIntent(intent) {
+		w.applyAnimalAttack(a, intent)
+	}
+	if w.actionHasTag(intent.Action, fauna.TagFeed) {
+		w.applyAnimalFeed(a, intent)
+	}
 	if a.Vital <= 0 {
-		w.removeAnimal(a.ID)
-		w.emit.Emit(core.Event{
-			SchemaVersion: 1,
-			Tick:          w.tick,
-			Type:          "AnimalDied",
-			Payload: map[string]any{
-				"id":      string(a.ID),
-				"species": string(a.Species),
-			},
-		})
+		w.killAnimal(a.ID)
 	}
 }
 
@@ -136,6 +174,19 @@ func (w *World) layerAnimalActionEffect(a *fauna.Animal, action actions.ActionID
 	for dim, delta := range def.EffectPerMinute {
 		w.applyAnimalEffect(a, dim, delta)
 	}
+}
+
+func (w *World) actionHasTag(action actions.ActionID, tag core.Tag) bool {
+	def, ok := w.actReg.Get(action)
+	if !ok {
+		return false
+	}
+	for _, t := range def.Tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *World) applyAnimalEffect(a *fauna.Animal, dim core.Dimension, delta float64) {

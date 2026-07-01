@@ -128,6 +128,16 @@ func buildWorldEnv(wd worldDoc, bal *Balance) (*world.EnvConfig, *navmap.Config,
 			DormantPeriod: wd.Cadence.FaunaDormantPeriod,
 			WakeCooldown:  core.Tick(wd.Cadence.FaunaWakeCooldown),
 		},
+		FaunaCombat: fauna.CombatParams{
+			ExchangeMinTicks:       wd.Cadence.ExchangeMinTicks,
+			ExchangeMaxTicks:       wd.Cadence.ExchangeMaxTicks,
+			EngageCooldownMinTicks: wd.Cadence.EngageCooldownMinTicks,
+			EngageCooldownMaxTicks: wd.Cadence.EngageCooldownMaxTicks,
+			DisengageRangeFactor:   wd.Cadence.DisengageRangeFactor,
+			StaminaDropThreshold:   wd.Cadence.StaminaDropThreshold,
+			VitalRegenPerTick:      wd.Cadence.VitalRegenPerTick,
+			VitalCapDamageFraction: wd.Cadence.VitalCapDamageFraction,
+		},
 		MaxSpeed: wd.Motion.MaxSpeed,
 	}
 	nav := &navmap.Config{

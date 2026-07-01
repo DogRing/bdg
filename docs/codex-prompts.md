@@ -345,11 +345,16 @@ Done when: unit tests — utility picks Attack when a diet target is in range + 
 timing (seeded); `VitalCap` regen cap; operand cross-check; `go test ./engine/fauna/ -count=2`.
 
 ### 6d — config: combat content parse   `@backend/platform/config/SPEC-world.md` §Fauna combat content
-Goal: parse the new fauna combat §6 fields (`attack_power`/`hit`/`engage_range`/`disengage_range`/cooldowns/
-`feed`) into `fauna.Rules`; cross-check `ReadsAttrs ⊆ AttrOperands()∪drives` (incl. `target.threat`/
-`scent.carrion`); parse the `carcass` item's decay states. `ScentEmitters` already handles `scent:carrion`.
-Done when: config tests — combat fields compile, unknown operand rejected, carcass decay states loaded;
-`go test ./platform/config/ -count=2`.
+Goal: parse combat content in THREE places — (a) per-species fauna combat §6 (`attack_power`/`hit`/`feed`)
+into `fauna.Rules` (cross-check `ReadsAttrs ⊆ AttrOperands()∪drives`, incl. `target.threat`/`scent.carrion`);
+(b) the scalar `CombatParams` (exchange/engage cooldown min/max, `disengage_range_factor`,
+`stamina_drop_threshold`, `vital_regen_per_tick`, `vital_cap_damage_fraction`) into `EnvConfig.FaunaCombat`
+— MIRROR how `FaunaCadence` is already parsed into `EnvConfig` (6c-fix added this surface); (c) the `carcass`
+item's `decay:` states into `decay.Rules` (generic decay parse). `ScentEmitters` already handles
+`scent:carrion`. ABSENT combat fields ⇒ neutral (current content loads, combat §6 = nil, FaunaCombat = zero).
+Done when: config tests — combat §6 compile + cross-check, unknown operand rejected, `CombatParams` parsed
+into `EnvConfig.FaunaCombat` (mirror the FaunaCadence test), carcass decay states loaded, current content
+still loads neutral; `go test ./platform/config/ ... -count=2`.
 
 ### 6e — world: combat apply   `@backend/engine/world/SPEC-world-fauna.md` §Combat, death & carcass apply
 Goal: `applyAnimalIntent` cross-animal damage (Attack → target Vital↓; engage state on BOTH, id-sorted);

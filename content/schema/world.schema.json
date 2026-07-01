@@ -57,7 +57,15 @@
         "decay_step":           { "type": "integer", "minimum": 1 },
         "scent_spread":         { "type": "integer", "minimum": 1, "description": "Ns — scent diffusion bulk pass (drives scent_cell_size floor)" },
         "fauna_dormant_period": { "type": "integer", "minimum": 1, "description": "F45 dormant re-arbitration period N" },
-        "fauna_wake_cooldown":  { "type": "integer", "minimum": 0, "description": "ticks an animal stays ACTIVE after a predator-scent wake" }
+        "fauna_wake_cooldown":  { "type": "integer", "minimum": 0, "description": "ticks an animal stays ACTIVE after a predator-scent wake" },
+        "exchange_min_ticks": { "type": "integer", "minimum": 0, "description": "combat exchange cooldown lower bound (fauna.CombatParams)" },
+        "exchange_max_ticks": { "type": "integer", "minimum": 0, "description": "combat exchange cooldown upper bound (fauna.CombatParams)" },
+        "engage_cooldown_min_ticks": { "type": "integer", "minimum": 0, "description": "combat engage-attempt cooldown lower bound (fauna.CombatParams)" },
+        "engage_cooldown_max_ticks": { "type": "integer", "minimum": 0, "description": "combat engage-attempt cooldown upper bound (fauna.CombatParams)" },
+        "disengage_range_factor": { "type": "number", "minimum": 0, "description": "combat disengage range factor multiplied by scent_cell_size" },
+        "stamina_drop_threshold": { "type": "number", "minimum": 0, "description": "combat disengage stamina threshold" },
+        "vital_regen_per_tick": { "type": "number", "minimum": 0, "description": "combat vital regeneration rate per tick" },
+        "vital_cap_damage_fraction": { "type": "number", "minimum": 0, "description": "fraction of exchange damage applied as vital-cap scar" }
       }
     },
 

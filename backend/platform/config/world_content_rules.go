@@ -173,12 +173,25 @@ func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, statReg *stat
 		if err != nil {
 			return nil, err
 		}
+		attackPower, err := parseOptionalFaunaFormula(obj.Fauna.AttackPower, parse, "attack_power")
+		if err != nil {
+			return nil, err
+		}
+		hit, err := parseOptionalFaunaFormula(obj.Fauna.Hit, parse, "hit")
+		if err != nil {
+			return nil, err
+		}
+		feed, err := parseOptionalFaunaFormula(obj.Fauna.Feed, parse, "feed")
+		if err != nil {
+			return nil, err
+		}
 		tc, imp, err := faunaTerrain(obj, terrainIDs)
 		if err != nil {
 			return nil, err
 		}
 		species[fauna.SpeciesID(obj.ID)] = fauna.SpeciesRule{
 			Utilities: utilities, Drives: drives, AppTemp: appTemp, Speed: speed,
+			AttackPower: attackPower, Hit: hit, Feed: feed,
 			Diet: faunaDiet(obj), IsPredator: faunaIsPredator(obj), SmellRadius: obj.Fauna.Senses.SmellRadius,
 			SightRadius: obj.Fauna.Senses.SightRadius, FovArc: obj.Fauna.Senses.FovArc,
 			TerrainCost: tc, Impassable: imp, SteerChannel: steer,
@@ -188,6 +201,13 @@ func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, statReg *stat
 		return nil, nil
 	}
 	return fauna.NewRules(species), nil
+}
+
+func parseOptionalFaunaFormula(v any, parse func(string, any) (*expr.Program, error), name string) (*expr.Program, error) {
+	if v == nil {
+		return nil, nil
+	}
+	return parse(name, v)
 }
 
 func buildDecayRules(doc objectsDoc, itemIDs map[core.Tag]bool, statReg *stats.Registry) (*decay.Rules, error) {

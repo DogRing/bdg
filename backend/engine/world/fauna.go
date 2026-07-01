@@ -142,6 +142,7 @@ func (w *World) runScentEnv() {
 			w.depositAnimalScent(a, false)
 		}
 		w.depositFloraScent()
+		w.depositObjectScent()
 		w.scent.Spread(w.scentWind())
 	}
 	w.scent.Commit()
@@ -177,6 +178,23 @@ func (w *World) depositFloraScent() {
 	}
 }
 
+func (w *World) depositObjectScent() {
+	for _, id := range w.objectIDs {
+		obj, ok := w.objects[id]
+		if !ok {
+			continue
+		}
+		mag := objectScentMagnitude(obj)
+		for _, tag := range w.scentEmitters[obj.Kind] {
+			ch, ok := scentChannelFromTag(tag)
+			if !ok || ch == scent.ChanPredator {
+				continue
+			}
+			w.scent.Deposit(ch, obj.Pos, mag)
+		}
+	}
+}
+
 func scentChannelFromTag(tag core.Tag) (scent.Channel, bool) {
 	switch tag {
 	case "scent:predator":
@@ -185,6 +203,8 @@ func scentChannelFromTag(tag core.Tag) (scent.Channel, bool) {
 		return scent.ChanPrey, true
 	case "scent:food":
 		return scent.ChanFood, true
+	case "scent:carrion":
+		return scent.ChanCarrion, true
 	default:
 		return 0, false
 	}
@@ -201,6 +221,27 @@ func floraScentMagnitude(p flora.Plant) float64 {
 	mag := p.Length + p.Width
 	if mag < 0 {
 		return 0
+	}
+	return mag
+}
+
+func objectScentMagnitude(obj objectRecord) float64 {
+	if len(obj.Supply) == 0 {
+		return 1
+	}
+	dims := make([]core.Dimension, 0, len(obj.Supply))
+	for dim := range obj.Supply {
+		dims = append(dims, dim)
+	}
+	sort.Slice(dims, func(i, j int) bool { return dims[i] < dims[j] })
+	var mag float64
+	for _, dim := range dims {
+		if obj.Supply[dim] > 0 {
+			mag += obj.Supply[dim]
+		}
+	}
+	if mag <= 0 {
+		return 1
 	}
 	return mag
 }
