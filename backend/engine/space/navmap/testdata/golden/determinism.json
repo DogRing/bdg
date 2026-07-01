@@ -1,0 +1,41 @@
+{
+  "wear": [
+    {
+      "Cell": {
+        "X": 1,
+        "Y": 0
+      },
+      "Wear": 5
+    },
+    {
+      "Cell": {
+        "X": 3,
+        "Y": 2
+      },
+      "Wear": 7
+    },
+    {
+      "Cell": {
+        "X": 0,
+        "Y": 5
+      },
+      "Wear": 5
+    }
+  ],
+  "overrides": [
+    {
+      "Cell": {
+        "X": 2,
+        "Y": 1
+      },
+      "Terrain": "forest"
+    },
+    {
+      "Cell": {
+        "X": 4,
+        "Y": 3
+      },
+      "Terrain": "forest"
+    }
+  ]
+}

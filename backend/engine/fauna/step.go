@@ -1,0 +1,423 @@
+package fauna
+
+import (
+	"math"
+
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/space/scent"
+)
+
+// defaultWanderAngle is the standard deviation (radians) of the heading
+// perturbation drawn once per ACTIVE animal per tick (stochastic steering jitter).
+// Named balance-tunable constant (like scent.spreadFraction); not a drive/rate/
+// threshold/radius literal (D10 guard). Same seed ⇒ identical steering (D12).
+const defaultWanderAngle = 0.15
+
+// Step scores all animals and returns ONE Intent each, in sorted Animal-ObjectID
+// order (D12). Pure function of (snap, rules, rng): never mutates snap (incl.
+// snap.Animals, the scent grid, the spatial index) or Rules. Panics if snap.Env
+// is missing a live animal entry (world-contract guard, mirrors flora/decay).
+//
+// For each animal in sorted ID order:
+//  0. CADENCE/WAKE (F45): O(1) IntensityAt(ChanPredator, Pos); determine ACTIVE
+//     or DORMANT; DORMANT may re-arbitrate on phase-gate tick.
+//     1–4. Full pipeline: SENSE → DRIVES → SCORE → STEER.
+//     Cheap path (DORMANT, off-boundary): hold Action, advance accumulators + decay
+//     fear, cheap steer along Heading — NOT frozen.
+//
+// RNG is drawn ONLY in the STEER step, once per ACTIVE (or re-arb DORMANT) animal,
+// in sorted ID order. DORMANT off-boundary animals make no draw (D12 byte-identity).
+func Step(snap *Snapshot, rules *Rules, r *rng.RNG) []Intent {
+	if len(snap.Animals) == 0 {
+		return nil
+	}
+
+	sorted := sortAnimalsByID(snap.Animals)
+	intents := make([]Intent, 0, len(sorted))
+
+	for i := range sorted {
+		a := sorted[i]
+
+		// ── Step 0: CADENCE / WAKE (F45) ─────────────────────────────────────
+		// O(1) predator intensity probe on COMMITTED buffer (next-tick latency, F33).
+		predIntensity := snap.Scent.IntensityAt(scent.ChanPredator, a.Pos)
+		predBit := predIntensity > 0
+		isPred := rules.IsPredator(a.Species)
+
+		newActiveUntil := a.ActiveUntil
+		if predBit {
+			// Wake: extend/set cooldown horizon (SPEC: "set ActiveUntil = Tick + WakeCooldown").
+			candidate := snap.Tick + snap.Cadence.WakeCooldown
+			if candidate > newActiveUntil {
+				newActiveUntil = candidate
+			}
+		}
+
+		isActive := isPred || predBit || (snap.Tick <= a.ActiveUntil)
+
+		// DORMANT: check re-arbitration gate.
+		isReArb := false
+		if !isActive && snap.Cadence.DormantPeriod > 0 {
+			ph := phase(a.ID, snap.Cadence.DormantPeriod)
+			isReArb = (snap.Tick+ph)%core.Tick(snap.Cadence.DormantPeriod) == 0
+		}
+
+		// Lookup EnvSample — panic on missing entry (world-contract guard).
+		env, ok := snap.Env[a.ID]
+		if !ok {
+			panic("fauna.Step: missing EnvSample for animal " + string(a.ID))
+		}
+
+		var intent Intent
+		if isActive || isReArb {
+			intent = fullPipeline(a, env, snap, rules, r, newActiveUntil)
+		} else {
+			intent = cheapPath(a, snap, rules, newActiveUntil)
+		}
+		intents = append(intents, intent)
+	}
+
+	return intents
+}
+
+// ── Full pipeline (ACTIVE or re-arbitrating DORMANT) ─────────────────────────
+
+func fullPipeline(
+	a Animal, env EnvSample, snap *Snapshot, rules *Rules, r *rng.RNG,
+	newActiveUntil core.Tick,
+) Intent {
+	smellRadius, sightRadius, fovArc := rules.Senses(a.Species)
+
+	// ── Step 1: SENSE ─────────────────────────────────────────────────────────
+	// Scent: omni neighbor/upwind read (F34, scent-only, no FOV here).
+	reading := snap.Scent.Read(a.Pos, smellRadius, env.Wind)
+
+	// Sight: spatial forward-FOV predator query (F44(c-ii) / D11 / D12).
+	// NearbyEntities is ObjectID-sorted (D12). Agents NOT classified in P_fa1 (F46).
+	sightPred, distPred, nearPredPos := sightQuery(a, snap, rules, sightRadius, fovArc)
+
+	// ── Step 2: DRIVES (F25(c)) ───────────────────────────────────────────────
+	// Pre-compute AppTemp once (uses stats + climate only; no circular dep on drives).
+	// The animalContext for AppTemp uses pre-update drives + climate.
+	appTemp := computeAppTemp(a, env, rules)
+
+	// Build context for DriveUpdate with PRE-update drives.
+	dCtx := &animalContext{
+		animal:      &a,
+		drives:      a.Drives,
+		reading:     reading,
+		sightPred:   sightPred,
+		distPred:    distPred,
+		smellRadius: smellRadius,
+		sightRadius: sightRadius,
+		env:         env,
+		appTemp:     appTemp,
+	}
+	newDrives := rules.DriveUpdate(a.Species, a.Drives, dCtx, snap.DT)
+
+	// ── Step 3: SCORE (F1/F26) ────────────────────────────────────────────────
+	// Build §6 context with POST-update drives (SPEC: "build the §6 Context once").
+	sCtx := &animalContext{
+		animal:      &a,
+		drives:      newDrives,
+		reading:     reading,
+		sightPred:   sightPred,
+		distPred:    distPred,
+		smellRadius: smellRadius,
+		sightRadius: sightRadius,
+		env:         env,
+		appTemp:     appTemp,
+	}
+
+	bestAction, _ := scoreAction(a, rules, sCtx)
+
+	// ── Step 4: STEER (F35) ───────────────────────────────────────────────────
+	// Stochastic wander draw (once per ACTIVE/re-arb animal, in sorted ID order, D12).
+	wander := r.NormFloat64() * defaultWanderAngle
+
+	nextPos, nextHeading := steerFull(a, env, bestAction, reading, nearPredPos, sightPred,
+		snap, rules, sCtx, wander, smellRadius, sightRadius)
+
+	return Intent{
+		Animal:      a.ID,
+		Action:      bestAction,
+		Target:      "",
+		NextPos:     nextPos,
+		NextHeading: nextHeading,
+		Drives:      newDrives,
+		Stamina:     a.Stamina,
+		ActiveUntil: newActiveUntil,
+	}
+}
+
+// sightQuery performs the F44 forward-FOV spatial predator query.
+// Returns (sightPred, distPred, nearestPredPos):
+//   - sightPred = 1.0 if a predator animal is within FOV, else 0.0
+//   - distPred  = distance to nearest qualifying predator, or sightRadius if none
+//   - nearPredPos: pointer to the nearest qualifying predator position (nil if none)
+//
+// Iterates NearbyEntities (ObjectID-sorted, D12). Only checks entities that are
+// also in snap.Animals (P_fa1 — agents NOT classified, F46). Bearing test uses
+// continuous angle (D11); rear blind spot: |bearing − Heading| > fovArc.
+func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc float64) (float64, float64, *core.Vec2) {
+	if sightRadius <= 0 {
+		return 0, sightRadius, nil
+	}
+
+	// Build a temporary ObjectID → index map for snap.Animals (key lookup, not iteration).
+	// This is built per-animal on the full pipeline; O(N) per-animal is acceptable for P_fa1.
+	// We iterate snap.Animals once to build the map, then do O(1) key lookups.
+	animalIdx := make(map[core.ObjectID]int, len(snap.Animals))
+	for i := range snap.Animals {
+		animalIdx[snap.Animals[i].ID] = i
+	}
+
+	nearby := snap.Spatial.NearbyEntities(a.Pos, sightRadius)
+	// NearbyEntities is already ObjectID-sorted (spatial.NearbyEntities guarantee, D12).
+
+	bestDist := sightRadius
+	var bestPos *core.Vec2
+	found := false
+
+	for _, ent := range nearby {
+		if ent.ID == a.ID {
+			continue // skip self
+		}
+		idx, isAnimal := animalIdx[ent.ID]
+		if !isAnimal {
+			continue // skip non-animals (objects, agents — P_fa1 scope)
+		}
+		other := snap.Animals[idx]
+		if !rules.IsPredator(other.Species) {
+			continue
+		}
+
+		// Bearing from a to other (D11 — continuous angle).
+		dx := ent.Pos.X - a.Pos.X
+		dy := ent.Pos.Y - a.Pos.Y
+		bearing := math.Atan2(dy, dx)
+		diff := math.Abs(angularDiff(bearing, a.Heading))
+		if diff > fovArc {
+			continue // rear blind spot
+		}
+
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if !found || dist < bestDist {
+			bestDist = dist
+			pos := ent.Pos
+			bestPos = &pos
+			found = true
+		}
+	}
+
+	if found {
+		return 1.0, bestDist, bestPos
+	}
+	return 0.0, sightRadius, nil
+}
+
+// computeAppTemp evaluates the AppTemp program using a climate-only context.
+// Uses pre-update drives + climate (no circular dependency on scent/sight/drives).
+func computeAppTemp(a Animal, env EnvSample, rules *Rules) float64 {
+	ctx := &animalContext{
+		animal:  &a,
+		drives:  a.Drives,
+		reading: scent.Reading{}, // zero: no scent for AppTemp computation
+		env:     env,
+	}
+	return rules.AppTemp(a.Species, ctx)
+}
+
+// scoreAction evaluates all candidate actions and returns the best (highest
+// utility) action and its score. Ties broken by lexicographically-smaller
+// ActionID (D12). Returns (CurrentAction, -∞) if no candidates.
+func scoreAction(a Animal, rules *Rules, ctx *animalContext) (actions.ActionID, float64) {
+	candidates := rules.Candidates(a.Species)
+	if len(candidates) == 0 {
+		return a.CurrentAction, math.Inf(-1)
+	}
+
+	var bestAction actions.ActionID
+	bestScore := math.Inf(-1)
+	first := true
+
+	// Candidates are in sorted order (D12 — NewRules guarantees this).
+	for _, act := range candidates {
+		ctx.isCurrent = (act == a.CurrentAction)
+		score := rules.Utility(a.Species, act, ctx)
+		if first || score > bestScore || (score == bestScore && act < bestAction) {
+			bestScore = score
+			bestAction = act
+			first = false
+		}
+	}
+	return bestAction, bestScore
+}
+
+// steerFull computes NextPos and NextHeading for the full pipeline (ACTIVE/re-arb).
+// Direction is determined by the steer-channel tag of the chosen action (D4):
+//   - TagSteerFood   → toward food scent Dir
+//   - TagSteerPrey   → toward prey scent Dir
+//   - TagFleePred    → away from predator (reversed Dir or away from nearPredPos)
+//   - TagWaryPred    → slowly away from predator
+//   - TagNoLoco      → no movement (NextPos == Pos, speed = 0 regardless of §6)
+//   - ""             → continue along current Heading (random walk)
+//
+// A stochastic wander angle is added to the heading (D12: drawn once per animal,
+// same seed ⇒ identical). NextPos is TerrainSampler-clamped: blocked iff
+// FootprintBlocked OR !TerrainCost(species,terrain).passable.
+func steerFull(
+	a Animal, env EnvSample, act actions.ActionID,
+	reading scent.Reading, nearPredPos *core.Vec2,
+	sightPred float64,
+	snap *Snapshot, rules *Rules, ctx *animalContext,
+	wander, smellRadius, sightRadius float64,
+) (nextPos core.Vec2, nextHeading float64) {
+	// Check steer channel from Rules (content-defined, D4/D10).
+	tag := rules.steerChannelFor(a.Species, act)
+
+	// TagNoLoco or zero-speed actions: Rest → NextPos == Pos.
+	if tag == TagNoLoco {
+		return a.Pos, a.Heading
+	}
+
+	// Evaluate §6 speed (F35).
+	speed := rules.Speed(a.Species, ctx)
+	if speed <= 0 {
+		// Speed program returned 0 (e.g., authored Rest-equivalent).
+		return a.Pos, a.Heading
+	}
+
+	// Resolve base direction from steer channel.
+	dir := baseSteerDir(a, tag, reading, nearPredPos, sightPred)
+
+	// Apply angular jitter to heading (stochastic wander, D12).
+	heading := math.Atan2(dir.Y, dir.X) + wander
+	dir = core.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+
+	// Evaluate terrain at tentative next position.
+	tentative := a.Pos.Add(dir.Scale(speed * snap.DT))
+	terrain := snap.Terrain.TerrainAt(tentative)
+	mult, passable := rules.TerrainCost(a.Species, terrain)
+	blocked := snap.Terrain.FootprintBlocked(tentative) || !passable
+
+	if blocked {
+		// Cannot enter: stay.
+		return a.Pos, a.Heading
+	}
+
+	// Effective cost: BaseCost × species mult (W10b).
+	baseCost := snap.Terrain.BaseCost(tentative)
+	effectiveCost := baseCost * mult
+	if effectiveCost < 1 {
+		effectiveCost = 1 // cost floored at 1 (base convention)
+	}
+
+	// Actual speed modulated by terrain cost (higher cost = slower effective movement).
+	// speed is in world units / DT (already from §6); terrain cost scales it inversely.
+	effectiveSpeed := speed / effectiveCost
+	nextPos = a.Pos.Add(dir.Scale(effectiveSpeed * snap.DT))
+	nextHeading = heading
+
+	return nextPos, nextHeading
+}
+
+// baseSteerDir returns the base steering direction vector for the chosen action's
+// steer-channel tag. All directions are derived from sense data (D11 — continuous).
+// Zero vector fallback → continue along heading (caller applies wander to heading).
+func baseSteerDir(
+	a Animal, tag core.Tag,
+	reading scent.Reading, nearPredPos *core.Vec2, sightPred float64,
+) core.Vec2 {
+	switch tag {
+	case TagSteerFood:
+		if reading.Food.Intensity > 0 {
+			return reading.Food.Dir
+		}
+	case TagSteerPrey:
+		if reading.Prey.Intensity > 0 {
+			return reading.Prey.Dir
+		}
+	case TagFleePred, TagWaryPred:
+		// Flee / wary: away from predator. Sight has priority over scent.
+		if sightPred > 0 && nearPredPos != nil {
+			// Away from the nearest visible predator (continuous, D11).
+			dx := a.Pos.X - nearPredPos.X
+			dy := a.Pos.Y - nearPredPos.Y
+			mag := math.Sqrt(dx*dx + dy*dy)
+			if mag > 0 {
+				return core.Vec2{X: dx / mag, Y: dy / mag}
+			}
+		}
+		if reading.Predator.Intensity > 0 {
+			// Scent Dir points TOWARD source; reverse for flee.
+			return core.Vec2{X: -reading.Predator.Dir.X, Y: -reading.Predator.Dir.Y}
+		}
+	}
+	// Default: continue along current Heading.
+	return core.Vec2{X: math.Cos(a.Heading), Y: math.Sin(a.Heading)}
+}
+
+// ── Cheap path (DORMANT, off-boundary) ───────────────────────────────────────
+
+func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick) Intent {
+	// Drive advance: only accumulators + fear decay (no full sense, no sight query).
+	newDrives := rules.cheapDriveAdvance(a.Species, a.Drives, snap.DT)
+
+	// Cheap steer: continue along Heading. Evaluate speed with minimal context.
+	env := snap.Env[a.ID] // already validated in Step (panic path is before cheapPath)
+	appTemp := computeAppTemp(a, env, rules)
+	sCtx := &animalContext{
+		animal:  &a,
+		drives:  newDrives,
+		reading: scent.Reading{}, // zero sense on cheap path
+		env:     env,
+		appTemp: appTemp,
+	}
+
+	speed := rules.Speed(a.Species, sCtx)
+	if speed < 0 {
+		speed = 0
+	}
+
+	// Direction: current heading.
+	dir := core.Vec2{X: math.Cos(a.Heading), Y: math.Sin(a.Heading)}
+
+	var nextPos core.Vec2
+	var nextHeading float64
+	if speed <= 0 {
+		nextPos = a.Pos
+		nextHeading = a.Heading
+	} else {
+		tentative := a.Pos.Add(dir.Scale(speed * snap.DT))
+		terrain := snap.Terrain.TerrainAt(tentative)
+		mult, passable := rules.TerrainCost(a.Species, terrain)
+		blocked := snap.Terrain.FootprintBlocked(tentative) || !passable
+		if blocked {
+			nextPos = a.Pos
+			nextHeading = a.Heading
+		} else {
+			baseCost := snap.Terrain.BaseCost(tentative)
+			effectiveCost := baseCost * mult
+			if effectiveCost < 1 {
+				effectiveCost = 1
+			}
+			effectiveSpeed := speed / effectiveCost
+			nextPos = a.Pos.Add(dir.Scale(effectiveSpeed * snap.DT))
+			nextHeading = a.Heading
+		}
+	}
+
+	return Intent{
+		Animal:      a.ID,
+		Action:      a.CurrentAction, // held (dormant off-boundary)
+		Target:      "",
+		NextPos:     nextPos,
+		NextHeading: nextHeading,
+		Drives:      newDrives,
+		Stamina:     a.Stamina,
+		ActiveUntil: newActiveUntil,
+	}
+}
