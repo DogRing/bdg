@@ -117,6 +117,21 @@ func TestRulesHideChanceNeutralAndEval(t *testing.T) {
 	}
 }
 
+func TestRulesCoverCostNeutralAndScalar(t *testing.T) {
+	rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"prey": {CoverCost: 0.7},
+	})
+	if got := rules.CoverCost("prey"); got != 0.7 {
+		t.Fatalf("CoverCost = %v, want 0.7", got)
+	}
+	if got := rules.CoverCost("pred"); got != 0 {
+		t.Fatalf("absent species CoverCost = %v, want 0", got)
+	}
+	if got := (*fauna.Rules)(nil).CoverCost("prey"); got != 0 {
+		t.Fatalf("nil rules CoverCost = %v, want 0", got)
+	}
+}
+
 type hideCtx struct {
 	stats map[core.StatID]float64
 	attrs map[core.Tag]float64

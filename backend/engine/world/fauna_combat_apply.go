@@ -153,6 +153,33 @@ func (w *World) nearCoverFlora(a *fauna.Animal) bool {
 	return false
 }
 
+// coverResistance is the M4-b movement drag at p for a species (>= 1; 1 = no
+// cover). It sums per-plant linear-falloff overlap over cover-tagged flora times
+// the species' cover_cost. Pure/deterministic (D12).
+func (w *World) coverResistance(species fauna.SpeciesID, p core.Vec2) float64 {
+	if w.faunaRules == nil || w.floraState == nil {
+		return 1
+	}
+	cc := w.faunaRules.CoverCost(species)
+	if cc <= 0 {
+		return 1
+	}
+	density := 0.0
+	for _, pl := range w.floraState.Plants() {
+		if !w.kindIsCover(core.Tag(pl.Species)) {
+			continue
+		}
+		radius := w.envCfg.FaunaCombat.CoverRadiusFactor * pl.Width
+		if radius <= 0 {
+			continue
+		}
+		if d := p.Distance(pl.Pos); d < radius {
+			density += 1 - d/radius
+		}
+	}
+	return 1 + density*cc
+}
+
 func (w *World) kindEmitsFood(kind core.Tag) bool {
 	for _, tag := range w.scentEmitters[kind] {
 		if tag == "scent:food" {

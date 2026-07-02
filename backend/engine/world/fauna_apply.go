@@ -129,7 +129,11 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	if a == nil {
 		return
 	}
-	pos := w.clampToBounds(intent.NextPos)
+	intended := w.clampToBounds(intent.NextPos)
+	pos := intended
+	if res := w.coverResistance(a.Species, intended); res > 1 {
+		pos = a.Pos.Add(intended.Sub(a.Pos).Scale(1.0 / res))
+	}
 	w.spatial.Move(a.ID, pos)
 	a.Pos = pos
 	a.Heading = intent.NextHeading

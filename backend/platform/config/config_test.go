@@ -544,6 +544,7 @@ object_kinds:
       hide_chance: "hunger + Agility"
       diet: [ forage ]
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }
+      cover_cost: 0.7
       terrain_cost: { sand: 1.2 }
       impassable: []
 item_kinds:
@@ -602,6 +603,7 @@ object_kinds:
       feed: "scent.carrion + hunger"
       diet: [ game ]
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 3.14 }
+      cover_cost: 1.2
       terrain_cost: { sand: 1.2 }
       impassable: []
   - id: deer
@@ -893,6 +895,9 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 	if got := out.FaunaRules.HideChance("deer", ctx); got != 1 {
 		t.Fatalf("HideChance = %v, want 1", got)
 	}
+	if got := out.FaunaRules.CoverCost("deer"); got != 0.7 {
+		t.Fatalf("CoverCost = %v, want 0.7", got)
+	}
 }
 
 func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
@@ -909,6 +914,7 @@ func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
   hide_duration: 100
   hidden_flush_factor: 1.0
   hide_cover_factor: 1.0
+  cover_radius_factor: 3.0
 `, 1)
 	dir := writeTestContent(t, files, worldSchemaFiles())
 	out, err := LoadContent(dir)
@@ -928,6 +934,7 @@ func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
 		HideDurationTicks:      100,
 		HiddenFlushFactor:      1.0,
 		HideCoverFactor:        1.0,
+		CoverRadiusFactor:      3.0,
 	}
 	if got != want {
 		t.Fatalf("FaunaCombat = %+v, want %+v", got, want)
@@ -958,6 +965,9 @@ func TestFaunaCombatContentCompilesAndCrossChecks(t *testing.T) {
 	}
 	if got := out.FaunaRules.HideChance("deer", ctx); math.Abs(got-1.0) > 1e-12 {
 		t.Fatalf("HideChance = %v, want 1.0", got)
+	}
+	if got := out.FaunaRules.CoverCost("wolf"); got != 1.2 {
+		t.Fatalf("CoverCost = %v, want 1.2", got)
 	}
 
 	animals := []fauna.Animal{

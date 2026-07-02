@@ -242,6 +242,7 @@
         "feed": { "$ref": "#/$defs/scalarOrFormula" },
         "graze": { "$ref": "#/$defs/scalarOrFormula" },
         "hide_chance": { "$ref": "#/$defs/formula" },
+        "cover_cost": { "type": "number", "minimum": 0 },
         "respawn_target": { "type": "integer", "minimum": 0, "description": "population carrying capacity for timer-respawn (F9); 0 = no respawn" },
         "diet": { "$ref": "#/$defs/tagList" },
         "senses": { "$ref": "#/$defs/senses" },

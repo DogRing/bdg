@@ -98,6 +98,25 @@ func testCombatFaunaRules(t *testing.T) *fauna.Rules {
 	})
 }
 
+func testCoverFaunaRules(t *testing.T) *fauna.Rules {
+	t.Helper()
+	return fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {
+			Utilities: map[actions.ActionID]*expr.Program{
+				"Forage": testNumProgram(t, "1"),
+			},
+			Drives:      []fauna.DriveRule{{ID: "hunger"}},
+			Speed:       testNumProgram(t, "0"),
+			CoverCost:   1,
+			SmellRadius: 5,
+			SightRadius: 5,
+			FovArc:      3.14,
+		},
+		"rabbit": {CoverCost: 0.3},
+		"bear":   {CoverCost: 2.0},
+	})
+}
+
 func testHideFaunaRules(t *testing.T) *fauna.Rules {
 	t.Helper()
 	return fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
@@ -356,6 +375,88 @@ func TestAnimalAttackClearsHiddenUntil(t *testing.T) {
 	}
 	if got := fx.world.animals["an:deer"].HiddenUntil; got != 0 {
 		t.Fatalf("target HiddenUntil = %d, want 0", got)
+	}
+}
+
+func TestCoverResistanceScalesMoveThroughCover(t *testing.T) {
+	fx := newFixtureSeeded(t, 86)
+	cfg := testEnvConfig()
+	cfg.FaunaCombat.CoverRadiusFactor = 2
+	fx.world.InstallFauna(cfg, testCoverFaunaRules(t), testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{
+		testAnimal("an:deer", "deer", core.Vec2{}),
+	})
+	fx.world.floraState = flora.New([]flora.Plant{
+		{ID: "plant:cover", Species: "berry_shrub", Pos: core.Vec2{X: 10}, Width: 5},
+	})
+
+	if got := fx.world.coverResistance("unknown", core.Vec2{X: 10}); got != 1 {
+		t.Fatalf("cover_cost 0 resistance = %.12f, want exactly 1", got)
+	}
+	savedFlora := fx.world.floraState
+	fx.world.floraState = nil
+	if got := fx.world.coverResistance("deer", core.Vec2{X: 10}); got != 1 {
+		t.Fatalf("nil floraState resistance = %.12f, want exactly 1", got)
+	}
+	fx.world.floraState = savedFlora
+	if got := fx.world.coverResistance("deer", core.Vec2{X: 25}); got != 1 {
+		t.Fatalf("outside cover radius resistance = %.12f, want exactly 1", got)
+	}
+
+	center := fx.world.coverResistance("deer", core.Vec2{X: 10})
+	mid := fx.world.coverResistance("deer", core.Vec2{X: 15})
+	edge := fx.world.coverResistance("deer", core.Vec2{X: 19})
+	if center <= 1 {
+		t.Fatalf("inside cover resistance = %.6f, want > 1", center)
+	}
+	if !(center > mid && mid > edge && edge > 1) {
+		t.Fatalf("cover resistance should decrease with distance: center=%.6f mid=%.6f edge=%.6f", center, mid, edge)
+	}
+	bear := fx.world.coverResistance("bear", core.Vec2{X: 10})
+	rabbit := fx.world.coverResistance("rabbit", core.Vec2{X: 10})
+	if bear <= rabbit {
+		t.Fatalf("larger cover_cost should resist more at same point: bear=%.6f rabbit=%.6f", bear, rabbit)
+	}
+	if again := fx.world.coverResistance("deer", core.Vec2{X: 10}); again != center {
+		t.Fatalf("cover resistance not deterministic: first=%.12f again=%.12f", center, again)
+	}
+
+	fx.world.applyAnimalIntent(fauna.Intent{
+		Animal: "an:deer", Action: "Forage", NextPos: core.Vec2{X: 10}, Drives: map[fauna.DriveID]float64{"hunger": 0.2},
+		Stamina: 1, Vital: 1, VitalCap: 1,
+	})
+	if got := fx.world.animals["an:deer"].Pos; got.X <= 0 || got.X >= 10 || got.Y != 0 {
+		t.Fatalf("cover drag did not scale displacement through cover: pos=%+v", got)
+	}
+}
+
+func TestCoverResistanceNeutralUsesIntendedPositionExactly(t *testing.T) {
+	run := func(rules *fauna.Rules, plants []flora.Plant) core.Vec2 {
+		fx := newFixtureSeeded(t, 87)
+		cfg := testEnvConfig()
+		cfg.FaunaCombat.CoverRadiusFactor = 2
+		fx.world.InstallFauna(cfg, rules, testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{
+			testAnimal("an:deer", "deer", core.Vec2{X: 1, Y: 1}),
+		})
+		if plants != nil {
+			fx.world.floraState = flora.New(plants)
+		}
+		intended := core.Vec2{X: 6.25, Y: 7.5}
+		fx.world.applyAnimalIntent(fauna.Intent{
+			Animal: "an:deer", Action: "Forage", NextPos: intended, Drives: map[fauna.DriveID]float64{"hunger": 0.2},
+			Stamina: 1, Vital: 1, VitalCap: 1,
+		})
+		return fx.world.animals["an:deer"].Pos
+	}
+
+	intended := core.Vec2{X: 6.25, Y: 7.5}
+	if got := run(testFaunaRules(t), []flora.Plant{{ID: "plant:cover", Species: "berry_shrub", Pos: intended, Width: 5}}); got != intended {
+		t.Fatalf("species with no cover_cost should commit intended exactly: got %+v want %+v", got, intended)
+	}
+	if got := run(testCoverFaunaRules(t), nil); got != intended {
+		t.Fatalf("no cover flora should commit intended exactly: got %+v want %+v", got, intended)
+	}
+	if got := run(testCoverFaunaRules(t), []flora.Plant{{ID: "plant:flower", Species: "wildflower", Pos: intended, Width: 5}}); got != intended {
+		t.Fatalf("non-cover flora should commit intended exactly: got %+v want %+v", got, intended)
 	}
 }
 

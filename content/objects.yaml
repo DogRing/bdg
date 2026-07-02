@@ -279,6 +279,7 @@ object_kinds:
       diet: [ forage ]                                                             # grazes objects carrying `forage` (grass/berry_shrub)
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }             # wide FOV ~120° (prey vigilance, F44)
       respawn_target: 16                                                           # herd carrying capacity (F9 timer-respawn)
+      cover_cost: 0.7                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 1.5, mountain: 1.6 }                                  # FORDS water to escape (< wolf 3.0 → loses pursuers at the river, M4-a); climbs poorly (W10b)
       impassable: [ sea ]                                                          # cannot enter deep sea (per-species block; sea also globally impassable)
 
@@ -309,6 +310,7 @@ object_kinds:
       diet: [ game ]                                                               # hunts animals carrying `game` (deer)
       senses: { smell_radius: 20.0, sight_radius: 34.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
       respawn_target: 3                                                            # apex predator — sparse (F9)
+      cover_cost: 1.2                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 3.0, mountain: 1.5 }                                  # AVOIDS deep water (river = prey refuge, M4-a); modest on hills (W10b)
       impassable: [ sea ]
 
@@ -337,6 +339,7 @@ object_kinds:
       diet: [ forage ]
       senses: { smell_radius: 8.0, sight_radius: 16.0, fov_arc: 1.4 }               # near-panoramic FOV ~160°
       respawn_target: 20                                                           # prolific prey (F9)
+      cover_cost: 0.3                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 2.5, mountain: 2.0 }                                  # poor at water + climbing (plains animal)
       impassable: [ sea ]
 
@@ -364,6 +367,7 @@ object_kinds:
       diet: [ forage ]
       senses: { smell_radius: 9.0, sight_radius: 13.0, fov_arc: 1.0 }
       respawn_target: 6                                                            # small mountain band (F9)
+      cover_cost: 0.6                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.6, river: 2.0, sand: 1.2 }                       # CLIMBER: cheap on mountains (FA8); poor at water
       impassable: [ sea ]
 
@@ -394,6 +398,7 @@ object_kinds:
       diet: [ game, forage ]                                                       # OMNIVORE: prey + vegetation (F7)
       senses: { smell_radius: 22.0, sight_radius: 30.0, fov_arc: 0.9 }              # superb nose
       respawn_target: 3                                                            # apex omnivore — sparse (F9)
+      cover_cost: 2.0                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.7, river: 2.6 }                                  # CLIMBER predator (FA8); avoids deep water (river = prey refuge, M4-a)
       impassable: [ sea ]
 

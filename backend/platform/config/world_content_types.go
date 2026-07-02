@@ -63,6 +63,7 @@ type worldDoc struct {
 		HideDuration           int     `yaml:"hide_duration"`
 		HiddenFlushFactor      float64 `yaml:"hidden_flush_factor"`
 		HideCoverFactor        float64 `yaml:"hide_cover_factor"`
+		CoverRadiusFactor      float64 `yaml:"cover_radius_factor"`
 		RespawnCadence         int     `yaml:"respawn_cadence"`
 	} `yaml:"cadence"`
 }
@@ -158,6 +159,7 @@ type objectKindDoc struct {
 		Feed          any      `yaml:"feed"`
 		Graze         any      `yaml:"graze"`
 		HideChance    any      `yaml:"hide_chance"`
+		CoverCost     float64  `yaml:"cover_cost"`
 		RespawnTarget int      `yaml:"respawn_target"`
 		Diet          []string `yaml:"diet"`
 		Senses        struct {

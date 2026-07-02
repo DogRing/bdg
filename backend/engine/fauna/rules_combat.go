@@ -90,6 +90,20 @@ func (r *Rules) HideChance(sp SpeciesID, ctx expr.Context) float64 {
 	return v
 }
 
+// CoverCost is the species' cover-drag affinity (M4-b): 0 = unaffected by cover
+// flora, higher = bogs down more. World reads it in the move commit to scale
+// displacement through cover. Pure.
+func (r *Rules) CoverCost(sp SpeciesID) float64 {
+	if r == nil {
+		return 0
+	}
+	sd, ok := r.species[sp]
+	if !ok {
+		return 0
+	}
+	return sd.coverCost
+}
+
 // Diet returns the species' diet/target tags in sorted order.
 func (r *Rules) Diet(sp SpeciesID) []core.Tag {
 	if r == nil {

@@ -120,6 +120,7 @@ type CombatParams struct {
 	HiddenFlushFactor      float64 // × Snapshot.ScentCellSize = flush radius for hidden prey detection (M3)
 	HideDurationTicks      int     // ticks a prey stays hidden after a successful world-side hide roll (M3)
 	HideCoverFactor        float64 // × ScentCellSize = cover reach for world nearCoverFlora (M3)
+	CoverRadiusFactor      float64 // × plant Width = cover-drag radius for world-side resistance (M4-b)
 }
 
 // Snapshot is the read-only world view the controller scores over (the read phase;
