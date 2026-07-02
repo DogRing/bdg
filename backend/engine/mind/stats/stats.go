@@ -78,7 +78,7 @@ type Def struct {
 
 // GenSpec is the generation distribution for a stat (content/stats.yaml gen.*).
 type GenSpec struct {
-	Dist string  // "normal" | "uniform"
+	Dist string // "normal" | "uniform"
 	Mean float64
 	SD   float64 // ≥ 0
 }
@@ -98,13 +98,13 @@ func (d Def) Clamp(v float64) float64 {
 
 // rawStat is the on-disk shape for one stat entry (content/stats.yaml stats[*]).
 type rawStat struct {
-	ID      string   `yaml:"id"`
-	Label   string   `yaml:"label,omitempty"`
-	Kind    string   `yaml:"kind"`
+	ID      string    `yaml:"id"`
+	Label   string    `yaml:"label,omitempty"`
+	Kind    string    `yaml:"kind"`
 	Range   []float64 `yaml:"range"`
-	Default *float64 `yaml:"default,omitempty"`
-	Gen     *rawGen  `yaml:"gen"`
-	Inherit float64  `yaml:"inherit"`
+	Default *float64  `yaml:"default,omitempty"`
+	Gen     *rawGen   `yaml:"gen"`
+	Inherit float64   `yaml:"inherit"`
 }
 
 type rawGen struct {
@@ -114,8 +114,8 @@ type rawGen struct {
 }
 
 type rawDocument struct {
-	SchemaVersion int        `yaml:"schema_version"`
-	Stats         []rawStat  `yaml:"stats"`
+	SchemaVersion int       `yaml:"schema_version"`
+	Stats         []rawStat `yaml:"stats"`
 }
 
 // ── Validation ───────────────────────────────────────────────────────────────

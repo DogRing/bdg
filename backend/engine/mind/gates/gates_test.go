@@ -268,10 +268,10 @@ gates:
 	reg := mustLoadGates(t, gatesYAML, sReg)
 
 	cases := []struct {
-		name        string
-		strength    float64
-		agility     float64
-		wantVisible bool
+		name         string
+		strength     float64
+		agility      float64
+		wantVisible  bool
 		wantTraceLen int
 	}{
 		{"both gates pass", 0.7, 0.7, true, 2},

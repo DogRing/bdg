@@ -50,9 +50,9 @@ type Vec2 struct {
 	Y float64 `json:"y"`
 }
 
-func (v Vec2) Add(o Vec2) Vec2          { return Vec2{v.X + o.X, v.Y + o.Y} }
-func (v Vec2) Sub(o Vec2) Vec2          { return Vec2{v.X - o.X, v.Y - o.Y} }
-func (v Vec2) Scale(f float64) Vec2     { return Vec2{v.X * f, v.Y * f} }
+func (v Vec2) Add(o Vec2) Vec2         { return Vec2{v.X + o.X, v.Y + o.Y} }
+func (v Vec2) Sub(o Vec2) Vec2         { return Vec2{v.X - o.X, v.Y - o.Y} }
+func (v Vec2) Scale(f float64) Vec2    { return Vec2{v.X * f, v.Y * f} }
 func (v Vec2) DistSq(o Vec2) float64   { dx, dy := v.X-o.X, v.Y-o.Y; return dx*dx + dy*dy }
 func (v Vec2) Distance(o Vec2) float64 { return math.Sqrt(v.DistSq(o)) }
 
@@ -79,9 +79,9 @@ type Referent struct {
 type Posture uint8
 
 const (
-	Maximize       Posture = iota // as much as possible
-	MaintainAbove                 // keep at or above the setpoint
-	PreventBelow                  // keep from falling below the setpoint
+	Maximize      Posture = iota // as much as possible
+	MaintainAbove                // keep at or above the setpoint
+	PreventBelow                 // keep from falling below the setpoint
 )
 
 // Value is a root value: a goal direction expressed as (Dimension, Referent, Posture, Setpoint).

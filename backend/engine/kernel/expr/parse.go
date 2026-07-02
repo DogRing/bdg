@@ -292,4 +292,3 @@ func classifyBare(name string, pos int, ks StatSet, preds map[string]KnownPred) 
 	// lowercase-initial → Attr (unvalidated caller namespace)
 	return &node{kind: nAttr, attrName: core.Tag(name)}, nil
 }
-

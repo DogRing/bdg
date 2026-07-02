@@ -299,15 +299,15 @@ func TestDef_NoSatisfactionField(t *testing.T) {
 	// This is structural verification via the godoc. We check at runtime that
 	// the Def only exposes the allowed fields.
 	d := Def{
-		ID:       "Test",
-		Kind:     Consumable,
-		Rate:     0.001,
+		ID:        "Test",
+		Kind:      Consumable,
+		Rate:      0.001,
 		Threshold: 0.5,
-		Posture:  MaintainAbove,
-		Setpoint: 0.5,
-		Referent: core.Self,
-		Curve:    Deficit,
-		Gain:     1.0,
+		Posture:   MaintainAbove,
+		Setpoint:  0.5,
+		Referent:  core.Self,
+		Curve:     Deficit,
+		Gain:      1.0,
 	}
 
 	_ = d
@@ -388,7 +388,7 @@ func TestLevel_Pure(t *testing.T) {
 		{level0: 1.0, minutes: 100, want: 0.9},
 		{level0: 1.0, minutes: 0, want: 1.0},
 		{level0: 0.5, minutes: 100, want: 0.4},
-		{level0: 0.1, minutes: 200, want: 0.0}, // clamped to 0
+		{level0: 0.1, minutes: 200, want: 0.0},  // clamped to 0
 		{level0: 1.0, minutes: 1001, want: 0.0}, // clamped to 0
 		{level0: 0.0, minutes: 50, want: 0.0},
 	}
@@ -473,8 +473,8 @@ func TestSalience_Curves(t *testing.T) {
 			level, setpoint, want float64
 		}{
 			{level: 0.3, setpoint: 0.55, want: 0.25},
-			{level: 0.6, setpoint: 0.55, want: 0.0},   // level > setpoint => no salience
-			{level: 0.55, setpoint: 0.55, want: 0.0},  // equal => 0
+			{level: 0.6, setpoint: 0.55, want: 0.0},  // level > setpoint => no salience
+			{level: 0.55, setpoint: 0.55, want: 0.0}, // equal => 0
 			{level: 1.0, setpoint: 0.55, want: 0.0},
 			{level: 0.0, setpoint: 0.55, want: 0.55},
 		}
@@ -492,10 +492,10 @@ func TestSalience_Curves(t *testing.T) {
 		tests := []struct {
 			level, setpoint, want float64
 		}{
-			{level: 0.3, setpoint: 0.5, want: 0.49},    // (1-0.3)*0.7 = 0.49
-			{level: 1.0, setpoint: 0.5, want: 0.0},      // level=1 => no salience
-			{level: 0.0, setpoint: 0.5, want: 0.7},      // (1-0)*0.7 = 0.7
-			{level: 0.8, setpoint: 0.5, want: 0.14},     // (1-0.8)*0.7 = 0.14
+			{level: 0.3, setpoint: 0.5, want: 0.49}, // (1-0.3)*0.7 = 0.49
+			{level: 1.0, setpoint: 0.5, want: 0.0},  // level=1 => no salience
+			{level: 0.0, setpoint: 0.5, want: 0.7},  // (1-0)*0.7 = 0.7
+			{level: 0.8, setpoint: 0.5, want: 0.14}, // (1-0.8)*0.7 = 0.14
 		}
 		for _, tt := range tests {
 			got := d.Salience(tt.level, tt.setpoint)
@@ -969,8 +969,8 @@ func TestGolden_Salience(t *testing.T) {
 	tests2 := []struct {
 		level, setpoint, want float64
 	}{
-		{level: 0.3, setpoint: 0.5, want: (1 - 0.3) * 0.7},   // 0.49
-		{level: 0.8, setpoint: 0.5, want: (1 - 0.8) * 0.7},   // 0.14
+		{level: 0.3, setpoint: 0.5, want: (1 - 0.3) * 0.7}, // 0.49
+		{level: 0.8, setpoint: 0.5, want: (1 - 0.8) * 0.7}, // 0.14
 		{level: 1.0, setpoint: 0.5, want: 0.0},
 	}
 	for _, tt := range tests2 {
@@ -1037,10 +1037,10 @@ func TestUpdateConditionalNeeds_NoThreatDecays(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		cur      float64
-		decay    float64
-		want     float64
+		name  string
+		cur   float64
+		decay float64
+		want  float64
 	}{
 		{name: "already zero", cur: 0, decay: 0.10, want: 0},
 		{name: "below decay", cur: 0.03, decay: 0.10, want: 0},
@@ -1071,11 +1071,11 @@ func TestUpdateConditionalNeeds_ThreatRises(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		cur      float64
-		threats  []core.AgentID
-		gain     float64
-		want     float64
+		name    string
+		cur     float64
+		threats []core.AgentID
+		gain    float64
+		want    float64
 	}{
 		{name: "one threat", cur: 0, threats: []core.AgentID{"B"}, gain: 0.20, want: 0.20},
 		{name: "two threats", cur: 0, threats: []core.AgentID{"B", "C"}, gain: 0.20, want: 0.40},

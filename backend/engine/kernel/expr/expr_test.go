@@ -63,12 +63,12 @@ func TestArithmetic(t *testing.T) {
 	}{
 		{"Strength * 0.5", 0.8, 0.0, 0.4},
 		{"Strength + Agility", 0.8, 0.6, 1.4},
-		{"Strength * 0.5 + Agility * 0.3", 0.8, 0.6, 0.58},    // operator precedence
-		{"(Strength + Agility) * 0.5", 0.8, 0.6, 0.70},         // parens override
+		{"Strength * 0.5 + Agility * 0.3", 0.8, 0.6, 0.58}, // operator precedence
+		{"(Strength + Agility) * 0.5", 0.8, 0.6, 0.70},     // parens override
 		{"Strength - Agility", 0.8, 0.6, 0.2},
 		{"Strength / 2", 0.8, 0.0, 0.4},
-		{"Strength + Agility * 2", 0.5, 0.3, 1.1},              // * before +
-		{"Strength - Agility * 0.5", 1.0, 0.6, 0.70},           // * before -
+		{"Strength + Agility * 2", 0.5, 0.3, 1.1},                      // * before +
+		{"Strength - Agility * 0.5", 1.0, 0.6, 0.70},                   // * before -
 		{"(Strength + Agility) * (Strength - Agility)", 0.8, 0.2, 0.6}, // nested parens
 	}
 	for _, c := range cases {
@@ -90,9 +90,9 @@ func TestComparisonLogical(t *testing.T) {
 	kp := expr.BasePreds()
 
 	cases := []struct {
-		formula        string
+		formula         string
 		str, agi, depth float64
-		want           bool
+		want            bool
 	}{
 		{"Strength > 0.5", 0.8, 0, 0, true},
 		{"Strength > 0.5", 0.4, 0, 0, false},

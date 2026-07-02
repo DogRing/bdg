@@ -144,12 +144,12 @@ type gate struct {
 // never changes (no setters, no exported mutable fields). Safe to share across
 // goroutines in the read/plan phase.
 type Registry struct {
-	gates         []gate                // sorted by id
-	ids           []GateID              // sorted lexicographically
+	gates         []gate   // sorted by id
+	ids           []GateID // sorted lexicographically
 	readsSet      map[core.StatID]struct{}
-	readsList     []core.StatID         // stat reads in lexicographic order
+	readsList     []core.StatID           // stat reads in lexicographic order
 	readsBodySet  map[BodyScalar]struct{} // NEW v3
-	readsBodyList []BodyScalar          // NEW v3: sorted body-scalar reads
+	readsBodyList []BodyScalar            // NEW v3: sorted body-scalar reads
 }
 
 // Load parses the gates document from r (the bytes of content/gates.yaml — the

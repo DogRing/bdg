@@ -196,31 +196,31 @@ func DeriveReferentInput(
 			MaxIntensity:     1.0,
 		}
 
-		case core.Collective:
-			if len(members) == 0 {
-				return ReferentInput{
-					CurrentIntensity: 0,
-					MaxIntensity:     0,
-				}
-			}
-			var sumCurrent, sumMax float64
-			minCurrent := members[0].CurrentIntensity
-			for _, m := range members {
-				sumCurrent += m.CurrentIntensity
-				sumMax += m.MaxIntensity
-				if m.CurrentIntensity < minCurrent {
-					minCurrent = m.CurrentIntensity
-				}
-			}
-			n := float64(len(members))
-			currentIntensity := sumCurrent / n
-			if cfg.CollectiveAggregationMode == "min" {
-				currentIntensity = minCurrent
-			}
+	case core.Collective:
+		if len(members) == 0 {
 			return ReferentInput{
-				CurrentIntensity: currentIntensity,
-				MaxIntensity:     sumMax / n,
+				CurrentIntensity: 0,
+				MaxIntensity:     0,
 			}
+		}
+		var sumCurrent, sumMax float64
+		minCurrent := members[0].CurrentIntensity
+		for _, m := range members {
+			sumCurrent += m.CurrentIntensity
+			sumMax += m.MaxIntensity
+			if m.CurrentIntensity < minCurrent {
+				minCurrent = m.CurrentIntensity
+			}
+		}
+		n := float64(len(members))
+		currentIntensity := sumCurrent / n
+		if cfg.CollectiveAggregationMode == "min" {
+			currentIntensity = minCurrent
+		}
+		return ReferentInput{
+			CurrentIntensity: currentIntensity,
+			MaxIntensity:     sumMax / n,
+		}
 
 	default:
 		// Unknown referent kind — fall back to Self semantics.
@@ -262,10 +262,10 @@ func getStatDefFromBelief(belief tom.Belief, statID core.StatID) (struct{ Min, M
 // values.weights block, plus the P5 OtherLowIntelThreshold from the intelligence block
 // and CollectiveAggregationMode from the values block. Immutable after Load.
 type Config struct {
-	weights                  map[core.Dimension]float64
-	dims                     []core.Dimension // sorted lexicographically (D12)
-	OtherLowIntelThreshold   float64          // balance.yaml intelligence.other_intel_threshold; default 0.5
-	CollectiveAggregationMode string          // "mean" or "min"; balance.yaml values.collective_aggregation_mode; default "mean"
+	weights                   map[core.Dimension]float64
+	dims                      []core.Dimension // sorted lexicographically (D12)
+	OtherLowIntelThreshold    float64          // balance.yaml intelligence.other_intel_threshold; default 0.5
+	CollectiveAggregationMode string           // "mean" or "min"; balance.yaml values.collective_aggregation_mode; default "mean"
 }
 
 // Load parses ONLY the top-level values: block from r (the bytes of content/balance.yaml —
@@ -353,9 +353,9 @@ func Load(r io.Reader) (*Config, error) {
 	}
 
 	return &Config{
-		weights:                  weights,
-		dims:                     dims,
-		OtherLowIntelThreshold:   otherLowIntelThreshold,
+		weights:                   weights,
+		dims:                      dims,
+		OtherLowIntelThreshold:    otherLowIntelThreshold,
 		CollectiveAggregationMode: collectiveAggregationMode,
 	}, nil
 }

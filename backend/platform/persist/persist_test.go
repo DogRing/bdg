@@ -148,10 +148,10 @@ func TestDecodeInvalidJSON(t *testing.T) {
 
 func TestKeyerFormats(t *testing.T) {
 	tests := []struct {
-		name   string
-		run    core.RunID
-		agent  core.AgentID
-		want   map[string]string // method → expected key
+		name  string
+		run   core.RunID
+		agent core.AgentID
+		want  map[string]string // method → expected key
 	}{
 		{
 			name:  "simple run",
@@ -248,7 +248,7 @@ func TestCaptureSnapshotCompilesAndRoundTrips(t *testing.T) {
 	// Verify that CaptureSnapshot returns the right field types by constructing
 	// a Snapshot manually and round-tripping through Encode/Decode.
 	ws := world.WorldState{
-		Tick: 7,
+		Tick:     7,
 		RNGState: rng.RNGState{Data: "cm5nLXN0YXRl"},
 	}
 	s := Snapshot{

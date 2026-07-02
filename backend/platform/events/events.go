@@ -49,8 +49,8 @@ type Emitter struct {
 	client RedisClient
 	stream string // "sim:{runID}:events", composed once on construction
 
-	seq     int64  // monotone counter; incremented atomically per Emit
-	errOnce sync.Once
+	seq      int64 // monotone counter; incremented atomically per Emit
+	errOnce  sync.Once
 	firstErr error
 }
 

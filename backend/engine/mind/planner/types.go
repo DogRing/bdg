@@ -10,8 +10,8 @@
 package planner
 
 import (
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/stats"
 	"github.com/dogring/bdg/engine/mind/tom"
 	"github.com/dogring/bdg/engine/mind/values"
@@ -61,7 +61,7 @@ type AgentSnapshot struct {
 	NeedIntensities map[core.Dimension]float64 // current GROWN intensity per consumable dimension
 	Known           map[core.ObjectID]struct{} // objects this agent knows of
 	Urgency         float64                    // max Salience across all Dimensions (drives relaxation)
-	SatisfiedFacts  []core.Pred               // predicates already true in the current world state (e.g. near_other)
+	SatisfiedFacts  []core.Pred                // predicates already true in the current world state (e.g. near_other)
 
 	// Body scalars (NEW P3) — threaded to gates for body-scalar leaf evaluation.
 	Stamina    float64 // [0, StaminaMax]

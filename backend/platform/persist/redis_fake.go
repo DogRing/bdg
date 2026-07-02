@@ -13,11 +13,11 @@ import (
 // All methods are safe for concurrent use but tests run sequentially.
 type FakeRedis struct {
 	mu        sync.Mutex
-	ticks     map[string]core.Tick     // key → tick value
-	snapshots map[string][]byte        // key → blob
-	agents    map[string]string        // key → JSON of AgentView
-	meta      map[string]string        // key → meta hash fields (stored as flat key:field)
-	expired   bool                     // true after Expire called
+	ticks     map[string]core.Tick // key → tick value
+	snapshots map[string][]byte    // key → blob
+	agents    map[string]string    // key → JSON of AgentView
+	meta      map[string]string    // key → meta hash fields (stored as flat key:field)
+	expired   bool                 // true after Expire called
 }
 
 func NewFakeRedis() *FakeRedis {

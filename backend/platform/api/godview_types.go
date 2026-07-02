@@ -16,9 +16,9 @@ type StatTriple struct {
 
 // DivergenceResponse is GET /api/god/agent/{id}/divergence.
 type DivergenceResponse struct {
-	AgentID core.AgentID                `json:"agent_id"`
-	Tick    core.Tick                   `json:"tick"`
-	PerStat map[core.StatID]StatTriple  `json:"per_stat"` // keyed by StatID (glossary); JSON sorts keys (D12)
+	AgentID core.AgentID               `json:"agent_id"`
+	Tick    core.Tick                  `json:"tick"`
+	PerStat map[core.StatID]StatTriple `json:"per_stat"` // keyed by StatID (glossary); JSON sorts keys (D12)
 }
 
 // FactionRep is one observer-cluster's mean opinion of a subject for one stat (reputation breakdown).
@@ -43,9 +43,9 @@ type StatReputation struct {
 // ReputationResponse is GET /api/god/reputation/{id}. D6: there is NO top-level reputation scalar —
 // only the per-stat {mean, variance, per_faction} aggregate, derived on demand from the TomDigest.
 type ReputationResponse struct {
-	SubjectID core.AgentID                     `json:"subject_id"`
-	Tick      core.Tick                        `json:"tick"`
-	PerStat   map[core.StatID]StatReputation   `json:"per_stat"` // keyed by StatID; JSON sorts keys (D12)
+	SubjectID core.AgentID                   `json:"subject_id"`
+	Tick      core.Tick                      `json:"tick"`
+	PerStat   map[core.StatID]StatReputation `json:"per_stat"` // keyed by StatID; JSON sorts keys (D12)
 }
 
 // RelationEdge is one directed (from->to) social-graph edge for /api/god/relations.
@@ -67,7 +67,7 @@ type RelationsResponse struct {
 // GoalCandidate is one (competing or chosen) goal candidate in a why-trace.
 type GoalCandidate struct {
 	Dimension core.Dimension `json:"dimension"`
-	Target    *core.ObjectID `json:"target"`     // nullable — an abstract value goal may have no object (D1)
+	Target    *core.ObjectID `json:"target"` // nullable — an abstract value goal may have no object (D1)
 	EffValue  float64        `json:"eff_value"`
 }
 
@@ -82,9 +82,9 @@ type GoalSelectedView struct {
 
 // PlanBuiltView mirrors the PlanBuilt event payload (data-contracts §4).
 type PlanBuiltView struct {
-	Steps       []string `json:"steps"`        // e.g. ["MoveTo(forest)","Gather(berry_bush_1)"]
+	Steps       []string `json:"steps"` // e.g. ["MoveTo(forest)","Gather(berry_bush_1)"]
 	TotalCost   float64  `json:"total_cost"`
-	Provisioned []string `json:"provisioned"`  // forward-sim provisioning summary (D9)
+	Provisioned []string `json:"provisioned"` // forward-sim provisioning summary (D9)
 }
 
 // WhyResponse is GET /api/god/why/{agent_id}/{tick}, reconstructed from the Postgres events rows.

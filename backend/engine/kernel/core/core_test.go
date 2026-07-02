@@ -64,9 +64,9 @@ func TestVec2_AddSubScale(t *testing.T) {
 			a, b, want Vec2
 		}{
 			{Vec2{4, 6}, Vec2{3, 4}, Vec2{1, 2}},
-			{Vec2{5, 7}, Vec2{0, 0}, Vec2{5, 7}},   // subtract zero = identity
-			{Vec2{0, 0}, Vec2{0, 0}, Vec2{0, 0}},   // zero - zero
-			{Vec2{1, 1}, Vec2{1, 1}, Vec2{0, 0}},   // v - v = zero
+			{Vec2{5, 7}, Vec2{0, 0}, Vec2{5, 7}}, // subtract zero = identity
+			{Vec2{0, 0}, Vec2{0, 0}, Vec2{0, 0}}, // zero - zero
+			{Vec2{1, 1}, Vec2{1, 1}, Vec2{0, 0}}, // v - v = zero
 			{Vec2{-3, 5}, Vec2{-2, -8}, Vec2{-1, 13}},
 		}
 		for _, tc := range cases {

@@ -63,14 +63,14 @@ func toMap(payload any) map[string]any {
 
 // SeedResult holds the emergence metrics from a single run (one seed).
 type SeedResult struct {
-	Seed                     int64   `json:"seed"`
-	CrimeRate                float64 `json:"crime_rate"`
-	ReputationVariance       float64 `json:"reputation_variance"`
-	RoleConvergence          bool    `json:"role_convergence"`
-	SafetyMean               float64 `json:"safety_mean"`
-	StarvationConcentration  float64 `json:"starvation_concentration"`
-	TotalActions             int     `json:"total_actions"`
-	TransgressiveActions     int     `json:"transgressive_actions"`
+	Seed                    int64   `json:"seed"`
+	CrimeRate               float64 `json:"crime_rate"`
+	ReputationVariance      float64 `json:"reputation_variance"`
+	RoleConvergence         bool    `json:"role_convergence"`
+	SafetyMean              float64 `json:"safety_mean"`
+	StarvationConcentration float64 `json:"starvation_concentration"`
+	TotalActions            int     `json:"total_actions"`
+	TransgressiveActions    int     `json:"transgressive_actions"`
 }
 
 // transgressiveActions lists action IDs considered transgressive for crime-rate

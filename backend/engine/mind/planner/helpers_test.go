@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/gates"
 	"github.com/dogring/bdg/engine/mind/needs"
 	"github.com/dogring/bdg/engine/mind/stats"
@@ -149,8 +149,8 @@ func defaultConfig() PlannerConfig {
 			MaxActions: 16,
 			MaxNodes:   256,
 		},
-		BaseHorizonTicks: 720,
-		UrgencyThreshold: 0.65,
+		BaseHorizonTicks:   720,
+		UrgencyThreshold:   0.65,
 		LookaheadThreshold: 0.4,
 		TagCosts: map[core.Tag]float64{
 			"effort:low":   0.20,

@@ -299,10 +299,10 @@ func TestNoHardcodedConstants(t *testing.T) {
 func TestDefaultsFromConfig(t *testing.T) {
 	regs := makeTestRegs(t)
 	cfg := PlannerConfig{
-		Budget:           Budget{MaxDepth: 4, MaxActions: 8, MaxNodes: 64},
-		BaseHorizonTicks: 100,
-		TagCosts:         map[core.Tag]float64{"effort:low": 0.10},
-		UrgencyThreshold: 0.80,
+		Budget:             Budget{MaxDepth: 4, MaxActions: 8, MaxNodes: 64},
+		BaseHorizonTicks:   100,
+		TagCosts:           map[core.Tag]float64{"effort:low": 0.10},
+		UrgencyThreshold:   0.80,
 		LookaheadThreshold: 0.4,
 	}
 	pl := newPlanner(t, regs, cfg)

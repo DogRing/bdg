@@ -321,10 +321,10 @@ func (d Def) UpdateConditionalNeeds(cur float64, threats []core.AgentID, perThre
 
 // rawNeed is one entry in content/needs.yaml's needs array.
 type rawNeed struct {
-	ID      string        `yaml:"id"`
-	Kind    string        `yaml:"kind"`
-	Default rawDefault    `yaml:"default"`
-	Salience rawSalience  `yaml:"salience"`
+	ID       string      `yaml:"id"`
+	Kind     string      `yaml:"kind"`
+	Default  rawDefault  `yaml:"default"`
+	Salience rawSalience `yaml:"salience"`
 }
 
 type rawDefault struct {
@@ -349,7 +349,7 @@ type rawBalanceDocument struct {
 }
 
 type rawBalanceNeed struct {
-	DecayPerTick      float64 `yaml:"decay_per_tick"`
+	DecayPerTick          float64 `yaml:"decay_per_tick"`
 	SatisfactionThreshold float64 `yaml:"satisfaction_threshold"`
 }
 
@@ -385,10 +385,10 @@ var postureNames = map[string]Posture{
 }
 
 var referentNames = map[string]core.ReferentKind{
-	"Self":        core.Self,
-	"Other":       core.Other,
-	"Place":       core.Place,
-	"Collective":  core.Collective,
+	"Self":       core.Self,
+	"Other":      core.Other,
+	"Place":      core.Place,
+	"Collective": core.Collective,
 }
 
 var curveNames = map[string]SalienceCurve{

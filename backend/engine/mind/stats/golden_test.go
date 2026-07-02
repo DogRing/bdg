@@ -16,10 +16,10 @@ const goldenPath = "testdata/golden/registry/content_stats_v1.json"
 
 // goldenSnapshot is the JSON shape written to / read from the golden file.
 type goldenSnapshot struct {
-	IDs          []core.StatID            `json:"ids"`
-	Capabilities []core.StatID            `json:"capabilities"`
-	Dispositions []core.StatID            `json:"dispositions"`
-	Defaults     map[core.StatID]float64  `json:"defaults"`
+	IDs          []core.StatID           `json:"ids"`
+	Capabilities []core.StatID           `json:"capabilities"`
+	Dispositions []core.StatID           `json:"dispositions"`
+	Defaults     map[core.StatID]float64 `json:"defaults"`
 }
 
 // TestGoldenRegistry loads the actual content/stats.yaml, builds a snapshot,

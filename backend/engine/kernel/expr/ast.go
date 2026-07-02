@@ -32,11 +32,11 @@ type node struct {
 	inferred Kind // set by typecheck; KindNum or KindBool
 
 	// leaf payloads (one is set per kind)
-	num      float64      // nLit
-	statID   core.StatID  // nStat
-	attrName core.Tag     // nAttr
-	predName string       // nPred
-	predArg  core.Tag     // nPred; "" for arity-0 predicates
+	num      float64     // nLit
+	statID   core.StatID // nStat
+	attrName core.Tag    // nAttr
+	predName string      // nPred
+	predArg  core.Tag    // nPred; "" for arity-0 predicates
 
 	// children
 	left  *node // nNot, nMul, nDiv, nAdd, nSub, nGT, nLT, nGTE, nLTE, nEQ, nNEQ, nAnd, nOr

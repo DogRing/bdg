@@ -781,10 +781,10 @@ const goldenPath = "testdata/golden/sequence_digest.json"
 
 // tomDigest is a serializable digest of a ToM's key state for golden regression testing.
 type tomDigest struct {
-	SelfID    core.AgentID                     `json:"self_id"`
-	Subjects  []core.AgentID                   `json:"subjects"`
-	Means     map[string]map[string]float64    `json:"means"`     // subject -> stat -> mean
-	Variances map[string]map[string]float64    `json:"variances"` // subject -> stat -> variance
+	SelfID    core.AgentID                  `json:"self_id"`
+	Subjects  []core.AgentID                `json:"subjects"`
+	Means     map[string]map[string]float64 `json:"means"`     // subject -> stat -> mean
+	Variances map[string]map[string]float64 `json:"variances"` // subject -> stat -> variance
 }
 
 func captureDigest(tomA tom.ToM, reg *stats.Registry) tomDigest {
@@ -1164,9 +1164,9 @@ func TestBestProviderFor_SelectsBest(t *testing.T) {
 
 	// Create three candidates with different strength/trust profiles.
 	for _, tc := range []struct {
-		id          core.AgentID
-		strength    float64
-		trust       float64
+		id       core.AgentID
+		strength float64
+		trust    float64
 	}{
 		{"X", 0.8, 0.9},
 		{"Y", 0.2, 0.3},

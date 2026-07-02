@@ -18,14 +18,14 @@ import (
 // It holds no simulation state; it reads Redis through the injected store and a minimal
 // read client (RedisReader) and serialises the result. All routes are registered in New.
 type Server struct {
-	live   persist.LiveStore // ReadSnapshot + key/shape contracts
-	rds    RedisReader       // PING, HGETALL agent hash, XREAD events, GET snapshot
-	gv     GodViewStore      // QueryEvents — the /api/god/why event source (Postgres); may be nil
-	keyer  persist.Keyer    // sim:{run}:* key strings (never hand-formatted)
-	runID  core.RunID       // which sim run to tail/query
-	godMode bool            // startup flag; gates real_stats on /api/agents/{id}?god=true AND all /api/god/*
-	mux    *http.ServeMux
-	addr   string
+	live    persist.LiveStore // ReadSnapshot + key/shape contracts
+	rds     RedisReader       // PING, HGETALL agent hash, XREAD events, GET snapshot
+	gv      GodViewStore      // QueryEvents — the /api/god/why event source (Postgres); may be nil
+	keyer   persist.Keyer     // sim:{run}:* key strings (never hand-formatted)
+	runID   core.RunID        // which sim run to tail/query
+	godMode bool              // startup flag; gates real_stats on /api/agents/{id}?god=true AND all /api/god/*
+	mux     *http.ServeMux
+	addr    string
 }
 
 // GodViewStore is the read-side of Postgres for /api/god/why queries.
@@ -36,9 +36,9 @@ type GodViewStore interface {
 
 // Config holds the API-layer knobs injected at construction.
 type Config struct {
-	Addr    string       // e.g. ":8080" from HTTP_ADDR env
-	RunID   core.RunID   // which sim run to tail/query
-	GodMode bool         // startup-only: enables real_stats on /api/agents/{id}?god=true
+	Addr    string     // e.g. ":8080" from HTTP_ADDR env
+	RunID   core.RunID // which sim run to tail/query
+	GodMode bool       // startup-only: enables real_stats on /api/agents/{id}?god=true
 }
 
 // RedisReader is the minimal Redis surface api needs for the read path.

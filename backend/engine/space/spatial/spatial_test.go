@@ -45,7 +45,7 @@ func TestNearbyEntities_RadiusFilter(t *testing.T) {
 		{
 			name: "just outside boundary",
 			entities: []Entity{
-				{ID: "inside", Pos: core.Vec2{X: 6, Y: 8}},   // dist = 10
+				{ID: "inside", Pos: core.Vec2{X: 6, Y: 8}},    // dist = 10
 				{ID: "outside", Pos: core.Vec2{X: 6, Y: 8.1}}, // dist ≈ 10.005 > 10
 			},
 			center:  core.Vec2{X: 0, Y: 0},
@@ -667,11 +667,11 @@ func TestFloorDiv(t *testing.T) {
 		{v: -8.1, invScale: 0.125, want: -2},  // floor(-1.0125) = -2
 		{v: -16.0, invScale: 0.125, want: -2}, // floor(-2.0) = -2
 		{v: 0.0, invScale: 0.25, want: 0},
-		{v: -1.0, invScale: 0.25, want: -1},  // floor(-0.25) = -1
-		{v: -2.0, invScale: 0.25, want: -1},  // floor(-0.5) = -1
-		{v: -3.0, invScale: 0.25, want: -1},  // floor(-0.75) = -1
-		{v: -4.0, invScale: 0.25, want: -1},  // floor(-1.0) = -1
-		{v: -5.0, invScale: 0.25, want: -2},  // floor(-1.25) = -2
+		{v: -1.0, invScale: 0.25, want: -1}, // floor(-0.25) = -1
+		{v: -2.0, invScale: 0.25, want: -1}, // floor(-0.5) = -1
+		{v: -3.0, invScale: 0.25, want: -1}, // floor(-0.75) = -1
+		{v: -4.0, invScale: 0.25, want: -1}, // floor(-1.0) = -1
+		{v: -5.0, invScale: 0.25, want: -2}, // floor(-1.25) = -2
 	}
 	for _, tc := range tests {
 		got := floorDiv(tc.v, tc.invScale)

@@ -291,10 +291,10 @@ func TestSalience_EqualsIntensityRatio(t *testing.T) {
 
 func TestComputeEffValue_Formula(t *testing.T) {
 	tests := []struct {
-		name            string
-		sal             Salience
-		expectedEffect  float64
-		want            EffValue
+		name           string
+		sal            Salience
+		expectedEffect float64
+		want           EffValue
 	}{
 		{name: "salience 0 -> 0", sal: 0.0, expectedEffect: 0.5, want: 0.0},
 		{name: "effect 0 -> 0", sal: 1.0, expectedEffect: 0.0, want: 0.0},
@@ -589,8 +589,8 @@ func TestIntegration_SatietyOverRest(t *testing.T) {
 	// would pick Satiety.
 	cfg := mustLoad(t)
 
-	satietyWeight := cfg.Weight("Satiety")  // 1.00
-	restWeight := cfg.Weight("Rest")        // 0.85
+	satietyWeight := cfg.Weight("Satiety") // 1.00
+	restWeight := cfg.Weight("Rest")       // 0.85
 
 	// Satiety: intensity = 0.8, threshold = 0.55 (need's Threshold)
 	// Standing = 1 - 0.8/0.55 = 1 - 1.4545... = clamped to 0
@@ -742,12 +742,12 @@ func TestDeriveReferentInput_OtherLowIntel(t *testing.T) {
 	cfg := &Config{OtherLowIntelThreshold: 0.5}
 
 	tests := []struct {
-		name                   string
-		perceivedIntelligence  float64
-		moodMean               float64
-		moodMax                float64
-		wantCurrentIntensity   float64
-		wantMaxIntensity       float64
+		name                  string
+		perceivedIntelligence float64
+		moodMean              float64
+		moodMax               float64
+		wantCurrentIntensity  float64
+		wantMaxIntensity      float64
 	}{
 		{
 			name:                  "low intel, negative mood → high intensity",
@@ -805,10 +805,10 @@ func TestDeriveReferentInput_OtherHighIntel(t *testing.T) {
 	cfg := &Config{OtherLowIntelThreshold: 0.5}
 
 	tests := []struct {
-		name                   string
-		perceivedIntelligence  float64
-		statMeans              map[core.StatID]float64
-		wantCurrentIntensity   float64
+		name                  string
+		perceivedIntelligence float64
+		statMeans             map[core.StatID]float64
+		wantCurrentIntensity  float64
 	}{
 		{
 			name:                  "high intel, all stats at max → no suffering",
@@ -943,28 +943,28 @@ func TestDeriveReferentInput_Collective(t *testing.T) {
 	ref := core.Referent{Kind: core.Collective, ID: "family"}
 
 	tests := []struct {
-		name          string
-		members       []ReferentInput
-		wantCurrent   float64
-		wantMax       float64
+		name        string
+		members     []ReferentInput
+		wantCurrent float64
+		wantMax     float64
 	}{
 		{
-			name:          "two members",
-			members:       []ReferentInput{{CurrentIntensity: 0.3, MaxIntensity: 1.0}, {CurrentIntensity: 0.7, MaxIntensity: 1.0}},
-			wantCurrent:   0.5,
-			wantMax:       1.0,
+			name:        "two members",
+			members:     []ReferentInput{{CurrentIntensity: 0.3, MaxIntensity: 1.0}, {CurrentIntensity: 0.7, MaxIntensity: 1.0}},
+			wantCurrent: 0.5,
+			wantMax:     1.0,
 		},
 		{
-			name:          "empty members",
-			members:       nil,
-			wantCurrent:   0,
-			wantMax:       0,
+			name:        "empty members",
+			members:     nil,
+			wantCurrent: 0,
+			wantMax:     0,
 		},
 		{
-			name:          "single member",
-			members:       []ReferentInput{{CurrentIntensity: 0.9, MaxIntensity: 0.8}},
-			wantCurrent:   0.9,
-			wantMax:       0.8,
+			name:        "single member",
+			members:     []ReferentInput{{CurrentIntensity: 0.9, MaxIntensity: 0.8}},
+			wantCurrent: 0.9,
+			wantMax:     0.8,
 		},
 	}
 

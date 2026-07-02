@@ -50,11 +50,11 @@ type Belief struct {
 // The self field records which SubjectID is the owning agent (ToM[self], D8),
 // and rates/reg store the injected configuration for all methods.
 type ToM struct {
-	self            core.AgentID    // owning agent's ID; used to enforce D8
-	belief          map[SubjectID]Belief
-	rates           Rates           // injected rate constants
-	reg             *stats.Registry // stat definitions for clamping and initial estimates
-	selfPerception  float64         // perception capability (typically Intelligence) governing initial uncertainty for unknown subjects
+	self           core.AgentID // owning agent's ID; used to enforce D8
+	belief         map[SubjectID]Belief
+	rates          Rates           // injected rate constants
+	reg            *stats.Registry // stat definitions for clamping and initial estimates
+	selfPerception float64         // perception capability (typically Intelligence) governing initial uncertainty for unknown subjects
 }
 
 // StatEvidence is one direct-observation datum: the outcome the observer
@@ -111,11 +111,11 @@ func DefaultRates() Rates {
 // rates.InitialBeliefNoise, producing the over/under-estimation asymmetry of D8.
 func NewToM(self core.AgentID, realStats stats.Stats, selfPerception float64, rng *rng.RNG, reg *stats.Registry, rates Rates) ToM {
 	t := ToM{
-		self:            self,
-		belief:          make(map[SubjectID]Belief),
-		rates:           rates,
-		reg:             reg,
-		selfPerception:  clamp(selfPerception, 0, 1),
+		self:           self,
+		belief:         make(map[SubjectID]Belief),
+		rates:          rates,
+		reg:            reg,
+		selfPerception: clamp(selfPerception, 0, 1),
 	}
 
 	estStats := make(map[core.StatID]StatDist, reg.Len())
@@ -279,7 +279,7 @@ func (t ToM) ReputationDist(subject core.AgentID, observers []Belief) map[core.S
 		}
 
 		mean := sum / float64(count)
-		variance := (sumSq / float64(count)) - (mean*mean)
+		variance := (sumSq / float64(count)) - (mean * mean)
 		if variance < 0 {
 			variance = 0
 		}

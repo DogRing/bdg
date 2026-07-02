@@ -62,11 +62,11 @@ gates:
 
 // goldenTestCase is one evaluate call in the golden snapshot.
 type goldenTestCase struct {
-	ActionTags     []string          `json:"action_tags"`
+	ActionTags     []string           `json:"action_tags"`
 	SelfStats      map[string]float64 `json:"self_stats"`
-	Visible        bool              `json:"visible"`
-	TraceLength    int               `json:"trace_length"`
-	TraceSummaries []gateSummary     `json:"trace,omitempty"`
+	Visible        bool               `json:"visible"`
+	TraceLength    int                `json:"trace_length"`
+	TraceSummaries []gateSummary      `json:"trace,omitempty"`
 }
 
 type gateSummary struct {
@@ -76,9 +76,9 @@ type gateSummary struct {
 
 // goldenDocument is the top-level golden snapshot shape.
 type goldenDocument struct {
-	GateIDs  []string          `json:"gate_ids"`
-	Reads    []string          `json:"reads"`
-	Results  []goldenTestCase  `json:"results"`
+	GateIDs []string         `json:"gate_ids"`
+	Reads   []string         `json:"reads"`
+	Results []goldenTestCase `json:"results"`
 }
 
 func TestGolden(t *testing.T) {
