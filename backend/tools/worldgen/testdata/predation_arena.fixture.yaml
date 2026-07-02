@@ -1,0 +1,73 @@
+# predation_arena.fixture.yaml — a SMALL forced-encounter arena for measuring predator-prey balance
+# (M3 cover-hiding + M4-a river refuge). NOT the demo world — a measurement bed (docs/fauna.md 클러스터 10,
+# balance step). Loaded by the fauna_arena balance harness (backend/tools/worldgen/fauna_balance_test.go).
+#
+# LAYOUT (8×8 navmap cells @ 12 units = 96×96): all soil except a RIVER down col 4 (x∈[48,60)) splitting
+# WEST (rabbits + berry_shrub thickets) from EAST (deer + an oak grove). One wolf starts among the rabbits
+# so encounters are FORCED (no spatial dilution) → many hunt attempts to measure hunt-success% against.
+# Cover is scattered so a fleeing prey is usually within reach of a thicket/grove (exercises M3), and the
+# river gives a fleeing prey a refuge the wolf avoids (exercises M4-a).
+
+schema_version: 1
+seed: 20260702
+
+bounds:
+  min: [0.0, 0.0]
+  max: [96.0, 96.0]
+
+terrain:
+  cols: 8
+  rows: 8
+  cells: [
+    soil, soil, soil, soil, river, soil, soil, soil,   # row 0
+    soil, soil, soil, soil, river, soil, soil, soil,   # row 1
+    soil, soil, soil, soil, river, soil, soil, soil,   # row 2
+    soil, soil, soil, soil, river, soil, soil, soil,   # row 3
+    soil, soil, soil, soil, river, soil, soil, soil,   # row 4
+    soil, soil, soil, soil, river, soil, soil, soil,   # row 5
+    soil, soil, soil, soil, river, soil, soil, soil,   # row 6
+    soil, soil, soil, soil, river, soil, soil, soil    # row 7
+  ]
+
+# ── Flora: WEST berry_shrub thickets (rabbit cover) + EAST oak grove (deer cover) + a little grass ──
+flora:
+  - { id: shrub_w1, species: berry_shrub, pos: [24.0, 42.0], length: 1.0, width: 0.8 }
+  - { id: shrub_w2, species: berry_shrub, pos: [30.0, 54.0], length: 1.0, width: 0.8 }
+  - { id: shrub_w3, species: berry_shrub, pos: [18.0, 60.0], length: 1.0, width: 0.8 }
+  - { id: shrub_w4, species: berry_shrub, pos: [36.0, 66.0], length: 1.0, width: 0.8 }
+  - { id: oak_e1, species: oak, pos: [78.0, 42.0], length: 8.0, width: 5.0 }
+  - { id: oak_e2, species: oak, pos: [84.0, 54.0], length: 8.0, width: 5.0 }
+  - { id: oak_e3, species: oak, pos: [72.0, 60.0], length: 8.0, width: 5.0 }
+  - { id: grass_w, species: grass, pos: [36.0, 30.0], length: 0.3, width: 0.2 }
+  - { id: grass_e, species: grass, pos: [66.0, 30.0], length: 0.3, width: 0.2 }
+
+# ── Animals: 1 wolf among the rabbits (forced hunt) + rabbits (west) + deer (east) ──
+animals:
+  - { id: wolf_1, species: wolf, pos: [33.0, 42.0], heading: 0.0 }
+  - { id: rabbit_1, species: rabbit, pos: [30.0, 36.0] }
+  - { id: rabbit_2, species: rabbit, pos: [36.0, 48.0] }
+  - { id: rabbit_3, species: rabbit, pos: [24.0, 30.0] }
+  - { id: rabbit_4, species: rabbit, pos: [42.0, 60.0] }
+  - { id: deer_1, species: deer, pos: [72.0, 36.0], heading: 3.14 }
+  - { id: deer_2, species: deer, pos: [78.0, 66.0], heading: 3.14 }
+  - { id: deer_3, species: deer, pos: [66.0, 48.0], heading: 3.14 }
+
+animal_templates:
+  rabbit:
+    stats: { Strength: 18, Agility: 85 }
+    drives: { hunger: 0.90, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  deer:
+    stats: { Strength: 45, Agility: 70 }
+    drives: { hunger: 0.88, fatigue: 0.05, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  wolf:
+    stats: { Strength: 78, Agility: 82 }
+    drives: { hunger: 0.96, fatigue: 0.02, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Hunt
