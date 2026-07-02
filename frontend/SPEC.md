@@ -1,259 +1,282 @@
 # SPEC — `frontend`
 
-> Status: `DRAFT`
+> Status: `APPROVED` (ecosystem render phase; plan: `docs/frontend-plan.md`, Q1–Q8 RESOLVED 2026-07-02)
 > Leaf level: `L10` (depends only on the HTTP boundary of `platform/api` — SSE + REST endpoints)
-> Language: **TypeScript** (no Go). Bundled with Vite. No framework.
+> Language: **TypeScript + React 19** (Vite). The viewer is a component tree, not vanilla DOM.
+> Children (referenced, not restated): [`src/render/SPEC.md`](src/render/SPEC.md) ·
+> [`src/assets/SPEC.md`](src/assets/SPEC.md) · [`dev/SPEC.md`](dev/SPEC.md)
 
 ## Purpose
 
 A **god's-eye simulation viewer**: connect to the running backend via SSE and REST, render the live
-world state in a browser tab, and expose a filterable event log. This is a read-only observer tool —
-no simulation controls, no auth beyond same-origin. The goal is to watch agents wander, gossip,
-form reliance clusters, and shift power in real time; a simple 2D map plus a scrolling narrative log
-suffices for P1.
+world state in a browser tab, and expose a filterable event log. Read-only observer — no simulation
+controls beyond a local view pause, no auth beyond same-origin. The goal is to watch the **social
+layer** (agents wander, gossip, form reliance clusters, shift power) AND the **ecosystem layer**
+(river/grass/forest terrain, plants growing and dying, animals grazing / fleeing / hunting with
+visible **movement, attack, and death motion**, weather + wind + day-night) in real time, on one
+2D map plus a scrolling narrative log.
+
+> **Implementation status:** the data/state layer (types + `useWorld` reducer + `useSSE`) is built.
+> The render layer is the current work — specified across this file (state/UI contract) and the
+> child SPECs (`src/render` draw/camera/motion, `src/assets` manifest/spritesheets, `dev` mock +
+> asset generator). The hardcoded decorative terrain mockup in the old `utils/canvasRenderer.ts` is
+> **deleted** by this phase. Backend `WorldFrame` emission (WI-P4) and `GET /api/terrain` do not
+> exist yet; until they do, development runs against `dev/mock-server.mjs` and the live viewer
+> renders social-only (env-off neutrality below).
 
 ## Backend Contract (what the frontend reads)
 
-All data comes from `platform/api` endpoints (see `backend/platform/api/SPEC.md`). Frontend never
-reads Redis or Postgres directly.
+All data comes from `platform/api` endpoints (`backend/platform/api/SPEC.md`). The frontend never
+reads Redis or Postgres directly and never sends god-view (`?god=true`).
 
 ### SSE stream — `GET /sse`
-Primary real-time channel. Each message is:
+Primary real-time channel. Each message is one `core.Event` (data-contracts §4):
 ```
 data: {"schema_version":1,"tick":42,"seq":0,"agent_id":"farmer_1","type":"ActionDone","payload":{...}}\n\n
 ```
-The `type` field determines how the event is rendered. The frontend handles these types:
+`type` selects how the event is reduced + rendered. `src/hooks/useWorld.ts` (`applyEvent`) +
+`src/utils/eventFormatter.ts` (`formatEvent`) handle these; unknown types log as raw JSON and are
+otherwise ignored.
 
-| `type` | Payload fields (gist) | UI treatment |
+| `type` | Payload (gist) | Treatment |
 |---|---|---|
-| `TickDone` | `tick` | Advance the tick counter; may trigger a position refresh |
-| `GoalSelected` | `dimension, target, eff_value` | Log line: "🎯 farmer_1 → Satiety (berry_bush_1)" |
-| `PlanBuilt` | `steps[], total_cost` | Log line (detail level): plan steps |
-| `ActionStarted` | `action` | Move dot to destination; log line |
-| `ActionDone` | `action, result` | Log line |
-| `Interacted` | `with, signal_kind, claimed_value` | Log line: "💬 farmer_1 → guard_1 (gossip)" |
-| `BeliefUpdated` | `about, stat, old, new, cause` | Log line (detail level) |
-| `ReputationGossip` | `about, from, trust, delta` | Log line: "🗣 farmer_1 heard about guard_1" |
-| `RoleEmerged` | `function, holder, reliance_share` | Banner: "👑 guard_1 is now Safety holder" |
-| `CopingEntered` | `mode` | Log line: "😶 farmer_1 → Apathy" |
+| `TickDone` | `tick, agents[]{id,pos,goal,action,mood}` | Per-tick **agent** render frame: merge agent pos/goal/mood/action; advance tick. Returns early (no log line) |
+| `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge agent + animal positions (keeping prev values for interpolation), flora stage deltas (grow FX on stage increase), terrain deltas, ambient weather. Returns early (no log line) |
+| `GoalSelected` | `dimension, target, eff_value` | Set agent goal; log "🎯 farmer_1 → Satiety" |
+| `PlanBuilt` | `steps[], total_cost, provisioned[]` | Log (detail) |
+| `ActionStarted` / `ActionDone` | `action, pos? / action, result` | Move agent dot (if `pos`); log |
+| `Interacted` | `with, signal_kind, claimed_value, accepted` | Log "💬 farmer_1 → guard_1 (gossip)" |
+| `BeliefUpdated` | `about, stat, old, new, cause` | Mood drift; log (detail) |
+| `ReputationGossip` | `about, from, trust, delta` | Log "🗣 …" |
+| `RoleEmerged` | `function, holder, reliance_share` | Update `roles`, tag holder cluster; banner/log "👑 guard_1 Safety holder" |
+| `CopingEntered` | `mode` | Set coping mode; log "😶 → Apathy" |
+| `Decayed` / `Crafted` / `Mined` / `ToolBroke` | (Materials, data-contracts §4) | Log line |
+| `AnimalBorn` / `AnimalDied` | `object_id, species, pos / cause` | Add / remove an animal **+ enqueue spawn / death FX**; log (WI-P4) |
+| `PlantSpawned` / `PlantDied` | `object_id, species, pos` | Add / remove a plant **+ enqueue spawn / death FX**; log (WI-P4) |
 
-Unknown `type` values are logged as raw JSON at the detail level and otherwise ignored.
+### Env render channel — `WorldFrame` (WI-P4, data-contracts §4/§10)
+Once the env subsystem is installed backend-side, the world streams a periodic **`WorldFrame`** —
+the graphics frame carrying agent + animal positions/actions, flora **stage** deltas, terrain
+deltas, and the ambient weather. Wire shape (snake_case; `WorldFramePayload` in `src/types.ts`):
+```ts
+{ tick, hour_of_day, day_night:'day'|'night', temperature, apparent_temp?, raining,
+  wind:{dir, mag},
+  agents:[{id, pos, action}],
+  animals:[{id, pos, species, action, heading}],
+  flora_delta:[{id, pos, stage}],
+  terrain_delta:[{cell, terrain?, wear?}] }
+```
+The reducer stores it into `WorldState.animals` / `flora` / `climate` / `terrain`, and — for motion
+— shifts each entity's previous `pos/heading` + arrival timestamp into `prevPos/prevHeading/
+prevFrameAtMs` so the render layer can interpolate between frames at any streaming cadence
+(`src/render/SPEC.md` §animator). **God-view (`real_stats`/`drives`/`stats`) is NEVER in a
+`WorldFrame`.** Derived display values arrive ready-to-render: `day_night`, `stage`,
+`apparent_temp`. When env is OFF no `WorldFrame` is emitted and the env slices stay empty.
 
 ### REST endpoints (initial load)
-- `GET /api/snapshot` — full world state blob on page load. Extracts agent positions and tick.
-- `GET /api/agents/{id}` — optional: fetch a single agent's live state on click.
+- `GET /api/snapshot` — full world blob on page load (`loadSnapshot` in `useWorld.ts`): tick,
+  agents (`{id,pos,goal,action,mood}`), placed objects (`{id,kind,pos}`).
+- `GET /api/terrain` — **initial terrain grid** (plan Q5; *pending backend SPEC delta on
+  `platform/api`*): `{cell_size, size:{w,h}, terrain:[…], wear?:[…]}` fetched once at connect;
+  kept current by SSE `terrain_delta`. Until the endpoint exists, `terrain` stays `null` and no
+  terrain layer draws.
+- `GET /api/agents/{id}` — optional: a single agent's live state on click.
+- World-geometry (bounds + `pixelsPerUnit`) → `RenderConfig` — anchors the initial camera;
+  `null` until fetched (auto-fit fallback).
 
-God-view routes (`/api/god/*`) and `?god=true` are **out of scope for P1**. The frontend never
-sends `?god=true` (no `real_stats`, no divergence/reputation/relations). They are P2+ once a
-deploy-flag-gated mode is added.
+God-view routes (`/api/god/*`, `?god=true`) are **out of scope** (no `real_stats`, divergence,
+reputation, or relations display).
 
 ## UI Layout
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  bdg  ·  tick 42  ·  agents 8  ·  ● LIVE          │  ← StatusBar
-├───────────────────────────┬─────────────────────────┤
-│                           │  EVENT LOG              │
-│     2D WORLD CANVAS       │  ─────────────────────  │
-│                           │  [filter: all ▾]        │
-│  · farmer_1 (satiety)     │  TickDone 42            │
-│  · guard_1  (safety)      │  🎯 farmer_1 → Satiety  │
-│       ↳ cluster_guard_1   │  💬 farmer_1 → guard_1  │
-│  · blacksmith_1 (rest)    │  👑 guard_1 Safety hld  │
-│                           │  😶 elder_1 → Apathy    │
-│                           │  [load more…]           │
-└───────────────────────────┴─────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│  bdg · tick 42 · 8 agents · 6 fauna · ☀ 14°C · ● LIVE      │  ← Header
+├───────────────────────────────┬───────────────────────────┤
+│   WorldCanvas (zoom/pan/      │  Sidebar                  │
+│                follow camera) │  ┌─ AgentDetail (click) ──┐│
+│  ≈≈ river   ▒ forest          │  └────────────────────────┘│
+│  · farmer_1 (satiety)         │  EventLog                  │
+│  ▷ deer (walk→run, flee)      │  [filter: all ▾]           │
+│  ▶ wolf (attack lunge)        │  TickDone 42               │
+│  ♣ oak (stage 3, grow fx)     │  🐺 wolf_1 killed deer_2   │
+│  ~wind→  ☂rain   ◐dusk        │  🎯 farmer_1 → Satiety     │
+└───────────────────────────────┴───────────────────────────┘
 ```
 
-- **StatusBar** (top strip): run id, tick counter, agent count, connection indicator.
-- **WorldCanvas** (left, 70% width): HTML5 Canvas. Agents as labeled dots. Reliance cluster shown as
-  a dim hull (convex polygon) around cluster members. Faction colour comes from the cluster holder's
-  `faction_id` hash. Clicking a dot opens an agent detail tooltip.
-- **EventLog** (right, 30% width): scrolling div. Newest events at top. Filter dropdown: `all`,
-  `social` (Interacted/Gossip/ReputationGossip), `goals` (GoalSelected/PlanBuilt), `roles`
-  (RoleEmerged/CopingEntered), `actions` (ActionStarted/ActionDone). Max 500 entries; older entries
-  are trimmed.
+- **Header** (`components/Header.tsx`): run id, tick, agent count, fauna count + ambient weather
+  chip (day-night icon, temperature + `apparentTemp`, rain/wind), connection badge, theme + pause
+  toggles.
+- **WorldCanvas** (`components/WorldCanvas.tsx`, left, flex-1): HTML5 Canvas, RAF render loop.
+  Draws (back→front) terrain → flora → placed objects → animals → agents → fx → ambient. **Camera
+  (plan Q6): wheel zoom (cursor-anchored), drag pan, click an entity to select + follow it**;
+  empty click deselects. Input handlers dispatch pure camera reducers (`src/render/SPEC.md`).
+- **Sidebar** (`components/Sidebar.tsx`, right): `AgentDetail` (selected agent; a followed
+  *animal* shows no detail panel) over `EventLog` (scrolling, filtered, newest-first, ≤500).
 
 ## Module Structure
 
 ```
 frontend/
-  index.html          HTML shell (no framework; single <div id="app">)
-  package.json        Vite + typescript devDeps only
-  tsconfig.json
-  vite.config.ts      base: "/" (prod) or proxy to :8080 (dev)
+  index.html              shell: <div id="root">
+  package.json            React 19 + Vite + TS
+  vite.config.ts          dev proxy /sse + /api → :8080 (or dev/mock-server.mjs)
+  public/assets/          PNG spritesheets — fauna/<species>.png, flora/<species>.png
+                          (layout + example files: src/assets/SPEC.md + dev/SPEC.md)
+  dev/                    mock-server.mjs + generate-spritesheets.mjs   → dev/SPEC.md
   src/
-    main.ts           Entry: creates modules, wires SSE, triggers snapshot load
-    types.ts          TypeScript event + world types (mirror core.Event, AgentView shapes)
-    sse.ts            EventSource wrapper: connect, reconnect backoff, dispatch by type
-    world.ts          AgentState map, tick counter, role-holder registry — pure state, no DOM
-    canvas.ts         WorldCanvas: renders world.ts state onto <canvas>; redraws on world change
-    log.ts            EventLog: DOM list, filter, trim — appends from SSE dispatch
-    api.ts            fetchSnapshot(url) → WorldSnapshot; fetchAgent(id) → AgentView
-    status.ts         StatusBar: tick / agent count / connection badge DOM update
+    main.tsx              entry
+    App.tsx               root: theme, useWorld(), useSSE(), sprite cache creation, layout
+    config.ts             API_BASE
+    theme.ts              LIGHT / DARK ThemeTokens
+    types.ts              all shapes (below)
+    hooks/
+      useSSE.ts           EventSource wrapper: connect, reconnect backoff, dispatch by type
+      useWorld.ts         useReducer state machine (applyEvent + reducer) + loadSnapshot/loadTerrain
+    components/
+      Header.tsx          status strip
+      WorldCanvas.tsx     canvas + RAF + ResizeObserver + camera input (wheel/drag/click)
+      Sidebar.tsx         AgentDetail + EventLog container
+      EventLog.tsx        scrolling list, filter, trim
+      AgentDetail.tsx     selected-agent panel
+    render/               pure draw / camera / animation layer          → src/render/SPEC.md
+    assets/               manifest (data tables) + spritesheet cache    → src/assets/SPEC.md
+    utils/
+      eventFormatter.ts   formatEvent(ev) → LogEntry | null
 ```
+`src/utils/canvasRenderer.ts` is **deleted** (absorbed into `src/render/`). State lives in the
+`useWorld` reducer (single source of truth, passed down as props); the camera is component state in
+`WorldCanvas` driven by pure reducers. No module-level mutable singletons; no `window.*` stores.
 
-## Types (key shapes, `src/types.ts`)
+## Key Types (`src/types.ts`)
 
-```typescript
-// Mirrors core.Event (data-contracts §4)
-export interface SimEvent {
-  schema_version: number;
-  tick: number;
-  seq: number;
-  agent_id: string | null;
-  type: string;
-  payload: Record<string, unknown>;
-}
-
-// Mirrors persist.AgentView (data-contracts §2)
-export interface AgentView {
-  id: string;
-  pos: { x: number; y: number };
-  goal: string;       // dimension string
-  action: string;
-  mood: number;
-}
-
-// Frontend-only: enriched agent state maintained in world.ts
-export interface AgentState extends AgentView {
-  cluster: string | null;       // "cluster_<holder>" or null
-  copingMode: string | null;    // current CopingEntered.mode or null
-}
-
-// Role/reliance cluster (from RoleEmerged events)
-export interface RoleHolder {
-  function: string;
-  holder: string;
-  relianceShare: number;
-}
+`SimEvent`, `AgentState`, `WorldObject`, plus the env/motion shapes:
+```ts
+interface AnimalState  { id; pos; species; action; heading; stamina;
+                         prevPos; prevHeading; frameAtMs; prevFrameAtMs }   // interpolation (Q3)
+interface PlantState   { id; pos; species; stage; width }
+interface ClimateState { temperature; apparentTemp|null; moisture; raining;
+                         windDir; windMag; hourOfDay; dayNight:'day'|'night'; yearFraction }
+interface TerrainGrid  { cellSize; w; h; terrain:string[]; wear?:Float32Array }  // /api/terrain + deltas
+interface FxInstance   { kind:'spawn'|'death'|'attack'|'grow'; at:ms; pos; id; species?; heading? }
+interface RenderConfig { bounds:{min,max}; pixelsPerUnit }
+interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connectionStatus;
+                         selectedEntity:{kind:'agent'|'animal', id}|null; paused; food; wood;
+                         animals:Map; flora:PlantState[]; climate:ClimateState|null;
+                         terrain:TerrainGrid|null; fx:FxInstance[]; render:RenderConfig|null }
 ```
+`Pose`, `CameraState`, and manifest types are owned by the children (`src/assets/SPEC.md`,
+`src/render/SPEC.md`).
 
-## SSE Connection Logic (`src/sse.ts`)
+## SSE Connection (`src/hooks/useSSE.ts`)
 
-- Open `new EventSource("/sse")`.
-- On `message`: parse JSON → `SimEvent`, dispatch to `world.applyEvent(ev)`, `log.append(ev)`,
-  `status.update(ev)`.
-- On `error`: set status badge to ⚠ RECONNECTING; wait `min(2^retries × 500ms, 30s)` then
-  reconnect (capped exponential backoff). Reset retry counter on successful first message.
-- Do **not** pass `?lastEventID`; the stream starts from `$` and the viewer is a live tail only
-  (no replay on reconnect for P1 — the event log shows the gap as a timestamp break line).
-- `EventSource` is a native browser API; no polyfill required for modern browsers.
+- Open `new EventSource(\`${API_BASE}/sse\`)`. On `message`: `JSON.parse` → `SimEvent` → dispatch.
+- On `open`/first message: `setConnection('live')`. On `error`: `'reconnecting'`, retry after
+  `min(2^retries × 500ms, 30s)`; reset on success. Live tail only — no replay; a reconnect gap
+  shows as a break in the log. Decode once; no re-stringify for display.
 
-## Canvas Rendering (`src/canvas.ts`)
+## Rendering & Motion (contract summary — detail in `src/render/SPEC.md`)
 
-- Coordinate system: the world is free 2D (no tiles, D11). Map agent `pos.x/pos.y` linearly to
-  canvas pixels. If the world bounds are not yet known (before snapshot), auto-fit to observed
-  positions.
-- **Agent dot**: filled circle, radius 8px. Colour = cluster colour (hashed from holder id) or
-  grey if unclustered. Label = agent `id` above the dot.
-- **Cluster hull**: dim semi-transparent convex hull polygon around all agents in the same cluster.
-  Computed on each redraw when cluster membership changes.
-- **Goal arrow**: thin line from agent's current pos toward the recorded `goal` dimension direction
-  (conceptual, not geographic; skip if no current positional target is known).
-- Redraw on: `world.change` event (a custom EventTarget dispatch from world.ts whenever state
-  mutates). Use `requestAnimationFrame` — do not redraw in the SSE message handler directly.
-- On canvas click: find nearest agent within 15px radius; show tooltip (`id, goal, action, mood,
-  cluster`) near the click point. Clear tooltip on next click elsewhere.
+- **One shared world→canvas transform** built from `CameraState` (center/zoom/follow) — all layers
+  (terrain, flora, objects, animals, agents, fx) map through it (D11: continuous coords, never
+  tiled/snapped). Camera: init from `RenderConfig` (auto-fit until fetched), then zoom/pan/follow.
+- **RAF loop** (`WorldCanvas`): redraw on state change *or* while any animation is live (env
+  entities, fx queue non-empty, follow active); `performance.now()` is sampled once per frame at
+  the loop boundary and passed into the pure render fns as `clockMs`. Never draw in the SSE handler.
+- **Motion**: entity positions/headings interpolate between the last two SSE frames (adaptive
+  lerp, plan Q3); animals draw a spritesheet frame chosen by `species × pose × clockMs`, where
+  pose = data-driven mapping of the open-content `action` (plan Q2; `hunt/attack→attack` is the
+  **attack motion**), rotated by heading, dimmed by stamina.
+- **Transition FX** (plan Q4): the reducer appends `FxInstance`s on lifecycle events / attack-pose
+  entry / stage increase; the render layer evaluates them time-parametrically (spawn fade-in,
+  **death fade + corpse ~1.5 s**, attack lunge, grow tween) and the reducer prunes expired ones.
+- **Terrain**: `GET /api/terrain` + `terrain_delta` → offscreen raster in data-driven flat colours
+  (river/grass/forest = `water/plain/forest` TerrainIDs), wear trails overlay. The old hardcoded
+  decorative map is gone.
+- **Ambient**: day-night tint, temperature vignette, rain, wind arrow from `ClimateState`.
+- **Scent field**: NOT streamed (derived, data-contracts §10) — no render.
 
-## Event Log (`src/log.ts`)
+## Event Log (`src/components/EventLog.tsx` + `utils/eventFormatter.ts`)
 
-- Render as `<ul>` with fixed max height + `overflow-y: scroll`.
-- Each entry: `[tick] icon type: human-readable summary`. Icon is a single emoji per event type
-  (see type table above). Unknown types: `⁉`.
-- Human-readable summaries are generated in `log.ts`; they read the `payload` fields directly.
-  No translation layer needed — the payload is already JSON with canonical names from the glossary.
-- Filter: a `<select>` above the list; changing it re-filters the in-memory `entries[]` array
-  and re-renders. The array itself is always unfiltered (filter is display-only).
-- Trim: if `entries.length > 500`, remove the oldest 100 entries.
-- Scroll: when a new entry arrives and the list is already scrolled to the top (newest-first), keep
-  it pinned. If the user has scrolled down (reading history), do not auto-scroll.
-
-## Public Interface (none — this is a leaf)
-
-The frontend exposes no API. It is a browser app; the backend is the source of truth. The only
-"public interface" is the set of backend endpoints it reads (listed above in Backend Contract).
+- Scrolling list, newest-first; `[tick] icon summary` + variant colour. `formatEvent` reads payload
+  fields directly (glossary names); unknown types → `⁉` raw.
+- Filter: `all`, `social`, `goals`, `roles`, `actions`, **`ecosystem`
+  (AnimalBorn/AnimalDied/PlantSpawned/PlantDied)**. Display-only over the in-memory array.
+- Trim: `> 500` entries → slice to 400 (drop oldest).
 
 ## Invariants
 
-- **Read-only.** The frontend never sends POST/PUT/DELETE. All mutations go through the simulation
-  itself (the engine is the single writer, D12).
-- **No god-view for P1.** `?god=true` is never sent; `real_stats` is never displayed. The viewer
-  is a mortal observer: it sees `goal`, `action`, `mood`, and social events — not the hidden
-  `RealStats`.
-- **Reconnect on failure.** If SSE drops, the UI shows a warning and retries. It never requires
-  a page reload.
-- **No global mutable state.** All shared state lives in `world.ts` (exported singleton). No
-  `window.*` stores, no module-level `let` outside the singleton. Canvas and log receive the
-  singleton via dependency injection in `main.ts`.
-- **SSE payload bytes are not re-serialised.** The frontend decodes once (`JSON.parse`) and reads
-  the parsed object. No re-stringification for display (format human strings directly from the
-  parsed payload fields).
-- **Tick counter only advances.** `world.tick` only increases (or stays the same on out-of-order
-  delivery). If `ev.tick < world.tick`, update state but do not decrement the displayed tick.
+- **Read-only.** No POST/PUT/DELETE; the local pause toggle freezes the *view* reducer only.
+- **No god-view.** `?god=true` never sent; `real_stats`/`drives`/`stats` never read or displayed —
+  not for agents, not for animals.
+- **Reconnect on failure.** SSE drop → badge + capped-backoff retry; never a page reload.
+- **Single source of truth.** All world state (incl. `fx[]`, `terrain`, interpolation fields) is
+  the `useWorld` reducer value; camera state is one `CameraState` in the canvas component. No
+  `window.*`, no module-level mutable state outside pure render helpers (see child invariants).
+- **Render purity.** Render/animator fns are pure `(state, camera, clockMs) → pixels`; sprite
+  cache injected; no `Math.random`/wall-clock reads inside (child SPECs own the guards).
+- **Data-driven content mapping (D10 mirror).** species/ActionID/TerrainID → sprite/pose/colour
+  only via the assets manifest + fallback chain; unknown content renders a fallback, never throws.
+- **Decode once.** Parse the SSE payload once; format from parsed fields.
+- **Tick counter only advances.**
+- **One world transform (D11).** Every layer shares one `buildTransform` per frame.
+- **Env-off neutrality.** No `WorldFrame`/terrain streamed ⇒ env slices empty ⇒ canvas + Header
+  render exactly as the social-only viewer.
 
-## Acceptance Criteria (testable)
+## Acceptance Criteria (parent-level; per-layer ACs live in the child SPECs)
 
-> P1: all tests are browser smoke-tests / Vitest unit tests (no Playwright for P1).
+> Vitest on the reducer + integration of pure render helpers; browser smoke via `dev/mock-server.mjs`.
 
-- [ ] **SSE connect**: `sse.ts` opens `EventSource("/sse")`; on the first `message` event, the
-  status badge changes from ⚠ CONNECTING to ● LIVE and the tick counter updates.
-- [ ] **SSE reconnect**: close the `EventSource` and verify `sse.ts` reopens it within 2× the
-  backoff window; status badge shows ⚠ RECONNECTING during the gap.
-- [ ] **Event log filter**: `GoalSelected` events appear under filter `goals` and `all`; they do
-  NOT appear under filter `social`.
-- [ ] **Event log trim**: adding 600 entries to an EventLog instance trims to ≤ 500 (oldest 100
-  removed); the newest entry is still present.
-- [ ] **World state — agent position**: dispatching an `ActionStarted` event with `pos` in payload
-  updates `world.agents[id].pos`; the canvas re-requests a `requestAnimationFrame` redraw.
-- [ ] **RoleEmerged**: dispatching `RoleEmerged{function:"Safety", holder:"guard_1"}` updates
-  `world.roles` and assigns `cluster = "cluster_guard_1"` to all agents with `RelyOn.Safety` >0
-  on their next `BeliefUpdated` / snapshot refresh.
-- [ ] **Canvas hit-test**: clicking within 15px of a known agent's canvas position shows the
-  tooltip with the agent's `id`, `goal`, `action`, `mood`; clicking elsewhere clears it.
-- [ ] **No `real_stats` leak**: a snapshot blob that contains `real_stats` inside an agent entry
-  does not display it; `api.ts` only reads `id`, `pos`, `goal`, `action`, `mood`.
+- [ ] **SSE connect/reconnect** — `useSSE` opens `EventSource("/sse")`; first message → `live`;
+  forced error → reopen within 2× backoff showing `reconnecting`.
+- [ ] **TickDone agent frame** — updates `agents[id].pos`, no log line.
+- [ ] **WorldFrame env reduce + motion fields** — a second `WorldFrame` for the same animal moves
+  `pos→prevPos`, `heading→prevHeading`, stamps `frameAtMs/prevFrameAtMs`; merges flora (by id),
+  terrain deltas (grid object replaced), climate; ignores injected god-view fields.
+- [ ] **Fx queue** — `AnimalDied` removes the animal AND appends `{kind:'death'}` with its last
+  pos/species/heading; a flora `stage` increase appends `grow`; an animal whose pose enters
+  `attack` appends `attack` once (not every frame); expired fx are pruned by a later reduce.
+- [ ] **Event log filter + trim** — `AnimalDied` under `ecosystem`/`all`; 600 entries → ≤ 500.
+- [ ] **RoleEmerged** — updates `roles`, tags holder cluster.
+- [ ] **Selection + follow** — clicking an agent selects it (detail panel) and the camera follows;
+  clicking an animal follows without a detail panel; empty click / manual pan clears follow.
+- [ ] **No `real_stats` leak** — snapshot/event carrying god-view fields never displays them.
+- [ ] **Env-off neutrality** — with no `WorldFrame`/terrain, canvas + Header byte-match the
+  social-only render.
+- [ ] **Mock smoke** — against `dev/mock-server.mjs`: river/grass/forest terrain visible, deer
+  walk→run→flee motion, wolf attack lunge, a death fade + corpse, a plant grow tween, day-night +
+  rain ambient — with zero `src/` changes when later pointed at the real backend.
 
 ## Out of Scope (P2+)
 
-- **God-view mode** (`?god=true`, divergence/reputation/relations display) — requires a deploy-flag
-  and auth layer; deferred.
-- **Time scrubbing / replay** — the SSE stream is live-only for P1. A replay mode would require
-  `/api/snapshot` history or a separate event-replay endpoint.
-- **Social graph panel** (force-directed graph of `/api/god/relations`) — P2; needs god-view.
-- **Writing / player controls** — the frontend is read-only; no input to the engine is planned.
-- **Mobile layout** — two-panel layout is desktop-only for P1.
-- **Authentication / CORS** — handled at the gateway (`platform/auth` / nginx); the frontend is
-  same-origin in production.
+- **God-view mode** (`?god=true`, divergence/reputation/relations, real_stats/drives panels).
+- **Time scrubbing / replay** — SSE is live-only.
+- **Scent / cost-field / navmap debug overlays** (not streamed; needs dedicated endpoints).
+- **Social graph panel**; **player controls / writes**; **mobile layout**; **auth/CORS** (gateway).
+- **Backend work**: `WorldFrame` emission (WI-P4) and the `GET /api/terrain` server route —
+  tracked in `docs/frontend-plan.md` (Q5 pending backend SPEC delta on `platform/api`).
 
 ## Build & Dev
 
 ```bash
-# install
 cd frontend && npm install
-
-# dev server (proxies /sse, /api/* to localhost:8080)
-npm run dev
-
-# production build → frontend/dist/
-npm run build
+npm run dev                        # Vite dev server; proxies /sse + /api/* → :8080
+node dev/mock-server.mjs           # contract-parity fake backend on :8080 (dev/SPEC.md)
+node dev/generate-spritesheets.mjs # regenerate placeholder PNG assets
+npm run build                      # static bundle → frontend/dist/
 ```
-
-`vite.config.ts` in dev mode proxies `/sse` and `/api` to `http://localhost:8080` so the backend
-can run separately. The production build is a static bundle (`dist/`) served by nginx (see
-`deploy/k8s/` for the ingress config).
 
 ## Notes
 
-- **Why Vite + vanilla TypeScript, no framework?** The UI is two panels plus a canvas; no routing,
-  no forms, no server-side rendering. A framework would add dead weight. Vanilla TS + DOM is the
-  minimal viable surface; the module split gives the same separation of concerns as a component
-  tree.
-- **Why newest-first in the log?** The most interesting events are the latest ones. Oldest-first
-  requires constant scrolling; newest-first keeps the interesting content at eye level.
-- **Cluster colour hashing**: `hash(holder_id) % PALETTE_SIZE` where `PALETTE` is a set of 8
-  distinguishable colours. Agents with no cluster get a neutral grey. The palette is fixed in
-  `canvas.ts` (not data-driven) — for P1 there are at most a handful of roles.
-- **Coordinate fit**: the world has no declared bounds (D11). The canvas auto-scales to the
-  bounding box of all known agent positions, with 10% padding. If all agents are at the same
-  point (initial state), show a 200×200 unit default view.
+- **Why React (not vanilla)?** Header chip, selectable detail, filtered log, theming, and the env
+  reducer benefit from component state + a single `useReducer`; render stays pure fns.
+- **Ambient FX is the visible cause of fauna behaviour.** Temperature drives the fauna `thermal`
+  slowdown (F35/F40), wind drives scent spread + upwind homing (F33) — rendering them makes the
+  ecosystem legible. Keep the overlay readable, not overwhelming.
+- **Motion is client-side presentation only.** Interpolation, poses, and FX never feed back into
+  state or imply simulation semantics; the sim's truth is the streamed frames (D12 stays intact).
+- **Cluster colour hashing**: `hash(holder_id) % PALETTE_SIZE`; unclustered = neutral grey.
+- Reference: `backend/platform/api/SPEC.md` (endpoints), `docs/data-contracts.md §2/§4/§10`,
+  `backend/engine/fauna/SPEC.md` (heading/action/species are open content),
+  `backend/engine/env/flora/SPEC.md` (stage/width), `backend/engine/env/climate/SPEC.md`,
+  `docs/frontend-plan.md` (phases FE-P1…P5 + resolved decisions Q1–Q8).

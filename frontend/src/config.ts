@@ -7,5 +7,7 @@ declare global {
 }
 
 // SSE_URL is the base origin (e.g. "https://sse.dogring.kr"); append the path here.
-export const SSE_URL = (window.__ENV?.SSE_URL ?? '') + '/sse'
-export const API_BASE = window.__ENV?.API_URL ?? ''
+// Guarded so modules importing this stay loadable without a DOM (vitest/node).
+const env = typeof window !== 'undefined' ? window.__ENV : undefined
+export const SSE_URL = (env?.SSE_URL ?? '.') + '/sse'
+export const API_BASE = env?.API_URL ?? '.'
