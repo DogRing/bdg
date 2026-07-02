@@ -55,6 +55,8 @@ type worldDoc struct {
 		StaminaDropThreshold   float64 `yaml:"stamina_drop_threshold"`
 		StaminaDrainPerTick    float64 `yaml:"stamina_drain_per_tick"`
 		StaminaRecoverPerTick  float64 `yaml:"stamina_recover_per_tick"`
+		FatiguePursuitPerTick  float64 `yaml:"fatigue_pursuit_per_tick"`
+		FatigueRecoverPerTick  float64 `yaml:"fatigue_recover_per_tick"`
 		VitalRegenPerTick      float64 `yaml:"vital_regen_per_tick"`
 		VitalCapDamageFraction float64 `yaml:"vital_cap_damage_fraction"`
 		RespawnCadence         int     `yaml:"respawn_cadence"`

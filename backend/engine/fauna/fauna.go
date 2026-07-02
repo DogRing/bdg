@@ -112,6 +112,8 @@ type CombatParams struct {
 	StaminaDropThreshold   float64
 	StaminaDrainPerTick    float64 // stamina spent per tick while engaged in combat (FC6 / scenario #8)
 	StaminaRecoverPerTick  float64 // stamina regained per tick while not engaged
+	FatiguePursuitPerTick  float64 // fatigue gained per tick during a high-effort chase/flight (M2 endurance)
+	FatigueRecoverPerTick  float64 // fatigue shed per tick while resting/low-effort
 	VitalRegenPerTick      float64
 	VitalCapDamageFraction float64
 }

@@ -139,6 +139,30 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	a.NextExchangeTick = intent.NextExchangeTick
 	a.EngageCooldownUntil = intent.EngageCooldownUntil
 	w.layerAnimalActionEffect(a, intent.Action)
+	w.applyAnimalFatigue(a, intent.Action)
+}
+
+// applyAnimalFatigue (M2 endurance): a high-effort action (chase/flight — effort:high) accrues fatigue; a
+// low-effort action (Rest/Graze — effort:none/low) sheds it. The speed §6 reads `- fatigue`, so a prolonged
+// chase tires the pursuer (or the fleer) and endurance — not raw speed — decides a long chase. Data-driven
+// (CombatParams rates); no-op if the species has no fatigue drive or the rates are zero.
+func (w *World) applyAnimalFatigue(a *fauna.Animal, action actions.ActionID) {
+	if a == nil || a.Drives == nil {
+		return
+	}
+	if _, ok := a.Drives["fatigue"]; !ok {
+		return
+	}
+	var delta float64
+	switch {
+	case w.actionHasTag(action, "effort:high"):
+		delta = w.envCfg.FaunaCombat.FatiguePursuitPerTick
+	case w.actionHasTag(action, "effort:none"), w.actionHasTag(action, "effort:low"):
+		delta = -w.envCfg.FaunaCombat.FatigueRecoverPerTick
+	}
+	if delta != 0 {
+		a.Drives["fatigue"] = clamp01(a.Drives["fatigue"] + delta)
+	}
 }
 
 // applyAnimalCombat applies an animal's CROSS-animal combat effects (attack damage + mutual engage, feed)

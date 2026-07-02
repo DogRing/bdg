@@ -297,7 +297,7 @@ object_kinds:
         - { id: fatigue, rate: 0.0005 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 5 - moisture * 2"
-      speed: "Agility * 0.0058 - fatigue * 0.1 - thermal * 0.0013"                  # faster than deer (pursuit); thermal stress → slower (F40)
+      speed: "Agility * 0.0038 - fatigue * 0.3 - thermal * 0.0013"                  # faster than deer (pursuit); thermal stress → slower (F40)
       attack_power: "Strength * 0.006"                                              # §6 damage magnitude from base stat composition (FC4)
       hit: "0.55 + Agility * 0.0045"                                                # §6 hit multiplier/probability proxy; target defense deferred to content operands
       feed: "0.35 + hunger * 0.45"                                                  # carcass supply → hunger recovery factor (FC8)
@@ -380,7 +380,7 @@ object_kinds:
         - { id: fatigue, rate: 0.0004 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 3 - moisture * 1"                    # large, well-insulated
-      speed: "Agility * 0.0075 - fatigue * 0.1 - thermal * 0.0006"                  # strong, not fast; well-insulated → smallest thermal penalty (F40)
+      speed: "Agility * 0.0030 - fatigue * 0.3 - thermal * 0.0006"                  # strong, not fast; well-insulated → smallest thermal penalty (F40)
       attack_power: "Strength * 0.008"                                              # heavier hit than wolf (FC4)
       hit: "0.5 + Agility * 0.0035"                                                 # less agile but still stat-composed
       feed: "0.4 + hunger * 0.4"                                                    # larger predator extracts more recovery from a carcass

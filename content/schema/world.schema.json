@@ -66,6 +66,8 @@
         "stamina_drop_threshold": { "type": "number", "minimum": 0, "description": "combat disengage stamina threshold" },
         "stamina_drain_per_tick": { "type": "number", "minimum": 0, "description": "stamina spent per tick while engaged in combat" },
         "stamina_recover_per_tick": { "type": "number", "minimum": 0, "description": "stamina regained per tick while not engaged" },
+        "fatigue_pursuit_per_tick": { "type": "number", "minimum": 0, "description": "fatigue gained per tick during a high-effort chase/flight (M2)" },
+        "fatigue_recover_per_tick": { "type": "number", "minimum": 0, "description": "fatigue shed per tick while resting / low-effort" },
         "vital_regen_per_tick": { "type": "number", "minimum": 0, "description": "combat vital regeneration rate per tick" },
         "respawn_cadence": { "type": "integer", "minimum": 0, "description": "ticks between timer-respawn top-ups (F9); 0 = off" },
         "vital_cap_damage_fraction": { "type": "number", "minimum": 0, "description": "fraction of exchange damage applied as vital-cap scar" }
