@@ -279,14 +279,14 @@ object_kinds:
       diet: [ forage ]                                                             # grazes objects carrying `forage` (grass/berry_shrub)
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }             # wide FOV ~120° (prey vigilance, F44)
       respawn_target: 16                                                           # herd carrying capacity (F9 timer-respawn)
-      terrain_cost: { river: 1.8, mountain: 1.6 }                                  # fords water / climbs poorly (W10b); absent terrain ⇒ 1.0
+      terrain_cost: { river: 1.5, mountain: 1.6 }                                  # FORDS water to escape (< wolf 3.0 → loses pursuers at the river, M4-a); climbs poorly (W10b)
       impassable: [ sea ]                                                          # cannot enter deep sea (per-species block; sea also globally impassable)
 
   # WOLF — an apex predator (carnivore). Hunts deer (diet: game) by SCENT homing (scent.prey, upwind in
   # wind). Emits `scent:predator` (deer detect → Wary/Flee) + carries `threat:predator` (the predator
   # flag, F8). NO `fear` drive (apex). NARROW long-range FOV (focused pursuit, F44). Predators are always
-  # ACTIVE (F45). Ranges over hills/water better than deer (lower terrain_cost), so pursuit can corner a
-  # fleeing deer across terrain (W10b/FA8).
+  # ACTIVE (F45). AVOIDS deep water (high river cost) — a fleeing deer/rabbit can ford the river to break
+  # pursuit (M4-a: river = prey refuge, W10b/FA8); ranges hills at a modest cost.
   - id: wolf
     mobile: true
     tags: [ threat:predator, scent:predator ]
@@ -309,7 +309,7 @@ object_kinds:
       diet: [ game ]                                                               # hunts animals carrying `game` (deer)
       senses: { smell_radius: 20.0, sight_radius: 34.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
       respawn_target: 3                                                            # apex predator — sparse (F9)
-      terrain_cost: { river: 1.4, mountain: 1.2 }                                  # ranges water/hills better than deer (W10b)
+      terrain_cost: { river: 3.0, mountain: 1.5 }                                  # AVOIDS deep water (river = prey refuge, M4-a); modest on hills (W10b)
       impassable: [ sea ]
 
   # RABBIT — a small, twitchy herbivore prey. Same diet/tags as deer but tuned timid + FAST: high hunger
@@ -394,7 +394,7 @@ object_kinds:
       diet: [ game, forage ]                                                       # OMNIVORE: prey + vegetation (F7)
       senses: { smell_radius: 22.0, sight_radius: 30.0, fov_arc: 0.9 }              # superb nose
       respawn_target: 3                                                            # apex omnivore — sparse (F9)
-      terrain_cost: { mountain: 0.7, river: 1.5 }                                  # CLIMBER predator (FA8)
+      terrain_cost: { mountain: 0.7, river: 2.6 }                                  # CLIMBER predator (FA8); avoids deep water (river = prey refuge, M4-a)
       impassable: [ sea ]
 
   # FISH — an AQUATIC prey (FA8 swimmer + impassable demo): cheap on `river`/`sea` (terrain_cost < 1) and
