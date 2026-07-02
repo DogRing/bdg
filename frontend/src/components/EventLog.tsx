@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import type { LogEntry } from '../types'
 import type { ThemeTokens } from '../theme'
 
-type FilterKey = 'all' | 'social' | 'goals' | 'roles' | 'actions'
+type FilterKey = 'all' | 'social' | 'goals' | 'roles' | 'actions' | 'ecosystem'
 
 const FILTER_TYPES: Record<FilterKey, string[]> = {
   all: [],
@@ -10,6 +10,7 @@ const FILTER_TYPES: Record<FilterKey, string[]> = {
   goals: ['GoalSelected', 'PlanBuilt'],
   roles: ['RoleEmerged', 'CopingEntered'],
   actions: ['ActionStarted', 'ActionDone'],
+  ecosystem: ['AnimalBorn', 'AnimalDied', 'PlantSpawned', 'PlantDied'],
 }
 
 const VARIANT_COLOR = {
@@ -91,6 +92,7 @@ export function EventLog({ entries, t, isLight }: Props) {
           <option value="goals">goals</option>
           <option value="roles">roles</option>
           <option value="actions">actions</option>
+          <option value="ecosystem">ecosystem</option>
         </select>
       </div>
 

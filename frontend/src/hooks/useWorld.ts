@@ -1,13 +1,20 @@
 import { useReducer, useCallback } from 'react'
 import type {
-  WorldState, WorldAction, SimEvent, AgentState, LogEntry, WorldObject,
-  PlantState, ClimateState,
+  WorldState, WorldAction, SimEvent, AgentState, AnimalState, LogEntry, WorldObject,
+  PlantState, ClimateState, FxInstance, TerrainGrid,
 } from '../types'
 import { formatEvent } from '../utils/eventFormatter'
+import { poseFor, FX_DEFS } from '../assets/manifest'
 import { API_BASE } from '../config'
 
 const MAX_LOG = 500
 const TRIM_TO = 400
+
+// Interpolation window bounds (plan Q3): the measured inter-frame gap is
+// clamped so a hiccup never schedules an absurd tween.
+const GAP_MIN_MS = 100
+const GAP_MAX_MS = 2000
+const GAP_DEFAULT_MS = 500
 
 const initial: WorldState = {
   tick: 0,
@@ -23,7 +30,16 @@ const initial: WorldState = {
   animals: new Map(),
   flora: [],
   climate: null,
+  terrain: null,
+  fx: [],
   render: null,
+}
+
+// Drop fx whose timeline ended (render already skips them via fxProgress→null).
+function pruneFx(fx: FxInstance[], atMs: number): FxInstance[] {
+  if (fx.length === 0) return fx
+  const kept = fx.filter(f => atMs - f.at <= FX_DEFS[f.kind].durationMs)
+  return kept.length === fx.length ? fx : kept
 }
 
 function parsePos(raw: unknown): { x: number; y: number } {
@@ -37,7 +53,7 @@ function parsePos(raw: unknown): { x: number; y: number } {
   return { x: 0, y: 0 }
 }
 
-function applyEvent(state: WorldState, ev: SimEvent): WorldState {
+function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
   if (state.paused) return state
 
   const agents = new Map(state.agents)
@@ -45,6 +61,7 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
   let tick = state.tick
   let food = state.food
   let wood = state.wood
+  let fx = pruneFx(state.fx, atMs)
 
   const p = ev.payload ?? {}
 
@@ -66,7 +83,7 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
         ? { ...prev, pos, goal, mood, action: action || prev.action }
         : { id, pos, goal, action, mood, cluster: null, copingMode: null })
     }
-    return { ...state, tick, agents, roles, log: state.log, food, wood }
+    return { ...state, tick, agents, roles, log: state.log, food, wood, fx }
   }
 
   // WorldFrame (data-contracts §4, WI-P4) is the env-inclusive render frame: agent + animal
@@ -93,14 +110,34 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
         const id = String(raw.id ?? '')
         if (!id) continue
         const prev = animals.get(id)
-        animals.set(id, {
+        const pos = parsePos(raw.pos)
+        const action = String(raw.action ?? prev?.action ?? '')
+        const heading = Number(raw.heading ?? prev?.heading ?? 0)
+        const next: AnimalState = {
           id,
-          pos: parsePos(raw.pos),
+          pos,
           species: String(raw.species ?? prev?.species ?? ''),
-          action: String(raw.action ?? prev?.action ?? ''),
-          heading: Number(raw.heading ?? prev?.heading ?? 0),
+          action,
+          heading,
           stamina: Number(raw.stamina ?? prev?.stamina ?? 1),
-        })
+        }
+        if (prev) {
+          // Shift the old target into prev* and stamp the tween window with the
+          // measured inter-frame gap (adaptive lerp, plan Q3).
+          const gap = prev.prevFrameAtMs !== undefined
+            ? Math.min(GAP_MAX_MS, Math.max(GAP_MIN_MS, atMs - prev.prevFrameAtMs))
+            : GAP_DEFAULT_MS
+          next.prevPos = prev.pos
+          next.prevHeading = prev.heading
+          next.prevFrameAtMs = atMs
+          next.frameAtMs = atMs + gap
+          // Attack motion trigger (plan Q4): the pose *entering* attack enqueues
+          // one lunge fx — not re-armed while the action stays attack-posed.
+          if (poseFor(action) === 'attack' && poseFor(prev.action) !== 'attack') {
+            fx = [...fx, { kind: 'attack', at: atMs, pos, id, species: next.species, heading }]
+          }
+        }
+        animals.set(id, next)
       }
     }
 
@@ -112,15 +149,47 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
         const id = String(raw.id ?? '')
         if (!id) continue
         const prev = byId.get(id)
+        const pos = parsePos(raw.pos)
+        const stage = Number(raw.stage ?? prev?.stage ?? 0)
+        // A stage increase is the visible growth moment → grow tween (plan Q4).
+        if (prev && stage > prev.stage) {
+          fx = [...fx, { kind: 'grow', at: atMs, pos, id, species: prev.species }]
+        }
         byId.set(id, {
           id,
-          pos: parsePos(raw.pos),
+          pos,
           species: prev?.species ?? '',
-          stage: Number(raw.stage ?? prev?.stage ?? 0),
+          stage,
           width: prev?.width ?? 0,
         })
       }
       flora = Array.from(byId.values())
+    }
+
+    // terrain arrives as sparse cell deltas over the /api/terrain base grid.
+    // The grid OBJECT is replaced on change — the canvas re-rasterizes on
+    // identity change (render/terrain.ts). Deltas without a base grid drop.
+    let terrain = state.terrain
+    if (terrain && Array.isArray(p.terrain_delta) && (p.terrain_delta as unknown[]).length > 0) {
+      const cells = terrain.terrain.slice()
+      let wear = terrain.wear
+      let changed = false
+      for (const raw of p.terrain_delta as Array<Record<string, unknown>>) {
+        const cell = (raw.cell ?? {}) as Record<string, unknown>
+        const x = Number(cell.x), y = Number(cell.y)
+        if (!Number.isInteger(x) || !Number.isInteger(y) ||
+            x < 0 || y < 0 || x >= terrain.w || y >= terrain.h) continue
+        const idx = y * terrain.w + x
+        if (typeof raw.terrain === 'string') { cells[idx] = raw.terrain; changed = true }
+        if (typeof raw.wear === 'number') {
+          if (!wear || wear === terrain.wear) {
+            wear = wear ? Float32Array.from(wear) : new Float32Array(terrain.w * terrain.h)
+          }
+          wear[idx] = raw.wear
+          changed = true
+        }
+      }
+      if (changed) terrain = { ...terrain, terrain: cells, wear }
     }
 
     const wind = (p.wind ?? {}) as Record<string, unknown>
@@ -136,7 +205,55 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
       yearFraction: state.climate?.yearFraction ?? 0,
     }
 
-    return { ...state, tick, agents, animals, flora, climate, roles, log: state.log, food, wood }
+    return { ...state, tick, agents, animals, flora, climate, terrain, roles, log: state.log, food, wood, fx }
+  }
+
+  // Ecosystem lifecycle events (data-contracts §4, WI-P4): mutate the live maps
+  // AND enqueue the matching transition fx (plan Q4); they fall through to
+  // formatEvent below so the log line still appears.
+  let animals = state.animals
+  let flora = state.flora
+  if (ev.type === 'AnimalBorn' || ev.type === 'AnimalDied' ||
+      ev.type === 'PlantSpawned' || ev.type === 'PlantDied') {
+    const id = String(p.object_id ?? '')
+    const species = String(p.species ?? '')
+    if (id) {
+      switch (ev.type) {
+        case 'AnimalBorn': {
+          const pos = parsePos(p.pos)
+          animals = new Map(animals)
+          animals.set(id, { id, pos, species, action: '', heading: 0, stamina: 1 })
+          fx = [...fx, { kind: 'spawn', at: atMs, pos, id, species }]
+          break
+        }
+        case 'AnimalDied': {
+          const live = animals.get(id)
+          const pos = live?.pos ?? parsePos(p.pos)
+          animals = new Map(animals)
+          animals.delete(id)
+          fx = [...fx, {
+            kind: 'death', at: atMs, pos, id,
+            species: live?.species ?? species, heading: live?.heading,
+          }]
+          break
+        }
+        case 'PlantSpawned': {
+          const pos = parsePos(p.pos)
+          flora = [...flora.filter(f => f.id !== id), {
+            id, pos, species, stage: Number(p.stage ?? 0), width: Number(p.width ?? 0),
+          }]
+          fx = [...fx, { kind: 'spawn', at: atMs, pos, id, species }]
+          break
+        }
+        case 'PlantDied': {
+          const live = flora.find(f => f.id === id)
+          const pos = live?.pos ?? parsePos(p.pos)
+          flora = flora.filter(f => f.id !== id)
+          fx = [...fx, { kind: 'death', at: atMs, pos, id, species: live?.species ?? species }]
+          break
+        }
+      }
+    }
   }
 
   // Update agent state from event payload
@@ -205,10 +322,11 @@ function applyEvent(state: WorldState, ev: SimEvent): WorldState {
     if (log.length > MAX_LOG) log = log.slice(0, TRIM_TO)
   }
 
-  return { ...state, tick, agents, roles, log, food, wood }
+  return { ...state, tick, agents, animals, flora, roles, log, food, wood, fx }
 }
 
-function reducer(state: WorldState, action: WorldAction): WorldState {
+// Exported for reducer unit tests (frontend/SPEC.md ACs); components use useWorld().
+export function worldReducer(state: WorldState, action: WorldAction): WorldState {
   switch (action.type) {
     case 'SNAPSHOT_LOADED': {
       // Merge over existing agents so periodic snapshot polls refresh authoritative
@@ -239,7 +357,9 @@ function reducer(state: WorldState, action: WorldAction): WorldState {
       return { ...state, agents }
     }
     case 'EVENT':
-      return applyEvent(state, action.payload)
+      return applyEvent(state, action.payload, action.atMs ?? 0)
+    case 'TERRAIN_LOADED':
+      return { ...state, terrain: action.payload }
     case 'SET_CONNECTION':
       return { ...state, connectionStatus: action.payload }
     case 'SELECT_AGENT':
@@ -251,11 +371,14 @@ function reducer(state: WorldState, action: WorldAction): WorldState {
   }
 }
 
+export const initialWorldState: WorldState = initial
+
 export function useWorld() {
-  const [state, dispatch] = useReducer(reducer, initial)
+  const [state, dispatch] = useReducer(worldReducer, initial)
 
   const dispatchEvent = useCallback((ev: SimEvent) => {
-    dispatch({ type: 'EVENT', payload: ev })
+    // performance.now() shares the clock domain with the render loop's clockMs.
+    dispatch({ type: 'EVENT', payload: ev, atMs: performance.now() })
   }, [])
 
   const setConnection = useCallback((s: WorldState['connectionStatus']) => {
@@ -276,7 +399,9 @@ export function useWorld() {
       if (!res.ok) return
       const doc = await res.json() as Record<string, unknown>
       const tick = Number(doc.tick ?? 0)
-      const world = (doc.world ?? {}) as Record<string, unknown>
+      // Flat {tick, agents, objects} (platform/api shape); tolerate a legacy
+      // {world:{...}} wrapper.
+      const world = (doc.world ?? doc) as Record<string, unknown>
 
       // Parse agents from snapshot (array of {id, pos, goal, action, mood})
       const rawAgents: AgentState[] = []
@@ -315,5 +440,29 @@ export function useWorld() {
     }
   }, [])
 
-  return { state, dispatchEvent, setConnection, selectAgent, togglePause, loadSnapshot }
+  // Initial terrain grid (plan Q5): fetched once at connect; SSE terrain_delta
+  // keeps it current. Endpoint absent (backend pre-WI-P4) → terrain stays null
+  // and no terrain layer draws (env-off neutrality).
+  const loadTerrain = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/terrain`)
+      if (!res.ok) return
+      const doc = await res.json() as Record<string, unknown>
+      const size = (doc.size ?? {}) as Record<string, unknown>
+      const w = Number(size.w ?? 0)
+      const h = Number(size.h ?? 0)
+      const cellSize = Number(doc.cell_size ?? 0)
+      const cells = Array.isArray(doc.terrain) ? (doc.terrain as unknown[]).map(String) : []
+      if (w <= 0 || h <= 0 || cellSize <= 0 || cells.length !== w * h) return
+      const grid: TerrainGrid = { cellSize, w, h, terrain: cells }
+      if (Array.isArray(doc.wear) && (doc.wear as unknown[]).length === w * h) {
+        grid.wear = Float32Array.from((doc.wear as unknown[]).map(Number))
+      }
+      dispatch({ type: 'TERRAIN_LOADED', payload: grid })
+    } catch {
+      // terrain endpoint not available yet — that's OK
+    }
+  }, [])
+
+  return { state, dispatchEvent, setConnection, selectAgent, togglePause, loadSnapshot, loadTerrain }
 }

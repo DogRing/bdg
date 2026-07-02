@@ -1,54 +1,119 @@
 import { useRef, useEffect, useCallback } from 'react'
-import type { AgentState, WorldObject } from '../types'
+import type {
+  AgentState, WorldObject, AnimalState, PlantState, ClimateState, TerrainGrid,
+  FxInstance, RenderConfig,
+} from '../types'
 import type { ThemeTokens } from '../theme'
-import { drawTerrain, drawObjects, drawAgents, hitTestAgent, buildTransform } from '../utils/canvasRenderer'
+import type { SpriteCache } from '../assets/sprites'
+import {
+  buildTransform, drawObjects, drawAgents, drawFlora, drawFauna, drawFx,
+  drawTerrain, makeTerrainRaster, drawAmbient, hitTest, wx, wy,
+  initialCamera, cameraZoom, cameraPan, cameraFollow, cameraTick,
+  type CameraState, type TerrainRaster,
+} from '../render'
 
 interface Props {
   agents: AgentState[]
   objects: WorldObject[]
+  animals: Map<string, AnimalState>
+  flora: PlantState[]
+  climate: ClimateState | null
+  terrain: TerrainGrid | null
+  fx: FxInstance[]
+  render: RenderConfig | null
+  sprites: SpriteCache
   selectedId: string | null
   t: ThemeTokens
   onSelectAgent: (id: string | null) => void
 }
 
-export function WorldCanvas({ agents, objects, selectedId, t, onSelectAgent }: Props) {
+export function WorldCanvas({ agents, objects, animals, flora, climate, terrain, fx, render, sprites, selectedId, t, onSelectAgent }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef<number>(0)
   const dirtyRef = useRef(true)
+  // Camera is the only view state (render SPEC): initialized lazily on the first
+  // frame that knows either RenderConfig or some entity positions.
+  const camRef = useRef<CameraState | null>(null)
+  const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+  // Derived terrain raster, rebuilt only when the grid object identity changes.
+  const rasterRef = useRef<TerrainRaster | null>(null)
+  // Latest props for the (mounted-once) RAF loop + native wheel listener.
+  const propsRef = useRef({ agents, objects, animals, flora, climate, terrain, fx, render, sprites, selectedId, t, onSelectAgent })
+  propsRef.current = { agents, objects, animals, flora, climate, terrain, fx, render, sprites, selectedId, t, onSelectAgent }
 
   // Redraw on next RAF whenever any input changes.
-  useEffect(() => { dirtyRef.current = true }, [agents, objects, selectedId, t])
+  useEffect(() => { dirtyRef.current = true }, [agents, objects, animals, flora, climate, terrain, fx, render, selectedId, t])
 
-  // RAF render loop: background terrain → real resource objects → agents, all on
-  // ONE world transform (anchored on objects + agents so they align).
+  const viewSize = useCallback(() => {
+    const c = canvasRef.current
+    const dpr = window.devicePixelRatio || 1
+    return c ? { W: c.width / dpr, H: c.height / dpr } : { W: 0, H: 0 }
+  }, [])
+
+  // RAF render loop: background → world bounds → objects → agents, all through
+  // ONE camera-driven transform (render SPEC: one buildTransform per frame).
   useEffect(() => {
-    function render() {
-      rafRef.current = requestAnimationFrame(render)
-      if (!dirtyRef.current) return
+    function frame() {
+      rafRef.current = requestAnimationFrame(frame)
+      const cam = camRef.current
+      // Keep drawing while uninitialized (waiting for data), following, or
+      // animating (fauna sprite frames + interpolation + live fx + rain).
+      if (!dirtyRef.current && cam && !cam.follow &&
+          propsRef.current.animals.size === 0 && propsRef.current.fx.length === 0 &&
+          !propsRef.current.climate?.raining) return
       dirtyRef.current = false
+      const clockMs = performance.now() // sampled ONCE per frame at the loop boundary
 
       const c = canvasRef.current
-      if (!c) return
-      const ctx = c.getContext('2d')
-      if (!ctx) return
+      const ctx = c?.getContext('2d')
+      if (!c || !ctx) return
 
       const dpr = window.devicePixelRatio || 1
       const W = c.width / dpr   // logical (CSS) px
       const H = c.height / dpr
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0) // map logical → device each frame
 
-      drawTerrain(ctx, W, H, t)
-      const tr = buildTransform([...objects, ...agents], W, H)
-      drawObjects(ctx, objects, tr, t)
-      drawAgents(ctx, agents, selectedId, t, tr)
+      const p = propsRef.current
+      ctx.fillStyle = p.t.canvasBg
+      ctx.fillRect(0, 0, W, H)
+
+      if (!camRef.current) {
+        camRef.current = initialCamera(p.render, [...p.objects, ...p.agents], W, H)
+        if (!camRef.current) return // nothing known yet — background only
+      }
+      camRef.current = cameraTick(camRef.current, p.agents, p.animals.values(), clockMs)
+      const tr = buildTransform(camRef.current, W, H)
+
+      // Terrain raster: re-rasterize only when the grid object changed
+      // (reducer replaces it on /api/terrain load + every terrain_delta merge).
+      if (p.terrain && rasterRef.current?.grid !== p.terrain) {
+        rasterRef.current = makeTerrainRaster(p.terrain)
+      }
+      drawTerrain(ctx, p.terrain, tr, rasterRef.current)
+
+      // World bounds outline (the real world edge — replaces the decorative map).
+      if (p.render) {
+        const { min, max } = p.render.bounds
+        ctx.strokeStyle = p.t.gridColor
+        ctx.lineWidth = 1
+        ctx.strokeRect(wx(min.x, tr), wy(min.y, tr), (max.x - min.x) * tr.sx, (max.y - min.y) * tr.sy)
+      }
+
+      // Layer order (render SPEC): terrain → flora → objects → animals →
+      // agents → fx → ambient.
+      drawFlora(ctx, p.flora, tr, p.sprites, clockMs, p.fx)
+      drawObjects(ctx, p.objects, tr, p.t)
+      drawFauna(ctx, p.animals.values(), tr, p.sprites, clockMs, p.fx)
+      drawAgents(ctx, p.agents, p.selectedId, p.t, tr)
+      drawFx(ctx, p.fx, tr, p.sprites, clockMs)
+      drawAmbient(ctx, p.climate, W, H, clockMs)
     }
 
-    rafRef.current = requestAnimationFrame(render)
+    rafRef.current = requestAnimationFrame(frame)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [agents, objects, selectedId, t])
+  }, [])
 
   // Resize observer: keep the backing store in sync with display size (DPR-aware).
-  // The render loop applies the DPR transform itself, so we only size here.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -65,23 +130,71 @@ export function WorldCanvas({ agents, objects, selectedId, t, onSelectAgent }: P
     return () => ro.disconnect()
   }, [])
 
-  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Wheel zoom, cursor-anchored. Native listener: React's onWheel is passive,
+  // and we must preventDefault to keep the page from scrolling.
+  useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const cam = camRef.current
+      if (!cam) return
+      const rect = canvas.getBoundingClientRect()
+      const { W, H } = viewSize()
+      const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      camRef.current = cameraZoom(cam, cursor, Math.exp(-e.deltaY * 0.0015), W, H)
+      dirtyRef.current = true
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [viewSize])
+
+  // Drag = pan (breaks follow); a click (no drag) selects + follows the hit
+  // entity: agents get the detail panel, animals follow-only (render SPEC).
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = { x: e.clientX, y: e.clientY, moved: false }
+  }, [])
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current
+    const cam = camRef.current
+    if (!drag || !cam) return
+    const dx = e.clientX - drag.x
+    const dy = e.clientY - drag.y
+    if (!drag.moved && dx * dx + dy * dy < 9) return // 3px slop before it becomes a pan
+    drag.moved = true
+    camRef.current = cameraPan(cam, dx, dy)
+    drag.x = e.clientX
+    drag.y = e.clientY
+    dirtyRef.current = true
+  }, [])
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = dragRef.current
+    dragRef.current = null
+    if (!drag || drag.moved) return // pan end — not a click
+    const canvas = canvasRef.current
+    const cam = camRef.current
+    if (!canvas || !cam) return
     const rect = canvas.getBoundingClientRect()
-    const dpr = window.devicePixelRatio || 1
-    const x = e.clientX - rect.left  // CSS px == logical px used by the transform
-    const y = e.clientY - rect.top
-    const tr = buildTransform([...objects, ...agents], canvas.width / dpr, canvas.height / dpr)
-    onSelectAgent(hitTestAgent(agents, x, y, tr))
-  }, [agents, objects, onSelectAgent])
+    const { W, H } = viewSize()
+    const tr = buildTransform(cam, W, H)
+    const hit = hitTest(propsRef.current.agents, propsRef.current.animals.values(),
+      tr, e.clientX - rect.left, e.clientY - rect.top)
+    camRef.current = cameraFollow(cam, hit)
+    propsRef.current.onSelectAgent(hit?.kind === 'agent' ? hit.id : null)
+    dirtyRef.current = true
+  }, [viewSize])
 
   return (
     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
       <canvas
         ref={canvasRef}
-        onClick={handleClick}
-        style={{ width: '100%', height: '100%', display: 'block', cursor: 'crosshair' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        style={{ width: '100%', height: '100%', display: 'block', cursor: 'crosshair', touchAction: 'none' }}
       />
 
       {/* Resource legend */}
@@ -121,7 +234,7 @@ export function WorldCanvas({ agents, objects, selectedId, t, onSelectAgent }: P
         border: t.glow ? `1px solid ${t.panelBorder}` : undefined,
         borderRadius: t.glow ? 0 : 2,
       }}>
-        {`${agents.length} agents · ${objects.length} resources`}
+        {`${agents.length} agents · ${objects.length} resources · scroll zoom / drag pan`}
       </div>
     </div>
   )

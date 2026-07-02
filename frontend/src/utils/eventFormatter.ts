@@ -65,6 +65,25 @@ export function formatEvent(ev: SimEvent): LogEntry | null {
       const mode = String(p.mode ?? '')
       return { ...base, type: ev.type, text: `😶 ${agentId} → ${mode}`, variant: 'negative' }
     }
+    case 'AnimalBorn': {
+      const species = String(p.species ?? '?')
+      const objId = String(p.object_id ?? '?')
+      return { ...base, type: ev.type, text: `🐾 ${species} (${objId}) was born`, variant: 'normal' }
+    }
+    case 'AnimalDied': {
+      const cause = String(p.cause ?? 'unknown')
+      const objId = String(p.object_id ?? '?')
+      return { ...base, type: ev.type, text: `☠ Animal (${objId}) died of ${cause}`, variant: 'negative' }
+    }
+    case 'PlantSpawned': {
+      const species = String(p.species ?? '?')
+      const objId = String(p.object_id ?? '?')
+      return { ...base, type: ev.type, text: `🌱 ${species} (${objId}) sprouted`, variant: 'normal' }
+    }
+    case 'PlantDied': {
+      const objId = String(p.object_id ?? '?')
+      return { ...base, type: ev.type, text: `🍂 Plant (${objId}) withered`, variant: 'normal' }
+    }
     case 'TickDone': {
       return null // suppress tick-done from log; update tick counter only
     }

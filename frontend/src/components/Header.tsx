@@ -60,10 +60,33 @@ export function Header({ t, theme, onToggleTheme, world, onTogglePause }: Props)
         </div>
         <div style={{ fontFamily: t.fontMono, fontSize: 10, color: t.textDim }}>
           {world.agents.size} agents
+          {world.animals.size > 0 && ` · ${world.animals.size} fauna`}
         </div>
       </div>
 
       <div style={{ width: 1, height: 26, background: t.headerBorder }} />
+
+      {/* Ambient weather chip */}
+      {world.climate && (
+        <>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontFamily: t.fontMono, fontSize: 10, color: t.textDim,
+            background: t.panelBg, padding: '4px 10px',
+            border: `1px solid ${t.panelBorder}`,
+            borderRadius: theme === 'light' ? 2 : 0,
+          }}>
+            <span style={{ fontSize: 12 }}>{world.climate.dayNight === 'day' ? '☀' : '🌙'}</span>
+            <span>{world.climate.temperature.toFixed(1)}°C</span>
+            {world.climate.apparentTemp !== null && (
+              <span style={{ color: t.textMuted }}>(feels {world.climate.apparentTemp.toFixed(1)}°C)</span>
+            )}
+            {world.climate.raining && <span style={{ color: '#3a86d0', fontSize: 12 }}>☂</span>}
+            {world.climate.windMag > 0 && <span>~wind→</span>}
+          </div>
+          <div style={{ width: 1, height: 26, background: t.headerBorder }} />
+        </>
+      )}
 
       {/* Connection badge */}
       <div style={{
