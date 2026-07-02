@@ -564,6 +564,18 @@ world-side); **fauna only READS `Animal.HiddenUntil`** here. This is the fauna-m
   `combatTarget`/steer behave exactly as before; existing goldens byte-identical (the M3 OFF-neutral lever,
   parallel to the FC/Graze levers). NO new `AttrOperands()` entry, NO new `Snapshot`/`Intent` field.
 
+## Cover speed resistance (M4-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+
+Moving through `cover` flora slows an animal and makes its speed VARY (a continuous drag, no stumble/fall).
+The mechanic is **entirely world-side** (world owns flora; scales the committed move by a cover resistance —
+SPEC-world-fauna M4-b); fauna's §6 `Speed` is UNCHANGED. The only fauna-module surface is the per-species
+affinity, exposed as a `Rules` accessor world reads in apply (mirrors `TerrainCost`/`Graze`/`HideChance`):
+
+- **`SpeciesRule.CoverCost float64`** + **`func (r *Rules) CoverCost(sp SpeciesID) float64`** — the species'
+  cover drag affinity (`content/objects.yaml fauna: cover_cost`, D10). Returns **0 when absent** (species
+  unaffected → OFF-neutral). Parsed by `platform/config` like `terrain_cost`; compiled into the per-species
+  record. Pure, read-only. NO new `Snapshot`/`Intent`/`AttrOperands` surface, NO change to `Speed`/`Step`.
+
 ## Notes
 - `Step` deliberately mirrors `flora.Step`/`decay.Step`: pure read → return per-entity delta/intent →
   `world` applies. Keeps `world` the single mutator (D12) and adds no cycle (F5/F41 — dependency-inverted

@@ -425,8 +425,8 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
 
 *M4 — 지형 차단/회피(terrain-block). 사람 의도: "나무·강·지형이 추격을 막게". [M4-a는 M3와 병행 가능]*
 - **사실 확인(2026-07-02):** fauna 이동은 **이미** per-species `TerrainCost`/`Impassable`을 읽는다(`fauna/step.go`·`cheap.go`: 유효비용=BaseCost×종mult, impassable=스텝 거부). ⇒ **강/산/바다 방벽 = 신규 메커니즘이 아니라 content terrain_cost 튜닝**.
-- **M4-a 강 비대칭(content):** wolf/bear의 `river` cost↑(크게 우회), deer는 중간(건너 도망 가능), fish는 `river`<1. 순수 content 튜닝. 추천 적용.
-- **M4-b 숲(flora)이 추격을 늦추는가:** 숲은 지형이 아니라 oak flora → terrain_cost로 안 잡힘. (i) cover flora 반경 내 **이동 속도 감쇠 §6 항**(덤불 저항; prey 작음→감쇠↓, bear 큼→감쇠↑ 비대칭) / **(ii) 숲은 이동 무차별 + 은신(M3)만으로 처리** / (iii) flora=물리 장애물(회피 steering). 추천 **(ii) 먼저**(M3로 충분한지 측정) → 부족하면 (i). (iii)는 park.
+- **M4-a 강 비대칭(content) — 완료·커밋 `42954fa`(2026-07-02):** wolf river 1.4→3.0, bear 1.5→2.6, deer 1.8→1.5(건너 도망), rabbit/goat/fish 유지. 순수 content(W10b). arena 측정 hunt-success ~11–12.5%(목표 범위 내).
+- **M4-b 숲/풀숲이 추격을 늦춤 — RESOLVED (i), 사람 확정 2026-07-02: cover flora 이동 저항(감속+변주, 넘어짐 없음).** 사람 의도: "숲·풀숲 장애물에서 계속 변속, 넘어지진 않되 속도 변주". **설계(M3와 동일 world-side 패턴, 발명 아님):** world가 매 틱 이동량을 cover 저항으로 스케일 — `resistance = 1 + coverDensity(pos)×종 cover_cost`, 실제 이동 = `Pos + (NextPos−Pos)/resistance`(≥1이므로 감속만, 정지/낙상 없음). `coverDensity(p)` = 주변 `cover` flora 각 겹침(중심→가장자리 선형감쇠, 반경=`cover_radius_factor×Width`) 합 → **공간적으로 peaky → 이동 중 저항 오르내림 → 속도 변주(RNG 없이 결정적, D12)**. 비대칭 = 종별 `cover_cost`(D10 content, rabbit 0.3 < deer/goat 0.6~0.7 < wolf 1.2 < bear 2.0). **단일 writer=world**(flora는 world 소유; `depositFloraScent`/`nearCoverFlora`/`kindIsCover` 동형), fauna는 `Rules.CoverCost(species)`만 노출. OFF-neutral: cover flora 없거나 cover_cost=0 → resistance=1 → 골든 불변. (ii)"은신만으로 처리"는 측정 결과 M3가 dilute fixture에서 잘 안 터져 기각; (iii) 물리 장애물=park.
 
 *M5 — 매복·감지(ambush/detection). M3/M4로 prey가 어려워지면 predator 성공 레버. [M3/M4 착지 후]*
 - **사실 확인(2026-07-02):** fauna 감지는 **반경+FOV**(`sightQuery`: SightRadius/fovArc + spatial NearbyEntities)이며 **shade/LoS 미반영**(perception full-LoS 동물 지각 = park). ⇒ shade(어두운 숲)로 매복이 **자동 창발하지 않는다**.

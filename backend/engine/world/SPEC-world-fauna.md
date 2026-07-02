@@ -349,6 +349,48 @@ fauna SPEC M3). It reuses the graze machinery verbatim (`applyAnimalGraze`/`near
   is never set, no deposit is skipped, and `Tick()` stays byte-identical — the fixture is the deliberate
   activation site (like the fauna/climate/flora levers).
 
+## Cover speed resistance (M4-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+
+Moving through `cover` flora (forest/thicket) **slows an animal AND makes its speed vary** — a continuous
+drag, **no stumble/stop/fall**. World-side (world owns flora; parallels M3 and `depositFloraScent`); fauna
+only exposes the per-species affinity via `Rules.CoverCost`. This is a movement SCALE applied when world
+commits the animal's move, NOT a §6 speed change (fauna's speed is unchanged).
+
+- **Where (in `commitAnimalOwnState`, movement commit):** after `intended := w.clampToBounds(intent.NextPos)`,
+  scale the DISPLACEMENT by the cover resistance at the destination:
+  ```
+  res  := w.coverResistance(a.Species, intended)          // ≥ 1
+  pos  := a.Pos.Add(intended.Sub(a.Pos).Scale(1.0 / res)) // moves LESS through denser cover; res=1 ⇒ pos=intended
+  w.spatial.Move(a.ID, pos); a.Pos = pos                  // pos is between a.Pos and intended ⇒ still in bounds
+  ```
+  A crouching (M3 hidden) or engaged animal has `intended == a.Pos` (zero displacement) ⇒ resistance is a
+  no-op, so M4-b never fights M3/combat.
+- **`coverResistance(species, p)`** (nil-safe; returns 1 when nothing applies):
+  ```
+  cc := w.faunaRules.CoverCost(species)                   // per-species content affinity; 0 ⇒ unaffected
+  if cc <= 0 || w.floraState == nil { return 1 }
+  density := 0.0
+  for _, pl := range w.floraState.Plants() {              // sorted-plant iteration (depositFloraScent twin)
+      if !w.kindIsCover(core.Tag(pl.Species)) { continue }   // reuse the M3 cover set
+      radius := w.envCfg.FaunaCombat.CoverRadiusFactor * pl.Width
+      if radius <= 0 { continue }
+      if d := p.Distance(pl.Pos); d < radius { density += 1 - d/radius }  // linear falloff, peaky (→ variation)
+  }
+  return 1 + density*cc
+  ```
+  `density` PEAKS near a plant and dips between plants, so as the animal moves each tick it samples a
+  DIFFERENT density ⇒ resistance oscillates ⇒ **speed varies (변주)** — deterministically, no RNG (D12). Bigger
+  species (higher `cover_cost`) bog down more; small prey (rabbit 0.3) slip through — the prey-into-thicket,
+  predator-bogs-down asymmetry.
+- **Config/content (D10):** per-species `cover_cost` (scalar ≥0) on the `content/objects.yaml fauna:` block →
+  `SpeciesRule.CoverCost` (parsed like `terrain_cost`, exposed by `Rules.CoverCost`); `content/world.yaml
+  cadence.cover_radius_factor` (float, × plant `Width` → cover radius) → `EnvConfig.FaunaCombat.CoverRadiusFactor`
+  (`CombatParams`) + `world.schema.json`. Placeholders: rabbit 0.3 / deer 0.7 / goat 0.6 / wolf 1.2 / bear 2.0;
+  predators+fish otherwise; `cover_radius_factor` ~3.0.
+- **Neutrality:** no `cover_cost` authored (⇒ `CoverCost`≡0) and/or no `cover` flora placed ⇒ `res`≡1 ⇒ movement
+  byte-identical to today. The starter/arena fixtures (which DO place cover) are the activation site; their
+  smoke/arena harnesses have no stored golden (determinism + behavioural asserts only), so no golden re-baseline.
+
 ## Notes
 - **fauna.Step plans, world applies (F41).** The split — fauna emits intents in the plan phase, the
   world applies them in the SAME combined sorted stream as agents — is what keeps "world = sole
