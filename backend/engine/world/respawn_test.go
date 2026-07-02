@@ -25,7 +25,7 @@ func TestRespawnTopsUpToTarget(t *testing.T) {
 	cfg.ScentSpread = 1
 	cfg.FaunaDT = 1
 	// install 2 deer
-	fx.world.InstallFauna(cfg, rules, testScentEmitters(), []fauna.Animal{
+	fx.world.InstallFauna(cfg, rules, testScentEmitters(), nil, []fauna.Animal{
 		testAnimal("an:deer1", "deer", core.Vec2{X: 10, Y: 10}),
 		testAnimal("an:deer2", "deer", core.Vec2{X: 12, Y: 10}),
 	})

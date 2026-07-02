@@ -44,6 +44,7 @@ func (w *World) applyCombinedIntents(
 	})
 
 	conflicts := combinedConflictGroups(combined)
+	hideRNG := w.envFork(w.tick, "fauna-hide")
 	// Pass 1: agents + each animal's OWN-state commit (fixed sorted order, D12).
 	for i := range combined {
 		item := combined[i]
@@ -54,6 +55,7 @@ func (w *World) applyCombinedIntents(
 		}
 		if item.animal != nil && !loser {
 			w.commitAnimalOwnState(*item.animal)
+			w.applyAnimalHiding(w.animals[item.animal.Animal], hideRNG)
 		}
 	}
 	// Pass 2: animal combat cross-writes (attack/feed) + death, AFTER every own-state commit — so an
@@ -115,6 +117,7 @@ func (w *World) applyCombinedAgentIntent(intent agent.Intent, conflictLoser bool
 // own-state commit regardless of sorted-id order.
 func (w *World) applyAnimalIntent(intent fauna.Intent) {
 	w.commitAnimalOwnState(intent)
+	w.applyAnimalHiding(w.animals[intent.Animal], w.envFork(w.tick, "fauna-hide"))
 	w.applyAnimalCombat(intent)
 }
 

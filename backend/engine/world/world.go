@@ -113,6 +113,7 @@ type World struct {
 	faunaRules    *fauna.Rules
 	scent         *scent.Grid
 	scentEmitters map[core.Tag][]core.Tag
+	coverKinds    map[core.Tag]bool
 	nextAnimalSeq int64
 
 	// Respawn (F9 timer-respawn-to-target): optional; zero cadence ⇒ off. Templates + anchors are

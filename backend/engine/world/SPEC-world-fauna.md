@@ -62,7 +62,7 @@ type EnvConfig struct {
 // no scent deposit/spread/commit runs, and the world behaves byte-identically (fauna-OFF neutrality,
 // fauna SPEC — the legacy `prey` timer-respawn object is untouched, W7). Animals may be empty (the
 // scent grid + plan call exist but produce nothing = neutral).
-func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitters map[core.Tag][]core.Tag, animals []fauna.Animal)
+func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitters map[core.Tag][]core.Tag, coverKinds map[core.Tag]bool, animals []fauna.Animal)
 // (cfg is the SAME EnvConfig from InstallEnv, now carrying the fauna/scent fields; the world builds
 //  scent.New(cfg.ScentCellSize) and seeds the animal set + spatial-hash entries for each animal.)
 ```
@@ -310,6 +310,44 @@ World-side of the combat loop (world = sole mutator + owns death, F3):
   `scent:food` flora object (`applyAnimalGraze`), reduces its `hunger` by the species `Graze` §6. The mirror
   of Feed for herbivores; flora is not depleted in P1. No food source in reach ⇒ no-op (hunger keeps rising).
 - **Regen (FC7):** slow Vital regen toward `VitalCap` applied by world in the animal commit (balance rate).
+
+## Cover-hiding apply (M3 — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+
+The world is the **sole writer of `Animal.HiddenUntil`** (fauna only reads it — combatTarget skip + crouch,
+fauna SPEC M3). It reuses the graze machinery verbatim (`applyAnimalGraze`/`nearForageFlora`/`kindEmitsFood`
+/`animalFeedContext`/`depositAnimalScent`):
+
+- **Entry roll (`applyAnimalHiding`, in the animal apply path):** for a **non-predator** animal whose
+  committed action's steer channel is `flee:predator` (`TagFleePred`) AND `EngagedWith == ""` AND
+  `HiddenUntil < w.tick` (not already hidden) AND `nearCoverFlora(a)` → roll the seeded fauna fork
+  (`w.envFork(w.tick,"fauna-hide")`, drawn in apply): if `r.Float64() < w.faunaRules.HideChance(a.Species,
+  animalFeedContext{animal:a})` then `a.HiddenUntil = w.tick + HideDurationTicks`. `HideChance`≡0 for a
+  species without a `hide_chance` §6 ⇒ never hides (OFF-neutral). This mirrors `applyAnimalGraze` (§6 eval +
+  proximity gate) — the roll is the only new RNG draw, from the disjoint `"fauna-hide"` fork (D12).
+- **`nearCoverFlora(a)`** — the `nearForageFlora` twin: a flora object whose kind carries the **`cover`**
+  tag within `HideCoverFactor * ScentCellSize` of `a.Pos` (add `kindIsCover(kind)` beside `kindEmitsFood`,
+  matching the `cover` tag in `w.scentEmitters`… — NB `cover` is NOT a scent channel; extract it from the
+  content kind→tags map the same way, or a dedicated `coverKinds` set built at install from `objects.yaml`
+  tags). Iterates `w.objectIDs` in sorted order (D12).
+- **Scent suppression (M3-c):** in `depositAnimalScent`, when depositing the **prey** channel
+  (`ChanPrey`, i.e. `!predatorCadence` non-predator path) SKIP the deposit if `a.HiddenUntil >= w.tick` —
+  a hidden prey emits no prey scent, so a scent-homing predator loses the trail (invisible to smell as well
+  as to the ranged `combatTarget`). Predator channel unaffected (predators do not hide).
+- **Engage clear:** when `applyAnimalAttack` sets `EngagedWith` on a target (or attacker), clear that
+  animal's `HiddenUntil = 0` (a flushed/engaged animal is no longer hidden). Keeps the invariant "engaged ⇒
+  not hidden".
+- **Snapshot wiring:** `buildFaunaSnapshot` passes `HiddenFlushFactor` through `Snapshot.Combat`
+  (`CombatParams`) so fauna's `combatTarget`/bolt can compute the flush radius; `HideDurationTicks` /
+  `HideCoverFactor` are consumed only world-side.
+- **Config/content (D10):** `content/world.yaml cadence` gains `hide_duration` (int, → `HideDurationTicks`),
+  `hidden_flush_factor` (float, → `HiddenFlushFactor`), `hide_cover_factor` (float, → `HideCoverFactor`);
+  `platform/config` maps them into `EnvConfig.FaunaCombat` (`CombatParams`) + `world.schema.json`. Prey
+  species in `content/objects.yaml fauna:` gain an optional `hide_chance` §6 (compiled + cross-checked like
+  `graze`/`attack_power`); the `cover` tag is already on `oak`/`berry_shrub`. Absent keys ⇒ zero/no-hide ⇒
+  neutral.
+- **Neutrality (the M3 lever):** with no `hide_chance` authored and/or no `cover` flora placed, `HiddenUntil`
+  is never set, no deposit is skipped, and `Tick()` stays byte-identical — the fixture is the deliberate
+  activation site (like the fauna/climate/flora levers).
 
 ## Notes
 - **fauna.Step plans, world applies (F41).** The split — fauna emits intents in the plan phase, the

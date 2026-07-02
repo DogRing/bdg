@@ -15,11 +15,12 @@ import (
 )
 
 // InstallFauna installs the optional animal controller and the world-owned scent grid.
-func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitters map[core.Tag][]core.Tag, animals []fauna.Animal) {
+func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitters map[core.Tag][]core.Tag, coverKinds map[core.Tag]bool, animals []fauna.Animal) {
 	w.envCfg = cfg
 	w.faunaRules = faunaRules
 	w.scent = scent.New(cfg.ScentCellSize)
 	w.scentEmitters = cloneScentEmitters(scentEmitters)
+	w.coverKinds = cloneCoverKinds(coverKinds)
 	w.animals = make(map[core.ObjectID]*fauna.Animal, len(animals))
 	w.animalIDs = nil
 	for _, animal := range animals {
@@ -156,6 +157,9 @@ func (w *World) depositAnimalScent(a *fauna.Animal, predatorCadence bool) {
 	for _, tag := range w.scentEmitters[core.Tag(a.Species)] {
 		ch, ok := scentChannelFromTag(tag)
 		if !ok || (ch == scent.ChanPredator) != predatorCadence {
+			continue
+		}
+		if ch == scent.ChanPrey && a.HiddenUntil > 0 && a.HiddenUntil >= w.tick {
 			continue
 		}
 		w.scent.Deposit(ch, a.Pos, mag)
@@ -311,6 +315,27 @@ func cloneScentEmitters(in map[core.Tag][]core.Tag) map[core.Tag][]core.Tag {
 			}
 		}
 		out[kind] = deduped
+	}
+	return out
+}
+
+func cloneCoverKinds(in map[core.Tag]bool) map[core.Tag]bool {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[core.Tag]bool, len(in))
+	keys := make([]core.Tag, 0, len(in))
+	for kind := range in {
+		keys = append(keys, kind)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	for _, kind := range keys {
+		if in[kind] {
+			out[kind] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

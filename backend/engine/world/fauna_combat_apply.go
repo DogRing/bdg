@@ -6,6 +6,7 @@ import (
 	"github.com/dogring/bdg/engine/env/decay"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
 )
 
 func (w *World) commitAnimalVital(a *fauna.Animal, intent fauna.Intent) {
@@ -35,6 +36,8 @@ func (w *World) applyAnimalAttack(attacker *fauna.Animal, intent fauna.Intent) {
 	}
 	attacker.EngagedWith = target.ID
 	target.EngagedWith = attacker.ID
+	attacker.HiddenUntil = 0
+	target.HiddenUntil = 0
 	target.NextExchangeTick = intent.NextExchangeTick
 	target.EngageCooldownUntil = intent.EngageCooldownUntil
 	if target.Vital <= 0 {
@@ -93,12 +96,54 @@ func (w *World) applyAnimalGraze(a *fauna.Animal) {
 	a.Drives["hunger"] = clamp01(a.Drives["hunger"] - mult)
 }
 
+func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
+	if a == nil || w.faunaRules == nil || hideRNG == nil {
+		return
+	}
+	if w.faunaRules.IsPredator(a.Species) {
+		return
+	}
+	if a.EngagedWith != "" || (a.HiddenUntil > 0 && a.HiddenUntil >= w.tick) {
+		return
+	}
+	if !w.actionHasTag(a.CurrentAction, fauna.TagFleePred) {
+		return
+	}
+	if !w.nearCoverFlora(a) {
+		return
+	}
+	chance := w.faunaRules.HideChance(a.Species, animalFeedContext{animal: a})
+	if chance <= 0 {
+		return
+	}
+	if hideRNG.Float64() < chance {
+		a.HiddenUntil = w.tick + core.Tick(w.envCfg.FaunaCombat.HideDurationTicks)
+	}
+}
+
 // nearForageFlora reports whether an edible-flora object (a scent:food emitter) is within grazing reach.
 func (w *World) nearForageFlora(a *fauna.Animal) bool {
 	reach := w.envCfg.ScentCellSize
 	for _, id := range w.objectIDs {
 		obj, ok := w.objects[id]
 		if !ok || !w.kindEmitsFood(obj.Kind) {
+			continue
+		}
+		if a.Pos.Distance(obj.Pos) <= reach {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *World) nearCoverFlora(a *fauna.Animal) bool {
+	reach := w.envCfg.FaunaCombat.HideCoverFactor * w.envCfg.ScentCellSize
+	if reach <= 0 {
+		return false
+	}
+	for _, id := range w.objectIDs {
+		obj, ok := w.objects[id]
+		if !ok || !w.kindIsCover(obj.Kind) {
 			continue
 		}
 		if a.Pos.Distance(obj.Pos) <= reach {
@@ -115,6 +160,10 @@ func (w *World) kindEmitsFood(kind core.Tag) bool {
 		}
 	}
 	return false
+}
+
+func (w *World) kindIsCover(kind core.Tag) bool {
+	return w.coverKinds[kind]
 }
 
 func (w *World) resolveFeedCarcass(predator *fauna.Animal, preferred core.ObjectID) (core.ObjectID, bool) {

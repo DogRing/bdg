@@ -64,6 +64,9 @@ cadence:
   fatigue_recover_per_tick: 0.008 # fatigue shed per tick while resting / low-effort
   vital_regen_per_tick: 0.001    # slow vital recovery, clamped by VitalCap (FC7)
   vital_cap_damage_fraction: 0.05 # exchange damage fraction applied as scar cap damage (FC7)
+  hide_duration: 100              # M3 cover-hiding duration after a successful flee-near-cover roll
+  hidden_flush_factor: 1.0        # hidden prey is flushed if predator is within this × scent_cell_size
+  hide_cover_factor: 1.0          # cover reach = this × scent_cell_size
   respawn_cadence: 200            # every N ticks, top each species up toward its respawn_target (F9)
 
 # ── Sizes (W6 + flora/resource) — representative defaults ──────────────────────────────

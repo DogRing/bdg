@@ -69,6 +69,9 @@
         "fatigue_pursuit_per_tick": { "type": "number", "minimum": 0, "description": "fatigue gained per tick during a high-effort chase/flight (M2)" },
         "fatigue_recover_per_tick": { "type": "number", "minimum": 0, "description": "fatigue shed per tick while resting / low-effort" },
         "vital_regen_per_tick": { "type": "number", "minimum": 0, "description": "combat vital regeneration rate per tick" },
+        "hide_duration": { "type": "integer", "minimum": 0, "description": "cover-hiding duration in ticks after a successful hide roll (M3)" },
+        "hidden_flush_factor": { "type": "number", "minimum": 0, "description": "hidden prey flush radius factor multiplied by scent_cell_size (M3)" },
+        "hide_cover_factor": { "type": "number", "minimum": 0, "description": "cover reach factor multiplied by scent_cell_size for nearCoverFlora (M3)" },
         "respawn_cadence": { "type": "integer", "minimum": 0, "description": "ticks between timer-respawn top-ups (F9); 0 = off" },
         "vital_cap_damage_fraction": { "type": "number", "minimum": 0, "description": "fraction of exchange damage applied as vital-cap scar" }
       }

@@ -70,6 +70,7 @@ type Registries struct {
     FaunaRules   *fauna.Rules               // compiled per-species fauna §6 (objects.yaml fauna:)
     DecayRules   *decay.Rules               // compiled decay table (objects.yaml decay:)
     ScentEmitters map[core.Tag][]core.Tag    // object kind id → sorted raw `scent:<channel>` tags; world resolves known tokens
+    CoverKinds   map[core.Tag]bool          // object kind id → carries `cover` tag (M3)
 }
 ```
 

@@ -515,7 +515,7 @@ const validObjectsWorldYAML = `schema_version: 1
 object_kinds:
   - id: grass
     mobile: false
-    tags: [ scent:food, forage ]
+    tags: [ scent:food, forage, cover ]
     flora:
       suitability: "moisture*0.5 + (1 - slope)*0.5"
       length_rate: 0.05
@@ -541,6 +541,7 @@ object_kinds:
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 6 - moisture * 3"
       speed: "Agility * 1.2 - thermal * 0.6"
+      hide_chance: "hunger + Agility"
       diet: [ forage ]
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }
       terrain_cost: { sand: 1.2 }
@@ -613,6 +614,7 @@ object_kinds:
         - { id: hunger, rate: 0.0008 }
       apparent_temp: "temperature"
       speed: 0
+      hide_chance: "hunger + Agility"
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 3.14 }
 item_kinds:
   - id: bones
@@ -767,7 +769,8 @@ func TestLoadValidContent(t *testing.T) {
 	}
 	if out.WorldEnv != nil || out.ClimateCfg != nil || out.NavCfg != nil ||
 		out.ClimateRules != nil || out.FloraRules != nil || out.FaunaRules != nil ||
-		out.DecayRules != nil || out.TerrainTypes != nil || out.ScentEmitters != nil {
+		out.DecayRules != nil || out.TerrainTypes != nil || out.ScentEmitters != nil ||
+		out.CoverKinds != nil {
 		t.Fatal("optional world/env fields should be nil when files are absent")
 	}
 
@@ -871,6 +874,9 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 		len(out.ScentEmitters["carcass"]) != 1 || out.ScentEmitters["carcass"][0] != "scent:carrion" {
 		t.Fatalf("scent emitters not extracted from content tags: %#v", out.ScentEmitters)
 	}
+	if len(out.CoverKinds) != 1 || !out.CoverKinds["grass"] {
+		t.Fatalf("cover kinds not extracted from content tags: %#v", out.CoverKinds)
+	}
 	if out.WorldEnv.FaunaCombat != (fauna.CombatParams{}) {
 		t.Fatalf("absent combat params should stay neutral zeroes: %+v", out.WorldEnv.FaunaCombat)
 	}
@@ -883,6 +889,9 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 	}
 	if got := out.FaunaRules.Feed("deer", ctx); got != 0 {
 		t.Fatalf("absent feed = %v, want 0", got)
+	}
+	if got := out.FaunaRules.HideChance("deer", ctx); got != 1 {
+		t.Fatalf("HideChance = %v, want 1", got)
 	}
 }
 
@@ -897,6 +906,9 @@ func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
   stamina_drop_threshold: 0.05
   vital_regen_per_tick: 0.001
   vital_cap_damage_fraction: 0.05
+  hide_duration: 100
+  hidden_flush_factor: 1.0
+  hide_cover_factor: 1.0
 `, 1)
 	dir := writeTestContent(t, files, worldSchemaFiles())
 	out, err := LoadContent(dir)
@@ -913,6 +925,9 @@ func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
 		StaminaDropThreshold:   0.05,
 		VitalRegenPerTick:      0.001,
 		VitalCapDamageFraction: 0.05,
+		HideDurationTicks:      100,
+		HiddenFlushFactor:      1.0,
+		HideCoverFactor:        1.0,
 	}
 	if got != want {
 		t.Fatalf("FaunaCombat = %+v, want %+v", got, want)
@@ -940,6 +955,9 @@ func TestFaunaCombatContentCompilesAndCrossChecks(t *testing.T) {
 	}
 	if got := out.FaunaRules.Feed("wolf", ctx); math.Abs(got-0.9) > 1e-12 {
 		t.Fatalf("Feed = %v, want 0.9", got)
+	}
+	if got := out.FaunaRules.HideChance("deer", ctx); math.Abs(got-1.0) > 1e-12 {
+		t.Fatalf("HideChance = %v, want 1.0", got)
 	}
 
 	animals := []fauna.Animal{
@@ -989,6 +1007,23 @@ func TestFaunaCombatUnknownOperandRejected(t *testing.T) {
 		t.Fatal("expected no partial registry on combat operand failure")
 	}
 	if !strings.Contains(err.Error(), "fauna wolf attack_power") || !strings.Contains(err.Error(), "target.threaat") {
+		t.Fatalf("error %q does not name species/formula/operand", err)
+	}
+}
+
+func TestFaunaHideChanceUnknownOperandRejected(t *testing.T) {
+	files := worldContentFiles()
+	files["actions.yaml"] = combatActionsYAML
+	files["objects.yaml"] = strings.Replace(combatObjectsYAML, `hide_chance: "hunger + Agility"`, `hide_chance: "hunger + bush.cover"`, 1)
+	dir := writeTestContent(t, files, worldSchemaFiles())
+	out, err := LoadContent(dir)
+	if err == nil {
+		t.Fatal("expected hide_chance operand error, got nil")
+	}
+	if out != nil {
+		t.Fatal("expected no partial registry on hide_chance operand failure")
+	}
+	if !strings.Contains(err.Error(), "fauna deer hide_chance") || !strings.Contains(err.Error(), "bush.cover") {
 		t.Fatalf("error %q does not name species/formula/operand", err)
 	}
 }

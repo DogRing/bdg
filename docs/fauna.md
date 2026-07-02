@@ -396,6 +396,52 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
 
 ---
 
+### 클러스터 10 — 포식자-피식자 리얼리즘 (M1~M6) — 진행 중 (2026-07-02)
+> **원칙(사람 확정):** 포식자 속도를 올려서 잡지 않는다. 도망자(prey)가 포식자와 **같거나 약간 빠르게** — prey는
+> **속도·은신·지형**으로, predator는 **매복·스태미나·몰이**로 생존. 목표: 측정 가능한 **~15% 포식 성공률**로 함께
+> 튜닝(balance.yaml + `tools/tuner`). D2/D3/D4/D7/D10/D11/D12 가드 §3 준용(은신/지형/매복은 **창발**이어야 하며
+> per-species FSM/속도·비율 하드코딩 금지). 배경: `docs/scenarios-world.md` FA1~FA3, memory `live-emergence-underseeded`.
+
+**확정(Decisions locked) — 구현 완료:**
+- **M1 — prey-경쟁 속도 baseline (RESOLVED, 커밋 3948b86):** 포식자 속도 상향 revert. §6 speed는 공통 baseline +
+  Agility 파생(prey Agility↑ → 자연히 대등~우세). 개별 종 속도 하드코딩 없음(D4/D7).
+- **M2 — 추격 피로 (RESOLVED, 커밋 3948b86):** `applyAnimalFatigue` — `effort:high`(추격) 시 fatigue↑,
+  `effort:none/low` 시 회복. speed §6가 fatigue를 감산 → 장기 추격 시 포식자 감속(스태미나 창발, FC6 동형). rate = balance cadence.
+- **맵 저작 — cover flora (RESOLVED, 2026-07-02):** `starter_village.fixture.yaml`에 **숲(oak 클러스터)·덤불(berry_shrub
+  thicket)** 저작 + `oak`/`berry_shrub`에 **`cover` 태그**(glossary 등재). 숲은 지형 타입이 아니라 flora 클러스터로
+  창발(D11). WEST/EAST WOODS + riparian gallery + 토끼밭 thicket. **`cover` 태그는 M3 전까지 INERT**(거동 0 변화; 스모크·전체 스위트 GREEN).
+
+**Open questions (사람 확정 필요 — resolve 전 SPEC/구현 금지, 발명=결함):**
+
+*M3 — cover 은신(cover-hiding). 사람 의도: "prey가 풀숲에 들어가면 일정 확률로 ~100틱 안 보이게". **RESOLVED 2026-07-02 (추천대로) → SPEC 착수·빌드 중.***
+- **M3-a 발동 조건 — RESOLVED: (ii) `flee`(선택 steer=`flee:predator`) 중일 때만** 판정.
+- **M3-b 확률·지속 — RESOLVED: (ii) §6 파생 확률**(prey 종별 `hide_chance` §6, 예 `0.5 + Agility*0.005`, D4/D7) + 지속 N=balance `hide_duration`(기본 100).
+- **M3-c hidden 의미 — RESOLVED: (ii) sight+`scent:prey` 둘 다 제외**(완전 은신). **flush 반경**(`hidden_flush_factor`×scent cell) 안으로 predator가 들어오면 즉시 발각/교전 가능(코앞 은신 방지).
+- **M3-d 해제 조건 — RESOLVED:** N틱 만료 ∨ engaged(교전 시 clear) ∨ predator flush 반경 진입. (crouch = hidden 중 제자리 웅크림 → 스스로 cover 이탈 안 함.)
+- **M3-e 상태/결정성 — RESOLVED:** 신규 `fauna.Animal.HiddenUntil`(tick, 직렬화 FC12 동형); 진입 roll = world apply의 seeded `envFork(tick,"fauna")`; cover flora 조회 = world 객체 근접(`nearCoverFlora`, `nearForageFlora` 동형; 연속좌표·칸 스냅 없음, D11).
+- **M3-f cover 종 집합 — RESOLVED:** `cover` 태그 = `oak`+`berry_shrub`(grass 제외). 태그로 조정 = content(D10).
+
+> **SPEC design (2026-07-02, 게이트 resolve로부터 유도 — 발명 아님).** **단일 writer = world**(이미 flora 근접·per-species §6 eval·seeded roll·per-animal scent deposit을 apply에서 수행 — `applyAnimalGraze`/`nearForageFlora`/`Rules.Graze`/`depositAnimalScent` 동형), **fauna는 `HiddenUntil`을 읽기만**. ① world `applyAnimalHiding`: prey∧선택 steer=`flee:predator`∧非engaged∧非hidden∧`nearCoverFlora` → `Rules.HideChance` §6 roll(fauna fork) → `HiddenUntil=tick+hide_duration`; engage 시 clear. ② world scent deposit: `HiddenUntil≥tick`인 prey는 `ChanPrey` deposit skip(냄새로도 안 보임). ③ fauna `combatTarget`: `other.HiddenUntil≥Tick`인 후보 skip(단 `dist≤flush`면 발각). ④ fauna 조향: 자신이 hidden이면 crouch(NextPos=Pos), predator가 flush 반경 안이면 bolt. **신규 operand 없음·Snapshot seam 없음·Intent 필드 없음**; `cover` 태그·`hide_chance` §6·`hide_*` balance 키가 OFF-neutral 레버(prey에 hide_chance 없으면 은신 0 → 기존 골든 불변).
+
+*M4 — 지형 차단/회피(terrain-block). 사람 의도: "나무·강·지형이 추격을 막게". [M4-a는 M3와 병행 가능]*
+- **사실 확인(2026-07-02):** fauna 이동은 **이미** per-species `TerrainCost`/`Impassable`을 읽는다(`fauna/step.go`·`cheap.go`: 유효비용=BaseCost×종mult, impassable=스텝 거부). ⇒ **강/산/바다 방벽 = 신규 메커니즘이 아니라 content terrain_cost 튜닝**.
+- **M4-a 강 비대칭(content):** wolf/bear의 `river` cost↑(크게 우회), deer는 중간(건너 도망 가능), fish는 `river`<1. 순수 content 튜닝. 추천 적용.
+- **M4-b 숲(flora)이 추격을 늦추는가:** 숲은 지형이 아니라 oak flora → terrain_cost로 안 잡힘. (i) cover flora 반경 내 **이동 속도 감쇠 §6 항**(덤불 저항; prey 작음→감쇠↓, bear 큼→감쇠↑ 비대칭) / **(ii) 숲은 이동 무차별 + 은신(M3)만으로 처리** / (iii) flora=물리 장애물(회피 steering). 추천 **(ii) 먼저**(M3로 충분한지 측정) → 부족하면 (i). (iii)는 park.
+
+*M5 — 매복·감지(ambush/detection). M3/M4로 prey가 어려워지면 predator 성공 레버. [M3/M4 착지 후]*
+- **사실 확인(2026-07-02):** fauna 감지는 **반경+FOV**(`sightQuery`: SightRadius/fovArc + spatial NearbyEntities)이며 **shade/LoS 미반영**(perception full-LoS 동물 지각 = park). ⇒ shade(어두운 숲)로 매복이 **자동 창발하지 않는다**.
+- **M5-a prey 조기감지 튜닝(content):** prey `senses`(sight 반경/FOV) vs predator 은밀성 = content senses 튜닝. 신규 메커니즘 아님. 추천 적용.
+- **M5-b 매복 메커니즘:** (i) **fauna 감지에 shade occluder 반영**(park 승격 — 숲 안 predator가 prey sight에서 감쇠 → 매복 창발; 정합적이나 큼) / **(ii) cover-근접 피탐지 반경 축소**(M3 hidden과 통합한 근사 — predator가 cover 안이면 상대 sight 반경↓). 추천 **(ii)** — 저비용, M3와 한 메커니즘. (i)는 후행.
+- **M5-c 몰이(cornering):** prey를 강/바다/경계로 몰면 실패 — 위치+지형 창발(강+bounds+M4). **별도 코드 불필요**(창발 유지). 추천.
+
+*M6 — 관성·저크(inertia/momentum). [후행 phase — M3~M5 착지 후]*
+- **M6-a:** 이동에 관성/급회전 페널티 — prey turn_rate↑(juke), predator 관성↑(오버슈트). content §6 `turn_rate`/`accel` per-species. 추천 content §6.
+
+**균형(공통):** M3~M6 착지 후 balance.yaml + `tools/tuner`로 **~15% 포식 성공률** 타겟 튜닝. 측정 시나리오: 토끼-늑대,
+사슴-늑대/곰(스모크 digest 확장 or scenario fixture). 종별 성공률·평균 추격시간·개체군 안정성 로그.
+
+---
+
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `flora.md §2`/`climate.md §2` 양식)
 > **모든 §1 게이트 RESOLVED ✓** → phase의 남은 실제 선행은 **Open question이 아니라 선행 leaf 빌드**다:
 > `engine/kernel/expr`(§6 — drive·utility·체감온도 내성·yield 수식) + `engine/env/decay`(P_m2 — 사체 lot 부패). 둘 다 READY/다음 leaf.

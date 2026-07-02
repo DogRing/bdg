@@ -45,6 +45,9 @@ func combatTarget(a Animal, snap *Snapshot, rules *Rules, targetRange float64) c
 		if targetID == "" && (!rules.dietMatches(diet, other.Species) || dist > targetRange) {
 			continue
 		}
+		if targetID == "" && other.HiddenUntil > 0 && other.HiddenUntil >= snap.Tick && dist > snap.Combat.HiddenFlushFactor*snap.ScentCellSize {
+			continue
+		}
 		threat := 0.0
 		if rules.IsPredator(other.Species) {
 			threat = 1.0

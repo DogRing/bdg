@@ -1,6 +1,6 @@
 # starter_village.fixture.yaml — the first hand-authored world fixture (W9 / world-integration WI-P4 input)
 #
-# A SMALL (128×128) starter world demonstrating the full env+fauna stack end-to-end (W12 RESOLVED: first
+# A starter 192×192 world demonstrating the full env+fauna stack end-to-end (W12 RESOLVED: first
 # fixture = small map + CLUSTERED village seeding so social proximity < sight, world-readiness §1). Loaded
 # by backend/tools/worldgen.Load → builds navmap/climate/flora/decay states + the animal set + scent grid
 # → world.InstallEnv/InstallFauna + Spawn/PlaceObject. This is a PER-RUN artifact, NOT content
@@ -11,10 +11,13 @@
 # seed ⇒ same world. Agent RealStats are SAMPLED by world.Spawn from the stat GenSpec (NOT in the
 # fixture); animal stats from the per-species GenSpec (W-seam). Positions are continuous (D11).
 #
-# LAYOUT (16×16 navmap cells @ 8 units = 128×128; row-major, row 0 = y∈[0,8)):
+# LAYOUT (16×16 navmap cells @ 12 units = 192×192; row-major, row 0 = y∈[0,12)):
 #   soil baseline · a RIVER running N→S at col 8 (sandy banks) → a SAND beach (row 13) → SEA coast (rows
 #   14-15) · a MOUNTAIN block in the NE (rows 0-2, cols 12-14, an ore_node on it). The village CLUSTERS
-#   on soil around (40,44) (west of the river); a DEER herd grazes the east pasture; a WOLF ranges the NE.
+#   on soil around (63,72) (west of the river); a DEER herd grazes the east pasture; a WOLF ranges the NE.
+#   FORESTS EMERGE from oak clusters (D11 — no `forest` terrain type): a WEST WOODS (SW of the village), an
+#   EAST WOODS (SE of the pasture, the deer's flee-refuge), a RIPARIAN gallery lining the river, plus
+#   berry_shrub THICKETS by the rabbit fields — all `cover`-tagged so prey can break line-of-sight (M3).
 #
 # What each scenario needs (docs/scenarios-world.md): FA1 graze (deer+grass+hunger), FA2 hunt (wolf+scent),
 # FA3 wary/flee bands, FA8 per-species terrain cost (river/mountain), env weather (climate.yaml).
@@ -71,9 +74,12 @@ agents:
   - { id: villager_8, pos: [57.0, 81.0] }
 
 # ── Flora (suitability-seeded plants) — DORMANT unless flora is active ────────────────────
-# Grass = the deer pasture (east) + a little near the village; berry_shrub = mature food bushes. Lengths
-# set to a mature stage so they bear/emit scent:food immediately (else they start as seedlings).
+# Grass = the deer/goat pasture (east + mountain-base); berry_shrub THICKETS = mature food bushes that
+# double as small-prey cover (cover tag); oak WOODS = cover-tagged forest patches (dense canopy). Lengths
+# set to a mature stage so they bear/emit scent:food + cast full shade immediately (else start as seedlings).
+# All flora sits on soil (never in the river col 8, on the NE mountain, or on the beach/sea rows 13-15).
 flora:
+  # GRASS pastures — grazing ground-cover (scent:food)
   - { id: grass_1, species: grass, pos: [129.0, 87.0], length: 0.3, width: 0.2 }   # east pasture (deer graze)
   - { id: grass_2, species: grass, pos: [141.0, 96.0], length: 0.3, width: 0.2 }
   - { id: grass_3, species: grass, pos: [123.0, 102.0], length: 0.3, width: 0.2 }
@@ -82,8 +88,33 @@ flora:
   - { id: grass_6, species: grass, pos: [75.0, 69.0], length: 0.3, width: 0.2 }   # near village
   - { id: grass_7, species: grass, pos: [84.0, 78.0], length: 0.3, width: 0.2 }
   - { id: grass_8, species: grass, pos: [150.0, 42.0], length: 0.3, width: 0.2 }  # mountain-base pasture (goat grazes, then climbs)
-  - { id: shrub_1, species: berry_shrub, pos: [87.0, 60.0], length: 1.0, width: 0.8 }  # mature (stage 2) → berries
+  # THICKETS (berry_shrub) — food + small-prey cover, clustered around the rabbit fields + pasture edge
+  - { id: shrub_1, species: berry_shrub, pos: [87.0, 60.0], length: 1.0, width: 0.8 }  # mature (stage 2) → berries + cover
   - { id: shrub_2, species: berry_shrub, pos: [78.0, 90.0], length: 1.0, width: 0.8 }
+  - { id: shrub_3, species: berry_shrub, pos: [84.0, 72.0], length: 1.0, width: 0.8 }  # in the rabbit field (hide spot)
+  - { id: shrub_4, species: berry_shrub, pos: [90.0, 84.0], length: 1.0, width: 0.8 }
+  - { id: shrub_5, species: berry_shrub, pos: [72.0, 84.0], length: 1.0, width: 0.8 }
+  - { id: shrub_6, species: berry_shrub, pos: [132.0, 114.0], length: 1.0, width: 0.8 } # pasture edge (deer nearer cover)
+  - { id: shrub_7, species: berry_shrub, pos: [144.0, 111.0], length: 1.0, width: 0.8 }
+  # WEST WOODS (oak) — forest SW of the village (west of the river); flee-cover for the village prey
+  - { id: oak_1, species: oak, pos: [42.0, 114.0], length: 8.0, width: 5.0 }   # mature (> stage 6) → full canopy shade
+  - { id: oak_2, species: oak, pos: [54.0, 120.0], length: 8.0, width: 5.0 }
+  - { id: oak_3, species: oak, pos: [48.0, 132.0], length: 8.0, width: 5.0 }
+  - { id: oak_4, species: oak, pos: [60.0, 126.0], length: 8.0, width: 5.0 }
+  - { id: oak_5, species: oak, pos: [66.0, 138.0], length: 8.0, width: 5.0 }
+  - { id: oak_6, species: oak, pos: [42.0, 144.0], length: 8.0, width: 5.0 }
+  # EAST WOODS (oak) — forest SE of the deer pasture; the herd's flee-refuge (and the bear's cover)
+  - { id: oak_7,  species: oak, pos: [156.0, 102.0], length: 8.0, width: 5.0 }
+  - { id: oak_8,  species: oak, pos: [168.0, 108.0], length: 8.0, width: 5.0 }
+  - { id: oak_9,  species: oak, pos: [162.0, 120.0], length: 8.0, width: 5.0 }
+  - { id: oak_10, species: oak, pos: [174.0, 114.0], length: 8.0, width: 5.0 }
+  - { id: oak_11, species: oak, pos: [168.0, 132.0], length: 8.0, width: 5.0 }
+  - { id: oak_12, species: oak, pos: [156.0, 126.0], length: 8.0, width: 5.0 }
+  # RIPARIAN gallery (oak) — wooded river banks (a cover corridor by the water crossing)
+  - { id: oak_13, species: oak, pos: [90.0, 108.0], length: 8.0, width: 5.0 }   # west bank (col 7)
+  - { id: oak_14, species: oak, pos: [90.0, 120.0], length: 8.0, width: 5.0 }
+  - { id: oak_15, species: oak, pos: [114.0, 108.0], length: 8.0, width: 5.0 }  # east bank (col 9)
+  - { id: oak_16, species: oak, pos: [114.0, 120.0], length: 8.0, width: 5.0 }
 
 # ── Animals (fauna) — DORMANT unless InstallFauna runs (empty ⇒ fauna OFF) ────────────────
 # A deer herd grazing the east pasture + a single wolf ranging the NE. Stats sampled from the per-species

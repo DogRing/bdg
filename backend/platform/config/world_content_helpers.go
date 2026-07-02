@@ -115,6 +115,22 @@ func buildScentEmitters(doc objectsDoc) map[core.Tag][]core.Tag {
 	return emitters
 }
 
+func buildCoverKinds(doc objectsDoc) map[core.Tag]bool {
+	out := make(map[core.Tag]bool)
+	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
+		for _, tag := range obj.Tags {
+			if tag == "cover" {
+				out[core.Tag(obj.ID)] = true
+				break
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func addScentEmitterTags(emitters map[core.Tag][]core.Tag, kind core.Tag, tags []string) {
 	seen := make(map[core.Tag]bool)
 	for _, tagText := range tags {

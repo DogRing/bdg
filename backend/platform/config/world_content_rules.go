@@ -189,13 +189,17 @@ func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, statReg *stat
 		if err != nil {
 			return nil, err
 		}
+		hideChance, err := parseOptionalFaunaFormula(obj.Fauna.HideChance, parse, "hide_chance")
+		if err != nil {
+			return nil, err
+		}
 		tc, imp, err := faunaTerrain(obj, terrainIDs)
 		if err != nil {
 			return nil, err
 		}
 		species[fauna.SpeciesID(obj.ID)] = fauna.SpeciesRule{
 			Utilities: utilities, Drives: drives, AppTemp: appTemp, Speed: speed,
-			AttackPower: attackPower, Hit: hit, Feed: feed, Graze: graze,
+			AttackPower: attackPower, Hit: hit, Feed: feed, Graze: graze, HideChance: hideChance,
 			Diet: faunaDiet(obj), Tags: faunaTags(obj), IsPredator: faunaIsPredator(obj), SmellRadius: obj.Fauna.Senses.SmellRadius,
 			SightRadius: obj.Fauna.Senses.SightRadius, FovArc: obj.Fauna.Senses.FovArc,
 			TerrainCost: tc, Impassable: imp, SteerChannel: steer,

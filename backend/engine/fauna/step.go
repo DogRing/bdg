@@ -151,6 +151,12 @@ func fullPipeline(
 		nextPos = a.Pos
 		nextHeading = a.Heading
 	}
+	flushRadius := snap.Combat.HiddenFlushFactor * snap.ScentCellSize
+	flushed := sightPred > 0 && distPred <= flushRadius
+	if a.HiddenUntil > 0 && a.HiddenUntil >= snap.Tick && !flushed {
+		nextPos = a.Pos
+		nextHeading = a.Heading
+	}
 
 	return Intent{
 		Animal:               a.ID,

@@ -21,6 +21,7 @@ type worldContent struct {
 	FaunaRules     *fauna.Rules
 	DecayRules     *decay.Rules
 	ScentEmitters  map[core.Tag][]core.Tag
+	CoverKinds     map[core.Tag]bool
 	RespawnTargets map[core.Tag]int
 }
 
@@ -59,6 +60,9 @@ type worldDoc struct {
 		FatigueRecoverPerTick  float64 `yaml:"fatigue_recover_per_tick"`
 		VitalRegenPerTick      float64 `yaml:"vital_regen_per_tick"`
 		VitalCapDamageFraction float64 `yaml:"vital_cap_damage_fraction"`
+		HideDuration           int     `yaml:"hide_duration"`
+		HiddenFlushFactor      float64 `yaml:"hidden_flush_factor"`
+		HideCoverFactor        float64 `yaml:"hide_cover_factor"`
 		RespawnCadence         int     `yaml:"respawn_cadence"`
 	} `yaml:"cadence"`
 }
@@ -153,6 +157,7 @@ type objectKindDoc struct {
 		Hit           any      `yaml:"hit"`
 		Feed          any      `yaml:"feed"`
 		Graze         any      `yaml:"graze"`
+		HideChance    any      `yaml:"hide_chance"`
 		RespawnTarget int      `yaml:"respawn_target"`
 		Diet          []string `yaml:"diet"`
 		Senses        struct {

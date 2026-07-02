@@ -65,9 +65,14 @@ type Animal struct {
     Drives        map[DriveID]float64      // open drive vector ∈ [0,1] (F29(ii))
     Stamina       float64
     Vital         float64                  // single vital (F3); world owns death (object-mortality, §7)
+    VitalCap      float64                  // upper bound for regen after combat scars; 0 = full cap
     Heading       float64                  // steering direction (radians); FOV reference axis (F44)
     CurrentAction actions.ActionID         // last chosen action — §6 stickiness operand, NOT an FSM (F30/D3)
     ActiveUntil   core.Tick                // F45 wake cooldown horizon; 0 = none. world commits it.
+    EngagedWith         core.ObjectID      // combat partner; empty = free
+    NextExchangeTick    core.Tick          // next engaged exchange tick
+    EngageCooldownUntil core.Tick          // next allowed engage attempt
+    HiddenUntil         core.Tick          // hidden while >0 and >= current tick; 0 = visible. world is sole writer (M3)
 }
 
 // EnvSample is the per-animal exogenous climate world samples at Animal.Pos and injects each tick.
@@ -523,6 +528,41 @@ section is the **fauna-module interface delta only** (behaviour/why → 클러�
   carrying the `game` tag). The herbivore side mirrors Feed: a `seek:food` (Graze) action, when the animal
   has reached a `scent:food` flora, crops it — the world reduces hunger by the species' `Graze` §6
   (`Rules.Graze`, parallels `Rules.Feed`). Absent `Graze`/`Tags` ⇒ outcome-neutral.
+
+## Cover-hiding (M3 — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+
+Prey survive by **hiding**, not by out-running: a fleeing herbivore that reaches `cover`-tagged flora may
+break the predator's detection for a while. **`HiddenUntil` has a SINGLE writer — `engine/world`** (it
+owns flora proximity, the per-species §6 eval, the seeded roll, and the scent deposit — all already
+world-side); **fauna only READS `Animal.HiddenUntil`** here. This is the fauna-module interface delta
+(behaviour/why → 클러스터 10); the entry roll + scent suppression are world's (SPEC-world-fauna M3).
+
+- **Animal state (M3-e):** add `Animal.HiddenUntil core.Tick` — the animal is HIDDEN while
+  `HiddenUntil >= snap.Tick` (0 = visible). Serialized alongside the FC combat fields (F17). fauna never
+  writes it (world sets it on entry / clears it on engage); `Step` treats it as read-only snapshot state.
+- **§6 hide chance (M3-b, D4/D7):** add `func (r *Rules) HideChance(sp SpeciesID, ctx expr.Context) float64`
+  — the species' §6 probability program (`fauna: hide_chance`, e.g. `0.5 + Agility*0.005`). Returns **0 when
+  absent** so a species with no `hide_chance` never hides (OFF-neutral; predators omit it). Parallels
+  `Rules.Graze`/`Feed`/`AttackPower`/`Hit` exactly. `ReadsAttrs()` ⊆ `AttrOperands()` ∪ drive ids and
+  `Reads()` ⊆ stats registry are cross-checked by `platform/config` like every other §6 (no new operand —
+  `Agility` rides the existing `Stat` channel). Evaluated WORLD-side in apply (world holds `Rules`).
+- **Detection exclusion (M3-c, combatTarget):** `combatTarget` SKIPS a candidate `other` with
+  `other.HiddenUntil >= snap.Tick` **UNLESS** `dist <= snap.Combat.HiddenFlushFactor * snap.ScentCellSize`
+  (the point-blank **flush** exception — a predator at the prey's feet still finds it). A hidden prey is
+  thus un-targetable at range; combined with the world-side `scent:prey` deposit suppression it is fully
+  "invisible" (sight+scent) until flushed or the timer expires.
+- **Crouch / bolt steering (M3-a/d):** in the STEER phase, if the acting animal is hidden
+  (`a.HiddenUntil >= snap.Tick`) it **crouches** — `NextPos == Pos` (holds still in cover, so it never
+  wanders out of cover on its own; heading unchanged), OVERRIDING the chosen action's steer — **UNLESS** a
+  predator is within the flush radius (`dist.predator <= HiddenFlushFactor * ScentCellSize`), in which case
+  it **bolts** (steers normally, i.e. resumes Flee). It does not clear `HiddenUntil` itself (world owns the
+  field); once flushed the predator's `combatTarget` flush exception + the world engage-clear take over.
+- **Params (balance):** `CombatParams` gains `HiddenFlushFactor float64` (× `ScentCellSize` → flush radius;
+  used by `combatTarget` + the bolt test), `HideDurationTicks int` and `HideCoverFactor float64` (× cell →
+  cover reach) — the latter two consumed WORLD-side (entry). All from `content/world.yaml cadence` (D10).
+- **Neutrality:** no species carries `hide_chance` ⇒ `HideChance`≡0 ⇒ `HiddenUntil` never set ⇒
+  `combatTarget`/steer behave exactly as before; existing goldens byte-identical (the M3 OFF-neutral lever,
+  parallel to the FC/Graze levers). NO new `AttrOperands()` entry, NO new `Snapshot`/`Intent` field.
 
 ## Notes
 - `Step` deliberately mirrors `flora.Step`/`decay.Step`: pure read → return per-entity delta/intent →

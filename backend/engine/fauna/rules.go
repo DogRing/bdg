@@ -40,6 +40,7 @@ type SpeciesRule struct {
 	Hit          *expr.Program                      // §6 hit multiplier/probability composition (FC4)
 	Feed         *expr.Program                      // §6 carcass feed value composition (FC8)
 	Graze        *expr.Program                      // §6 herbivore graze hunger-recovery factor (parallels Feed)
+	HideChance   *expr.Program                      // §6 cover-hide probability (M3)
 	Diet         []core.Tag                         // diet/target tags (F7)
 	Tags         []core.Tag                         // this kind's own content tags — what another animal's Diet matches against (D10)
 	IsPredator   bool                               // carries `threat:predator` (F8)
@@ -77,6 +78,7 @@ type speciesData struct {
 	hit          *expr.Program
 	feed         *expr.Program
 	graze        *expr.Program
+	hideChance   *expr.Program
 	diet         []core.Tag
 	tags         []core.Tag
 	isPredator   bool
@@ -148,6 +150,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			hit:          sr.Hit,
 			feed:         sr.Feed,
 			graze:        sr.Graze,
+			hideChance:   sr.HideChance,
 			diet:         cloneTags(sr.Diet),
 			tags:         cloneTags(sr.Tags),
 			isPredator:   sr.IsPredator,

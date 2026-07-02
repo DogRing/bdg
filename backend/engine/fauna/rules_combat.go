@@ -73,6 +73,23 @@ func (r *Rules) Graze(sp SpeciesID, ctx expr.Context) float64 {
 	return v
 }
 
+// HideChance evaluates the species' §6 cover-hide probability program (M3). Returns 0 when absent so a
+// species with no hide_chance never hides (OFF-neutral). Parallels Graze/Feed/AttackPower/Hit.
+func (r *Rules) HideChance(sp SpeciesID, ctx expr.Context) float64 {
+	if r == nil {
+		return 0
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.hideChance == nil {
+		return 0
+	}
+	v := sd.hideChance.EvalNumber(ctx)
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // Diet returns the species' diet/target tags in sorted order.
 func (r *Rules) Diet(sp SpeciesID) []core.Tag {
 	if r == nil {

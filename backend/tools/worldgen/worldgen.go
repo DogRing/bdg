@@ -181,7 +181,7 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 		return nil, err
 	}
 	if len(animals) > 0 {
-		w.InstallFauna(envCfg, cfg.FaunaRules, cfg.ScentEmitters, animals)
+		w.InstallFauna(envCfg, cfg.FaunaRules, cfg.ScentEmitters, cfg.CoverKinds, animals)
 		if envCfg.RespawnCadence > 0 && len(cfg.RespawnTargets) > 0 {
 			templates, anchors := respawnInputs(fx)
 			w.InstallRespawn(templates, cfg.RespawnTargets, anchors, envCfg.RespawnCadence)

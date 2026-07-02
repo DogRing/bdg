@@ -106,6 +106,7 @@ The `(KR: …)` hints cross-reference the Korean input docs (`PRD.md`, `design.m
 | Suitability | `Suitability` | §6 formula over terrain attrs + climate (`Moisture`/`Temperature`) → [0,1]; drives both flora growth axes (`Length`/`Width`) + (below θ, with hysteresis) death. `docs/flora.md` 1b. |
 | Shade | `Shade` | Per-plant occlusion PARAMETER (`Radius`/`Opacity` = §6(`Width`)) `engine/env/flora` emits; `engine/mind/perception` composes overlapping shade ∏(1−opacity) into LoS attenuation. "Dark forest" EMERGES from overlap (D2). NOT a terrain `light` attribute, NOT the binary `[opaque]` tag. `docs/flora.md` 1d. |
 | Shade occluder | `ShadeOccluder` | The perception-facing projection of a `Shade` caster (`{ID, Pos, Radius, Opacity}`) on `WorldSnapshot`; `world` adapts `flora.ShadeOf` into it (perception never imports flora). `backend/engine/mind/perception/SPEC.md`. |
+| Cover tag | `cover` | A flora kind's `tags` marker (`content/objects.yaml`) declaring it a HIDING SPOT for prey: reaching cover-tagged flora lets a fleeing herbivore break a predator's line-of-sight (the fauna-realism M3 mechanic). Data-driven (D4/D10) — "what hides you" authored once; SEPARATE from `Shade` (LoS attenuation ∝ `Width`), a discrete affordance not an occlusion gradient. INERT until the cover-hiding mechanic is built (OFF-neutral). `docs/fauna.md` (M3). |
 
 ## Climate & weather (`docs/climate.md`)
 | Concept | Canonical | Notes |

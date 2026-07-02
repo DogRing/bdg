@@ -65,6 +65,7 @@ type Animal struct {
 	EngagedWith         core.ObjectID    // combat partner; empty means free
 	NextExchangeTick    core.Tick        // next tick an engaged attack may propose damage
 	EngageCooldownUntil core.Tick        // next tick an engage attempt may be made
+	HiddenUntil         core.Tick        // hidden while >0 and >= current tick; SINGLE WRITER = engine/world (M3)
 }
 
 // EnvSample is the per-animal exogenous climate world samples injected each tick.
@@ -116,6 +117,9 @@ type CombatParams struct {
 	FatigueRecoverPerTick  float64 // fatigue shed per tick while resting/low-effort
 	VitalRegenPerTick      float64
 	VitalCapDamageFraction float64
+	HiddenFlushFactor      float64 // × Snapshot.ScentCellSize = flush radius for hidden prey detection (M3)
+	HideDurationTicks      int     // ticks a prey stays hidden after a successful world-side hide roll (M3)
+	HideCoverFactor        float64 // × ScentCellSize = cover reach for world nearCoverFlora (M3)
 }
 
 // Snapshot is the read-only world view the controller scores over (the read phase;

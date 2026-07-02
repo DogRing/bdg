@@ -66,7 +66,7 @@ func TestCombatScenarioDietIsTagDriven(t *testing.T) {
 		deer := testAnimal("an:deer", "deer", core.Vec2{X: 2, Y: 1})
 		deer.Vital = 1
 		deer.VitalCap = 1
-		fx.world.InstallFauna(scenarioCombatCfg(), scenarioCombatRules(t, diet), testScentEmitters(), []fauna.Animal{deer, wolf})
+		fx.world.InstallFauna(scenarioCombatCfg(), scenarioCombatRules(t, diet), testScentEmitters(), nil, []fauna.Animal{deer, wolf})
 		for range 10 {
 			fx.world.Tick()
 		}
@@ -99,7 +99,7 @@ func TestCombatScenarioPreyNeverRetaliates(t *testing.T) {
 	deer := testAnimal("an:deer", "deer", core.Vec2{X: 2, Y: 1})
 	deer.Vital = 1
 	deer.VitalCap = 1
-	fx.world.InstallFauna(scenarioCombatCfg(), scenarioCombatRules(t, []core.Tag{"game"}), testScentEmitters(), []fauna.Animal{deer, wolf})
+	fx.world.InstallFauna(scenarioCombatCfg(), scenarioCombatRules(t, []core.Tag{"game"}), testScentEmitters(), nil, []fauna.Animal{deer, wolf})
 
 	sawDeerDamage := false
 	for range 8 {
@@ -133,7 +133,7 @@ func TestCombatScenarioPackTwoPredators(t *testing.T) {
 			w.Stamina = 1
 			animals = append(animals, w)
 		}
-		fx.world.InstallFauna(scenarioCombatCfg(), scenarioCombatRules(t, []core.Tag{"game"}), testScentEmitters(), animals)
+		fx.world.InstallFauna(scenarioCombatCfg(), scenarioCombatRules(t, []core.Tag{"game"}), testScentEmitters(), nil, animals)
 		for tick := 1; tick <= 30; tick++ {
 			fx.world.Tick()
 			if fx.world.animals["an:deer"] == nil {
@@ -187,7 +187,7 @@ func TestGrazingReducesHungerAtForageFlora(t *testing.T) {
 	cfg.FaunaDT = 1
 	deer := testAnimal("an:deer", "deer", core.Vec2{X: 1, Y: 1})
 	deer.Drives = map[fauna.DriveID]float64{"hunger": 0.8}
-	fx.world.InstallFauna(cfg, rules, testScentEmitters(), []fauna.Animal{deer})
+	fx.world.InstallFauna(cfg, rules, testScentEmitters(), nil, []fauna.Animal{deer})
 	fx.world.PlaceObject("grass_1", "grass", core.Vec2{X: 2, Y: 1}, nil) // forage flora within reach
 
 	const start = 0.8
@@ -206,7 +206,7 @@ func TestGrazingReducesHungerAtForageFlora(t *testing.T) {
 	fx2.world.svc.Actions = reg
 	deer2 := testAnimal("an:deer", "deer", core.Vec2{X: 50, Y: 50})
 	deer2.Drives = map[fauna.DriveID]float64{"hunger": 0.8}
-	fx2.world.InstallFauna(cfg, rules, testScentEmitters(), []fauna.Animal{deer2})
+	fx2.world.InstallFauna(cfg, rules, testScentEmitters(), nil, []fauna.Animal{deer2})
 	fx2.world.PlaceObject("grass_far", "grass", core.Vec2{X: 2, Y: 1}, nil) // far away, out of reach
 	for range 20 {
 		fx2.world.Tick()
@@ -253,7 +253,7 @@ func TestCombatScenarioStaminaDisengage(t *testing.T) {
 	deer := testAnimal("an:deer", "deer", core.Vec2{X: 2, Y: 1})
 	deer.Vital = 1
 	deer.VitalCap = 1
-	fx.world.InstallFauna(cfg, rules, testScentEmitters(), []fauna.Animal{deer, wolf})
+	fx.world.InstallFauna(cfg, rules, testScentEmitters(), nil, []fauna.Animal{deer, wolf})
 
 	engagedAtSomePoint, disengagedWhileDeerAlive := false, false
 	for range 15 {

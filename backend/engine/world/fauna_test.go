@@ -98,6 +98,37 @@ func testCombatFaunaRules(t *testing.T) *fauna.Rules {
 	})
 }
 
+func testHideFaunaRules(t *testing.T) *fauna.Rules {
+	t.Helper()
+	return fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {
+			Utilities: map[actions.ActionID]*expr.Program{
+				"Flee":   testNumProgram(t, "1"),
+				"Forage": testNumProgram(t, "0"),
+			},
+			Drives:       []fauna.DriveRule{{ID: "hunger"}},
+			Speed:        testNumProgram(t, "0"),
+			HideChance:   testNumProgram(t, "1"),
+			SmellRadius:  5,
+			SightRadius:  5,
+			FovArc:       3.14,
+			SteerChannel: map[actions.ActionID]core.Tag{"Flee": fauna.TagFleePred},
+		},
+		"wolf": {
+			Utilities:   map[actions.ActionID]*expr.Program{"Attack": testNumProgram(t, "1")},
+			Drives:      []fauna.DriveRule{{ID: "hunger"}},
+			Speed:       testNumProgram(t, "0"),
+			IsPredator:  true,
+			SmellRadius: 5,
+			SightRadius: 5,
+			FovArc:      3.14,
+			SteerChannel: map[actions.ActionID]core.Tag{
+				"Attack": fauna.TagAttack,
+			},
+		},
+	})
+}
+
 func installCombatActionRegistry(t *testing.T, fx *testFixture) {
 	t.Helper()
 	reg, err := actions.Load(strings.NewReader(`schema_version: 1
@@ -124,6 +155,32 @@ actions:
 	fx.world.svc.Actions = reg
 }
 
+func installHideActionRegistry(t *testing.T, fx *testFixture) {
+	t.Helper()
+	reg, err := actions.Load(strings.NewReader(`schema_version: 1
+actions:
+  - id: Flee
+    tags: [effort:high, flee:predator]
+    duration: 1
+    produces: [safe]
+  - id: Forage
+    tags: [effort:low, seek:food]
+    duration: 1
+    produces: [has_food]
+  - id: Attack
+    tags: [effort:high, combat:attack]
+    duration: 1
+    produces: [near_other]
+`))
+	if err != nil {
+		t.Fatalf("actions.Load hide registry: %v", err)
+	}
+	fx.world.actReg = reg
+	fx.actReg = reg
+	fx.svc.Actions = reg
+	fx.world.svc.Actions = reg
+}
+
 func installCombatFauna(t *testing.T, fx *testFixture, animals []fauna.Animal) {
 	t.Helper()
 	installCombatActionRegistry(t, fx)
@@ -131,7 +188,7 @@ func installCombatFauna(t *testing.T, fx *testFixture, animals []fauna.Animal) {
 	cfg.ScentCellSize = 5
 	cfg.ScentSpread = 1
 	cfg.FaunaDT = 1
-	fx.world.InstallFauna(cfg, testCombatFaunaRules(t), testScentEmitters(), animals)
+	fx.world.InstallFauna(cfg, testCombatFaunaRules(t), testScentEmitters(), nil, animals)
 }
 
 func TestFaunaOffAndInstalledEmptyNeutrality(t *testing.T) {
@@ -142,7 +199,7 @@ func TestFaunaOffAndInstalledEmptyNeutrality(t *testing.T) {
 			cfg.ScentCellSize = 5
 			cfg.ScentSpread = 2
 			cfg.FaunaDT = 1
-			fx.world.InstallFauna(cfg, fauna.NewRules(nil), testScentEmitters(), nil)
+			fx.world.InstallFauna(cfg, fauna.NewRules(nil), testScentEmitters(), nil, nil)
 		}
 		fx.world.Tick()
 		return worldDigest(fx.world)
@@ -151,6 +208,154 @@ func TestFaunaOffAndInstalledEmptyNeutrality(t *testing.T) {
 	empty := run(true)
 	if off != empty {
 		t.Fatalf("installed empty fauna changed digest\noff:\n%s\nempty:\n%s", off, empty)
+	}
+}
+
+func TestAnimalHidingEntryRollNearCover(t *testing.T) {
+	run := func() core.Tick {
+		fx := newFixtureSeeded(t, 81)
+		installHideActionRegistry(t, fx)
+		cfg := testEnvConfig()
+		cfg.ScentCellSize = 5
+		cfg.FaunaCombat.HideDurationTicks = 100
+		cfg.FaunaCombat.HideCoverFactor = 1
+		fx.world.PlaceObject("cover_1", "berry_shrub", core.Vec2{X: 2}, nil)
+		fx.world.InstallFauna(cfg, testHideFaunaRules(t), testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{
+			testAnimal("an:deer", "deer", core.Vec2{}),
+		})
+
+		fx.world.applyAnimalIntent(fauna.Intent{
+			Animal: "an:deer", Action: "Flee", NextPos: core.Vec2{}, NextHeading: 0,
+			Drives: map[fauna.DriveID]float64{"hunger": 0.2}, Stamina: 1, Vital: 1, VitalCap: 1,
+		})
+		return fx.world.animals["an:deer"].HiddenUntil
+	}
+	if a, b := run(), run(); a != b || a != 100 {
+		t.Fatalf("HiddenUntil deterministic set = %d/%d, want 100/100", a, b)
+	}
+}
+
+func TestAnimalHidingIneligibleDoesNotSetOrDraw(t *testing.T) {
+	tests := []struct {
+		name       string
+		animal     fauna.Animal
+		action     actions.ActionID
+		cover      bool
+		wantHidden core.Tick
+	}{
+		{name: "predator", animal: testAnimal("an:wolf", "wolf", core.Vec2{}), action: "Flee", cover: true},
+		{name: "not fleeing", animal: testAnimal("an:deer", "deer", core.Vec2{}), action: "Forage", cover: true},
+		{name: "not near cover", animal: testAnimal("an:deer", "deer", core.Vec2{}), action: "Flee"},
+		{name: "already hidden", animal: func() fauna.Animal {
+			a := testAnimal("an:deer", "deer", core.Vec2{})
+			a.HiddenUntil = 50
+			return a
+		}(), action: "Flee", cover: true, wantHidden: 50},
+		{name: "engaged", animal: func() fauna.Animal {
+			a := testAnimal("an:deer", "deer", core.Vec2{})
+			a.EngagedWith = "an:wolf"
+			return a
+		}(), action: "Flee", cover: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fx := newFixtureSeeded(t, 84)
+			installHideActionRegistry(t, fx)
+			cfg := testEnvConfig()
+			cfg.ScentCellSize = 5
+			cfg.FaunaCombat.HideDurationTicks = 100
+			cfg.FaunaCombat.HideCoverFactor = 1
+			if tt.cover {
+				fx.world.PlaceObject("cover_1", "berry_shrub", core.Vec2{X: 2}, nil)
+			}
+			fx.world.InstallFauna(cfg, testHideFaunaRules(t), testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{tt.animal})
+			fx.world.applyAnimalIntent(fauna.Intent{
+				Animal: tt.animal.ID, Action: tt.action, NextPos: tt.animal.Pos, NextHeading: tt.animal.Heading,
+				Drives: tt.animal.Drives, Stamina: 1, Vital: 1, VitalCap: 1, EngagedWith: tt.animal.EngagedWith,
+			})
+			if got := fx.world.animals[tt.animal.ID].HiddenUntil; got != tt.wantHidden {
+				t.Fatalf("HiddenUntil = %d, want %d", got, tt.wantHidden)
+			}
+		})
+	}
+}
+
+func TestAnimalHidingNeutralityNoHideChanceOrNoCoverDraw(t *testing.T) {
+	run := func(rules *fauna.Rules, cover bool) (string, string, bool, core.Tick) {
+		fx := newFixtureSeeded(t, 85)
+		installHideActionRegistry(t, fx)
+		cfg := testEnvConfig()
+		cfg.ScentCellSize = 5
+		cfg.FaunaCombat.HideDurationTicks = 100
+		cfg.FaunaCombat.HideCoverFactor = 1
+		if cover {
+			fx.world.PlaceObject("cover_1", "berry_shrub", core.Vec2{X: 2}, nil)
+		}
+		animal := testAnimal("an:deer", "deer", core.Vec2{})
+		animal.CurrentAction = "Flee"
+		fx.world.InstallFauna(cfg, rules, testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{animal})
+		before := worldDigest(fx.world) + animalDigest(fx.world.animals, fx.world.animalIDs)
+		hideRNG := rng.New(99)
+		rngBefore := hideRNG.State().Data
+		fx.world.applyAnimalHiding(fx.world.animals["an:deer"], hideRNG)
+		return before, worldDigest(fx.world) + animalDigest(fx.world.animals, fx.world.animalIDs), rngBefore == hideRNG.State().Data, fx.world.animals["an:deer"].HiddenUntil
+	}
+	noChanceRules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {Utilities: map[actions.ActionID]*expr.Program{"Flee": testNumProgram(t, "1")}, Drives: []fauna.DriveRule{{ID: "hunger"}}, Speed: testNumProgram(t, "0")},
+	})
+	before, after, rngUnchanged, hiddenUntil := run(noChanceRules, true)
+	if before != after || !rngUnchanged || hiddenUntil != 0 {
+		t.Fatalf("no hide_chance should be byte-neutral and not draw\nbefore:\n%s\nafter:\n%s\nrngUnchanged=%v hiddenUntil=%d", before, after, rngUnchanged, hiddenUntil)
+	}
+	before, after, rngUnchanged, hiddenUntil = run(testHideFaunaRules(t), false)
+	if before != after || !rngUnchanged || hiddenUntil != 0 {
+		t.Fatalf("no cover should be byte-neutral and not draw\nbefore:\n%s\nafter:\n%s\nrngUnchanged=%v hiddenUntil=%d", before, after, rngUnchanged, hiddenUntil)
+	}
+}
+
+func TestHiddenPreyScentSuppressed(t *testing.T) {
+	run := func(hidden bool) float64 {
+		fx := newFixtureSeeded(t, 82)
+		cfg := testEnvConfig()
+		cfg.ScentSpread = 1
+		animal := testAnimal("an:deer", "deer", core.Vec2{})
+		if hidden {
+			animal.HiddenUntil = 1
+		}
+		fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{animal})
+		fx.world.runScentEnv()
+		return fx.world.scent.IntensityAt(scent.ChanPrey, animal.Pos)
+	}
+	if got := run(true); got != 0 {
+		t.Fatalf("hidden prey deposited prey scent: %.6f", got)
+	}
+	if got := run(false); got <= 0 {
+		t.Fatalf("visible prey did not deposit prey scent: %.6f", got)
+	}
+}
+
+func TestAnimalAttackClearsHiddenUntil(t *testing.T) {
+	fx := newFixtureSeeded(t, 83)
+	installHideActionRegistry(t, fx)
+	cfg := testEnvConfig()
+	wolf := testAnimal("an:wolf", "wolf", core.Vec2{})
+	deer := testAnimal("an:deer", "deer", core.Vec2{X: 1})
+	wolf.HiddenUntil = 50
+	deer.HiddenUntil = 50
+	wolf.VitalCap = 1
+	deer.VitalCap = 1
+	fx.world.InstallFauna(cfg, testHideFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{deer, wolf})
+
+	fx.world.applyAnimalIntent(fauna.Intent{
+		Animal: "an:wolf", Action: "Attack", Target: "an:deer", NextPos: wolf.Pos, NextHeading: wolf.Heading,
+		Drives: wolf.Drives, Stamina: 1, Vital: 1, VitalCap: 1,
+	})
+
+	if got := fx.world.animals["an:wolf"].HiddenUntil; got != 0 {
+		t.Fatalf("attacker HiddenUntil = %d, want 0", got)
+	}
+	if got := fx.world.animals["an:deer"].HiddenUntil; got != 0 {
+		t.Fatalf("target HiddenUntil = %d, want 0", got)
 	}
 }
 
@@ -168,7 +373,7 @@ func TestFaunaSnapshotEnvAndMissingEnvPanic(t *testing.T) {
 	}
 	climState := climate.New(climCfg, func(core.Vec2) core.Tag { return "plain" })
 	fx.world.InstallEnv(cfg, testNavMap(), climState, climate.NewRules(nil), nil, nil, nil, nil)
-	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), []fauna.Animal{
+	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{
 		testAnimal("an:1", "deer", core.Vec2{X: 3, Y: 4}),
 		testAnimal("an:2", "deer", core.Vec2{X: 4, Y: 4}),
 	})
@@ -226,7 +431,7 @@ func TestAnimalApplyMoveEffectAndDeath(t *testing.T) {
 	cfg.ScentCellSize = 5
 	cfg.ScentSpread = 2
 	cfg.FaunaDT = 1
-	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), []fauna.Animal{testAnimal("an:1", "deer", core.Vec2{})})
+	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{testAnimal("an:1", "deer", core.Vec2{})})
 
 	fx.world.applyAnimalIntent(fauna.Intent{
 		Animal:      "an:1",
@@ -509,7 +714,7 @@ func TestScentDepositCommitPostMoveAndLatency(t *testing.T) {
 	cfg.ScentCellSize = 5
 	cfg.ScentSpread = 2
 	cfg.FaunaDT = 1
-	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), []fauna.Animal{
+	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{
 		testAnimal("an:w", "wolf", core.Vec2{X: 1, Y: 1}),
 		testAnimal("an:d", "deer", core.Vec2{X: 2, Y: 2}),
 	})
@@ -563,7 +768,7 @@ func TestScentEmitterClassificationUsesContentTags(t *testing.T) {
 		nil,
 		nil,
 	)
-	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), []fauna.Animal{
+	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{
 		testAnimal("an:w", "wolf", core.Vec2{X: 1, Y: 1}),
 		testAnimal("an:d", "deer", core.Vec2{X: 11, Y: 1}),
 		testAnimal("an:f", "future", core.Vec2{X: 30, Y: 1}),
@@ -593,7 +798,7 @@ func TestScentEmitterRegistryNilSuppressesDeposits(t *testing.T) {
 	cfg.ScentCellSize = 5
 	cfg.ScentSpread = 1
 	cfg.FaunaDT = 1
-	fx.world.InstallFauna(cfg, testFaunaRules(t), nil, []fauna.Animal{
+	fx.world.InstallFauna(cfg, testFaunaRules(t), nil, nil, []fauna.Animal{
 		testAnimal("an:w", "wolf", core.Vec2{X: 1, Y: 1}),
 		testAnimal("an:d", "deer", core.Vec2{X: 11, Y: 1}),
 	})
@@ -615,7 +820,7 @@ func TestCombinedApplyConflictTieBySharedID(t *testing.T) {
 	cfg.FaunaDT = 1
 	animal := testAnimal("an:1", "deer", core.Vec2{})
 	animal.Stats["Agility"] = 80
-	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), []fauna.Animal{animal})
+	fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{animal})
 	hunter := fx.world.Spawn("zz_agent", core.Vec2{}, agent.DefaultConfig(), rng.New(350))
 	hunter.RealStats["Agility"] = 80
 	hunter.NeedIntensities["Satiety"] = 0.8
@@ -641,7 +846,7 @@ func TestCombinedApplyShuffledCollectionOrderDeterministic(t *testing.T) {
 		cfg.ScentCellSize = 5
 		cfg.ScentSpread = 2
 		cfg.FaunaDT = 1
-		fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), []fauna.Animal{
+		fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{
 			testAnimal("an:1", "deer", core.Vec2{}),
 			testAnimal("an:2", "deer", core.Vec2{X: 1}),
 		})
@@ -693,7 +898,7 @@ func TestFaunaDeterminismGolden(t *testing.T) {
 		cfg.ScentCellSize = 5
 		cfg.ScentSpread = 2
 		cfg.FaunaDT = 1
-		fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), []fauna.Animal{
+		fx.world.InstallFauna(cfg, testFaunaRules(t), testScentEmitters(), nil, []fauna.Animal{
 			testAnimal("an:1", "deer", core.Vec2{}),
 			testAnimal("an:2", "wolf", core.Vec2{X: 5}),
 		})

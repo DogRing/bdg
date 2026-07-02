@@ -83,7 +83,7 @@ func TestCombatPredationEndToEndThroughTick(t *testing.T) {
 	deer.Vital = 1
 	deer.VitalCap = 1
 
-	fx.world.InstallFauna(cfg, rules, testScentEmitters(), []fauna.Animal{deer, wolf})
+	fx.world.InstallFauna(cfg, rules, testScentEmitters(), nil, []fauna.Animal{deer, wolf})
 
 	var sawDamage, sawDeath, sawCarcass, sawCarrion, sawCarcassConsumed bool
 	for i := range 40 {

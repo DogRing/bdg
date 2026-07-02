@@ -13,6 +13,24 @@ func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick)
 	// Drive advance: only accumulators + fear decay (no full sense, no sight query).
 	newDrives := rules.cheapDriveAdvance(a.Species, a.Drives, snap.DT)
 
+	if a.HiddenUntil > 0 && a.HiddenUntil >= snap.Tick {
+		return Intent{
+			Animal:              a.ID,
+			Action:              a.CurrentAction,
+			Target:              "",
+			NextPos:             a.Pos,
+			NextHeading:         a.Heading,
+			Drives:              newDrives,
+			Stamina:             a.Stamina,
+			Vital:               regenVital(a, snap.DT, snap.Combat),
+			VitalCap:            effectiveVitalCap(a),
+			ActiveUntil:         newActiveUntil,
+			EngagedWith:         a.EngagedWith,
+			NextExchangeTick:    a.NextExchangeTick,
+			EngageCooldownUntil: a.EngageCooldownUntil,
+		}
+	}
+
 	// Cheap steer: continue along Heading. Evaluate speed with minimal context.
 	env := snap.Env[a.ID] // already validated in Step (panic path is before cheapPath)
 	appTemp := computeAppTemp(a, env, rules)
