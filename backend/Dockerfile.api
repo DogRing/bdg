@@ -33,3 +33,4 @@ USER nonroot:nonroot
 ENTRYPOINT ["/app/bdg"]
 # Service mode (run until SIGTERM). Override args in k8s / docker run.
 CMD ["-ticks=0"]
+

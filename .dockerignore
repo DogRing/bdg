@@ -11,7 +11,6 @@ tools/
 # committed/prebuilt binaries (rebuilt inside the image)
 backend/bdg
 backend/tuner
-backend/tools/
 
 # secrets & env (never ship into an image layer)
 deploy/.env
