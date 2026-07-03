@@ -281,7 +281,8 @@ func TestNewNilClientError(t *testing.T) {
 	}
 }
 
-// All 12 type constants are defined and non-empty.
+// All type constants are defined and non-empty (incl. WI-P4 WorldFrame/
+// AnimalBorn/AnimalDied/PlantSpawned/PlantDied — data-contracts §4).
 func TestTypeConstants(t *testing.T) {
 	constants := []string{
 		events.TypePerceived,
@@ -295,15 +296,20 @@ func TestTypeConstants(t *testing.T) {
 		events.TypeCopingEntered,
 		events.TypeRoleEmerged,
 		events.TypeTickDone,
+		events.TypeWorldFrame,
 		events.TypeSnapshotReady,
+		events.TypeAnimalBorn,
+		events.TypeAnimalDied,
+		events.TypePlantSpawned,
+		events.TypePlantDied,
 	}
 	for _, c := range constants {
 		if c == "" {
 			t.Errorf("event type constant is empty")
 		}
 	}
-	if len(constants) != 12 {
-		t.Errorf("want 12 type constants, got %d", len(constants))
+	if want := 17; len(constants) != want {
+		t.Errorf("want %d type constants, got %d", want, len(constants))
 	}
 }
 

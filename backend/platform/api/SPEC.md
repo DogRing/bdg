@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler
 | `GET /readyz` | Readiness — `rds.Ping(ctx)`. | `200` on success · `503` + `{"error":"redis unavailable"}` on PING failure or timeout |
 | `GET /sse` | Tails `keyer.Events()` via `XRead` BLOCK with last-id tracking; flushes each event. | `200` · `text/event-stream`; body is a sequence of `data: <JSON>\n\n` frames |
 | `GET /api/snapshot` | `rds.Get(keyer.SnapshotKey())` (the god-view blob; caller does access control). | `200` + snapshot JSON · `404` + `{"error":"snapshot not found"}` when key absent |
+| `GET /api/terrain` | `rds.Get(keyer.Terrain())` — forwards the stored `sim:{run}:terrain` bytes **verbatim** (WI-P4, data-contracts §2; `persist.TerrainView` is written already shaped as this response: `{cell_size, size:{w,h}, terrain[w*h], wear?[w*h]}` — the frontend `TerrainGrid` contract, `docs/frontend-plan.md` Q5 RESOLVED). Registered on the writer server (`New`) only, **not** on the SSE-only server (`NewSSE`). | `200` + terrain JSON · `404` + `{"error":"terrain not found"}` when the key is absent/empty (env/navmap OFF) |
 | `GET /api/agents/{id}` | `rds.HGetAll(keyer.Agent(id))` → `AgentView`; `?god=true` AND `GodMode` ⇒ also merge `real_stats` from the snapshot blob. | `200` + agent JSON · `404` + `{"error":"agent not found"}` when hash empty |
 | `GET /api/god/agent/{id}/divergence` | **God-view** (gate below). 3-way real / self-estimate / others-estimate-mean per stat — see [godview SPEC](godview/SPEC.md). | `200` + divergence JSON · `206` + `{"partial":true,...}` if TomDigest absent · `403` if gate fails |
 | `GET /api/god/reputation/{id}` | **God-view.** D6 reputation distribution (mean/variance + per-faction) per stat — see [godview SPEC](godview/SPEC.md). | `200` + reputation JSON · `206` if TomDigest absent · `403` if gate fails |
@@ -290,6 +291,10 @@ The `data:` value is the `core.Event` JSON exactly as `platform/events` wrote it
 ### Snapshot & agents
 - [ ] `GET /api/snapshot` returns the latest snapshot JSON (the `sim:{run}:snapshot` blob) with
   `200`; returns `404` + `{"error":"snapshot not found"}` when the key is absent.
+- [ ] `GET /api/terrain` returns the `sim:{run}:terrain` bytes **verbatim** with `200` when the
+  key exists (WI-P4); returns `404` + `{"error":"terrain not found"}` when the key is
+  absent/empty (env-off neutrality); the SSE-only server (`NewSSE`) does **not** register the
+  route (404 there).
 - [ ] `GET /api/agents/{id}` **without** `?god=true` → the response JSON, decoded into
   `map[string]any`, has **no** `real_stats` key (field absent, not `null`).
 - [ ] `GET /api/agents/{id}?god=true` **with** startup `GodMode=true` → the response includes a

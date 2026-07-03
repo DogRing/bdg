@@ -19,22 +19,27 @@ type fakeRedisReader struct {
 	mu           sync.Mutex
 	pingErr      error
 	snapshotBlob []byte
+	blobs        map[string][]byte // key-addressed GET blobs (e.g. sim:{run}:terrain)
 	agentHashes  map[string]map[string]string
 	eventsCh     chan StreamEntry
 }
 
 func newFakeRedisReader() *fakeRedisReader {
 	return &fakeRedisReader{
+		blobs:       make(map[string][]byte),
 		agentHashes: make(map[string]map[string]string),
 		eventsCh:    make(chan StreamEntry, 100),
 	}
 }
 
 func (f *fakeRedisReader) Ping(_ context.Context) error { return f.pingErr }
-func (f *fakeRedisReader) Get(_ context.Context, _ string) ([]byte, error) {
+func (f *fakeRedisReader) Get(_ context.Context, key string) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.snapshotBlob, nil
+	if b, ok := f.blobs[key]; ok {
+		return b, nil
+	}
+	return f.snapshotBlob, nil // legacy fallback (snapshot-key reads)
 }
 
 func (f *fakeRedisReader) HGetAll(_ context.Context, key string) (map[string]string, error) {

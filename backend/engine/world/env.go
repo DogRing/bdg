@@ -79,6 +79,13 @@ func (w *World) runFloraEnv() {
 		return
 	}
 
+	// Snapshot pre-Step species/pos for the Died event (StepDeltas.Died carries
+	// only ObjectIDs — data-contracts §4 PlantDied needs species+pos too).
+	oldByID := make(map[core.ObjectID]flora.Plant, len(w.floraState.Plants()))
+	for _, p := range w.floraState.Plants() {
+		oldByID[p.ID] = p
+	}
+
 	next, deltas := flora.Step(
 		w.floraState,
 		w.floraSiteInputs(),
@@ -86,13 +93,58 @@ func (w *World) runFloraEnv() {
 		w.allocObjectID,
 		w.envFork(w.tick, "flora"),
 	)
+
+	// WI-P4: PlantSpawned + the WorldFrame flora_delta buffer (spawned half).
 	for _, p := range deltas.Spawned {
 		w.PlaceObject(p.ID, core.Tag(p.Species), p.Pos, nil)
+		w.emit.Emit(core.Event{
+			SchemaVersion: 1, Tick: w.tick, Type: "PlantSpawned",
+			Payload: map[string]any{"object_id": string(p.ID), "species": string(p.Species), "pos": p.Pos},
+		})
+		w.pendingFloraFrame = append(w.pendingFloraFrame, floraFrameEntry{
+			ID: p.ID, Pos: p.Pos, Stage: w.floraStageOf(p.Species, p.Length),
+		})
 	}
+	// WI-P4: PlantDied (object-mortality, §7), using the pre-Step species/pos.
 	for _, id := range deltas.Died {
 		w.RemoveObject(id)
+		if old, ok := oldByID[id]; ok {
+			w.emit.Emit(core.Event{
+				SchemaVersion: 1, Tick: w.tick, Type: "PlantDied",
+				Payload: map[string]any{"object_id": string(id), "species": string(old.Species), "pos": old.Pos},
+			})
+		}
 	}
 	w.floraState = next
+
+	// WI-P4: the WorldFrame flora_delta buffer (grown half) — Pos/Species come
+	// from the POST-Step state (GrowthDelta itself carries no Pos, D9 parity: no
+	// stored field the caller could instead derive by lookup).
+	if len(deltas.Grown) > 0 {
+		newByID := make(map[core.ObjectID]flora.Plant, len(deltas.Grown))
+		for _, p := range next.Plants() {
+			newByID[p.ID] = p
+		}
+		for _, gd := range deltas.Grown {
+			p, ok := newByID[gd.ID]
+			if !ok {
+				continue
+			}
+			w.pendingFloraFrame = append(w.pendingFloraFrame, floraFrameEntry{
+				ID: gd.ID, Pos: p.Pos, Stage: w.floraStageOf(p.Species, gd.Length),
+			})
+		}
+	}
+}
+
+// floraStageOf derives the discrete Stage from Length via Rules (D9 — not
+// stored). 0 when floraRules is nil (defensive; should not happen when
+// floraState is installed, since both are set together by InstallEnv).
+func (w *World) floraStageOf(sp flora.SpeciesID, length float64) int {
+	if w.floraRules == nil {
+		return 0
+	}
+	return w.floraRules.Stage(sp, length)
 }
 
 func (w *World) runDecayEnv() {

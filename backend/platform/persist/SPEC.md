@@ -80,13 +80,18 @@ var ErrSchemaMismatch = errors.New("persist: snapshot schema_version mismatch")
 // callers never format keys by hand.
 //   sim:{run}:meta        sim:{run}:tick        sim:{run}:snapshot
 //   sim:{run}:agent:{id}  sim:{run}:events
+//   sim:{run}:animal:{id} sim:{run}:flora  sim:{run}:climate  sim:{run}:terrain  (WI-P4)
 type Keyer struct{ Run core.RunID }
 
-func (k Keyer) Meta() string                 // sim:{run}:meta
-func (k Keyer) Tick() string                 // sim:{run}:tick
-func (k Keyer) SnapshotKey() string          // sim:{run}:snapshot
-func (k Keyer) Agent(id core.AgentID) string // sim:{run}:agent:{id}
-func (k Keyer) Events() string               // sim:{run}:events
+func (k Keyer) Meta() string                   // sim:{run}:meta
+func (k Keyer) Tick() string                   // sim:{run}:tick
+func (k Keyer) SnapshotKey() string            // sim:{run}:snapshot
+func (k Keyer) Agent(id core.AgentID) string   // sim:{run}:agent:{id}
+func (k Keyer) Events() string                 // sim:{run}:events
+func (k Keyer) Animal(id core.ObjectID) string // sim:{run}:animal:{id} (WI-P4)
+func (k Keyer) Flora() string                  // sim:{run}:flora       (WI-P4)
+func (k Keyer) Climate() string                // sim:{run}:climate     (WI-P4)
+func (k Keyer) Terrain() string                // sim:{run}:terrain     (WI-P4)
 
 // LiveStore writes/reads the Redis live keys. It exposes ONLY render/decision-visible
 // fields (§2) — it MUST NOT write RealStats to any agent hash (god-view boundary).
@@ -98,6 +103,20 @@ type LiveStore interface {
     // WriteAgent upserts the per-agent render hash (pos, goal, action, mood — §2).
     // The AgentView it accepts CANNOT carry RealStats (compile-time god-view guard).
     WriteAgent(ctx context.Context, run core.RunID, v AgentView) error
+    // ── WI-P4 env render keys (data-contracts §2; see SPEC-world.md) ──
+    // WriteAnimal upserts sim:{run}:animal:{id}. AnimalView CANNOT carry
+    // Stats/Drives/Vital (god-view guard). Called only when fauna is installed.
+    WriteAnimal(ctx context.Context, run core.RunID, v AnimalView) error
+    // WriteFlora replaces sim:{run}:flora with the full live plant render set
+    // (periodic-full, JSON array; nil ⇒ "[]"). Called only when flora is installed.
+    WriteFlora(ctx context.Context, run core.RunID, plants []FloraView) error
+    // WriteClimate upserts the sim:{run}:climate ambient hash. Called only when
+    // climate is installed.
+    WriteClimate(ctx context.Context, run core.RunID, v ClimateView) error
+    // WriteTerrain replaces sim:{run}:terrain with the full render terrain grid —
+    // the SAME JSON shape GET /api/terrain forwards verbatim (api SPEC). Called
+    // only when navmap is installed.
+    WriteTerrain(ctx context.Context, run core.RunID, v TerrainView) error
     // InitMeta writes sim:{run}:meta { tick, schema_version, started_at, status }.
     InitMeta(ctx context.Context, run core.RunID, m RunMeta) error
     // ReadSnapshot loads the latest snapshot blob (for resume / hand-off to backup).
@@ -114,6 +133,52 @@ type AgentView struct {
     Goal   string       `json:"goal"`
     Action string       `json:"action"`
     Mood   float64      `json:"mood"`
+}
+
+// ── WI-P4 env render view types (built by engine/world.RenderView(); persist
+//    owns the wire shape — see SPEC-world.md for the full serialization spec) ──
+
+// AnimalView → sim:{run}:animal:{id} (§2). NO Stats/Drives/Vital (god-view guard).
+type AnimalView struct {
+    ID      core.ObjectID `json:"id"`
+    Pos     core.Vec2     `json:"pos"`
+    Species string        `json:"species"`
+    Action  string        `json:"action"`
+    Heading float64       `json:"heading"`
+    Stamina float64       `json:"stamina"`
+}
+
+// FloraView is one row of the sim:{run}:flora JSON array (§2). Stage is DERIVED
+// from length (D9) — raw length is not render-visible.
+type FloraView struct {
+    ID      core.ObjectID `json:"object_id"`
+    Species string        `json:"species"`
+    Pos     core.Vec2     `json:"pos"`
+    Stage   int           `json:"stage"`
+    Width   float64       `json:"width"`
+}
+
+// ClimateView → sim:{run}:climate ambient hash (§2). ApparentTemp nil ⇒ omitted.
+type ClimateView struct {
+    Temperature  float64  `json:"temperature"`
+    ApparentTemp *float64 `json:"apparent_temp,omitempty"`
+    Moisture     float64  `json:"moisture"`
+    Raining      bool     `json:"raining"`
+    WindDir      float64  `json:"wind_dir"`
+    WindMag      float64  `json:"wind_mag"`
+    HourOfDay    int      `json:"hour_of_day"`
+    DayNight     string   `json:"day_night"`
+    YearFraction float64  `json:"year_fraction"`
+}
+
+// TerrainView → sim:{run}:terrain (§2) — already shaped exactly as the
+// GET /api/terrain response (api forwards the bytes verbatim).
+type TerrainSize struct{ W, H int } // json: w, h
+type TerrainView struct {
+    CellSize float64     `json:"cell_size"`
+    Size     TerrainSize `json:"size"`
+    Terrain  []string    `json:"terrain"`
+    Wear     []float64   `json:"wear,omitempty"`
 }
 
 // RunMeta is the sim:{run}:meta hash payload (§2).

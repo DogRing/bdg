@@ -75,9 +75,10 @@ func (w *World) runRespawn() {
 			w.spatial.Insert(a.ID, a.Pos)
 			members[sp] = append(members[sp], a.Pos) // a later spawn can cluster near it
 			spawned = true
+			// WI-P4/data-contracts §4: AnimalBorn{object_id, species, pos}.
 			w.emit.Emit(core.Event{
-				SchemaVersion: 1, Tick: w.tick, Type: "AnimalSpawned",
-				Payload: map[string]any{"id": string(a.ID), "species": string(sp), "reason": "respawn"},
+				SchemaVersion: 1, Tick: w.tick, Type: "AnimalBorn",
+				Payload: map[string]any{"object_id": string(a.ID), "species": string(sp), "pos": a.Pos},
 			})
 		}
 	}

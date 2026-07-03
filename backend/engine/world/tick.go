@@ -24,6 +24,7 @@ func (w *World) Tick() {
 	// The snapshot freezes the cleared state; signals collected in this tick's
 	// apply phase will be available through the NEXT tick's snapshot.
 	w.pendingSignals = make(map[core.AgentID][]core.Signal)
+	w.pendingFloraFrame = nil // WI-P4: this tick's flora_delta buffer (see renderframe.go)
 	w.currentSnap = newSnapshot(w)
 
 	// ── Phase 2: PLAN (per-agent Tick, read-only on shared state) ─────────
@@ -676,66 +677,9 @@ func (w *World) emitTickDone() {
 		},
 	})
 
-	// --- MOCK ENV FOR FRONTEND TESTING ---
-	// Will be replaced by actual env state later.
-	hour := w.clock.HourOfDay(w.tick)
-	dayNight := "day"
-	if hour < 6 || hour > 18 {
-		dayNight = "night"
-	}
-
-	windMag := 0.0
-	if w.tick%100 < 50 {
-		windMag = 0.5
-	}
-	raining := false
-	if w.tick%200 > 150 {
-		raining = true
-	}
-
-	animals := []map[string]any{
-		{
-			"id":      "deer_1",
-			"pos":     map[string]any{"x": 200.0, "y": 300.0 + float64(w.tick%100)},
-			"species": "deer",
-			"action":  "graze",
-			"heading": 1.57,
-			"stamina": 1.0,
-		},
-		{
-			"id":      "wolf_1",
-			"pos":     map[string]any{"x": 600.0 - float64(w.tick%200), "y": 600.0},
-			"species": "wolf",
-			"action":  "hunt",
-			"heading": 3.14,
-			"stamina": 0.8,
-		},
-	}
-
-	flora := []map[string]any{
-		{"id": "oak_1", "pos": map[string]any{"x": 150, "y": 150}, "stage": 3, "width": 10, "species": "oak"},
-		{"id": "bush_1", "pos": map[string]any{"x": 170, "y": 140}, "stage": 2, "width": 5, "species": "bush"},
-	}
-
-	w.emit.Emit(core.Event{
-		SchemaVersion: 1,
-		Tick:          w.tick,
-		AgentID:       "",
-		Type:          "WorldFrame",
-		Payload: map[string]any{
-			"tick":          int64(w.tick),
-			"hour_of_day":   hour,
-			"day_night":     dayNight,
-			"temperature":   15.0 + float64(hour-12),
-			"apparent_temp": 15.0 + float64(hour-12) - windMag*5,
-			"raining":       raining,
-			"wind":          map[string]any{"dir": 1.0, "mag": windMag},
-			"agents":        agents,
-			"animals":       animals,
-			"flora_delta":   flora,
-			"terrain_delta": []any{},
-		},
-	})
+	// WI-P4: the real WorldFrame, built from live env state (renderframe.go).
+	// No-op when env is OFF (data-contracts §4).
+	w.emitWorldFrame()
 }
 
 func (w *World) emitSnapshotReady() {

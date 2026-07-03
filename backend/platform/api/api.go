@@ -74,6 +74,7 @@ func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *
 	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
 	s.mux.HandleFunc("GET /sse", s.handleSSE)
 	s.mux.HandleFunc("GET /api/snapshot", s.handleSnapshot)
+	s.mux.HandleFunc("GET /api/terrain", s.handleTerrain)
 	s.mux.HandleFunc("GET /api/agents/{id}", s.handleAgent)
 	s.mux.HandleFunc("GET /api/god/agent/{id}/divergence", s.handleGodDivergence)
 	s.mux.HandleFunc("GET /api/god/reputation/{id}", s.handleGodReputation)

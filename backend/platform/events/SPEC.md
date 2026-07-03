@@ -76,7 +76,14 @@ const (
     TypeCopingEntered    = "CopingEntered"
     TypeRoleEmerged      = "RoleEmerged"
     TypeTickDone         = "TickDone"
+    TypeWorldFrame       = "WorldFrame"
     TypeSnapshotReady    = "SnapshotReady"
+
+    // WI-P4 ecosystem lifecycle events (data-contracts §4).
+    TypeAnimalBorn   = "AnimalBorn"
+    TypeAnimalDied   = "AnimalDied"
+    TypePlantSpawned = "PlantSpawned"
+    TypePlantDied    = "PlantDied"
 )
 ```
 

@@ -204,6 +204,27 @@ func (w *World) AgentIDs() []core.AgentID
 // AgentOf returns the live agent for id and whether it exists (read access for persist/tests;
 // callers must NOT mutate the returned agent outside the apply phase).
 func (w *World) AgentOf(id core.AgentID) (*agent.Agent, bool)
+
+// ── WI-P4 render projection (renderframe.go; persist/SPEC-world.md RESOLVED (b)) ──
+// RenderView returns the god-view-FILTERED env projection persist writes to the
+// live render keys (sim:{run}:animal:{id}/flora/climate/terrain, data-contracts §2)
+// — the ONE place the god-view boundary is enforced for env render data. NO
+// Stats/Drives/Vital appear on any *RenderView type. Pure read; sorted (D12);
+// absent/zero blocks ⇒ that subsystem is OFF. The SSE WorldFrame (emitted from
+// the tick loop when ANY env subsystem is installed — data-contracts §4) is
+// built from the same live state and carries the same boundary.
+func (w *World) RenderView() RenderView
+
+type RenderView struct {
+    Tick core.Tick; HourOfDay int; DayNight string; YearFraction float64
+    ClimateOn bool; Temperature, Moisture float64; Raining bool; WindDir, WindMag float64
+    Animals []AnimalRenderView  // sorted ObjectID; empty when fauna OFF
+    Flora   []FloraRenderView   // sorted ObjectID; empty when flora OFF
+    Terrain *TerrainRenderView  // nil when navmap OFF
+}
+type AnimalRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Action string; Heading, Stamina float64 }
+type FloraRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Stage int; Width float64 }
+type TerrainRenderView struct{ CellSize float64; W, H int; Terrain []string; Wear []float64 } // row-major, Y-major then X
 ```
 
 > The world DEFINES no new vocabulary. `agent.Agent`, `agent.Intent`, `agent.ActionOutcome`,

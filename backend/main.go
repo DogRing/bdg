@@ -378,6 +378,58 @@ func writeLive(ctx context.Context, w *world.World, runID core.RunID, live persi
 			fmt.Fprintf(os.Stderr, "warning: live WriteAgent(%s): %v\n", id, err)
 		}
 	}
+
+	writeEnvLive(ctx, w.RenderView(), runID, live)
+}
+
+// writeEnvLive writes the WI-P4 env render keys (sim:{run}:animal:{id} / :flora /
+// :climate / :terrain, data-contracts §2) from the world's god-view-filtered
+// RenderView. Env-OFF ⇒ the view carries no env blocks ⇒ nothing is written and
+// the keys stay ABSENT (§2 "absent ⇒ env-off"). Staleness is TTL-bounded: dead
+// animals' hashes and a flora set that empties out age off via the store's TTL
+// rather than an explicit delete (same policy as agent hashes).
+func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID, live persist.LiveStore) {
+	for _, a := range rv.Animals {
+		if err := live.WriteAnimal(ctx, runID, persist.AnimalView{
+			ID: a.ID, Pos: a.Pos, Species: a.Species,
+			Action: a.Action, Heading: a.Heading, Stamina: a.Stamina,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: live WriteAnimal(%s): %v\n", a.ID, err)
+		}
+	}
+
+	if len(rv.Flora) > 0 {
+		plants := make([]persist.FloraView, 0, len(rv.Flora))
+		for _, p := range rv.Flora {
+			plants = append(plants, persist.FloraView{
+				ID: p.ID, Species: p.Species, Pos: p.Pos, Stage: p.Stage, Width: p.Width,
+			})
+		}
+		if err := live.WriteFlora(ctx, runID, plants); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: live WriteFlora: %v\n", err)
+		}
+	}
+
+	if rv.ClimateOn {
+		if err := live.WriteClimate(ctx, runID, persist.ClimateView{
+			Temperature: rv.Temperature, Moisture: rv.Moisture, Raining: rv.Raining,
+			WindDir: rv.WindDir, WindMag: rv.WindMag,
+			HourOfDay: rv.HourOfDay, DayNight: rv.DayNight, YearFraction: rv.YearFraction,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: live WriteClimate: %v\n", err)
+		}
+	}
+
+	if rv.Terrain != nil {
+		if err := live.WriteTerrain(ctx, runID, persist.TerrainView{
+			CellSize: rv.Terrain.CellSize,
+			Size:     persist.TerrainSize{W: rv.Terrain.W, H: rv.Terrain.H},
+			Terrain:  rv.Terrain.Terrain,
+			Wear:     rv.Terrain.Wear,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: live WriteTerrain: %v\n", err)
+		}
+	}
 }
 
 // finalizeRun marks the run completed: it refreshes the Redis meta hash and the Postgres
@@ -425,9 +477,10 @@ func (m *multiEmitter) Emit(e core.Event) {
 }
 
 // eventBuffer accumulates why-trace events for periodic batch insert into Postgres.
-// High-frequency housekeeping (TickDone/SnapshotReady) is dropped — those are operational
-// signals, not part of the why-trace (data-contracts §3 events table). It is filled by the
-// tick goroutine and drained on the backup cadence; the mutex guards that hand-off.
+// High-frequency housekeeping (TickDone/WorldFrame/SnapshotReady) is dropped — those
+// are operational/render signals, not part of the why-trace (data-contracts §3 events
+// table). It is filled by the tick goroutine and drained on the backup cadence; the
+// mutex guards that hand-off.
 type eventBuffer struct {
 	mu  sync.Mutex
 	evs []core.Event
@@ -435,7 +488,7 @@ type eventBuffer struct {
 
 func (b *eventBuffer) Emit(e core.Event) {
 	switch e.Type {
-	case events.TypeTickDone, events.TypeSnapshotReady:
+	case events.TypeTickDone, events.TypeWorldFrame, events.TypeSnapshotReady:
 		return
 	}
 	b.mu.Lock()
@@ -825,13 +878,13 @@ func copingName(c agent.CopingState) string {
 
 // stderrLogger emits events as JSON lines on stderr, filtering tick noise.
 // Trade, plan, and coping events are always emitted; per-tick housekeeping
-// (TickDone, SnapshotReady) is suppressed to keep the log readable.
+// (TickDone, WorldFrame, SnapshotReady) is suppressed to keep the log readable.
 type stderrLogger struct{}
 
 func (l *stderrLogger) Emit(e core.Event) {
 	switch e.Type {
-	case "TickDone", "SnapshotReady":
-		return // skip high-frequency housekeeping events
+	case events.TypeTickDone, events.TypeWorldFrame, events.TypeSnapshotReady:
+		return // skip high-frequency housekeeping/render events
 	}
 	b, err := json.Marshal(e)
 	if err != nil {

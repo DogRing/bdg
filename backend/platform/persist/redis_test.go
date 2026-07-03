@@ -256,3 +256,141 @@ func TestRedisLiveStoreExpire(t *testing.T) {
 		t.Error("expected error after Expire")
 	}
 }
+
+// ── RedisLiveStore WI-P4 env render keys via fakeGoRedisClient ────────────────
+
+func TestRedisLiveStoreWriteAnimal(t *testing.T) {
+	client := newFakeGoRedisClient()
+	store := NewRedisLiveStore(client, 0)
+	ctx := context.Background()
+	run := core.RunID("live-animal")
+
+	v := AnimalView{ID: "an:d1", Pos: core.Vec2{X: 1.5, Y: -2.25}, Species: "deer",
+		Action: "Graze", Heading: 0.5, Stamina: 0.875}
+	if err := store.WriteAnimal(ctx, run, v); err != nil {
+		t.Fatal(err)
+	}
+
+	key := Keyer{Run: run}.Animal("an:d1")
+	h := client.hashes[key]
+	if h == nil {
+		t.Fatalf("animal hash %q not written", key)
+	}
+	want := map[string]string{
+		"pos_x": "1.5000", "pos_y": "-2.2500",
+		"species": "deer", "action": "Graze",
+		"heading": "0.500000", "stamina": "0.8750",
+	}
+	for f, w := range want {
+		if h[f] != w {
+			t.Errorf("field %s = %q, want %q", f, h[f], w)
+		}
+	}
+	for _, forbidden := range []string{"stats", "drives", "vital", "real_stats"} {
+		if _, ok := h[forbidden]; ok {
+			t.Errorf("animal hash contains forbidden god-view field %q", forbidden)
+		}
+	}
+}
+
+func TestRedisLiveStoreWriteFlora(t *testing.T) {
+	client := newFakeGoRedisClient()
+	store := NewRedisLiveStore(client, 0)
+	ctx := context.Background()
+	run := core.RunID("live-flora")
+
+	plants := []FloraView{
+		{ID: "pl:1", Species: "oak", Pos: core.Vec2{X: 3, Y: 4}, Stage: 2, Width: 1.5},
+	}
+	if err := store.WriteFlora(ctx, run, plants); err != nil {
+		t.Fatal(err)
+	}
+
+	blob, err := client.Get(ctx, Keyer{Run: run}.Flora())
+	if err != nil {
+		t.Fatalf("Get flora key: %v", err)
+	}
+	var got []FloraView
+	if err := json.Unmarshal([]byte(blob), &got); err != nil {
+		t.Fatalf("flora key not a FloraView array: %v", err)
+	}
+	if len(got) != 1 || got[0] != plants[0] {
+		t.Errorf("flora round-trip = %+v, want %+v", got, plants)
+	}
+
+	// nil plants ⇒ JSON "[]" (empty-but-installed), never "null".
+	if err := store.WriteFlora(ctx, run, nil); err != nil {
+		t.Fatal(err)
+	}
+	blob, _ = client.Get(ctx, Keyer{Run: run}.Flora())
+	if blob != "[]" {
+		t.Errorf("nil plants stored as %q, want []", blob)
+	}
+}
+
+func TestRedisLiveStoreWriteClimate(t *testing.T) {
+	client := newFakeGoRedisClient()
+	store := NewRedisLiveStore(client, 0)
+	ctx := context.Background()
+	run := core.RunID("live-climate")
+
+	v := ClimateView{Temperature: 18.5, Moisture: 0.4, Raining: true,
+		WindDir: 1.5, WindMag: 0.6, HourOfDay: 10, DayNight: "day", YearFraction: 0.25}
+	if err := store.WriteClimate(ctx, run, v); err != nil {
+		t.Fatal(err)
+	}
+
+	h := client.hashes[Keyer{Run: run}.Climate()]
+	if h == nil {
+		t.Fatal("climate hash not written")
+	}
+	want := map[string]string{
+		"temperature": "18.5000", "moisture": "0.4000", "raining": "true",
+		"wind_dir": "1.500000", "wind_mag": "0.6000",
+		"hour_of_day": "10", "day_night": "day", "year_fraction": "0.250000",
+	}
+	for f, w := range want {
+		if h[f] != w {
+			t.Errorf("field %s = %q, want %q", f, h[f], w)
+		}
+	}
+	// ApparentTemp nil ⇒ field absent, not zero.
+	if _, ok := h["apparent_temp"]; ok {
+		t.Error("apparent_temp written despite nil ApparentTemp")
+	}
+}
+
+func TestRedisLiveStoreWriteTerrain(t *testing.T) {
+	client := newFakeGoRedisClient()
+	store := NewRedisLiveStore(client, 0)
+	ctx := context.Background()
+	run := core.RunID("live-terrain")
+
+	v := TerrainView{CellSize: 2, Size: TerrainSize{W: 2, H: 1},
+		Terrain: []string{"grass", "water"}, Wear: []float64{0, 0.5}}
+	if err := store.WriteTerrain(ctx, run, v); err != nil {
+		t.Fatal(err)
+	}
+
+	blob, err := client.Get(ctx, Keyer{Run: run}.Terrain())
+	if err != nil {
+		t.Fatalf("Get terrain key: %v", err)
+	}
+	// The stored bytes ARE the GET /api/terrain response (forwarded verbatim) —
+	// assert the exact wire shape the frontend TerrainGrid contract expects.
+	var got map[string]any
+	if err := json.Unmarshal([]byte(blob), &got); err != nil {
+		t.Fatalf("terrain key not JSON: %v", err)
+	}
+	if got["cell_size"] != 2.0 {
+		t.Errorf("cell_size = %v, want 2", got["cell_size"])
+	}
+	size, _ := got["size"].(map[string]any)
+	if size == nil || size["w"] != 2.0 || size["h"] != 1.0 {
+		t.Errorf("size = %v, want {w:2,h:1}", got["size"])
+	}
+	terrain, _ := got["terrain"].([]any)
+	if len(terrain) != 2 || terrain[0] != "grass" || terrain[1] != "water" {
+		t.Errorf("terrain = %v, want [grass water]", got["terrain"])
+	}
+}

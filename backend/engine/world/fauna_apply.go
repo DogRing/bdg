@@ -195,7 +195,7 @@ func (w *World) applyAnimalCombat(intent fauna.Intent) {
 		w.applyAnimalGraze(a)
 	}
 	if a.Vital <= 0 {
-		w.killAnimal(a.ID)
+		w.killAnimal(a.ID, "predation")
 	}
 }
 

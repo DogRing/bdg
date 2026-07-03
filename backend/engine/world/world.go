@@ -116,6 +116,11 @@ type World struct {
 	coverKinds    map[core.Tag]bool
 	nextAnimalSeq int64
 
+	// pendingFloraFrame is the current tick's sparse flora spawn/grow render delta
+	// (WI-P4 WorldFrame.flora_delta) — built in runFloraEnv, cleared at the top of
+	// each Tick (like currentSounds/pendingSignals), consumed by emitWorldFrame.
+	pendingFloraFrame []floraFrameEntry
+
 	// Respawn (F9 timer-respawn-to-target): optional; zero cadence ⇒ off. Templates + anchors are
 	// per-run (fixture, injected by worldgen); targets are content; cadence is balance.
 	respawnTemplates map[core.Tag]fauna.Animal

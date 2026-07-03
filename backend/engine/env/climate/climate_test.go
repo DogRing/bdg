@@ -415,6 +415,113 @@ func TestWindDeterministicAndResume(t *testing.T) {
 	}
 }
 
+// ── AC: Restore round-trip (WI-P4 persist resume) ─────────────────────────────
+
+// TestRestoreRoundTrip exercises the actual persist-shaped resume path (unlike
+// TestWindDeterministicAndResume, which continues the SAME *State in memory):
+// capture Cells()/Rain()/Wind() at step T, build a FRESH placeholder via New with
+// the same Config, reconstruct via Restore, and verify the resumed run reproduces
+// the uninterrupted run's Cells()/Rain()/Wind() AND transitions bit-for-bit.
+func TestRestoreRoundTrip(t *testing.T) {
+	cfg := testCfg()
+	cfg.RainProbPerHour = 0.05 // exercise the rain process too
+
+	// A real transition table: x → wet once moisture crosses 0.6.
+	transitionRules := climate.NewRules([]climate.TransitionRule{
+		{From: "x", When: mustParseBool(t, "moisture > 0.6"), To: "wet"},
+	})
+
+	const T = 8
+	const K = 12
+
+	r1 := rng.New(4242)
+	s1 := climate.New(cfg, fixedTerrainAt("x"))
+	for i := int64(0); i < T; i++ {
+		s1, _ = climate.Step(s1, forcing(i), transitionRules, r1)
+	}
+
+	// Capture the periodic-full shape (what persist would serialize).
+	capturedCells := s1.Cells()
+	capturedRain := s1.Rain()
+	capturedWind := s1.Wind()
+	savedRNG := r1.State()
+
+	// Uninterrupted continuation T → T+K.
+	var uninterruptedTrans [][]climate.Transition
+	for i := int64(0); i < K; i++ {
+		var trans []climate.Transition
+		s1, trans = climate.Step(s1, forcing(T+i), transitionRules, r1)
+		uninterruptedTrans = append(uninterruptedTrans, trans)
+	}
+
+	// Resume: fresh placeholder (same Config) + Restore from the captured shape.
+	placeholder := climate.New(cfg, fixedTerrainAt("x"))
+	resumed := climate.Restore(placeholder, capturedCells, capturedRain, capturedWind)
+
+	// Sanity: the resumed state's read API matches the captured shape exactly.
+	if !cellsEqual(resumed.Cells(), capturedCells) {
+		t.Fatalf("Restore: Cells() mismatch\ngot:  %+v\nwant: %+v", resumed.Cells(), capturedCells)
+	}
+	if resumed.Rain() != capturedRain {
+		t.Fatalf("Restore: Rain() = %+v, want %+v", resumed.Rain(), capturedRain)
+	}
+	if resumed.Wind() != capturedWind {
+		t.Fatalf("Restore: Wind() = %+v, want %+v", resumed.Wind(), capturedWind)
+	}
+
+	r2 := rng.New(0)
+	r2.Restore(savedRNG)
+	for i := int64(0); i < K; i++ {
+		var trans []climate.Transition
+		resumed, trans = climate.Step(resumed, forcing(T+i), transitionRules, r2)
+		want := uninterruptedTrans[i]
+		if len(trans) != len(want) {
+			t.Fatalf("step %d: transitions = %+v, want %+v", i, trans, want)
+		}
+		for j := range trans {
+			if trans[j] != want[j] {
+				t.Fatalf("step %d transition %d: got %+v, want %+v", i, j, trans[j], want[j])
+			}
+		}
+	}
+	if !cellsEqual(resumed.Cells(), s1.Cells()) {
+		t.Fatalf("resumed run diverged from uninterrupted run\nresumed: %+v\nwant:    %+v", resumed.Cells(), s1.Cells())
+	}
+	if resumed.Rain() != s1.Rain() {
+		t.Fatalf("resumed Rain() = %+v, want %+v", resumed.Rain(), s1.Rain())
+	}
+	if resumed.Wind() != s1.Wind() {
+		t.Fatalf("resumed Wind() = %+v, want %+v", resumed.Wind(), s1.Wind())
+	}
+}
+
+// TestRestorePanicsOnMissingCell verifies Restore rejects an incomplete cell set
+// (a persist-contract bug) rather than silently defaulting the missing cells.
+func TestRestorePanicsOnMissingCell(t *testing.T) {
+	cfg := testCfg() // 2x2 grid
+	placeholder := climate.New(cfg, fixedTerrainAt("x"))
+	defer func() {
+		if recover() == nil {
+			t.Fatalf("Restore did not panic on a missing cell")
+		}
+	}()
+	climate.Restore(placeholder, []climate.GridCellState{
+		{Cell: climate.GridCell{X: 0, Y: 0}, State: climate.CellState{Terrain: "x"}},
+	}, climate.RainProcess{}, climate.Wind{})
+}
+
+func cellsEqual(a, b []climate.GridCellState) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // ── AC: CellAt sampling ───────────────────────────────────────────────────────
 
 func TestCellAtSampling(t *testing.T) {

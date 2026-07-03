@@ -12,6 +12,7 @@
 package climate
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/dogring/bdg/engine/kernel/core"
@@ -154,6 +155,44 @@ func New(cfg Config, terrainAt func(core.Vec2) navTerrainID) *State {
 		wind:  Wind{Dir: cfg.WindPrevailingDir, Mag: cfg.WindMagMean},
 		cfg:   cfg,
 	}
+}
+
+// Restore reconstructs a State from its periodic-full serialization (Cells()/Rain()/Wind(),
+// data-contracts §10) — the resume counterpart to New (WI-P4 persist round-trip, D12). base
+// supplies the Config (geometry + rates), which is NOT itself part of the serialized snapshot
+// (persist round-trips only the dynamic per-cell/rain/wind values, mirroring how a resumed world
+// re-installs the same content-derived Rules before restoring dynamic state); base is typically
+// a freshly-`New`-constructed placeholder built from the SAME Config as the captured run. cells
+// must cover every GridCell in [0,GridCols)×[0,GridRows) exactly once — a missing, duplicate, or
+// out-of-bounds cell panics (a persist-contract bug, mirrors flora/decay unknown-id panics).
+// Pure; no RNG draw.
+func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind) *State {
+	cfg := base.cfg
+	grid := make([][]CellState, cfg.GridRows)
+	filled := make([][]bool, cfg.GridRows)
+	for y := range grid {
+		grid[y] = make([]CellState, cfg.GridCols)
+		filled[y] = make([]bool, cfg.GridCols)
+	}
+	for _, gcs := range cells {
+		x, y := gcs.Cell.X, gcs.Cell.Y
+		if x < 0 || x >= cfg.GridCols || y < 0 || y >= cfg.GridRows {
+			panic(fmt.Sprintf("climate.Restore: cell %+v out of bounds (%dx%d)", gcs.Cell, cfg.GridCols, cfg.GridRows))
+		}
+		if filled[y][x] {
+			panic(fmt.Sprintf("climate.Restore: duplicate cell %+v", gcs.Cell))
+		}
+		grid[y][x] = gcs.State
+		filled[y][x] = true
+	}
+	for y := range filled {
+		for x := range filled[y] {
+			if !filled[y][x] {
+				panic(fmt.Sprintf("climate.Restore: missing cell {%d %d}", x, y))
+			}
+		}
+	}
+	return &State{cells: grid, rain: rain, wind: wind, cfg: cfg}
 }
 
 // ── Snapshot / read API ───────────────────────────────────────────────────────

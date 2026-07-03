@@ -21,7 +21,12 @@ FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/bdg /app/bdg
 COPY content/ /app/content/
+# World fixtures: the default load path (WI-P4 live ecosystem). FIXTURE env can
+# point at any of them; without this COPY the relative flag default would not
+# exist in the container and startup would fatal on fixture load.
+COPY backend/tools/worldgen/testdata/*.fixture.yaml /app/fixtures/
 ENV CONTENT_DIR=/app/content \
+    FIXTURE=/app/fixtures/starter_village.fixture.yaml \
     HTTP_ADDR=:8080
 EXPOSE 8080
 USER nonroot:nonroot

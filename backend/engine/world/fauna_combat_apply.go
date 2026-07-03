@@ -51,7 +51,7 @@ func (w *World) applyAnimalAttack(attacker *fauna.Animal, intent fauna.Intent) {
 				attacker.Drives["hunger"] = clamp01(attacker.Drives["hunger"] - gain)
 			}
 		}
-		w.killAnimal(target.ID)
+		w.killAnimal(target.ID, "predation")
 	}
 }
 
@@ -276,7 +276,13 @@ func sumSupply(supply map[core.Dimension]float64) float64 {
 	return total
 }
 
-func (w *World) killAnimal(id core.ObjectID) {
+// killAnimal removes a dead animal, spawns its carcass, and emits AnimalDied
+// (data-contracts §4: {object_id, species, cause}). cause is the object-
+// mortality reason (§7) — currently always "predation" (the only death path
+// this engine implements, via combat Vital≤0); the parameter exists so a future
+// death cause (starvation, old age, …) is a call-site change, not a new event
+// shape.
+func (w *World) killAnimal(id core.ObjectID, cause string) {
 	a := w.animals[id]
 	if a == nil {
 		return
@@ -290,8 +296,9 @@ func (w *World) killAnimal(id core.ObjectID) {
 		Tick:          w.tick,
 		Type:          "AnimalDied",
 		Payload: map[string]any{
-			"id":      string(id),
-			"species": string(species),
+			"object_id": string(id),
+			"species":   string(species),
+			"cause":     cause,
 		},
 	})
 }

@@ -2,6 +2,7 @@ package persist
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
@@ -16,6 +17,10 @@ type FakeRedis struct {
 	ticks     map[string]core.Tick // key → tick value
 	snapshots map[string][]byte    // key → blob
 	agents    map[string]string    // key → JSON of AgentView
+	animals   map[string]string    // key → JSON of AnimalView (WI-P4)
+	flora     map[string]string    // key → JSON of []FloraView (WI-P4)
+	climate   map[string]string    // key → JSON of ClimateView (WI-P4)
+	terrain   map[string]string    // key → JSON of TerrainView (WI-P4)
 	meta      map[string]string    // key → meta hash fields (stored as flat key:field)
 	expired   bool                 // true after Expire called
 }
@@ -25,6 +30,10 @@ func NewFakeRedis() *FakeRedis {
 		ticks:     make(map[string]core.Tick),
 		snapshots: make(map[string][]byte),
 		agents:    make(map[string]string),
+		animals:   make(map[string]string),
+		flora:     make(map[string]string),
+		climate:   make(map[string]string),
+		terrain:   make(map[string]string),
 		meta:      make(map[string]string),
 	}
 }
@@ -58,6 +67,53 @@ func (f *FakeRedis) WriteAgent(_ context.Context, run core.RunID, v AgentView) e
 	return nil
 }
 
+func (f *FakeRedis) WriteAnimal(_ context.Context, run core.RunID, v AnimalView) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	blob, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	f.animals[Keyer{Run: run}.Animal(v.ID)] = string(blob)
+	return nil
+}
+
+func (f *FakeRedis) WriteFlora(_ context.Context, run core.RunID, plants []FloraView) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if plants == nil {
+		plants = []FloraView{}
+	}
+	blob, err := json.Marshal(plants)
+	if err != nil {
+		return err
+	}
+	f.flora[Keyer{Run: run}.Flora()] = string(blob)
+	return nil
+}
+
+func (f *FakeRedis) WriteClimate(_ context.Context, run core.RunID, v ClimateView) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	blob, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	f.climate[Keyer{Run: run}.Climate()] = string(blob)
+	return nil
+}
+
+func (f *FakeRedis) WriteTerrain(_ context.Context, run core.RunID, v TerrainView) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	blob, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	f.terrain[Keyer{Run: run}.Terrain()] = string(blob)
+	return nil
+}
+
 func (f *FakeRedis) InitMeta(_ context.Context, run core.RunID, m RunMeta) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -88,12 +144,20 @@ func (f *FakeRedis) Expire(_ context.Context, run core.RunID) error {
 	keyer := Keyer{Run: run}
 	delete(f.ticks, keyer.Tick())
 	delete(f.snapshots, keyer.SnapshotKey())
-	// Remove agent keys.
+	delete(f.flora, keyer.Flora())
+	delete(f.climate, keyer.Climate())
+	delete(f.terrain, keyer.Terrain())
+	// Remove agent/animal keys (per-id, matched by prefix).
 	for k := range f.agents {
-		// Match prefix sim:{run}:agent:
 		prefix := fmt.Sprintf("sim:%s:agent:", run)
 		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
 			delete(f.agents, k)
+		}
+	}
+	for k := range f.animals {
+		prefix := fmt.Sprintf("sim:%s:animal:", run)
+		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+			delete(f.animals, k)
 		}
 	}
 	// Remove meta keys.
@@ -140,6 +204,34 @@ func (f *FakeRedis) MetaField(run core.RunID, field string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.meta[Keyer{Run: run}.Meta()+":"+field]
+}
+
+// AnimalViewOf returns the stored animal view JSON for a given run+animal, or "" if absent.
+func (f *FakeRedis) AnimalViewOf(run core.RunID, id core.ObjectID) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.animals[Keyer{Run: run}.Animal(id)]
+}
+
+// FloraOf returns the stored sim:{run}:flora JSON blob, or "" if absent.
+func (f *FakeRedis) FloraOf(run core.RunID) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.flora[Keyer{Run: run}.Flora()]
+}
+
+// ClimateOf returns the stored sim:{run}:climate JSON blob, or "" if absent.
+func (f *FakeRedis) ClimateOf(run core.RunID) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.climate[Keyer{Run: run}.Climate()]
+}
+
+// TerrainOf returns the stored sim:{run}:terrain JSON blob, or "" if absent.
+func (f *FakeRedis) TerrainOf(run core.RunID) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.terrain[Keyer{Run: run}.Terrain()]
 }
 
 // AgentIDs returns all agent IDs stored for a given run.

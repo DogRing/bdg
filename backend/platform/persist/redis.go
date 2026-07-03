@@ -2,6 +2,7 @@ package persist
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -69,6 +70,84 @@ func (r *RedisLiveStore) WriteAgent(ctx context.Context, run core.RunID, v Agent
 	return nil
 }
 
+// WriteAnimal upserts the per-animal render hash (WI-P4, §2). Mirrors
+// WriteAgent exactly — same TTL policy, same god-view boundary shape (no
+// Stats/Drives/Vital field to write, by construction of AnimalView).
+func (r *RedisLiveStore) WriteAnimal(ctx context.Context, run core.RunID, v AnimalView) error {
+	keyer := Keyer{Run: run}
+	key := keyer.Animal(v.ID)
+	if err := r.client.HSet(ctx, key,
+		"pos_x", fmt.Sprintf("%.4f", v.Pos.X),
+		"pos_y", fmt.Sprintf("%.4f", v.Pos.Y),
+		"species", v.Species,
+		"action", v.Action,
+		"heading", fmt.Sprintf("%.6f", v.Heading),
+		"stamina", fmt.Sprintf("%.4f", v.Stamina),
+	); err != nil {
+		return fmt.Errorf("redis.WriteAnimal: %w", err)
+	}
+	if r.ttl > 0 {
+		if err := r.client.Expire(ctx, key, r.ttl); err != nil {
+			return fmt.Errorf("redis.WriteAnimal.Expire: %w", err)
+		}
+	}
+	return nil
+}
+
+// WriteFlora replaces sim:{run}:flora with the full live plant render set
+// (WI-P4, §2) — a JSON array, periodic-full (not a delta).
+func (r *RedisLiveStore) WriteFlora(ctx context.Context, run core.RunID, plants []FloraView) error {
+	if plants == nil {
+		plants = []FloraView{} // JSON "[]", not "null" — an empty-but-installed set
+	}
+	blob, err := json.Marshal(plants)
+	if err != nil {
+		return fmt.Errorf("redis.WriteFlora: marshal: %w", err)
+	}
+	keyer := Keyer{Run: run}
+	if err := r.client.Set(ctx, keyer.Flora(), string(blob), r.ttl); err != nil {
+		return fmt.Errorf("redis.WriteFlora: %w", err)
+	}
+	return nil
+}
+
+// WriteClimate upserts the sim:{run}:climate ambient hash (WI-P4, §2).
+func (r *RedisLiveStore) WriteClimate(ctx context.Context, run core.RunID, v ClimateView) error {
+	fields := []string{
+		"temperature", fmt.Sprintf("%.4f", v.Temperature),
+		"moisture", fmt.Sprintf("%.4f", v.Moisture),
+		"raining", fmt.Sprintf("%t", v.Raining),
+		"wind_dir", fmt.Sprintf("%.6f", v.WindDir),
+		"wind_mag", fmt.Sprintf("%.4f", v.WindMag),
+		"hour_of_day", fmt.Sprintf("%d", v.HourOfDay),
+		"day_night", v.DayNight,
+		"year_fraction", fmt.Sprintf("%.6f", v.YearFraction),
+	}
+	if v.ApparentTemp != nil {
+		fields = append(fields, "apparent_temp", fmt.Sprintf("%.4f", *v.ApparentTemp))
+	}
+	keyer := Keyer{Run: run}
+	if err := r.client.HSet(ctx, keyer.Climate(), fields...); err != nil {
+		return fmt.Errorf("redis.WriteClimate: %w", err)
+	}
+	return nil
+}
+
+// WriteTerrain replaces sim:{run}:terrain with the full render terrain grid
+// (WI-P4, §2) — the SAME JSON shape GET /api/terrain returns (platform/api
+// forwards the stored bytes verbatim, no reshaping).
+func (r *RedisLiveStore) WriteTerrain(ctx context.Context, run core.RunID, v TerrainView) error {
+	blob, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("redis.WriteTerrain: marshal: %w", err)
+	}
+	keyer := Keyer{Run: run}
+	if err := r.client.Set(ctx, keyer.Terrain(), string(blob), r.ttl); err != nil {
+		return fmt.Errorf("redis.WriteTerrain: %w", err)
+	}
+	return nil
+}
+
 func (r *RedisLiveStore) InitMeta(ctx context.Context, run core.RunID, m RunMeta) error {
 	keyer := Keyer{Run: run}
 	if err := r.client.HSet(ctx, keyer.Meta(),
@@ -98,6 +177,13 @@ func (r *RedisLiveStore) Expire(ctx context.Context, run core.RunID) error {
 		keyer.Tick(),
 		keyer.SnapshotKey(),
 		keyer.Events(),
+		// WI-P4: the bounded (single-key-per-run) env keys. Per-animal keys
+		// (sim:{run}:animal:{id}) are NOT enumerable here without a SCAN — same
+		// pre-existing limitation as sim:{run}:agent:{id} (both rely on the ttl
+		// passed to NewRedisLiveStore, or a future SCAN-based sweep).
+		keyer.Flora(),
+		keyer.Climate(),
+		keyer.Terrain(),
 	}
 	if err := r.client.Del(ctx, keys...); err != nil {
 		return fmt.Errorf("redis.Expire: %w", err)

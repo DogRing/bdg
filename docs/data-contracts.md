@@ -31,8 +31,10 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
     tool_instances[]  { object_id, kind, durability, location }      // durable TOOLS (§9, FINAL); periodic-full
     flora[]    { object_id, species, pos, length, width, death_streak } // live plants (§10, WI-P4); periodic-full
     animals[]  { object_id, species, pos, stats{StatID:float}, drives{DriveID:float},
-                 stamina, vital, heading, current_action, active_until }  // fauna (§10, WI-P4); periodic-full
-    climate    { cells[]{cell, moisture, temperature}, rain{raining, rain_ends_at_hour,
+                 stamina, vital, vital_cap, heading, current_action, active_until,
+                 engaged_with?, next_exchange_tick?, engage_cooldown_until?,
+                 hidden_until?, concealment? }  // fauna incl. Phase-6 combat/hiding fields (§10, WI-P4); periodic-full
+    climate    { cells[]{cell, moisture, temperature, terrain}, rain{raining, rain_ends_at_hour,
                  p_rain, hours_since_rain}, wind{dir, mag} }          // climate field (§10, WI-P4); periodic-full
     emerged_roles[] { function, holder }         // P6 (D2-derived)
     tom_digest {                                 // cross-agent ToM, god-view projection (D6/D8)
@@ -245,16 +247,23 @@ Representative `type`s (payload gist):
   `spawned[]{…}` / `died[]{object_id}` / `grown[]{object_id, length, width, death_streak}`, sorted by
   `object_id` (the spawn/grow/die sparse channel; world emits `PlantSpawned`/`PlantDied`, §4).
 - **Animals (`animals[]` in §1, periodic-full):** `{ object_id, species, pos, stats{StatID:float},
-  drives{DriveID:float}, stamina, vital, heading, current_action, active_until }` — the live
-  `fauna.Animal` set in sorted `object_id` order. `current_action`/`heading` are render-relevant;
+  drives{DriveID:float}, stamina, vital, vital_cap, heading, current_action, active_until,
+  engaged_with?, next_exchange_tick?, engage_cooldown_until?, hidden_until?, concealment? }` — the
+  live `fauna.Animal` set in sorted `object_id` order. The Phase-6 combat/hiding fields
+  (`vital_cap` + the five optional engagement/hiding fields) are part of the round-trip: a snapshot
+  captured mid-engagement or mid-hide must resume with that state intact (D12), not silently reset.
+  `current_action`/`heading` are render-relevant;
   `stats`/`drives` are god-view (NOT sent over SSE, §4). active/dormant is DERIVED from `active_until`
   vs tick (not stored). Per-step delta = move/commit/die: `moved[]{object_id, pos, heading}` /
   `updated[]{object_id, drives, stamina, vital, current_action, active_until}` / `died[]{object_id}`,
   sorted by `object_id` (world emits `AnimalBorn`/`AnimalDied`, §4). The legacy `prey` timer-respawn
   object stays an `objects[]` row until fauna activation migrates it (W7).
-- **Climate (`climate` in §1, periodic-full):** `{ cells[]{cell, moisture, temperature}, rain{raining,
-  rain_ends_at_hour, p_rain, hours_since_rain}, wind{dir, mag} }` — the coarse `climate.State`
-  (`Cells()`/`Rain()`/`Wind()`) in sorted `GridCell` (Y-major then X) order. `temperature` is **°C**
+- **Climate (`climate` in §1, periodic-full):** `{ cells[]{cell, moisture, temperature, terrain},
+  rain{raining, rain_ends_at_hour, p_rain, hours_since_rain}, wind{dir, mag} }` — the coarse
+  `climate.State` (`Cells()`/`Rain()`/`Wind()`) in sorted `GridCell` (Y-major then X) order.
+  `terrain` per cell IS serialized here: `CellState.Terrain` is climate's own authoritative input to
+  `Rules.Eval` on every subsequent `Step` (transition source state), not merely a navmap mirror —
+  omitting it would silently stop terrain transitions from firing after a resume. `temperature` is **°C**
   (CA3, may be sub-zero), `moisture` ∈ [0,1], `wind.dir` radians / `wind.mag` ∈ [0,1]. `rng_state` for
   the rain+wind process resumes byte-identically via the run's root rng fork (no separate field). The
   per-cell delta channel is the changed `cells[]` since the last full + the per-step `wind`; terrain

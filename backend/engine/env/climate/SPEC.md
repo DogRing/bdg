@@ -131,6 +131,18 @@ type Config struct {
 // navmap.New uses, so the two grids agree at t=0. Pure.
 func New(cfg Config, terrainAt func(core.Vec2) navTerrainID) *State
 
+// Restore reconstructs a State from its periodic-full serialization (Cells()/Rain()/Wind(),
+// data-contracts §10) — the resume counterpart to New (WI-P4 persist round-trip, D12). base
+// supplies the Config (geometry + rates — NOT itself part of the serialized snapshot); it is
+// typically a freshly-New-constructed placeholder built from the SAME Config as the captured
+// run (mirrors how Rules are re-installed, not serialized, before a resume). cells must cover
+// every GridCell in [0,GridCols)×[0,GridRows) exactly once — a missing/duplicate/out-of-bounds
+// cell panics (persist-contract bug, mirrors flora/decay unknown-id panics). Added WI-P4: prior
+// to this, engine/world.WorldState could not round-trip Cells()/Rain()/Wind() through the
+// opaque State type (no exported constructor accepted arbitrary per-cell state) — this closes
+// that gap so climate resume is byte-identical (§ Invariants). Pure; no RNG draw.
+func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind) *State
+
 // ── Forcing (time-derived; D12 — derived from worldtime, never wall-clock) ─────────
 
 // Forcing is the per-step exogenous input. world builds it each climate step from the current Tick

@@ -97,12 +97,12 @@ func findContentDir(t *testing.T) string {
 // yamlKeyForField maps agent.Config field names to their balance.yaml keys.
 func yamlKeyForField(field string) string {
 	m := map[string]string{
-		"RelyCostThreshold":    "rely_cost_threshold",
-		"RelyOnDelta":          "relyon_delta",
-		"VoteRelyThreshold":    "vote_rely_threshold",
-		"UrgencyThreshold":     "vote_urgency_threshold",
-		"VoteRelyOnDelta":      "vote_relyon_delta",
-		"InfluenceWeight":      "influence_weight",
+		"RelyCostThreshold": "rely_cost_threshold",
+		"RelyOnDelta":       "relyon_delta",
+		"VoteRelyThreshold": "vote_rely_threshold",
+		"UrgencyThreshold":  "vote_urgency_threshold",
+		"VoteRelyOnDelta":   "vote_relyon_delta",
+		"InfluenceWeight":   "influence_weight",
 	}
 	if v, ok := m[field]; ok {
 		return v

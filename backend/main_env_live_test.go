@@ -1,0 +1,70 @@
+package main
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/world"
+	"github.com/dogring/bdg/platform/persist"
+)
+
+// ── writeEnvLive (WI-P4 env render keys) ───────────────────────────────────────
+
+// TestWriteEnvLive_WritesAllEnvKeys verifies an env-ON RenderView lands in every
+// WI-P4 live key (animal/flora/climate/terrain, data-contracts §2) with the
+// render-visible fields intact.
+func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
+	live := persist.NewFakeRedis()
+	run := core.RunID("test-run")
+	rv := world.RenderView{
+		Tick: 7, HourOfDay: 10, DayNight: "day", YearFraction: 0.25,
+		ClimateOn: true, Temperature: 18.5, Moisture: 0.4,
+		Raining: true, WindDir: 1.5, WindMag: 0.6,
+		Animals: []world.AnimalRenderView{
+			{ID: "an:d1", Species: "deer", Pos: core.Vec2{X: 1, Y: 2}, Action: "Graze", Heading: 0.5, Stamina: 0.9},
+		},
+		Flora: []world.FloraRenderView{
+			{ID: "pl:oak1", Species: "oak", Pos: core.Vec2{X: 3, Y: 4}, Stage: 2, Width: 1.5},
+		},
+		Terrain: &world.TerrainRenderView{
+			CellSize: 2, W: 2, H: 1, Terrain: []string{"grass", "water"}, Wear: []float64{0, 0.3},
+		},
+	}
+
+	writeEnvLive(context.Background(), rv, run, live)
+
+	if got := live.AnimalViewOf(run, "an:d1"); !strings.Contains(got, `"species":"deer"`) {
+		t.Fatalf("animal key missing/wrong: %s", got)
+	}
+	if got := live.FloraOf(run); !strings.Contains(got, `"object_id":"pl:oak1"`) || !strings.Contains(got, `"stage":2`) {
+		t.Fatalf("flora key missing/wrong: %s", got)
+	}
+	if got := live.ClimateOf(run); !strings.Contains(got, `"temperature":18.5`) || !strings.Contains(got, `"day_night":"day"`) {
+		t.Fatalf("climate key missing/wrong: %s", got)
+	}
+	if got := live.TerrainOf(run); !strings.Contains(got, `"cell_size":2`) || !strings.Contains(got, `"terrain":["grass","water"]`) {
+		t.Fatalf("terrain key missing/wrong: %s", got)
+	}
+}
+
+// TestWriteEnvLive_EnvOffWritesNothing verifies env-off neutrality: an empty
+// RenderView (no env subsystem installed) writes NO env key — absence is the
+// env-off signal (data-contracts §2).
+func TestWriteEnvLive_EnvOffWritesNothing(t *testing.T) {
+	live := persist.NewFakeRedis()
+	run := core.RunID("test-run")
+
+	writeEnvLive(context.Background(), world.RenderView{Tick: 7}, run, live)
+
+	if got := live.FloraOf(run); got != "" {
+		t.Fatalf("flora key written on env-off: %s", got)
+	}
+	if got := live.ClimateOf(run); got != "" {
+		t.Fatalf("climate key written on env-off: %s", got)
+	}
+	if got := live.TerrainOf(run); got != "" {
+		t.Fatalf("terrain key written on env-off: %s", got)
+	}
+}

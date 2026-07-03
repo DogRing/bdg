@@ -32,6 +32,12 @@ const (
 	TypeTickDone         = "TickDone"
 	TypeWorldFrame       = "WorldFrame"
 	TypeSnapshotReady    = "SnapshotReady"
+
+	// WI-P4 ecosystem lifecycle events (data-contracts §4).
+	TypeAnimalBorn   = "AnimalBorn"
+	TypeAnimalDied   = "AnimalDied"
+	TypePlantSpawned = "PlantSpawned"
+	TypePlantDied    = "PlantDied"
 )
 
 // RedisClient is the minimal interface Emitter needs from a Redis client.

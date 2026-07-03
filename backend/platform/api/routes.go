@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	agentNotFound = `{"error":"agent not found"}`
-	snapNotFound  = `{"error":"snapshot not found"}`
+	agentNotFound   = `{"error":"agent not found"}`
+	snapNotFound    = `{"error":"snapshot not found"}`
+	terrainNotFound = `{"error":"terrain not found"}`
 )
 
 // ── GET /healthz ──────────────────────────────────────────────────────────────
@@ -46,6 +47,25 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	if blob == nil {
 		http.Error(w, snapNotFound, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(blob)
+}
+
+// ── GET /api/terrain ─────────────────────────────────────────────────────────
+
+// handleTerrain forwards the sim:{run}:terrain bytes verbatim (WI-P4,
+// data-contracts §2): persist.TerrainView is written to the key already shaped
+// exactly as this route's response ({cell_size, size:{w,h}, terrain[], wear?[]}
+// — frontend/SPEC.md TerrainGrid), so no reshaping happens here. The key exists
+// only when env (navmap) is installed; absence is served as 404, which the
+// frontend treats as "no terrain layer" (env-off neutrality).
+func (s *Server) handleTerrain(w http.ResponseWriter, r *http.Request) {
+	blob, err := s.rds.Get(r.Context(), s.keyer.Terrain())
+	if err != nil || len(blob) == 0 {
+		http.Error(w, terrainNotFound, http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

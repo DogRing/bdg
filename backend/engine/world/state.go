@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/dogring/bdg/engine/agent"
+	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/mind/actions"
@@ -33,6 +34,18 @@ type WorldState struct {
 	// Capture-only — NOT consumed by RestoreState (the running sim rebuilds beliefs);
 	// it exists so /api/god/* can expose real≠self≠others without a single scalar (D6).
 	TomDigest map[core.AgentID]map[core.AgentID]tomDigestEntry `json:"tom_digest,omitempty"`
+
+	// ── Env state (WI-P4, data-contracts §10) ──────────────────────────────────
+	// Flora/Animals/Climate are the periodic-full sources for the env subsystems.
+	// omitempty ⇒ ABSENT (not just empty) when env is OFF (InstallEnv/InstallFauna
+	// not called), so a pre-WI-P4 env-off snapshot stays byte-identical (additive
+	// change, no SchemaVersion bump — see persist/SPEC-world.md Open Questions).
+	// Derived views (stage from length, active/dormant from active_until) are NOT
+	// stored (D9); the scent grid is NOT stored (derived, rebuilt on restore from
+	// emitter positions — see RestoreState).
+	Flora   []floraDigest       `json:"flora,omitempty"`
+	Animals []animalStateDigest `json:"animals,omitempty"`
+	Climate *climateDigest      `json:"climate,omitempty"`
 }
 
 // emergedRoleEntry is a single (function → holder) record for serialization.
@@ -161,6 +174,9 @@ func (w *World) State() WorldState {
 		ws.TomDigest = td
 	}
 
+	// ── Env state capture (WI-P4; see state_env.go) ───────────────────────────
+	w.captureEnvState(&ws)
+
 	return ws
 }
 
@@ -204,7 +220,17 @@ func (w *World) RestoreState(ws WorldState) {
 		w.objectIDs = append(w.objectIDs, obj.ID)
 	}
 
-	rebuildSpatialHash(w.spatial, w.agentIDs, w.agents, w.objects)
+	// ── Env state restore (WI-P4) ──────────────────────────────────────────────
+	// Must run BEFORE the spatial-hash rebuild below so restored animals are
+	// included in it. The caller is expected to have already called InstallEnv/
+	// InstallFauna with the SAME content-derived Rules/Config as the captured run
+	// (Rules are not part of the blob — only dynamic state is, mirroring how
+	// agents' RealStats registry (w.svc.Stats) is assumed pre-installed above).
+	w.restoreFlora(ws.Flora)
+	w.restoreAnimals(ws.Animals)
+	w.restoreClimate(ws.Climate)
+
+	rebuildSpatialHash(w.spatial, w.agentIDs, w.agents, w.objects, w.animalIDs, w.animals)
 
 	w.knownObjects = make(map[core.AgentID]map[core.ObjectID]agent.KnownObject)
 	for _, kd := range ws.Known {
@@ -221,13 +247,18 @@ func (w *World) RestoreState(ws WorldState) {
 		w.emergedRoles[e.Function] = e.Holder
 	}
 
+	// The scent grid is NOT serialized (derived, data-contracts §10) — rebuild it
+	// from the just-restored emitter positions so the next tick's fauna reads
+	// match the uninterrupted run (mirrors the spatial-hash rebuild above).
+	w.rebuildScent(ws.Tick)
+
 	w.currentSounds = nil
 	w.currentSnap = nil
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-func rebuildSpatialHash(sh *spatial.SpatialHash, agentIDs []core.AgentID, agents map[core.AgentID]*agent.Agent, objects map[core.ObjectID]objectRecord) {
+func rebuildSpatialHash(sh *spatial.SpatialHash, agentIDs []core.AgentID, agents map[core.AgentID]*agent.Agent, objects map[core.ObjectID]objectRecord, animalIDs []core.ObjectID, animals map[core.ObjectID]*fauna.Animal) {
 	// Clear and rebuild: remove all, then re-insert.
 	for _, id := range agentIDs {
 		sh.Remove(core.ObjectID(id))
@@ -235,12 +266,20 @@ func rebuildSpatialHash(sh *spatial.SpatialHash, agentIDs []core.AgentID, agents
 	for _, obj := range objects {
 		sh.Remove(obj.ID)
 	}
+	for _, id := range animalIDs {
+		sh.Remove(id)
+	}
 	for _, id := range agentIDs {
 		a := agents[id]
 		sh.Insert(core.ObjectID(id), a.Pos)
 	}
 	for _, obj := range objects {
 		sh.Insert(obj.ID, obj.Pos)
+	}
+	for _, id := range animalIDs {
+		if a := animals[id]; a != nil {
+			sh.Insert(id, a.Pos)
+		}
 	}
 }
 
