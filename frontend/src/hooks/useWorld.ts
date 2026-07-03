@@ -358,8 +358,21 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
     }
     case 'EVENT':
       return applyEvent(state, action.payload, action.atMs ?? 0)
-    case 'TERRAIN_LOADED':
-      return { ...state, terrain: action.payload }
+    case 'TERRAIN_LOADED': {
+      // The terrain grid IS the world geometry (SPEC §API: RenderConfig comes
+      // from REST world geometry): derive RenderConfig.bounds from it so the
+      // camera anchors to the real world edge instead of staying frozen on the
+      // bbox of whichever entities arrived first (SSE agents can beat the REST
+      // snapshot on a slow link, leaving animals/terrain outside the viewport).
+      // A future dedicated geometry endpoint may overwrite this; never clobber
+      // an already-present config.
+      const g = action.payload
+      const render = state.render ?? {
+        bounds: { min: { x: 0, y: 0 }, max: { x: g.w * g.cellSize, y: g.h * g.cellSize } },
+        pixelsPerUnit: 4,
+      }
+      return { ...state, terrain: g, render }
+    }
     case 'SET_CONNECTION':
       return { ...state, connectionStatus: action.payload }
     case 'SELECT_AGENT':

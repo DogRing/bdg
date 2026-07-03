@@ -34,6 +34,11 @@ export function WorldCanvas({ agents, objects, animals, flora, climate, terrain,
   // Camera is the only view state (render SPEC): initialized lazily on the first
   // frame that knows either RenderConfig or some entity positions.
   const camRef = useRef<CameraState | null>(null)
+  // Whether the camera has been anchored to RenderConfig.bounds. An entity-bbox
+  // fit is provisional ("auto-fit until fetched", render SPEC §camera): when the
+  // config arrives after init — REST world geometry can lose the race against
+  // the first SSE entities — the camera re-anchors ONCE to the world bounds.
+  const anchoredRef = useRef(false)
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
   // Derived terrain raster, rebuilt only when the grid object identity changes.
   const rasterRef = useRef<TerrainRaster | null>(null)
@@ -80,6 +85,12 @@ export function WorldCanvas({ agents, objects, animals, flora, climate, terrain,
       if (!camRef.current) {
         camRef.current = initialCamera(p.render, [...p.objects, ...p.agents], W, H)
         if (!camRef.current) return // nothing known yet — background only
+        anchoredRef.current = p.render !== null
+      } else if (!anchoredRef.current && p.render && !dragRef.current) {
+        // RenderConfig arrived after a provisional entity-bbox fit: re-anchor
+        // once to the world bounds (skip mid-drag; never repeats afterwards).
+        camRef.current = initialCamera(p.render, [], W, H) ?? camRef.current
+        anchoredRef.current = true
       }
       camRef.current = cameraTick(camRef.current, p.agents, p.animals.values(), clockMs)
       const tr = buildTransform(camRef.current, W, H)

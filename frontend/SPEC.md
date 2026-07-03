@@ -82,7 +82,10 @@ prevFrameAtMs` so the render layer can interpolate between frames at any streami
   terrain layer draws.
 - `GET /api/agents/{id}` — optional: a single agent's live state on click.
 - World-geometry (bounds + `pixelsPerUnit`) → `RenderConfig` — anchors the initial camera;
-  `null` until fetched (auto-fit fallback).
+  `null` until fetched (auto-fit fallback). Source: DERIVED from the `GET /api/terrain` grid
+  (`bounds = (0,0)..(w·cell_size, h·cell_size)`) on `TERRAIN_LOADED` — the terrain grid IS the
+  world geometry; a future dedicated geometry endpoint may supersede it (the reducer never
+  clobbers an already-present config).
 
 God-view routes (`/api/god/*`, `?god=true`) are **out of scope** (no `real_stats`, divergence,
 reputation, or relations display).

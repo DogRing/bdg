@@ -90,8 +90,10 @@ export function hitTest(agents: Iterable<AgentState>, animals: Iterable<AnimalSt
 
 ### Camera (Q6)
 - **Init**: `RenderConfig` present → center = bounds centre, zoom = `pixelsPerUnit` fitted to the
-  viewport; else auto-fit the known-entity bbox (degenerate → default view). Never jitters after
-  init: only user input or follow moves it.
+  viewport; else auto-fit the known-entity bbox (degenerate → default view). An entity-bbox fit is
+  PROVISIONAL: if `RenderConfig` arrives after it (REST geometry can lose the race against the
+  first SSE entities on a slow link), the camera re-anchors ONCE to the world bounds (skipped
+  mid-drag, never repeated). Never jitters otherwise: only user input or follow moves it.
 - **Wheel zoom**: multiply `zoom` by `factor`, clamp; keep the world point under the cursor fixed
   (`cameraZoom` solves the new center for that). **Drag pan**: shift center by `d/zoom`; any manual
   pan clears `follow`. **Click-to-follow**: `hitTest` result → select + `cameraFollow`; empty click

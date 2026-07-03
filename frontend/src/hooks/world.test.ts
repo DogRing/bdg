@@ -105,3 +105,21 @@ describe('fx queue (Q4)', () => {
     expect(s.fx).toHaveLength(0)
   })
 })
+
+describe('RenderConfig derivation from terrain (camera anchor)', () => {
+  it('TERRAIN_LOADED derives render.bounds from the grid geometry', () => {
+    const grid: TerrainGrid = { cellSize: 12, w: 16, h: 16, terrain: Array(256).fill('soil') }
+    const s = worldReducer(initialWorldState, { type: 'TERRAIN_LOADED', payload: grid })
+    expect(s.render).not.toBeNull()
+    expect(s.render!.bounds.min).toEqual({ x: 0, y: 0 })
+    expect(s.render!.bounds.max).toEqual({ x: 192, y: 192 })
+  })
+
+  it('TERRAIN_LOADED never clobbers an already-present RenderConfig', () => {
+    const grid: TerrainGrid = { cellSize: 12, w: 16, h: 16, terrain: Array(256).fill('soil') }
+    const preset = { bounds: { min: { x: -5, y: -5 }, max: { x: 5, y: 5 } }, pixelsPerUnit: 40 }
+    const s0: WorldState = { ...initialWorldState, render: preset }
+    const s = worldReducer(s0, { type: 'TERRAIN_LOADED', payload: grid })
+    expect(s.render).toBe(preset)
+  })
+})
