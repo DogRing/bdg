@@ -157,12 +157,19 @@ func (w *World) nearCoverFlora(a *fauna.Animal) bool {
 // cover). It sums per-plant linear-falloff overlap over cover-tagged flora times
 // the species' cover_cost. Pure/deterministic (D12).
 func (w *World) coverResistance(species fauna.SpeciesID, p core.Vec2) float64 {
-	if w.faunaRules == nil || w.floraState == nil {
+	if w.faunaRules == nil {
 		return 1
 	}
 	cc := w.faunaRules.CoverCost(species)
 	if cc <= 0 {
 		return 1
+	}
+	return 1 + w.coverDensity(p)*cc
+}
+
+func (w *World) coverDensity(p core.Vec2) float64 {
+	if w.floraState == nil {
+		return 0
 	}
 	density := 0.0
 	for _, pl := range w.floraState.Plants() {
@@ -177,7 +184,7 @@ func (w *World) coverResistance(species fauna.SpeciesID, p core.Vec2) float64 {
 			density += 1 - d/radius
 		}
 	}
-	return 1 + density*cc
+	return density
 }
 
 func (w *World) kindEmitsFood(kind core.Tag) bool {

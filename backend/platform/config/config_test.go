@@ -541,6 +541,7 @@ object_kinds:
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 6 - moisture * 3"
       speed: "Agility * 1.2 - thermal * 0.6"
+      turn_rate: "0.5 + Agility"
       hide_chance: "hunger + Agility"
       diet: [ forage ]
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 1.05 }
@@ -598,6 +599,7 @@ object_kinds:
         - { id: hunger, rate: 0.0008 }
       apparent_temp: "temperature"
       speed: 0
+      turn_rate: "0.5 + Agility"
       attack_power: "Strength + target.threat"
       hit: "Agility"
       feed: "scent.carrion + hunger"
@@ -616,6 +618,7 @@ object_kinds:
         - { id: hunger, rate: 0.0008 }
       apparent_temp: "temperature"
       speed: 0
+      turn_rate: "0.2 + Agility"
       hide_chance: "hunger + Agility"
       senses: { smell_radius: 10.0, sight_radius: 14.0, fov_arc: 3.14 }
 item_kinds:
@@ -895,6 +898,9 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 	if got := out.FaunaRules.HideChance("deer", ctx); got != 1 {
 		t.Fatalf("HideChance = %v, want 1", got)
 	}
+	if got := out.FaunaRules.TurnRate("deer", ctx); got != 1.5 {
+		t.Fatalf("TurnRate = %v, want 1.5", got)
+	}
 	if got := out.FaunaRules.CoverCost("deer"); got != 0.7 {
 		t.Fatalf("CoverCost = %v, want 0.7", got)
 	}
@@ -915,6 +921,7 @@ func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
   hidden_flush_factor: 1.0
   hide_cover_factor: 1.0
   cover_radius_factor: 3.0
+  conceal_factor: 1.0
 `, 1)
 	dir := writeTestContent(t, files, worldSchemaFiles())
 	out, err := LoadContent(dir)
@@ -935,6 +942,7 @@ func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
 		HiddenFlushFactor:      1.0,
 		HideCoverFactor:        1.0,
 		CoverRadiusFactor:      3.0,
+		ConcealFactor:          1.0,
 	}
 	if got != want {
 		t.Fatalf("FaunaCombat = %+v, want %+v", got, want)
@@ -965,6 +973,9 @@ func TestFaunaCombatContentCompilesAndCrossChecks(t *testing.T) {
 	}
 	if got := out.FaunaRules.HideChance("deer", ctx); math.Abs(got-1.0) > 1e-12 {
 		t.Fatalf("HideChance = %v, want 1.0", got)
+	}
+	if got := out.FaunaRules.TurnRate("wolf", ctx); math.Abs(got-1.3) > 1e-12 {
+		t.Fatalf("TurnRate = %v, want 1.3", got)
 	}
 	if got := out.FaunaRules.CoverCost("wolf"); got != 1.2 {
 		t.Fatalf("CoverCost = %v, want 1.2", got)

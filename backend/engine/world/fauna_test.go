@@ -117,6 +117,38 @@ func testCoverFaunaRules(t *testing.T) *fauna.Rules {
 	})
 }
 
+func testAmbushFaunaRules(t *testing.T) *fauna.Rules {
+	t.Helper()
+	return fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {
+			Utilities: map[actions.ActionID]*expr.Program{
+				"Flee":   testNumProgram(t, "sight.predator * 10"),
+				"MoveTo": testNumProgram(t, "1"),
+			},
+			Drives:      []fauna.DriveRule{{ID: "fear"}},
+			AppTemp:     testNumProgram(t, "0"),
+			Speed:       testNumProgram(t, "0"),
+			SmellRadius: 1,
+			SightRadius: 10,
+			FovArc:      3.14,
+			SteerChannel: map[actions.ActionID]core.Tag{
+				"Flee":   fauna.TagFleePred,
+				"MoveTo": fauna.TagNoLoco,
+			},
+		},
+		"wolf": {
+			Utilities:   map[actions.ActionID]*expr.Program{"Rest": testNumProgram(t, "1")},
+			Drives:      []fauna.DriveRule{},
+			AppTemp:     testNumProgram(t, "0"),
+			Speed:       testNumProgram(t, "0"),
+			IsPredator:  true,
+			SmellRadius: 1,
+			SightRadius: 10,
+			FovArc:      3.14,
+		},
+	})
+}
+
 func testHideFaunaRules(t *testing.T) *fauna.Rules {
 	t.Helper()
 	return fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
@@ -457,6 +489,81 @@ func TestCoverResistanceNeutralUsesIntendedPositionExactly(t *testing.T) {
 	}
 	if got := run(testCoverFaunaRules(t), []flora.Plant{{ID: "plant:flower", Species: "wildflower", Pos: intended, Width: 5}}); got != intended {
 		t.Fatalf("non-cover flora should commit intended exactly: got %+v want %+v", got, intended)
+	}
+}
+
+func TestAnimalConcealmentWrittenFromCoverDensity(t *testing.T) {
+	run := func(cf float64, plants []flora.Plant, pos core.Vec2) float64 {
+		fx := newFixtureSeeded(t, 88)
+		cfg := testEnvConfig()
+		cfg.FaunaCombat.CoverRadiusFactor = 2
+		cfg.FaunaCombat.ConcealFactor = cf
+		wolf := testAnimal("an:wolf", "wolf", pos)
+		fx.world.InstallFauna(cfg, testAmbushFaunaRules(t), testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{wolf})
+		if plants != nil {
+			fx.world.floraState = flora.New(plants)
+		}
+		fx.world.applyAnimalIntent(fauna.Intent{
+			Animal: "an:wolf", Action: "Rest", NextPos: pos, NextHeading: wolf.Heading,
+			Drives: wolf.Drives, Stamina: 1, Vital: 1, VitalCap: 1,
+		})
+		return fx.world.animals["an:wolf"].Concealment
+	}
+
+	cover := []flora.Plant{{ID: "plant:cover", Species: "berry_shrub", Pos: core.Vec2{X: 10}, Width: 5}}
+	if got := run(0, cover, core.Vec2{X: 10}); got != 0 {
+		t.Fatalf("ConcealFactor 0 concealment = %.12f, want 0", got)
+	}
+	if got := run(1, nil, core.Vec2{X: 10}); got != 0 {
+		t.Fatalf("nil flora concealment = %.12f, want 0", got)
+	}
+	if got := run(1, cover, core.Vec2{X: 20}); got != 0 {
+		t.Fatalf("outside cover radius concealment = %.12f, want 0", got)
+	}
+	center := run(1, cover, core.Vec2{X: 10})
+	mid := run(1, cover, core.Vec2{X: 15})
+	if center <= 0 || center <= mid || mid <= 0 {
+		t.Fatalf("concealment should be positive and denser at center: center=%.6f mid=%.6f", center, mid)
+	}
+	if again := run(1, cover, core.Vec2{X: 10}); again != center {
+		t.Fatalf("concealment not deterministic: first=%.12f again=%.12f", center, again)
+	}
+}
+
+func TestConcealedPredatorNarrowsPreySightOnly(t *testing.T) {
+	run := func(concealFactor float64) actions.ActionID {
+		fx := newFixtureSeeded(t, 89)
+		cfg := testEnvConfig()
+		cfg.FaunaCombat.CoverRadiusFactor = 2
+		cfg.FaunaCombat.ConcealFactor = concealFactor
+		rules := testAmbushFaunaRules(t)
+		deer := testAnimal("an:deer", "deer", core.Vec2{})
+		deer.ActiveUntil = 100
+		deer.Heading = 0
+		wolf := testAnimal("an:wolf", "wolf", core.Vec2{X: 8})
+		fx.world.InstallFauna(cfg, rules, testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{deer, wolf})
+		fx.world.floraState = flora.New([]flora.Plant{
+			{ID: "plant:cover", Species: "berry_shrub", Pos: wolf.Pos, Width: 5},
+		})
+		fx.world.applyAnimalIntent(fauna.Intent{
+			Animal: "an:wolf", Action: "Rest", NextPos: wolf.Pos, NextHeading: wolf.Heading,
+			Drives: wolf.Drives, Stamina: 1, Vital: 1, VitalCap: 1,
+		})
+		intents := fauna.Step(fx.world.buildFaunaSnapshot(), rules, rng.New(1))
+		for _, it := range intents {
+			if it.Animal == "an:deer" {
+				return it.Action
+			}
+		}
+		t.Fatalf("missing deer intent")
+		return ""
+	}
+
+	if got := run(0); got != "Flee" {
+		t.Fatalf("exposed predator should be seen and trigger Flee, got %s", got)
+	}
+	if got := run(1); got != "MoveTo" {
+		t.Fatalf("concealed predator should be outside effective sight and not trigger Flee, got %s", got)
 	}
 }
 

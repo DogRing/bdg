@@ -136,6 +136,10 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	}
 	w.spatial.Move(a.ID, pos)
 	a.Pos = pos
+	a.Concealment = 0
+	if cf := w.envCfg.FaunaCombat.ConcealFactor; cf > 0 {
+		a.Concealment = w.coverDensity(pos) * cf
+	}
 	a.Heading = intent.NextHeading
 	a.Drives = cloneFaunaDrives(intent.Drives)
 	a.Stamina = intent.Stamina

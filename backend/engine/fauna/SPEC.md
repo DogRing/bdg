@@ -73,6 +73,7 @@ type Animal struct {
     NextExchangeTick    core.Tick          // next engaged exchange tick
     EngageCooldownUntil core.Tick          // next allowed engage attempt
     HiddenUntil         core.Tick          // hidden while >0 and >= current tick; 0 = visible. world is sole writer (M3)
+    Concealment         float64            // world-written transient cover concealment; fauna reads in sightQuery (M5-b)
 }
 
 // EnvSample is the per-animal exogenous climate world samples at Animal.Pos and injects each tick.
@@ -227,6 +228,7 @@ type SpeciesRule struct {
     Drives     []DriveRule                        // drive vocabulary + params (F25(c)) → DriveUpdate
     AppTemp    *expr.Program                      // §6 apparent_temp (F40) → AppTemp
     Speed      *expr.Program                      // §6 locomotion speed (F35) → Speed
+    TurnRate   *expr.Program                      // §6 max turn rate radians/unit time (M6) → TurnRate
     Diet       []core.Tag                         // diet/target tags (F7)
     IsPredator bool                               // carries `threat:predator` (F8) → IsPredator
     SmellRadius, SightRadius, FovArc float64      // senses (F31/F44) → Senses
@@ -277,6 +279,10 @@ func (r *Rules) AppTemp(sp SpeciesID, ctx expr.Context) float64
 // stats + any drive operand), never a fixed Go whitelist; the fear/fatigue/thermal set is the authored
 // content convention, not an engine constraint. Pure, no RNG.
 func (r *Rules) Speed(sp SpeciesID, ctx expr.Context) float64
+
+// TurnRate evaluates the species' §6 max turn RATE Program (radians per unit time; ×DT = per-tick
+// heading cap, M6). Returns 0 when absent/nil/negative, which means unlimited/off-neutral, not frozen.
+func (r *Rules) TurnRate(sp SpeciesID, ctx expr.Context) float64
 
 // IsPredator reports whether the species carries the `threat:predator` tag (F8) — used to classify
 // nearby spatial entities in the F44 sight query AND to keep predators always-ACTIVE (F45). Pure.
@@ -575,6 +581,55 @@ affinity, exposed as a `Rules` accessor world reads in apply (mirrors `TerrainCo
   cover drag affinity (`content/objects.yaml fauna: cover_cost`, D10). Returns **0 when absent** (species
   unaffected → OFF-neutral). Parsed by `platform/config` like `terrain_cost`; compiled into the per-species
   record. Pure, read-only. NO new `Snapshot`/`Intent`/`AttrOperands` surface, NO change to `Speed`/`Step`.
+
+## Ambush concealment (M5-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+
+A predator concealed in `cover` flora is SEEN by prey only at reduced range → it closes the distance before
+the prey flees → **ambush emerges** (no per-species ambush FSM, D2/D3). The concealment value is
+**world-computed** (world owns flora — SPEC-world-fauna M5-b) and carried on the `Animal` exactly like M3
+`HiddenUntil`; fauna only READS it, in the sight channel. §6 `Speed` unchanged; no new operand/Snapshot/Intent seam.
+
+- **`Animal.Concealment float64`** — world-written each tick (SINGLE WRITER = world), ≥0, `0` = fully
+  exposed. A derived transient (cover density × world `conceal_factor`); read-only to fauna.
+- **`sightQuery` change:** for each predator candidate, skip it when `dist > sightRadius / (1 +
+  other.Concealment)` — the twin of the M3 `combatTarget` `other.HiddenUntil` gate (a per-candidate field
+  read on `snap.Animals[idx]`, so NO new Snapshot seam). `Concealment=0` ⇒ effRadius = sightRadius ⇒
+  unchanged. Only the sight→Flee channel narrows; the scent→Wary channel is untouched (smell ignores cover).
+  Deterministic, no RNG (D12).
+
+## Turn-rate inertia (M6 — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+
+An animal cannot instantly reverse heading: each tick the desired steering heading is **clamped to within
+`±turn_rate×DT`** of its current `Heading`. Asymmetric per-species `turn_rate` gives the juke/overshoot
+dynamic — nimble prey out-turn a heavier predator, which cannot cut sharply and **overshoots** (it keeps going
+more-forward). This is **entirely fauna-side** (steering only; no world/state/serialization change), reuses the
+existing `Speed`/`HideChance` §6 accessor pattern and the existing `angularDiff` helper, and adds **no**
+`Snapshot`/`Intent`/operand/RNG. `Heading` is the only state, already present.
+
+- **`SpeciesRule.TurnRate *expr.Program`** + **`func (r *Rules) TurnRate(sp SpeciesID, ctx expr.Context) float64`**
+  — max turn RATE (radians per unit time, `×DT` gives per-tick cap), a §6 composition (D7 — e.g.
+  `base + Agility*k`, so agility emerges; parallels `Speed`). **Returns 0 when the program is nil/unauthored,
+  and `turn_rate ≤ 0` MUST mean "unlimited — do NOT clamp"** (a 0 here is the OFF-neutral sentinel, NOT a
+  frozen turn). `content/objects.yaml fauna: turn_rate` (D10), compiled by `platform/config` like `speed`/`hide_chance`.
+- **`steerFull` clamp (the one behavioural change):** after computing the desired heading
+  `desired := atan2(dir) + wander`, clamp it toward `a.Heading`:
+  ```
+  tr := rules.TurnRate(a.Species, ctx)
+  if tr > 0 {
+      maxTurn := tr * snap.DT
+      if d := angularDiff(desired, a.Heading); math.Abs(d) > maxTurn {
+          desired = a.Heading + math.Copysign(maxTurn, d)  // no normalize helper needed: cos/sin + angularDiff tolerate any angle
+      }
+  }
+  heading := desired   // then dir = {cos,sin}(heading); movement + nextHeading use the clamped heading
+  ```
+  Movement then proceeds along the **clamped** heading (so a predator that can't turn enough overshoots).
+- **Neutrality:** `turn_rate` unauthored (⇒ `TurnRate≡0`) or authored ≥ `π/DT` ⇒ clamp never binds ⇒
+  `heading == desired` ⇒ movement byte-identical to today. Deterministic, no RNG (D12). Content-only asymmetry
+  (D10): prey `turn_rate` high (juke), predators low (overshoot).
+- **Scope (M6-c):** heading-rate only; speed `accel` inertia is deferred. **Cheap/DORMANT path:** the clamp
+  lives in `steerFull` (full pipeline); `cheap.go` mostly holds `Heading`, so it is naturally inertial — apply
+  the same clamp there only if a cheap-steer branch changes heading materially (verify at implementation).
 
 ## Notes
 - `Step` deliberately mirrors `flora.Step`/`decay.Step`: pure read → return per-entity delta/intent →

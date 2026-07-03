@@ -36,6 +36,7 @@ type SpeciesRule struct {
 	Drives       []DriveRule                        // drive vocabulary + params (F25(c))
 	AppTemp      *expr.Program                      // §6 apparent_temp (F40)
 	Speed        *expr.Program                      // §6 locomotion speed (F35)
+	TurnRate     *expr.Program                      // §6 max turn rate radians/unit time (M6)
 	AttackPower  *expr.Program                      // §6 damage magnitude composition (FC4)
 	Hit          *expr.Program                      // §6 hit multiplier/probability composition (FC4)
 	Feed         *expr.Program                      // §6 carcass feed value composition (FC8)
@@ -75,6 +76,7 @@ type speciesData struct {
 	drives       []DriveRule // in sorted DriveID order (D12)
 	appTemp      *expr.Program
 	speed        *expr.Program
+	turnRate     *expr.Program
 	attackPower  *expr.Program
 	hit          *expr.Program
 	feed         *expr.Program
@@ -148,6 +150,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			drives:       drives,
 			appTemp:      sr.AppTemp,
 			speed:        sr.Speed,
+			turnRate:     sr.TurnRate,
 			attackPower:  sr.AttackPower,
 			hit:          sr.Hit,
 			feed:         sr.Feed,
@@ -307,6 +310,24 @@ func (r *Rules) Speed(sp SpeciesID, ctx expr.Context) float64 {
 		return 0
 	}
 	v := sd.speed.EvalNumber(ctx)
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+// TurnRate is the species' §6 max turn RATE (radians per unit time; ×DT =
+// per-tick heading cap, M6). 0 (nil/absent/negative) = unlimited: caller does
+// NOT clamp (OFF-neutral). Pure.
+func (r *Rules) TurnRate(sp SpeciesID, ctx expr.Context) float64 {
+	if r == nil {
+		return 0
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.turnRate == nil {
+		return 0
+	}
+	v := sd.turnRate.EvalNumber(ctx)
 	if v < 0 {
 		return 0
 	}

@@ -68,6 +68,7 @@ cadence:
   hidden_flush_factor: 1.0        # hidden prey is flushed if predator is within this × scent_cell_size
   hide_cover_factor: 1.0          # cover reach = this × scent_cell_size
   cover_radius_factor: 3.0        # M4-b: × plant Width → cover-drag radius
+  conceal_factor: 1.0             # M5-b: × cover density => predator concealment (untuned placeholder)
   respawn_cadence: 200            # every N ticks, top each species up toward its respawn_target (F9)
 
 # ── Sizes (W6 + flora/resource) — representative defaults ──────────────────────────────

@@ -237,6 +237,7 @@
         },
         "apparent_temp": { "$ref": "#/$defs/formula" },
         "speed": { "$ref": "#/$defs/formula" },
+        "turn_rate": { "$ref": "#/$defs/formula" },
         "attack_power": { "$ref": "#/$defs/scalarOrFormula" },
         "hit": { "$ref": "#/$defs/scalarOrFormula" },
         "feed": { "$ref": "#/$defs/scalarOrFormula" },

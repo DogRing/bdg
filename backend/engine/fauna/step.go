@@ -229,6 +229,9 @@ func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc floa
 		}
 
 		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist > sightRadius/(1+other.Concealment) {
+			continue // M5-b: concealed predators are seen only at reduced range.
+		}
 		if !found || dist < bestDist {
 			bestDist = dist
 			pos := ent.Pos
@@ -318,8 +321,15 @@ func steerFull(
 	// Resolve base direction from steer channel.
 	dir := baseSteerDir(a, tag, reading, nearPredPos, sightPred)
 
-	// Apply angular jitter to heading (stochastic wander, D12).
-	heading := math.Atan2(dir.Y, dir.X) + wander
+	// Apply angular jitter to heading (stochastic wander, D12), then cap turn
+	// rate when authored (M6). turn_rate <= 0 means unlimited/off-neutral.
+	desired := math.Atan2(dir.Y, dir.X) + wander
+	if tr := rules.TurnRate(a.Species, ctx); tr > 0 {
+		if maxTurn := tr * snap.DT; math.Abs(angularDiff(desired, a.Heading)) > maxTurn {
+			desired = a.Heading + math.Copysign(maxTurn, angularDiff(desired, a.Heading))
+		}
+	}
+	heading := desired
 	dir = core.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
 
 	// Evaluate terrain at tentative next position.

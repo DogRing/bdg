@@ -391,6 +391,34 @@ commits the animal's move, NOT a §6 speed change (fauna's speed is unchanged).
   byte-identical to today. The starter/arena fixtures (which DO place cover) are the activation site; their
   smoke/arena harnesses have no stored golden (determinism + behavioural asserts only), so no golden re-baseline.
 
+## Ambush concealment (M5-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+
+A predator standing in dense `cover` flora is **harder for prey to SEE** (not to smell) — it closes the
+distance before the prey bolts, so **ambush emerges** from cover + positioning (no per-species ambush FSM,
+D2/D3). World-side (world owns flora; reuses the M4-b cover density + the M3 "world writes an `Animal`
+field, fauna reads it" seam); fauna only READS the per-animal concealment in its sight query.
+
+- **`coverDensity(p)` (extract from `coverResistance`):** the species-independent peaky cover-flora overlap
+  sum (`Σ 1 − d/radius` over cover plants within `CoverRadiusFactor×Width`). `coverResistance` becomes
+  `1 + coverDensity(p)×CoverCost` — M4-b behaviour unchanged, just factored.
+- **Where (in `commitAnimalOwnState`, after the move commit):**
+  ```
+  a.Concealment = w.coverDensity(pos) * w.envCfg.FaunaCombat.ConcealFactor  // species-independent, ≥ 0
+  ```
+  Post-move position ⇒ prey read it NEXT tick (F33 latency, twin of scent deposit). `Animal.Concealment` is
+  a **derived transient** — recomputed every tick from position+flora, **NOT persisted** (a restore
+  self-heals within one tick; it is not authoritative decision state like `HiddenUntil`).
+- **fauna reads it (contract for `engine/fauna` `sightQuery`):** a predator candidate is skipped when
+  `dist > sightRadius / (1 + other.Concealment)` — the same saturating form as the M4-b drag. `Concealment=0`
+  ⇒ effRadius = sightRadius ⇒ the query is byte-unchanged. **Only the sight (Flee) channel narrows**; the
+  scent (Wary early-warning) channel and `combatTarget` (hunt / M3 hidden) are untouched — prey still SMELLS
+  the predator, it just SEES it late.
+- **Config/content (D10):** `content/world.yaml cadence.conceal_factor` (float ≥0, × cover density →
+  concealment) → `EnvConfig.FaunaCombat.ConcealFactor` (`CombatParams`) + `world.schema.json`. M5-a is pure
+  content senses tuning (prey `senses.sight_radius`/`fov_arc`) — no new field.
+- **Neutrality:** `conceal_factor=0` and/or no `cover` flora ⇒ `Concealment≡0` ⇒ effRadius≡SightRadius ⇒
+  sight byte-identical. Deterministic, no RNG (D12). No new Snapshot/Intent seam (mirrors M3 `HiddenUntil`).
+
 ## Notes
 - **fauna.Step plans, world applies (F41).** The split — fauna emits intents in the plan phase, the
   world applies them in the SAME combined sorted stream as agents — is what keeps "world = sole

@@ -64,6 +64,7 @@ type worldDoc struct {
 		HiddenFlushFactor      float64 `yaml:"hidden_flush_factor"`
 		HideCoverFactor        float64 `yaml:"hide_cover_factor"`
 		CoverRadiusFactor      float64 `yaml:"cover_radius_factor"`
+		ConcealFactor          float64 `yaml:"conceal_factor"`
 		RespawnCadence         int     `yaml:"respawn_cadence"`
 	} `yaml:"cadence"`
 }
@@ -154,6 +155,7 @@ type objectKindDoc struct {
 		} `yaml:"drives"`
 		ApparentTemp  any      `yaml:"apparent_temp"`
 		Speed         any      `yaml:"speed"`
+		TurnRate      any      `yaml:"turn_rate"`
 		AttackPower   any      `yaml:"attack_power"`
 		Hit           any      `yaml:"hit"`
 		Feed          any      `yaml:"feed"`

@@ -66,6 +66,7 @@ type Animal struct {
 	NextExchangeTick    core.Tick        // next tick an engaged attack may propose damage
 	EngageCooldownUntil core.Tick        // next tick an engage attempt may be made
 	HiddenUntil         core.Tick        // hidden while >0 and >= current tick; SINGLE WRITER = engine/world (M3)
+	Concealment         float64          // world-written transient cover concealment; fauna reads in sightQuery (M5-b)
 }
 
 // EnvSample is the per-animal exogenous climate world samples injected each tick.
@@ -121,6 +122,7 @@ type CombatParams struct {
 	HideDurationTicks      int     // ticks a prey stays hidden after a successful world-side hide roll (M3)
 	HideCoverFactor        float64 // × ScentCellSize = cover reach for world nearCoverFlora (M3)
 	CoverRadiusFactor      float64 // × plant Width = cover-drag radius for world-side resistance (M4-b)
+	ConcealFactor          float64 // × cover density = per-animal concealment for prey sight reduction (M5-b)
 }
 
 // Snapshot is the read-only world view the controller scores over (the read phase;
