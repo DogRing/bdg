@@ -7,6 +7,8 @@
 docs/
 testdata/
 tools/
+# …but ship the world fixtures the runtime loads (Dockerfile.api → /app/fixtures)
+!backend/tools/worldgen/testdata/*.fixture.yaml
 
 # committed/prebuilt binaries (rebuilt inside the image)
 backend/bdg

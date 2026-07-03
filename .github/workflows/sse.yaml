@@ -9,12 +9,14 @@ on:
     paths:
       - "backend/**"
       - "backend/Dockerfile.sse"
+      - ".dockerignore"
       - ".github/workflows/sse.yaml"
   pull_request:
     branches: [ "main" ]
     paths:
       - "backend/**"
       - "backend/Dockerfile.sse"
+      - ".dockerignore"
       - ".github/workflows/sse.yaml"
 
 env:
