@@ -294,8 +294,8 @@ object_kinds:
     tags: [ threat:predator, scent:predator ]
     fauna:
       actions:
-        - { action: Hunt,   utility: "hunger * (0.3 + scent.prey)" }                # hungry → home on prey scent (upwind, FA2)
-        - { action: Attack, utility: "hunger * (0.8 + scent.prey) - dist.prey * 0.05 - target.threat * 0.7" } # close prey → engage; predator targets damped by threat cost
+        - { action: Hunt,   utility: "hunger * (0.12 + scent.prey)" }               # hungry → home on prey scent (upwind, FA2). SCENT-GATED below the MoveTo wander baseline (0.15): a starving wolf with ZERO scent scores 0.9·0.12=0.108 < 0.15 → WANDERS (heading re-randomizes → plume re-acquisition) instead of blind-running its last heading forever (the observed "perpetual parallel walk", Phase 10). Plume edge s≈0.05 tips into pursuit. The scent slope stays 1.0 — matching Attack's — so the Attack crossover survives: Attack−Hunt = hunger·(0.8−0.12) − dist.prey·0.05 = 0.612 − 1/(1+s) at hunger 0.9/smell 20, positive from s≈0.64 (melee range), with is_current stickiness holding the exchange after the first win. A steeper slope (×2–3) makes Hunt outbid Attack at ALL scent levels → zero engagements (verified in the arena).
+        - { action: Attack, utility: "hunger * (0.8 + scent.prey) - dist.prey * 0.05 - target.threat * 0.7 + is_current * (0.1 + scent.prey * 2)" } # close prey → engage; predator targets damped by threat cost; is_current stickiness (F30/R5) locks the exchange in once engaged instead of flickering back to Hunt every other tick — scent-scaled (not a flat bonus) so a predator that loses the scent trail entirely (scent.prey→0) is NOT stuck picking Attack forever with no target (a flat bonus large enough to fix the melee flicker would also out-bid Hunt's baseline at zero scent — verified against this species' smell_radius/hunger ceiling)
         - { action: Feed,   utility: "hunger * scent.carrion * 4" }                     # committed carrion scent → feed after a kill
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
         - { action: MoveTo, utility: "0.15" }                                       # range/wander baseline
@@ -384,8 +384,8 @@ object_kinds:
     tags: [ threat:predator, scent:predator ]
     fauna:
       actions:
-        - { action: Hunt,   utility: "hunger * (0.2 + scent.prey)" }                # hunts when prey scent dominates
-        - { action: Attack, utility: "hunger * (0.9 + scent.prey) - dist.prey * 0.04 - target.threat * 0.5" } # strong predator, still threat-damped
+        - { action: Hunt,   utility: "hunger * (0.12 + scent.prey)" }               # hunts when prey scent dominates. Scent-gated below MoveTo 0.15 at zero scent (wander, don't blind-run) with the slope kept at 1.0 so the Attack crossover survives (wolf-parity rationale; Phase 10)
+        - { action: Attack, utility: "hunger * (0.9 + scent.prey) - dist.prey * 0.04 - target.threat * 0.5 + is_current * (0.1 + scent.prey * 2)" } # strong predator, still threat-damped; is_current stickiness (F30/R5), scent-scaled (wolf-parity, same zero-scent safety rationale)
         - { action: Feed,   utility: "hunger * scent.carrion * 4" }                     # scavenges/feeds from committed carcass scent
         - { action: Graze,  utility: "hunger * (0.2 + scent.food)" }                # grazes when food scent dominates (emergent omnivore)
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
