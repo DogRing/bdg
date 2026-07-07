@@ -73,13 +73,14 @@ export function WorldCanvas3D(props: Props) {
     const onWheel = (e: WheelEvent) => {
       const h = handleRef.current
       if (!h) return
-      e.preventDefault()
+      e.preventDefault() // always: plain wheel is intentionally inert (no accidental page scroll/zoom)
       // Browsers remap Alt/Shift + vertical wheel to horizontal scroll (deltaX), so read
-      // whichever axis carries the notch — otherwise Alt-tilt / Shift-rotate silently do nothing.
+      // whichever axis carries the notch — otherwise the modifier gestures silently do nothing.
       const dv = e.deltaY || e.deltaX
-      if (e.altKey) h.tiltBy(-dv * 0.0016)
+      if (e.ctrlKey || e.metaKey) h.zoomBy(Math.exp(dv * 0.0015)) // scroll up = in, down = out
+      else if (e.altKey) h.tiltBy(-dv * 0.0016)
       else if (e.shiftKey) h.orbitBy(dv * 0.004)
-      else h.zoomBy(Math.exp(dv * 0.0015)) // scroll up = zoom in (dolly closer), down = out
+      // plain wheel: locked
     }
     glc.addEventListener('wheel', onWheel, { passive: false })
     return () => glc.removeEventListener('wheel', onWheel)
@@ -161,7 +162,7 @@ export function WorldCanvas3D(props: Props) {
         background: t.glow ? 'rgba(20,18,16,0.7)' : 'rgba(240,227,192,0.7)',
         padding: '3px 8px', border: t.glow ? `1px solid ${t.panelBorder}` : undefined, borderRadius: t.glow ? 0 : 2,
       }}>
-        {`${agents.length} agents · scroll zoom · drag pan · Alt tilt · Shift rotate`}
+        {`${agents.length} agents · Ctrl zoom · Alt tilt · Shift rotate · drag pan`}
       </div>
     </div>
   )
