@@ -207,16 +207,26 @@ func (w *World) climateCellToNavCells(gc climate.GridCell) []navmap.Cell {
 	x1 := x0 + cellW
 	y1 := y0 + cellH
 
-	start := w.nav.CellOf(core.Vec2{X: x0, Y: y0})
-	end := w.nav.CellOf(core.Vec2{X: math.Nextafter(x1, x0), Y: math.Nextafter(y1, y0)})
+	// Fine-sample the coarse cell's continuous region and collect the DISTINCT hexes whose CENTRE ∈
+	// region — robust for flat-top hex (SPEC-world-env.md climate→navmap bridge). The sample step ≤ hex
+	// inradius (√3/2·CellSize) guarantees every in-region hex is hit; sampling is padded by one
+	// circumradius so a hex centred just inside the boundary is still discovered, and the centre∈region
+	// filter discards the padding overshoot.
+	cellSize := w.envCfg.NavmapCellSize
+	if cellSize <= 0 {
+		return nil
+	}
+	step := math.Sqrt(3) / 2 * cellSize
+	pad := cellSize
 	seen := make(map[navmap.Cell]struct{})
 	cells := make([]navmap.Cell, 0)
-	for y := start.Y - 1; y <= end.Y+1; y++ {
-		for x := start.X - 1; x <= end.X+1; x++ {
-			c := navmap.Cell{X: x, Y: y}
+	for y := y0 - pad; y <= y1+pad; y += step {
+		for x := x0 - pad; x <= x1+pad; x += step {
+			c := w.nav.CellOf(core.Vec2{X: x, Y: y})
 			if _, ok := seen[c]; ok {
 				continue
 			}
+			seen[c] = struct{}{}
 			center := w.nav.CellCenter(c)
 			if !pointInClimateRect(center, x0, y0, x1, y1, gc, w.envCfg) {
 				continue
@@ -224,7 +234,6 @@ func (w *World) climateCellToNavCells(gc climate.GridCell) []navmap.Cell {
 			if w.nav.TerrainAt(c) == "" {
 				continue
 			}
-			seen[c] = struct{}{}
 			cells = append(cells, c)
 		}
 	}
@@ -363,11 +372,13 @@ func cloneTerrainAttrs(in map[core.Tag]float64) map[core.Tag]float64 {
 	return out
 }
 
+// sortNavCells orders hex cells in the D12 canonical hex order: R-major then Q
+// (the flat-top analogue of the old square Y-major/X — hex-grid.md, navmap sort).
 func sortNavCells(cells []navmap.Cell) {
 	sort.Slice(cells, func(i, j int) bool {
-		if cells[i].Y != cells[j].Y {
-			return cells[i].Y < cells[j].Y
+		if cells[i].R != cells[j].R {
+			return cells[i].R < cells[j].R
 		}
-		return cells[i].X < cells[j].X
+		return cells[i].Q < cells[j].Q
 	})
 }

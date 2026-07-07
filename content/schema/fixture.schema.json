@@ -20,20 +20,32 @@
       }
     },
     "terrain": {
-      "type": "object",
-      "description": "The per-cell terrain LAYOUT at navmap resolution over bounds (the navmap base layer + climate t=0 terrain). Absent ⇒ no navmap/env terrain (flat default; env terrain-driven features off). `cells` is row-major, length cols*rows; each entry a terrain id from content/terrain.yaml.",
-      "additionalProperties": false,
-      "required": ["cols", "rows", "cells"],
-      "properties": {
-        "cols":  { "type": "integer", "minimum": 1, "description": "grid columns = round((max.x-min.x)/navmap_cell_size); loader cross-checks vs world.yaml." },
-        "rows":  { "type": "integer", "minimum": 1 },
-        "cells": {
-          "type": "array",
-          "description": "row-major terrain ids (length MUST equal cols*rows; loader enforces). Each ∈ content/terrain.yaml.",
-          "items": { "$ref": "#/$defs/identifier" },
-          "minItems": 1
+      "description": "The per-cell terrain LAYOUT at navmap resolution over bounds (the navmap base layer + climate t=0 terrain). Absent ⇒ no navmap/env terrain (flat default; env terrain-driven features off). TWO mutually exclusive forms: EXPLICIT {cols,rows,cells} (`cells` row-major, length cols*rows, ids ⊆ content/terrain.yaml) OR RANDOM {random:true} — the loader materializes a SimpleTerrain layout over navmap.OffsetDimsOf(bounds) from the run seed (dev/test worlds; same seed ⇒ same terrain, D12).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cols", "rows", "cells"],
+          "properties": {
+            "cols":  { "type": "integer", "minimum": 1, "description": "grid columns = round((max.x-min.x)/navmap_cell_size); loader cross-checks vs world.yaml." },
+            "rows":  { "type": "integer", "minimum": 1 },
+            "cells": {
+              "type": "array",
+              "description": "row-major terrain ids (length MUST equal cols*rows; loader enforces). Each ∈ content/terrain.yaml.",
+              "items": { "$ref": "#/$defs/identifier" },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["random"],
+          "properties": {
+            "random": { "const": true, "description": "loader-materialized SimpleTerrain over the run seed (dev/test; NOT the WG1-a Generate pipeline)." }
+          }
         }
-      }
+      ]
     },
     "objects": {
       "type": "array",
@@ -64,6 +76,12 @@
       "type": "array",
       "description": "Optional initial perishable decay lots (usually empty — most lots arise at runtime from harvest/craft). `kind` ∈ content/objects.yaml decay: item_kinds.",
       "items": { "$ref": "#/$defs/lotPlacement" }
+    },
+    "respawn_targets": {
+      "type": "object",
+      "description": "Per-run OVERRIDE of the content per-species respawn_target (F9 carrying capacity, content/objects.yaml fauna:). Keys = fauna species ids (loader cross-checks); values replace the content value for THIS run only. Absent ⇒ content values.",
+      "additionalProperties": { "type": "integer", "minimum": 0 },
+      "propertyNames": { "$ref": "#/$defs/identifier" }
     }
   },
   "$defs": {
@@ -94,11 +112,11 @@
     "animalPlacement": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "species", "pos"],
+      "required": ["id", "species"],
       "properties": {
         "id":      { "$ref": "#/$defs/identifier" },
         "species": { "$ref": "#/$defs/identifier" },
-        "pos":     { "$ref": "#/$defs/vec2" },
+        "pos":     { "$ref": "#/$defs/vec2", "description": "optional; absent ⇒ the loader places the animal on a random soil hex from the run seed (requires a terrain layout)." },
         "heading": { "type": "number", "description": "optional initial heading (radians); default 0." }
       }
     },
@@ -127,11 +145,11 @@
     "floraPlacement": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "species", "pos"],
+      "required": ["id", "species"],
       "properties": {
         "id":      { "$ref": "#/$defs/identifier" },
         "species": { "$ref": "#/$defs/identifier" },
-        "pos":     { "$ref": "#/$defs/vec2" },
+        "pos":     { "$ref": "#/$defs/vec2", "description": "optional; absent ⇒ the loader places the plant on a random soil hex from the run seed (requires a terrain layout)." },
         "length":  { "type": "number", "minimum": 0, "description": "optional initial height; default = world.yaml sizes.flora.seedling_start." },
         "width":   { "type": "number", "minimum": 0, "description": "optional initial canopy; default = seedling start." }
       }

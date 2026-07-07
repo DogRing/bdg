@@ -24,6 +24,8 @@ type Server struct {
 	keyer   persist.Keyer     // sim:{run}:* key strings (never hand-formatted)
 	runID   core.RunID        // which sim run to tail/query
 	godMode bool              // startup flag; gates real_stats on /api/agents/{id}?god=true AND all /api/god/*
+	restart func()            // POST /api/restart signal to the sim writer; nil ⇒ route 503s
+	regen   func(seed int64)  // POST /api/regen signal (new-seed rebuild); nil ⇒ route 503s
 	mux     *http.ServeMux
 	addr    string
 }
@@ -39,6 +41,10 @@ type Config struct {
 	Addr    string     // e.g. ":8080" from HTTP_ADDR env
 	RunID   core.RunID // which sim run to tail/query
 	GodMode bool       // startup-only: enables real_stats on /api/agents/{id}?god=true
+	Restart func()     // POST /api/restart signal sink (non-blocking; the sim writer rebuilds
+	                   // the world on its own tick goroutine). nil ⇒ the route responds 503.
+	Regen func(seed int64) // POST /api/regen signal sink (non-blocking; new-seed rebuild — seed 0
+	                   // ⇒ the writer draws one). nil (e.g. scenario mode) ⇒ the route responds 503.
 }
 
 // RedisReader is the minimal Redis surface api needs for the read path.
@@ -66,6 +72,8 @@ func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *
 		keyer:   persist.Keyer{Run: cfg.RunID},
 		runID:   cfg.RunID,
 		godMode: cfg.GodMode,
+		restart: cfg.Restart,
+		regen:   cfg.Regen,
 		mux:     http.NewServeMux(),
 		addr:    cfg.Addr,
 	}
@@ -76,6 +84,8 @@ func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *
 	s.mux.HandleFunc("GET /api/snapshot", s.handleSnapshot)
 	s.mux.HandleFunc("GET /api/terrain", s.handleTerrain)
 	s.mux.HandleFunc("GET /api/agents/{id}", s.handleAgent)
+	s.mux.HandleFunc("POST /api/restart", s.handleRestart)
+	s.mux.HandleFunc("POST /api/regen", s.handleRegen)
 	s.mux.HandleFunc("GET /api/god/agent/{id}/divergence", s.handleGodDivergence)
 	s.mux.HandleFunc("GET /api/god/reputation/{id}", s.handleGodReputation)
 	s.mux.HandleFunc("GET /api/god/relations", s.handleGodRelations)
@@ -109,7 +119,7 @@ func cors(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			w.WriteHeader(http.StatusNoContent)
 			return

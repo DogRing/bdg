@@ -76,14 +76,15 @@ prevFrameAtMs` so the render layer can interpolate between frames at any streami
 ### REST endpoints (initial load)
 - `GET /api/snapshot` — full world blob on page load (`loadSnapshot` in `useWorld.ts`): tick,
   agents (`{id,pos,goal,action,mood}`), placed objects (`{id,kind,pos}`).
-- `GET /api/terrain` — **initial terrain grid** (plan Q5; *pending backend SPEC delta on
-  `platform/api`*): `{cell_size, size:{w,h}, terrain:[…], wear?:[…]}` fetched once at connect;
-  kept current by SSE `terrain_delta`. Until the endpoint exists, `terrain` stays `null` and no
-  terrain layer draws.
+- `GET /api/terrain` — **initial terrain grid** (plan Q5 · hex `docs/hex-grid.md`; *pending backend
+  SPEC delta on `platform/api`*): `{cell_size, orientation:'flat', size:{cols,rows}, terrain:[…],
+  wear?:[…]}` — an **offset (col,row) rectangular array** (`i = row·cols + col`) of flat-top hex cells;
+  fetched once at connect, kept current by SSE `terrain_delta`. Until the endpoint exists, `terrain`
+  stays `null` and no terrain layer draws.
 - `GET /api/agents/{id}` — optional: a single agent's live state on click.
 - World-geometry (bounds + `pixelsPerUnit`) → `RenderConfig` — anchors the initial camera;
   `null` until fetched (auto-fit fallback). Source: DERIVED from the `GET /api/terrain` grid
-  (`bounds = (0,0)..(w·cell_size, h·cell_size)`) on `TERRAIN_LOADED` — the terrain grid IS the
+  (`bounds` = the flat-top hex pixel extent of `cols×rows` at `cell_size`) on `TERRAIN_LOADED` — the terrain grid IS the
   world geometry; a future dedicated geometry endpoint may supersede it (the reducer never
   clobbers an already-present config).
 
@@ -109,11 +110,15 @@ reputation, or relations display).
 
 - **Header** (`components/Header.tsx`): run id, tick, agent count, fauna count + ambient weather
   chip (day-night icon, temperature + `apparentTemp`, rain/wind), connection badge, theme + pause
-  toggles.
+  toggles, and a **new-map button** (confirm → `POST /api/regen` → the backend rebuilds the world
+  from its fixture with a NEW seed (random terrain/placements re-rolled) → page reload after
+  ~1.5 s so client state starts fresh; failure surfaces an alert). The backend's `POST
+  /api/restart` (same-seed deterministic reset) stays available but has no header button.
 - **WorldCanvas** (`components/WorldCanvas.tsx`, left, flex-1): HTML5 Canvas, RAF render loop.
   Draws (back→front) terrain → flora → placed objects → animals → agents → fx → ambient. **Camera
   (plan Q6): wheel zoom (cursor-anchored), drag pan, click an entity to select + follow it**;
-  empty click deselects. Input handlers dispatch pure camera reducers (`src/render/SPEC.md`).
+  empty click deselects; on-screen **+/− zoom buttons** (bottom-right overlay) zoom about the
+  viewport centre. Input handlers dispatch pure camera reducers (`src/render/SPEC.md`).
 - **Sidebar** (`components/Sidebar.tsx`, right): `AgentDetail` (selected agent; a followed
   *animal* shows no detail panel) over `EventLog` (scrolling, filtered, newest-first, ≤500).
 
@@ -138,11 +143,13 @@ frontend/
       useWorld.ts         useReducer state machine (applyEvent + reducer) + loadSnapshot/loadTerrain
     components/
       Header.tsx          status strip
-      WorldCanvas.tsx     canvas + RAF + ResizeObserver + camera input (wheel/drag/click)
+      WorldCanvas.tsx     2D canvas + RAF + ResizeObserver + camera input (wheel/drag/click)
+      WorldCanvas3D.tsx   WebGL curved-world view (opt-in toggle, same props)  → src/gl/SPEC.md
       Sidebar.tsx         AgentDetail + EventLog container
       EventLog.tsx        scrolling list, filter, trim
       AgentDetail.tsx     selected-agent panel
     render/               pure draw / camera / animation layer          → src/render/SPEC.md
+    gl/                   stateful WebGL curved-world renderer (3D)      → src/gl/SPEC.md
     assets/               manifest (data tables) + spritesheet cache    → src/assets/SPEC.md
     utils/
       eventFormatter.ts   formatEvent(ev) → LogEntry | null
@@ -160,7 +167,7 @@ interface AnimalState  { id; pos; species; action; heading; stamina;
 interface PlantState   { id; pos; species; stage; width }
 interface ClimateState { temperature; apparentTemp|null; moisture; raining;
                          windDir; windMag; hourOfDay; dayNight:'day'|'night'; yearFraction }
-interface TerrainGrid  { cellSize; w; h; terrain:string[]; wear?:Float32Array }  // /api/terrain + deltas
+interface TerrainGrid  { cellSize; cols; rows; terrain:string[]; wear?:Float32Array; orientation:'flat' } // /api/terrain + deltas; flat-top hex, offset(col,row) array (hex-grid.md)
 interface FxInstance   { kind:'spawn'|'death'|'attack'|'grow'; at:ms; pos; id; species?; heading? }
 interface RenderConfig { bounds:{min,max}; pixelsPerUnit }
 interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connectionStatus;
@@ -193,9 +200,10 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 - **Transition FX** (plan Q4): the reducer appends `FxInstance`s on lifecycle events / attack-pose
   entry / stage increase; the render layer evaluates them time-parametrically (spawn fade-in,
   **death fade + corpse ~1.5 s**, attack lunge, grow tween) and the reducer prunes expired ones.
-- **Terrain**: `GET /api/terrain` + `terrain_delta` → offscreen raster in data-driven flat colours
-  (river/grass/forest = `water/plain/forest` TerrainIDs), wear trails overlay. The old hardcoded
-  decorative map is gone.
+- **Terrain**: `GET /api/terrain` + `terrain_delta` → offscreen raster of **flat-top hex** cells in
+  data-driven flat colours (river/grass/forest = `water/plain/forest` TerrainIDs), wear trails overlay.
+  Offset(col,row) rectangular array; the frontend mirrors navmap's hex convention from the payload
+  (`docs/hex-grid.md`). The old hardcoded decorative map is gone.
 - **Ambient**: day-night tint, temperature vignette, rain, wind arrow from `ClimateState`.
 - **Scent field**: NOT streamed (derived, data-contracts §10) — no render.
 

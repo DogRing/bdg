@@ -61,6 +61,23 @@ export const FLORA_SHEETS: Record<string, FloraSheetDef> = Object.freeze({
 })
 export const DEFAULT_FLORA_COLOR = '#4a8a2a' // glyph fallback (circle, width-scaled)
 
+// Ground-cover flora render as a density COVERAGE wash instead of a per-plant
+// sprite/dot: overlapping soft stamps accumulate into a continuous meadow, so a
+// pasture reads as a painted area rather than dots pinned to the map. Membership
+// + tuning are DATA here (open content, D10) — render/ branches on the looked-up
+// style, never on a species string. `color` is rgb (draw applies alpha);
+// `radiusUnits` is the world-unit stamp radius (≈ grass propagation clump, so
+// neighbours overlap); `alpha` is the per-stamp peak (clusters build toward opaque).
+// `plateau` = fraction of the radius painted at full `alpha` before the soft rim
+// fades to 0. A near-solid core (plateau ~0.6) is what lets adjacent stamps MERGE
+// into one filled sheet instead of reading as separate dabs when zoomed in — the
+// meadow stays a painted area at every zoom, while overlap still builds opacity
+// (density). Radius is world units so it tracks zoom.
+export interface FloraCoverageStyle { color: string; radiusUnits: number; alpha: number; plateau: number }
+export const FLORA_COVERAGE: Record<string, FloraCoverageStyle> = Object.freeze({
+  grass: Object.freeze({ color: '92,150,54', radiusUnits: 4.5, alpha: 0.30, plateau: 0.6 }),
+})
+
 // ── ActionID → Pose (ordered, first match wins; ids are open content) ────────
 export const ACTION_POSE_RULES: ReadonlyArray<{ pattern: RegExp; pose: Pose }> = Object.freeze([
   Object.freeze({ pattern: /hunt|attack/i,                        pose: 'attack' as const }),
@@ -76,15 +93,21 @@ export function poseFor(actionId: string): Pose {
   return 'idle'
 }
 
-// ── terrain (flat per-cell colours, plan Q5; ids from content/terrain.yaml) ──
+// ── terrain (flat per-hex colours, plan Q5 · hex; ids from content/terrain.yaml) ──
 export const TERRAIN_STYLE: Record<string, string> = Object.freeze({
+  // canonical content/terrain.yaml ids
+  soil:     '#9a7a4a',
+  sand:     '#c8b078',
+  river:    '#4a8ec2', // fresh flowing water (lighter than sea)
+  mountain: '#8a8078', // steep rock
+  sea:      '#2f5c8a', // deep salt water
+  bare_rock: '#9a938a', // depleted ore node reroute
+  // legacy/example ids (older fixtures + tests)
   plain:  '#7a9a4a',
   water:  '#3a6ea5',
   steep:  '#8a8078',
   forest: '#3a6a2a',
   swamp:  '#5a6a3a',
-  soil:   '#9a7a4a',
-  sand:   '#c8b078',
 })
 export const TERRAIN_DEFAULT = '#77826e'
 export const WEAR_TRAIL_COLOR = '160,130,90' // rgb; draw applies alpha ∝ wear

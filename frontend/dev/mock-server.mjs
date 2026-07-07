@@ -33,21 +33,52 @@ function mulberry32(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-const rng = mulberry32(SEED)
+let seed = SEED // re-rolled by POST /api/regen (parity with the backend's new-seed rebuild)
+let rng = mulberry32(seed)
 
-// ── world ────────────────────────────────────────────────────────────────────
-const CELL = 8, GW = 64, GH = 64 // 512² world
-const terrain = []
-for (let y = 0; y < GH; y++) {
-  for (let x = 0; x < GW; x++) {
-    const fx = x - 46, fy = y - 14 // forest ellipse NE
-    if (x === 20 || x === 21) terrain.push('water')                 // river N-S
-    else if ((fx * fx) / 120 + (fy * fy) / 60 < 1) terrain.push('forest')
-    else if (Math.abs(x - 32) < 5 && Math.abs(y - 32) < 5) terrain.push('soil') // village fields
-    else terrain.push('plain')
+// ── world (FLAT-TOP HEX offset grid, mirrors backend navmap; docs/hex-grid.md) ──
+const CELL = 8, WORLD = 512 // 512² world; CELL = hex circumradius
+const SQRT3 = Math.sqrt(3)
+// navmap-mirroring hex helpers (engine hex.go) so the mock's grid == what the frontend expects.
+const hexToPixel = (q, r) => ({ x: CELL * 1.5 * q, y: CELL * (SQRT3 / 2 * q + SQRT3 * r) })
+const offsetToAxial = (col, row) => ({ q: col, r: row - (col + (col & 1)) / 2 })
+const axialToOffset = (q, r) => ({ col: q, row: r + (q + (q & 1)) / 2 })
+function pixelToHex(x, y) {
+  const fq = (2 / 3 * x) / CELL, fr = (-1 / 3 * x + SQRT3 / 3 * y) / CELL
+  let rx = Math.round(fq), ry = Math.round(-fq - fr), rz = Math.round(fr)
+  const xd = Math.abs(rx - fq), yd = Math.abs(ry - (-fq - fr)), zd = Math.abs(rz - fr)
+  if (xd > yd && xd > zd) rx = -ry - rz
+  else if (yd > zd) ry = -rx - rz
+  else rz = -rx - ry
+  return { q: rx, r: rz }
+}
+const COLS = Math.ceil(WORLD / (1.5 * CELL)) + 1
+const ROWS = Math.ceil(WORLD / (SQRT3 * CELL)) + 1
+const ORIENTATION = 'flat'
+// Terrain is rebuilt on POST /api/regen (new seed ⇒ river/forest/fields move) —
+// mock parity with the backend's SimpleTerrain materialization. Deterministic per
+// seed: same seed ⇒ same layout (its PRNG stream is separate from the scripted rng).
+let terrain = []
+function buildTerrain(seedVal) {
+  const rand = mulberry32(seedVal ^ 0x7e11a1)
+  const riverX = 96 + Math.floor(rand() * 320)               // river N-S band
+  const forest = { x: 64 + rand() * 384, y: 64 + rand() * 256 } // forest ellipse
+  const field = { x: 96 + rand() * 320, y: 96 + rand() * 320 } // village fields
+  terrain = []
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const { q, r } = offsetToAxial(col, row)
+      const { x, y } = hexToPixel(q, r)          // world centre of this hex
+      const fx = x - forest.x, fy = y - forest.y
+      if (x >= riverX && x < riverX + 16) terrain.push('river')
+      else if ((fx * fx) / 7680 + (fy * fy) / 3840 < 1) terrain.push('forest')
+      else if (Math.abs(x - field.x) < 40 && Math.abs(y - field.y) < 40) terrain.push('sand')
+      else terrain.push('soil')
+    }
   }
 }
-const wear = new Float32Array(GW * GH)
+buildTerrain(seed)
+const wear = new Float32Array(COLS * ROWS)
 
 const objects = [
   { id: 'berry_1', kind: 'berry_bush', pos: { x: 300, y: 340 } },
@@ -56,27 +87,54 @@ const objects = [
 ]
 const waypoints = objects.map(o => o.pos)
 
-const agents = [
-  { id: 'farmer_1', pos: { x: 256, y: 256 }, goal: 'satiety', action: 'forage', mood: 0.8, wp: 0 },
-  { id: 'guard_1', pos: { x: 270, y: 250 }, goal: 'safety', action: 'patrol', mood: 0.9, wp: 1 },
-]
-
+const agents = []
 const animals = new Map()
 const spawnDeer = (id, x, y) =>
   animals.set(id, { id, pos: { x, y }, species: 'deer', action: 'graze', heading: 0 })
-spawnDeer('deer_1', 150, 320); spawnDeer('deer_2', 162, 335); spawnDeer('deer_3', 140, 342)
-animals.set('wolf_1', { id: 'wolf_1', pos: { x: 400, y: 120 }, species: 'wolf', action: 'wander', heading: 0 })
 const wolf = { state: 'roam', until: 40, target: null, holdTicks: 0 }
 let deerSerial = 3, respawnAt = -1
 
 const flora = new Map()
 const plant = (id, species, x, y, stage, width) => flora.set(id, { id, species, pos: { x, y }, stage, width })
-plant('tree_1', 'tree', 380, 130, 1, 4); plant('tree_2', 'tree', 396, 118, 3, 6)
-plant('tree_3', 'tree', 370, 150, 2, 5); plant('tree_4', 'tree', 410, 140, 3, 6)
-plant('bush_1', 'berry_shrub', 298, 338, 2, 3); plant('bush_2', 'berry_shrub', 310, 348, 1, 2)
 let growerSerial = 1, reseedAt = -1
 
 let tick = 0
+
+// resetWorld (re)initialises every piece of scripted state to tick 0 — called
+// once at startup and again on POST /api/restart (contract parity with the
+// real backend's deterministic fixture rebuild: same seed ⇒ same replay).
+function resetWorld() {
+  rng = mulberry32(seed)
+  tick = 0
+  wear.fill(0)
+
+  agents.length = 0
+  agents.push(
+    { id: 'farmer_1', pos: { x: 256, y: 256 }, goal: 'satiety', action: 'forage', mood: 0.8, wp: 0 },
+    { id: 'guard_1', pos: { x: 270, y: 250 }, goal: 'safety', action: 'patrol', mood: 0.9, wp: 1 },
+  )
+
+  animals.clear()
+  spawnDeer('deer_1', 150, 320); spawnDeer('deer_2', 162, 335); spawnDeer('deer_3', 140, 342)
+  animals.set('wolf_1', { id: 'wolf_1', pos: { x: 400, y: 120 }, species: 'wolf', action: 'wander', heading: 0 })
+  Object.assign(wolf, { state: 'roam', until: 40, target: null, holdTicks: 0 })
+  deerSerial = 3; respawnAt = -1
+
+  flora.clear()
+  plant('tree_1', 'tree', 380, 130, 1, 4); plant('tree_2', 'tree', 396, 118, 3, 6)
+  plant('tree_3', 'tree', 370, 150, 2, 5); plant('tree_4', 'tree', 410, 140, 3, 6)
+  plant('bush_1', 'berry_shrub', 298, 338, 2, 3); plant('bush_2', 'berry_shrub', 310, 348, 1, 2)
+  // grass pasture near the deer — exercises the FLORA_COVERAGE density wash (deterministic
+  // layout, no rng, so the scripted stream is unchanged): a 7×4 clump ~3u apart overlaps into a meadow.
+  for (let i = 0; i < 28; i++) {
+    const gx = 130 + (i % 7) * 4 + ((i * 5) % 3) - 1
+    const gy = 315 + Math.floor(i / 7) * 4 + ((i * 3) % 3) - 1
+    plant(`grass_${i}`, 'grass', gx, gy, 2, 0.3)
+  }
+  growerSerial = 1; reseedAt = -1
+
+  climateWind.dir = 0.6; climateWind.mag = 0.3
+}
 
 // ── movement helpers ─────────────────────────────────────────────────────────
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
@@ -100,12 +158,13 @@ function step() {
   const floraDelta = []
   const terrainDelta = []
   const wearOn = (pos) => {
-    const cx = Math.floor(pos.x / CELL), cy = Math.floor(pos.y / CELL)
-    if (cx < 0 || cy < 0 || cx >= GW || cy >= GH) return
-    const i = cy * GW + cx
+    const { q, r } = pixelToHex(pos.x, pos.y)
+    const { col, row } = axialToOffset(q, r)
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return
+    const i = row * COLS + col
     if (wear[i] >= 1) return
     wear[i] = Math.min(1, wear[i] + 0.03)
-    terrainDelta.push({ cell: { x: cx, y: cy }, wear: Math.round(wear[i] * 100) / 100 })
+    terrainDelta.push({ cell: i, wear: Math.round(wear[i] * 100) / 100 }) // offset index i=row·cols+col
   }
 
   // agents: waypoint wander (and desire paths)
@@ -204,7 +263,7 @@ function step() {
   // periodic-full flora (§10) every 20 ticks so late joiners converge
   const fullFlora = tick % 20 === 1
   const floraOut = fullFlora
-    ? [...flora.values()].map(f => ({ id: f.id, pos: round(f.pos), stage: f.stage }))
+    ? [...flora.values()].map(f => ({ id: f.id, pos: round(f.pos), species: f.species, stage: f.stage, width: f.width }))
     : floraDelta
 
   emit('TickDone', null, {
@@ -229,6 +288,7 @@ function step() {
   return events
 }
 const climateWind = { dir: 0.6, mag: 0.3 }
+resetWorld()
 
 // ── dump mode: deterministic event listing, no server ────────────────────────
 if (DUMP > 0) {
@@ -252,7 +312,8 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       cell_size: CELL,
-      size: { w: GW, h: GH },
+      orientation: ORIENTATION,
+      size: { cols: COLS, rows: ROWS },
       terrain,
       wear: [...wear].map(v => Math.round(v * 100) / 100),
     }))
@@ -265,6 +326,19 @@ const server = http.createServer((req, res) => {
     })
     clients.add(res)
     req.on('close', () => clients.delete(res))
+  } else if (url.startsWith('/api/restart') && req.method === 'POST') {
+    resetWorld()
+    console.log('[mock] world reset to tick 0 (POST /api/restart)')
+    res.writeHead(202, { 'Content-Type': 'application/json' })
+    res.end('{"status":"restarting"}')
+  } else if (url.startsWith('/api/regen') && req.method === 'POST') {
+    const m = /[?&]seed=(-?\d+)/.exec(url)
+    seed = m ? Number(m[1]) : Math.floor(Math.random() * 2 ** 31) || 1
+    buildTerrain(seed)
+    resetWorld()
+    console.log(`[mock] world regenerated with seed ${seed} (POST /api/regen)`)
+    res.writeHead(202, { 'Content-Type': 'application/json' })
+    res.end('{"status":"regenerating"}')
   } else if (url.startsWith('/healthz') || url.startsWith('/readyz')) {
     res.writeHead(200); res.end('ok')
   } else {
@@ -282,5 +356,5 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(`[mock] contract-parity backend on :${PORT} (seed ${SEED}, tick ${TICK_MS}ms)`)
-  console.log('[mock] GET /api/snapshot · /api/terrain · /sse')
+  console.log('[mock] GET /api/snapshot · /api/terrain · /sse · POST /api/restart · /api/regen')
 })

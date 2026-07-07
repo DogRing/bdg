@@ -173,12 +173,13 @@ type ClimateView struct {
 
 // TerrainView → sim:{run}:terrain (§2) — already shaped exactly as the
 // GET /api/terrain response (api forwards the bytes verbatim).
-type TerrainSize struct{ W, H int } // json: w, h
+type TerrainSize struct{ Cols, Rows int } // json: cols, rows (flat-top hex offset grid, hex-grid.md)
 type TerrainView struct {
-    CellSize float64     `json:"cell_size"`
-    Size     TerrainSize `json:"size"`
-    Terrain  []string    `json:"terrain"`
-    Wear     []float64   `json:"wear,omitempty"`
+    CellSize    float64     `json:"cell_size"`   // hex circumradius
+    Orientation string      `json:"orientation"` // "flat" (flat-top hex)
+    Size        TerrainSize `json:"size"`
+    Terrain     []string    `json:"terrain"`     // offset(col,row) array, i=row*Cols+col
+    Wear        []float64   `json:"wear,omitempty"`
 }
 
 // RunMeta is the sim:{run}:meta hash payload (§2).

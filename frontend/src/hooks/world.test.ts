@@ -72,16 +72,16 @@ describe('fx queue (Q4)', () => {
   })
 
   it('terrain deltas mutate cells + wear and replace the grid object; deltas without a base grid drop', () => {
-    const grid: TerrainGrid = { cellSize: 8, w: 2, h: 2, terrain: ['plain', 'plain', 'plain', 'plain'] }
+    const grid: TerrainGrid = { cellSize: 8, cols: 2, rows: 2, orientation: 'flat', terrain: ['plain', 'plain', 'plain', 'plain'] }
     let s = worldReducer(initialWorldState, { type: 'TERRAIN_LOADED', payload: grid })
     expect(s.terrain).toBe(grid)
 
     s = dispatch(s, ev('WorldFrame', {
       agents: [], animals: [], flora_delta: [], wind: { dir: 0, mag: 0 },
       terrain_delta: [
-        { cell: { x: 1, y: 0 }, terrain: 'water' },
-        { cell: { x: 0, y: 1 }, wear: 0.5 },
-        { cell: { x: 9, y: 9 }, terrain: 'water' }, // out of bounds → ignored
+        { cell: 1, terrain: 'water' },   // offset index i=row·cols+col
+        { cell: 2, wear: 0.5 },
+        { cell: 99, terrain: 'water' },  // out of bounds → ignored
       ],
     }), 100)
     expect(s.terrain).not.toBe(grid)             // identity replaced → raster rebuild
@@ -91,7 +91,7 @@ describe('fx queue (Q4)', () => {
 
     const dropped = dispatch(initialWorldState, ev('WorldFrame', {
       agents: [], animals: [], flora_delta: [], wind: { dir: 0, mag: 0 },
-      terrain_delta: [{ cell: { x: 0, y: 0 }, terrain: 'water' }],
+      terrain_delta: [{ cell: 0, terrain: 'water' }],
     }), 0)
     expect(dropped.terrain).toBeNull()
   })
@@ -107,16 +107,18 @@ describe('fx queue (Q4)', () => {
 })
 
 describe('RenderConfig derivation from terrain (camera anchor)', () => {
-  it('TERRAIN_LOADED derives render.bounds from the grid geometry', () => {
-    const grid: TerrainGrid = { cellSize: 12, w: 16, h: 16, terrain: Array(256).fill('soil') }
+  it('TERRAIN_LOADED derives render.bounds from the hex grid geometry', () => {
+    // flat-top hex offset grid: cols apart 1.5·cellSize in x, rows apart √3·cellSize in y.
+    const grid: TerrainGrid = { cellSize: 12, cols: 12, rows: 11, orientation: 'flat', terrain: Array(132).fill('soil') }
     const s = worldReducer(initialWorldState, { type: 'TERRAIN_LOADED', payload: grid })
     expect(s.render).not.toBeNull()
     expect(s.render!.bounds.min).toEqual({ x: 0, y: 0 })
-    expect(s.render!.bounds.max).toEqual({ x: 192, y: 192 })
+    expect(s.render!.bounds.max.x).toBeCloseTo(12 * 1.5 * 12)          // 216
+    expect(s.render!.bounds.max.y).toBeCloseTo(11 * Math.sqrt(3) * 12) // ≈228.6
   })
 
   it('TERRAIN_LOADED never clobbers an already-present RenderConfig', () => {
-    const grid: TerrainGrid = { cellSize: 12, w: 16, h: 16, terrain: Array(256).fill('soil') }
+    const grid: TerrainGrid = { cellSize: 12, cols: 12, rows: 11, orientation: 'flat', terrain: Array(132).fill('soil') }
     const preset = { bounds: { min: { x: -5, y: -5 }, max: { x: 5, y: 5 } }, pixelsPerUnit: 40 }
     const s0: WorldState = { ...initialWorldState, render: preset }
     const s = worldReducer(s0, { type: 'TERRAIN_LOADED', payload: grid })

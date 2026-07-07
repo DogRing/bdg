@@ -158,9 +158,11 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
         byId.set(id, {
           id,
           pos,
-          species: prev?.species ?? '',
+          // Prefer the wire value (a full snapshot carries species/width so late
+          // joiners converge); fall back to prev for a sparse growth-only delta.
+          species: String(raw.species ?? prev?.species ?? ''),
           stage,
-          width: prev?.width ?? 0,
+          width: Number(raw.width ?? prev?.width ?? 0),
         })
       }
       flora = Array.from(byId.values())
@@ -172,18 +174,16 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
     let terrain = state.terrain
     if (terrain && Array.isArray(p.terrain_delta) && (p.terrain_delta as unknown[]).length > 0) {
       const cells = terrain.terrain.slice()
+      const n = terrain.cols * terrain.rows
       let wear = terrain.wear
       let changed = false
       for (const raw of p.terrain_delta as Array<Record<string, unknown>>) {
-        const cell = (raw.cell ?? {}) as Record<string, unknown>
-        const x = Number(cell.x), y = Number(cell.y)
-        if (!Number.isInteger(x) || !Number.isInteger(y) ||
-            x < 0 || y < 0 || x >= terrain.w || y >= terrain.h) continue
-        const idx = y * terrain.w + x
+        const idx = Number(raw.cell) // offset index i=row·cols+col
+        if (!Number.isInteger(idx) || idx < 0 || idx >= n) continue
         if (typeof raw.terrain === 'string') { cells[idx] = raw.terrain; changed = true }
         if (typeof raw.wear === 'number') {
           if (!wear || wear === terrain.wear) {
-            wear = wear ? Float32Array.from(wear) : new Float32Array(terrain.w * terrain.h)
+            wear = wear ? Float32Array.from(wear) : new Float32Array(n)
           }
           wear[idx] = raw.wear
           changed = true
@@ -366,9 +366,15 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
       // snapshot on a slow link, leaving animals/terrain outside the viewport).
       // A future dedicated geometry endpoint may overwrite this; never clobber
       // an already-present config.
+      // Flat-top hex offset grid → world extent: columns are 1.5·cellSize apart in x,
+      // rows √3·cellSize apart in y (hex-grid.md). Slightly generous framing is safe
+      // (entities stay visible); the real bounds come from a future geometry endpoint.
       const g = action.payload
       const render = state.render ?? {
-        bounds: { min: { x: 0, y: 0 }, max: { x: g.w * g.cellSize, y: g.h * g.cellSize } },
+        bounds: {
+          min: { x: 0, y: 0 },
+          max: { x: g.cols * 1.5 * g.cellSize, y: g.rows * Math.sqrt(3) * g.cellSize },
+        },
         pixelsPerUnit: 4,
       }
       return { ...state, terrain: g, render }
@@ -462,13 +468,14 @@ export function useWorld() {
       if (!res.ok) return
       const doc = await res.json() as Record<string, unknown>
       const size = (doc.size ?? {}) as Record<string, unknown>
-      const w = Number(size.w ?? 0)
-      const h = Number(size.h ?? 0)
+      const cols = Number(size.cols ?? 0)
+      const rows = Number(size.rows ?? 0)
       const cellSize = Number(doc.cell_size ?? 0)
+      const orientation = typeof doc.orientation === 'string' ? doc.orientation : 'flat'
       const cells = Array.isArray(doc.terrain) ? (doc.terrain as unknown[]).map(String) : []
-      if (w <= 0 || h <= 0 || cellSize <= 0 || cells.length !== w * h) return
-      const grid: TerrainGrid = { cellSize, w, h, terrain: cells }
-      if (Array.isArray(doc.wear) && (doc.wear as unknown[]).length === w * h) {
+      if (cols <= 0 || rows <= 0 || cellSize <= 0 || cells.length !== cols * rows) return
+      const grid: TerrainGrid = { cellSize, cols, rows, orientation, terrain: cells }
+      if (Array.isArray(doc.wear) && (doc.wear as unknown[]).length === cols * rows) {
         grid.wear = Float32Array.from((doc.wear as unknown[]).map(Number))
       }
       dispatch({ type: 'TERRAIN_LOADED', payload: grid })

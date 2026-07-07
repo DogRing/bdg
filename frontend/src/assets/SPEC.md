@@ -52,6 +52,9 @@ export const DEFAULT_FAUNA: Record<'predator' | 'prey', SpeciesStyle> // glyph-o
 export interface FloraSheetDef { url: string; frameW: number; frameH: number; stageFrames: number }
 export const FLORA_SHEETS: Record<string, FloraSheetDef>  // frame index = min(stage, stageFrames-1)
 export const DEFAULT_FLORA_COLOR: string                  // glyph fallback (circle, stage-scaled)
+export interface FloraCoverageStyle { color: string; radiusUnits: number; alpha: number }
+export const FLORA_COVERAGE: Record<string, FloraCoverageStyle>  // ground-cover species (grass) →
+  // density coverage wash instead of a sprite/dot; render branches on this style, not the species id
 
 // Ordered first-match-wins ActionID→Pose rules (Q2). Patterns test the raw ActionID string.
 export const ACTION_POSE_RULES: ReadonlyArray<{ pattern: RegExp; pose: Pose }>

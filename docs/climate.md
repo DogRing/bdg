@@ -133,7 +133,7 @@ operand 로 노출하는지 확인(apparent_temp 식 자체는 fauna F40 소관)
 
 ### M3 — `world` 와이어링 (cadence + navmap 브리지) — 여전히 outcome-중립(Rules 비어있음)
 - `world`가 `climate.State` 소유. `tick % 60 == 0`에 `Forcing`(=`worldtime.Clock`에서 `HourOfDay`/`AbsHour`)를 만들어 `climate.Step(prev, f, rules, fork)` 호출(per-step seeded fork, D12).
-- 반환 `[]Transition`을 apply 단계에서 처리: `GridCell` → `[]navmap.Cell` 매핑(coarse→fine) 후 정렬셀로 `navmap.SetTerrain(cells, To)` 직렬 호출(world가 유일 변이자).
+- 반환 `[]Transition`을 apply 단계에서 처리: `GridCell` → `[]navmap.Cell` 매핑(coarse square→fine hex, hex-grid.md) 후 정렬셀로 `navmap.SetTerrain(cells, To)` 직렬 호출(world가 유일 변이자).
 - climate State는 plan-phase snapshot에서 격리(navmap.Snapshot 동형) — `Step`은 `prev` 불변, `next`만 교체.
 - **Rules 여전히 비어있음** → 전이 0 → 기존 world 골든 불변(outcome-중립 회귀 가드). 와이어링·매핑·cadence·fork 결정성만 검증.
 - `platform/config`: `content/climate.yaml` 로드/검증(`climate.schema.json`) → `climate.Rules`+`climate.Config` 컴파일, `from`/`to`를 `terrain.yaml`과 교차검증, `when` 피연산자를 §6 Formula로 검증(D10). resume를 위해 `climate.State`를 snapshot에 직렬화(data-contracts §6).

@@ -175,11 +175,14 @@ func TestRenderViewBuildsEnvProjection(t *testing.T) {
 	if len(rv.Flora) != 1 || rv.Flora[0].ID != "rf_plant_1" {
 		t.Fatalf("RenderView.Flora = %+v, want one rf_plant_1", rv.Flora)
 	}
-	if rv.Terrain == nil || rv.Terrain.W <= 0 || rv.Terrain.H <= 0 {
+	if rv.Terrain == nil || rv.Terrain.Cols <= 0 || rv.Terrain.Rows <= 0 {
 		t.Fatalf("RenderView.Terrain = %+v, want a populated grid", rv.Terrain)
 	}
-	if len(rv.Terrain.Terrain) != rv.Terrain.W*rv.Terrain.H {
-		t.Fatalf("Terrain.Terrain len=%d, want %d (W*H)", len(rv.Terrain.Terrain), rv.Terrain.W*rv.Terrain.H)
+	if rv.Terrain.Orientation != "flat" {
+		t.Fatalf("RenderView.Terrain.Orientation = %q, want flat", rv.Terrain.Orientation)
+	}
+	if len(rv.Terrain.Terrain) != rv.Terrain.Cols*rv.Terrain.Rows {
+		t.Fatalf("Terrain.Terrain len=%d, want %d (Cols*Rows)", len(rv.Terrain.Terrain), rv.Terrain.Cols*rv.Terrain.Rows)
 	}
 }
 
@@ -195,7 +198,7 @@ func TestRenderViewEnvOffIsZero(t *testing.T) {
 
 func TestBuildTerrainGridDimensionsAndOverride(t *testing.T) {
 	fx := newFixtureSeeded(t, 206)
-	cfg := testEnvConfig() // Min={0,0} Max={20,20} NavmapCellSize=5 ⇒ 4x4 grid
+	cfg := testEnvConfig() // Min={0,0} Max={20,20} NavmapCellSize=5 (circumradius) ⇒ flat-top hex offset grid
 	nav := testNavMap()
 	fx.world.InstallEnv(cfg, nav, nil, nil, nil, nil, nil, nil)
 
@@ -203,27 +206,38 @@ func TestBuildTerrainGridDimensionsAndOverride(t *testing.T) {
 	if grid == nil {
 		t.Fatalf("buildTerrainGrid() = nil with navmap installed")
 	}
-	if grid.W != 4 || grid.H != 4 {
-		t.Fatalf("grid = %dx%d, want 4x4", grid.W, grid.H)
+	// Dimensions come from navmap's offset projection (the render/wire authority), not a bespoke calc.
+	wantCols, wantRows := nav.OffsetDims()
+	if grid.Cols != wantCols || grid.Rows != wantRows {
+		t.Fatalf("grid = %dx%d, want %dx%d (navmap.OffsetDims)", grid.Cols, grid.Rows, wantCols, wantRows)
+	}
+	if grid.Orientation != "flat" {
+		t.Fatalf("grid.Orientation = %q, want flat", grid.Orientation)
 	}
 	if grid.CellSize != 5 {
 		t.Fatalf("grid.CellSize = %v, want 5", grid.CellSize)
 	}
-	if len(grid.Terrain) != 16 || len(grid.Wear) != 16 {
-		t.Fatalf("grid arrays len terrain=%d wear=%d, want 16/16", len(grid.Terrain), len(grid.Wear))
+	n := wantCols * wantRows
+	if len(grid.Terrain) != n || len(grid.Wear) != n {
+		t.Fatalf("grid arrays len terrain=%d wear=%d, want %d/%d", len(grid.Terrain), len(grid.Wear), n, n)
 	}
+	// Every in-bounds hex is base "plain"; out-of-bounds fringe hexes (offset grid is slightly generous
+	// at the far edge, hex-grid.md) read as the empty default — no other terrain may appear.
 	for i, terr := range grid.Terrain {
-		if terr != "plain" {
-			t.Fatalf("cell %d terrain = %q, want plain (base layout)", i, terr)
+		if terr != "plain" && terr != "" {
+			t.Fatalf("cell %d terrain = %q, want plain or empty (base layout)", i, terr)
 		}
 	}
 
-	// A SetTerrain override is reflected (TerrainAt is override-aware).
-	nav.SetTerrain([]navmap.Cell{{X: 1, Y: 1}}, "wet")
+	// A SetTerrain override is reflected (TerrainAt is override-aware). Index via navmap's own
+	// axial→offset projection so the test never re-derives the hex convention.
+	target := navmap.Cell{Q: 1, R: 1}
+	nav.SetTerrain([]navmap.Cell{target}, "wet")
 	grid2 := fx.world.buildTerrainGrid()
-	idx := 1*grid2.W + 1
+	col, row := nav.CellToOffset(target)
+	idx := row*grid2.Cols + col
 	if grid2.Terrain[idx] != "wet" {
-		t.Fatalf("cell (1,1) after SetTerrain = %q, want wet", grid2.Terrain[idx])
+		t.Fatalf("cell %v (offset %d,%d) after SetTerrain = %q, want wet", target, col, row, grid2.Terrain[idx])
 	}
 }
 

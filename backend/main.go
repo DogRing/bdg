@@ -28,6 +28,8 @@ package main
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -134,6 +136,7 @@ func main() {
 		backupStore   persist.BackupStore
 		redisReader   api.RedisReader
 		pgEventBuf    *eventBuffer
+		purgeEntities func(context.Context, *world.World)
 	)
 
 	if redisAddr != "" {
@@ -153,6 +156,28 @@ func main() {
 		eventsEmitter = em
 		sinks = append(sinks, em)
 		liveStore = persist.NewRedisLiveStore(wa, 0) // ttl 0: keep live keys for the active run
+
+		// Restart/regen rebuilds swap the whole entity set, but the per-entity live
+		// keys (sim:{run}:agent:{id} / :animal:{id}) are written with TTL 0 — without
+		// an explicit purge the outgoing world's hashes would linger forever. The tick
+		// loop calls this with the OLD world right before swapping in the rebuilt one.
+		keyer := persist.Keyer{Run: runIDc}
+		purgeEntities = func(ctx context.Context, old *world.World) {
+			animals := old.Animals()
+			keys := make([]string, 0, len(old.AgentIDs())+len(animals))
+			for _, id := range old.AgentIDs() {
+				keys = append(keys, keyer.Agent(id))
+			}
+			for _, a := range animals {
+				keys = append(keys, keyer.Animal(a.ID))
+			}
+			if len(keys) == 0 {
+				return
+			}
+			if err := wa.Del(ctx, keys...); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: purge stale entity keys: %v\n", err)
+			}
+		}
 
 		// Read path (api + SSE) uses a separate, optionally read-only, valkey user
 		// (REDIS_RO_*). When those are unset they fall back to the primary credentials,
@@ -198,19 +223,39 @@ func main() {
 	runSeed := *seed
 
 	// ── 10. Load fixture or explicit scenario ────────────────────────────────
-	if *scenarioFile != "" {
-		rootRNG := rng.New(*seed)
-		w = world.New(cfg.Balance.WorldConfig(), clock, rootRNG, svc, cfg.ActionsRegistry, emitter)
+	// buildWorld reconstructs the world from the same fixture/scenario — the
+	// deterministic initial state (D12). Called once here and again by the tick
+	// loop on a control signal: POST /api/restart passes seed 0 (the original
+	// seed — identical world) and POST /api/regen a fresh seed (a fixture with
+	// terrain{random:true} / pos-less placements re-rolls; regen is fixture-only).
+	var buildWorld func(seed int64) (*world.World, error)
+	fixtureMode := *scenarioFile == ""
+	if !fixtureMode {
 		doc, err := loadScenario(*scenarioFile)
 		fatal(err, "scenario")
-		fatal(spawnScenario(w, doc, agentCfg, *seed), "scenario spawn")
+		buildWorld = func(int64) (*world.World, error) { // scenario: no regen, seed arg unused
+			nw := world.New(cfg.Balance.WorldConfig(), clock, rng.New(*seed), svc, cfg.ActionsRegistry, emitter)
+			if err := spawnScenario(nw, doc, agentCfg, *seed); err != nil {
+				return nil, err
+			}
+			return nw, nil
+		}
+		w, err = buildWorld(0)
+		fatal(err, "scenario spawn")
 		fmt.Fprintf(os.Stderr, "loaded scenario %s: %d agents, %d objects\n",
 			*scenarioFile, len(doc.Agents), len(doc.Objects))
 	} else {
 		schemaPath := filepath.Join(*contentDir, "schema", "fixture.schema.json")
 		fx, err := worldgen.ParseFile(*fixtureFile, schemaPath)
 		fatal(err, "fixture")
-		w, err = worldgen.Load(fx, cfg, worldgen.WithEmitter(emitter))
+		buildWorld = func(seed int64) (*world.World, error) {
+			f := fx
+			if seed != 0 {
+				f.Seed = seed
+			}
+			return worldgen.Load(f, cfg, worldgen.WithEmitter(emitter))
+		}
+		w, err = buildWorld(0)
 		fatal(err, "worldgen")
 		runSeed = fx.Seed
 		fmt.Fprintf(os.Stderr, "loaded fixture %s: %d agents, %d objects, %d flora, %d animals\n",
@@ -244,9 +289,33 @@ func main() {
 	apiCtx, apiCancel := context.WithCancel(context.Background())
 	apiDone := make(chan struct{})
 	apiStarted := httpAddr != "" && redisReader != nil
+	// POST /api/restart → non-blocking signal; the tick loop (the single writer,
+	// D12) performs the actual world rebuild. Buffered(1): concurrent requests
+	// while a restart is already pending coalesce into one.
+	restartCh := make(chan struct{}, 1)
+	requestRestart := func() {
+		select {
+		case restartCh <- struct{}{}:
+		default:
+		}
+	}
+	// POST /api/regen → same pattern, carrying the requested seed (0 ⇒ the loop
+	// draws a random one). Fixture mode only: a scenario world has nothing seeded
+	// to re-roll, so the callback stays nil and the route responds 503.
+	regenCh := make(chan int64, 1)
+	var requestRegen func(int64)
+	if fixtureMode {
+		requestRegen = func(seed int64) {
+			select {
+			case regenCh <- seed:
+			default:
+			}
+		}
+	}
 	if apiStarted {
 		var gv api.GodViewStore // nil for P1: BackupStore has no QueryEvents yet (/why → 503)
-		srv := api.New(api.Config{Addr: httpAddr, RunID: runIDc, GodMode: godMode}, liveStore, redisReader, gv)
+		srv := api.New(api.Config{Addr: httpAddr, RunID: runIDc, GodMode: godMode, Restart: requestRestart, Regen: requestRegen},
+			liveStore, redisReader, gv)
 		go func() {
 			defer close(apiDone)
 			if err := srv.ListenAndServe(apiCtx); err != nil {
@@ -263,8 +332,9 @@ func main() {
 
 	// ── 13. Tick loop (stops on -ticks exhaustion or SIGTERM) ─────────────────
 	fmt.Fprintf(os.Stderr, "running (ticks=%d backup_every=%d)...\n", *ticks, backupEvery)
-	runLoop(sigCtx, w, *ticks, runIDc, backupEvery, liveStore, backupStore, pgEventBuf,
-		time.Duration(tickSleepMs)*time.Millisecond)
+	w = runLoop(sigCtx, w, *ticks, runIDc, backupEvery, liveStore, backupStore, pgEventBuf,
+		time.Duration(tickSleepMs)*time.Millisecond,
+		loopControl{restart: restartCh, regen: regenCh, rebuild: buildWorld, purge: purgeEntities})
 
 	// ── 14. Final snapshot flush (fresh ctx — sigCtx is already cancelled on SIGTERM) ─
 	fmt.Fprintln(os.Stderr, "tick loop stopped; flushing final snapshot...")
@@ -291,17 +361,63 @@ func main() {
 
 // ── Tick loop & persistence flush ───────────────────────────────────────────────
 
+// loopControl carries the tick loop's runtime control surface: the restart/regen
+// signal channels (POST /api/restart / /api/regen) and the world (re)build + stale
+// live-key purge callbacks. A nil channel case never fires; a nil purge is skipped.
+type loopControl struct {
+	restart <-chan struct{}
+	regen   <-chan int64
+	rebuild func(seed int64) (*world.World, error) // seed 0 ⇒ the original fixture/scenario seed
+	purge   func(ctx context.Context, old *world.World)
+}
+
 // runLoop advances the world until the tick limit is reached (limit <= 0 = until
 // SIGTERM) or sigCtx is cancelled. Each tick mirrors the live tick counter to Redis;
 // every backupEvery ticks it flushes a full snapshot to Redis + Postgres.
+// A control signal rebuilds the world ON THIS GOROUTINE (D12 single-writer):
+// restart (POST /api/restart) re-runs the original fixture/scenario seed — the
+// deterministic initial state; regen (POST /api/regen) re-runs with a NEW seed
+// (0 in the signal ⇒ drawn here and logged, so the world stays reproducible via
+// /api/regen?seed=). Both purge the outgoing world's per-entity live keys, reset
+// the tick-limit counter, and flush the fresh state immediately so REST reads
+// (snapshot/terrain) are current before clients reload. Returns the world that
+// was live when the loop stopped (the caller flushes/finalizes it).
 func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.RunID,
 	backupEvery int, live persist.LiveStore, backup persist.BackupStore, buf *eventBuffer,
-	tickSleep time.Duration) {
+	tickSleep time.Duration, ctl loopControl) *world.World {
 	infinite := limit <= 0
+	doRebuild := func(i *int64, seed int64, kind string) {
+		nw, err := ctl.rebuild(seed)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %s rebuild failed: %v (keeping current world)\n", kind, err)
+			return
+		}
+		if ctl.purge != nil {
+			ctl.purge(sigCtx, w)
+		}
+		w = nw
+		*i = 0
+		flushSnapshot(sigCtx, w, runID, live, backup, buf)
+	}
+	doRestart := func(i *int64) {
+		fmt.Fprintln(os.Stderr, "restart signal: rebuilding world from initial state (tick 0)")
+		doRebuild(i, 0, "restart")
+	}
+	doRegen := func(i *int64, seed int64) {
+		if seed == 0 {
+			seed = randomSeed()
+		}
+		fmt.Fprintf(os.Stderr, "regen signal: rebuilding world with seed=%d (tick 0)\n", seed)
+		doRebuild(i, seed, "regen")
+	}
 	for i := int64(0); infinite || i < limit; i++ {
 		select {
 		case <-sigCtx.Done():
-			return
+			return w
+		case <-ctl.restart:
+			doRestart(&i)
+		case seed := <-ctl.regen:
+			doRegen(&i, seed)
 		default:
 		}
 		w.Tick()
@@ -319,11 +435,32 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 		if tickSleep > 0 {
 			select {
 			case <-sigCtx.Done():
-				return
+				return w
+			case <-ctl.restart:
+				doRestart(&i)
+			case seed := <-ctl.regen:
+				doRegen(&i, seed)
 			case <-time.After(tickSleep):
 			}
 		}
 	}
+	return w
+}
+
+// randomSeed draws a non-zero seed from the OS entropy source for POST /api/regen.
+// Platform layer only — the engine still sees nothing but the injected seeded RNG
+// (D12); the drawn seed is logged by the caller so any regenerated world can be
+// reproduced with /api/regen?seed=<value>.
+func randomSeed() int64 {
+	var b [8]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		return time.Now().UnixNano() // entropy source unavailable; still a valid one-off seed
+	}
+	s := int64(binary.LittleEndian.Uint64(b[:]) & (1<<63 - 1))
+	if s == 0 {
+		s = 1
+	}
+	return s
 }
 
 // flushSnapshot captures the world's deterministic state and writes it to the live
@@ -422,10 +559,11 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID, li
 
 	if rv.Terrain != nil {
 		if err := live.WriteTerrain(ctx, runID, persist.TerrainView{
-			CellSize: rv.Terrain.CellSize,
-			Size:     persist.TerrainSize{W: rv.Terrain.W, H: rv.Terrain.H},
-			Terrain:  rv.Terrain.Terrain,
-			Wear:     rv.Terrain.Wear,
+			CellSize:    rv.Terrain.CellSize,
+			Orientation: rv.Terrain.Orientation,
+			Size:        persist.TerrainSize{Cols: rv.Terrain.Cols, Rows: rv.Terrain.Rows},
+			Terrain:     rv.Terrain.Terrain,
+			Wear:        rv.Terrain.Wear,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteTerrain: %v\n", err)
 		}

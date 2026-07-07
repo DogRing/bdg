@@ -59,11 +59,19 @@ func validateFixtureShape(fx Fixture) error {
 		return fmt.Errorf("worldgen: fixture bounds max must exceed min")
 	}
 	if fx.Terrain != nil {
-		if fx.Terrain.Cols <= 0 || fx.Terrain.Rows <= 0 {
-			return fmt.Errorf("worldgen: terrain cols/rows must be positive")
-		}
-		if len(fx.Terrain.Cells) != fx.Terrain.Cols*fx.Terrain.Rows {
-			return fmt.Errorf("worldgen: terrain cells len %d != cols*rows %d", len(fx.Terrain.Cells), fx.Terrain.Cols*fx.Terrain.Rows)
+		if fx.Terrain.Random {
+			// Random and explicit layouts are mutually exclusive (SPEC §Fixture; the
+			// loader materializes the cells itself).
+			if fx.Terrain.Cols != 0 || fx.Terrain.Rows != 0 || len(fx.Terrain.Cells) != 0 {
+				return fmt.Errorf("worldgen: terrain random:true excludes explicit cols/rows/cells")
+			}
+		} else {
+			if fx.Terrain.Cols <= 0 || fx.Terrain.Rows <= 0 {
+				return fmt.Errorf("worldgen: terrain cols/rows must be positive")
+			}
+			if len(fx.Terrain.Cells) != fx.Terrain.Cols*fx.Terrain.Rows {
+				return fmt.Errorf("worldgen: terrain cells len %d != cols*rows %d", len(fx.Terrain.Cells), fx.Terrain.Cols*fx.Terrain.Rows)
+			}
 		}
 	}
 	return nil

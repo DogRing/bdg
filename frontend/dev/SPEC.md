@@ -24,19 +24,28 @@ emission) does not exist yet:
   determinism-AC harness.
 - **Routes** (same paths/shapes the real `platform/api` serves — no `/mock-*` prefixes):
   - `GET /api/snapshot` — `{tick, agents:[{id,pos,goal,action,mood}], objects:[{id,kind,pos}]}`.
-  - `GET /api/terrain` — the Q5 shape: `{cell_size, size:{w,h}, terrain:[...], wear:[...]}` with a
-    small authored map containing **water (river band), plain (grass), forest** cells.
+  - `GET /api/terrain` — the Q5 · hex shape: `{cell_size, orientation:'flat', size:{cols,rows},
+    terrain:[...], wear:[...]}` — a flat-top hex offset(col,row) array (`i=row·cols+col`, mirrors
+    navmap hex.go) with a small authored map: **river (N–S band), soil (grass), forest (NE), sand
+    (village fields)**. `terrain_delta.cell` is the offset index (not `{x,y}`).
   - `GET /sse` — `text/event-stream`; every `tick-ms` emits one `TickDone` and one `WorldFrame`
     (data-contracts §4 keys: `hour_of_day, day_night, temperature, raining, wind{dir,mag},
     agents[], animals[]{id,pos,species,action,heading}, flora_delta[], terrain_delta[]`), plus
     scripted lifecycle events.
+  - `POST /api/restart` — parity with the real api's restart control route: resets the scripted
+    world (tick 0, re-seeded PRNG, initial animal/flora/agent/wear state) and responds
+    `202 {"status":"restarting"}`, mirroring the backend's deterministic fixture rebuild.
+  - `POST /api/regen` — parity with the real api's regen control route: re-rolls the mock seed
+    (optional `?seed=` pins it), rebuilds the terrain grid + scripted state from the new seed and
+    responds `202 {"status":"regenerating"}`, mirroring the backend's new-seed world rebuild.
 - **Scripted scenario** (seeded PRNG from `--seed`; deterministic given seed): deer herd grazing →
   a wolf hunts (action `hunt` → pose attack near contact) → one `AnimalDied` → respawn later via
   `AnimalBorn`; plants `PlantSpawned`, `stage` increments (grow FX), one `PlantDied`; a full
   day-night cycle + a rain spell; agents wander between objects. Exercises every motion/FX path.
 - **Invariants**: shapes/casing byte-match data-contracts §4 (a fixture test in `src` may import
   the same JSON the mock emits); never emits god-view fields (`real_stats`/`drives`/`stats`);
-  read-only (no POST routes); no npm deps.
+  the only mutating routes are `POST /api/restart` and `POST /api/regen` (contract parity with
+  the real api); no npm deps.
 
 ## `generate-spritesheets.mjs`
 

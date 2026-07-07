@@ -1,5 +1,5 @@
 import type { PlantState, FxInstance } from '../types'
-import { DEFAULT_FLORA_COLOR, FX_DEFS } from '../assets/manifest'
+import { DEFAULT_FLORA_COLOR, FLORA_COVERAGE, FX_DEFS } from '../assets/manifest'
 import type { SpriteCache } from '../assets/sprites'
 import { fxProgress } from './animator'
 import { wx, wy, type Transform } from './transform'
@@ -7,6 +7,9 @@ import { wx, wy, type Transform } from './transform'
 // Sprite size is world-proportional (∝ plant.width) with a px floor so plants
 // stay visible at fit-zoom. Stage picks the sheet frame (growth stages).
 const MIN_PX = 10
+// Coverage stamp: world-scaled (so it grows/shrinks with zoom, unlike the old
+// fixed dot) with a small px floor so a lone tuft never vanishes when zoomed out.
+const MIN_COVER_PX = 6
 
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t)
 
@@ -28,7 +31,37 @@ export function drawFlora(
     }
   }
 
+  // Pass 1 — ground-cover density wash (drawn UNDER sprites so a tree standing in
+  // a pasture occludes it). Overlapping stamps accumulate via source-over: the
+  // denser the clump, the more opaque → a continuous meadow, not discrete dots.
   for (const plant of flora) {
+    const cover = FLORA_COVERAGE[plant.species]
+    if (!cover) continue
+    const cx = wx(plant.pos.x, tr)
+    const cy = wy(plant.pos.y, tr)
+    let r = Math.max(MIN_COVER_PX, cover.radiusUnits * tr.sx)
+    const gp = growP.get(plant.id)
+    if (gp !== undefined) r *= 0.8 + 0.2 * easeOut(gp)
+    // Fainter when young (sprout) → fuller when a mature tuft; spawn fx ramps in.
+    let a = cover.alpha * Math.min(1, 0.5 + 0.25 * Math.max(0, plant.stage))
+    const spP = spawnP.get(plant.id)
+    if (spP !== undefined) a *= spP
+    if (a <= 0) continue
+    // Solid core out to `plateau`, then a soft rim to 0 — adjacent stamps' cores
+    // overlap into one continuous sheet (a painted meadow), not separate dabs.
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
+    g.addColorStop(0, `rgba(${cover.color},${a})`)
+    g.addColorStop(cover.plateau, `rgba(${cover.color},${a})`)
+    g.addColorStop(1, `rgba(${cover.color},0)`)
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // Pass 2 — per-plant sprites/glyphs (trees, bushes, …).
+  for (const plant of flora) {
+    if (FLORA_COVERAGE[plant.species]) continue
     const cx = wx(plant.pos.x, tr)
     const cy = wy(plant.pos.y, tr)
     let size = Math.max(MIN_PX, plant.width * tr.sx)

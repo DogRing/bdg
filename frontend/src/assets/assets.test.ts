@@ -43,8 +43,8 @@ describe('frameRect', () => {
 })
 
 describe('terrain style totality', () => {
-  it('covers the content/terrain.yaml example ids; unknown → default', () => {
-    for (const id of ['plain', 'water', 'steep', 'forest', 'swamp']) {
+  it('covers the content/terrain.yaml ids (incl. hex fixture river/mountain/sea); unknown → default', () => {
+    for (const id of ['soil', 'sand', 'river', 'mountain', 'sea', 'bare_rock']) {
       expect(TERRAIN_STYLE[id], id).toBeTruthy()
     }
     expect(TERRAIN_STYLE['???'] ?? TERRAIN_DEFAULT).toBe(TERRAIN_DEFAULT)

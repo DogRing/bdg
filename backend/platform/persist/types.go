@@ -61,21 +61,24 @@ type ClimateView struct {
 	YearFraction float64  `json:"year_fraction"`
 }
 
-// TerrainSize is the nested {w,h} shape the GET /api/terrain contract expects
-// (frontend/src/hooks/useWorld.ts loadTerrain; frontend/SPEC.md TerrainGrid).
+// TerrainSize is the nested {cols,rows} shape the GET /api/terrain contract
+// expects — the flat-top hex offset (col,row) grid dimensions (docs/hex-grid.md;
+// frontend/src/hooks/useWorld.ts loadTerrain; frontend/SPEC.md TerrainGrid).
 type TerrainSize struct {
-	W int `json:"w"`
-	H int `json:"h"`
+	Cols int `json:"cols"`
+	Rows int `json:"rows"`
 }
 
 // TerrainView is the sim:{run}:terrain STRING payload (§2) — base layout +
 // climate overrides + wear, already shaped exactly as GET /api/terrain returns
-// it (platform/api forwards the stored bytes verbatim, no reshaping).
+// it (platform/api forwards the stored bytes verbatim, no reshaping). Terrain is
+// the flat-top hex field projected to an offset (col,row) array (i=row*Cols+col).
 type TerrainView struct {
-	CellSize float64     `json:"cell_size"`
-	Size     TerrainSize `json:"size"`
-	Terrain  []string    `json:"terrain"`
-	Wear     []float64   `json:"wear,omitempty"`
+	CellSize    float64     `json:"cell_size"`   // hex circumradius
+	Orientation string      `json:"orientation"` // "flat" (flat-top hex)
+	Size        TerrainSize `json:"size"`
+	Terrain     []string    `json:"terrain"`
+	Wear        []float64   `json:"wear,omitempty"`
 }
 
 // RunMeta is the sim:{run}:meta hash payload (§2).

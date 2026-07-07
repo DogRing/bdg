@@ -30,22 +30,26 @@ type Caps struct{ Tags map[core.Tag]bool }
 
 ## Dependencies
 - `engine/kernel/core` — `Vec2`, `Tag`.
-- `engine/space/navmap` — `NavMap` snapshot: `CellOf`, `Passable`, `StepCost`, `RequiredTags`.
+- `engine/space/navmap` — `NavMap` snapshot: `CellOf`, `Neighbors` (the 6 flat-top hex neighbors —
+  pathfind hardcodes NO offsets), `CellCenter`, `Passable`, `StepCost`, `RequiredTags`, `MinCostFactor`.
 
 ## Owned Data
 - None persistent. Per-call search state (open/closed sets) is created fresh and discarded — like
   `planner.searchState`. The caller owns the returned slice.
 
 ## Invariants
-- **D12 determinism** — the priority queue breaks `f`-score ties by a **fixed cell ordering** (then by
-  insertion is forbidden; use Cell (Y,X)); neighbour expansion is in a **fixed compass order**; no
-  `map` iteration affects the result. Same `(navmap snapshot, start, goal, caps)` ⇒ identical path.
-- **Admissible heuristic** — the A* heuristic (and `EstimateCost`) is a lower bound (octile/Euclidean ×
-  cheapest terrain cost), so results are optimal and `EstimateCost ≤ Path cost`.
+- **D12 determinism** — the priority queue breaks `f`-score ties by a **fixed cell ordering** (insertion
+  order is forbidden; use the canonical hex order **R then Q**); neighbour expansion iterates
+  `navmap.Neighbors(c)` in its **fixed canonical order** (pathfind hardcodes no hex offsets); no `map`
+  iteration affects the result. Same `(navmap snapshot, start, goal, caps)` ⇒ identical path.
+- **Admissible heuristic** — the A* heuristic (and `EstimateCost`) is a lower bound (**Euclidean world
+  distance × cheapest per-unit terrain cost**, `navmap.MinCostFactor`), so results are optimal and
+  `EstimateCost ≤ Path cost`. Euclidean stays admissible under hex (it under-estimates any real route).
 - **Read-only** — never mutates the navmap (wear deposit is `world`'s job, not the searcher's).
 - **Bounded** — a `maxExpansions` budget guarantees termination; on exhaustion return `ok=false`
   (caller falls back to straight-line `Move`, never freezes — mirrors locomotion's safety cap).
-- Movement cost agrees with `navmap.StepCost` connectivity (diagonal length √2).
+- Movement cost agrees with `navmap.StepCost`: the 6 flat-top hex neighbors are **equidistant** (no
+  square √2-diagonal case) — `StepCost` = base × wear × centre-to-centre distance.
 
 ## Acceptance Criteria (testable)
 - [ ] **Straight line on uniform cost** — open field: `waypoints` ≈ `[start, goal]` (string-pulled), `cost` ≈ Euclidean × base; not cell-stair-stepped.
@@ -71,3 +75,6 @@ type Caps struct{ Tags map[core.Tag]bool }
   `EstimateCost` to pick the *cheapest-to-reach* resource (not Euclidean-nearest); `agent.execute`
   consumes `Path` waypoints as the locomotion target sequence; `world` deposits wear along the cells
   the path actually crossed. See `docs/map-plan.md`.
+- **Hex** (`docs/hex-grid.md`): the search runs over flat-top hex cells; pathfind consumes
+  `navmap.Neighbors`/`CellCenter` and defines no hex geometry of its own (navmap is the authority).
+  String-pull / `lineClear` sample the segment via `CellOf`, so they stay orientation-agnostic.

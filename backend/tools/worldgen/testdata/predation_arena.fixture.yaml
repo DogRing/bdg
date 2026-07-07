@@ -2,11 +2,12 @@
 # (M3 cover-hiding + M4-a river refuge). NOT the demo world — a measurement bed (docs/fauna.md 클러스터 10,
 # balance step). Loaded by the fauna_arena balance harness (backend/tools/worldgen/fauna_balance_test.go).
 #
-# LAYOUT (8×8 navmap cells @ 12 units = 96×96): all soil except a RIVER down col 4 (x∈[48,60)) splitting
-# WEST (rabbits + berry_shrub thickets) from EAST (deer + an oak grove). One wolf starts among the rabbits
-# so encounters are FORCED (no spatial dilution) → many hunt attempts to measure hunt-success% against.
-# Cover is scattered so a fleeing prey is usually within reach of a thicket/grove (exercises M3), and the
-# river gives a fleeing prey a refuge the wolf avoids (exercises M4-a).
+# LAYOUT (FLAT-TOP HEX offset grid, 7×6 @ CellSize=12 over 96×96; navmap.OffsetDims): all soil except a
+# RIVER down hex col 3 (centre x=54) splitting WEST (rabbits + berry_shrub thickets, x≤42) from EAST
+# (deer + an oak grove, x≥66). One wolf starts among the rabbits so encounters are FORCED (no spatial
+# dilution) → many hunt attempts to measure hunt-success% against. Cover is scattered so a fleeing prey is
+# usually within reach of a thicket/grove (exercises M3), and the river gives a fleeing prey a refuge the
+# wolf avoids (exercises M4-a). The river is a connected hex chain down an even column (river-straight).
 
 schema_version: 1
 seed: 20260702
@@ -16,17 +17,15 @@ bounds:
   max: [96.0, 96.0]
 
 terrain:
-  cols: 8
-  rows: 8
+  cols: 7
+  rows: 6
   cells: [
-    soil, soil, soil, soil, river, soil, soil, soil,   # row 0
-    soil, soil, soil, soil, river, soil, soil, soil,   # row 1
-    soil, soil, soil, soil, river, soil, soil, soil,   # row 2
-    soil, soil, soil, soil, river, soil, soil, soil,   # row 3
-    soil, soil, soil, soil, river, soil, soil, soil,   # row 4
-    soil, soil, soil, soil, river, soil, soil, soil,   # row 5
-    soil, soil, soil, soil, river, soil, soil, soil,   # row 6
-    soil, soil, soil, soil, river, soil, soil, soil    # row 7
+    soil, soil, soil, river, soil, soil, soil,   # row 0
+    soil, soil, soil, river, soil, soil, soil,   # row 1
+    soil, soil, soil, river, soil, soil, soil,   # row 2
+    soil, soil, soil, river, soil, soil, soil,   # row 3
+    soil, soil, soil, river, soil, soil, soil,   # row 4
+    soil, soil, soil, river, soil, soil, soil    # row 5
   ]
 
 # ── Flora: WEST berry_shrub thickets (rabbit cover) + EAST oak grove (deer cover) + a little grass ──

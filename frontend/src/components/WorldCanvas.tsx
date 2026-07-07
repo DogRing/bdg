@@ -160,6 +160,16 @@ export function WorldCanvas({ agents, objects, animals, flora, climate, terrain,
     return () => canvas.removeEventListener('wheel', onWheel)
   }, [viewSize])
 
+  // On-screen +/− buttons: zoom about the viewport centre (same pure reducer
+  // as wheel zoom, cursor pinned to the middle of the view).
+  const zoomBy = useCallback((factor: number) => {
+    const cam = camRef.current
+    if (!cam) return
+    const { W, H } = viewSize()
+    camRef.current = cameraZoom(cam, { x: W / 2, y: H / 2 }, factor, W, H)
+    dirtyRef.current = true
+  }, [viewSize])
+
   // Drag = pan (breaks follow); a click (no drag) selects + follows the hit
   // entity: agents get the detail panel, animals follow-only (render SPEC).
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -232,6 +242,30 @@ export function WorldCanvas({ agents, objects, animals, flora, climate, terrain,
             }} />
             {label}
           </div>
+        ))}
+      </div>
+
+      {/* Zoom controls */}
+      <div style={{ position: 'absolute', bottom: 14, right: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {([['+', 1.4], ['−', 1 / 1.4]] as const).map(([label, factor]) => (
+          <button
+            key={label}
+            onClick={() => zoomBy(factor)}
+            aria-label={label === '+' ? 'zoom in' : 'zoom out'}
+            style={{
+              width: 30, height: 30,
+              background: t.glow ? 'rgba(20,18,16,0.88)' : 'rgba(240,227,192,0.88)',
+              border: `1px solid ${t.panelBorder}`,
+              borderRadius: t.glow ? 0 : 2,
+              color: t.textMuted,
+              fontFamily: t.fontMono,
+              fontSize: 16,
+              lineHeight: 1,
+              cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
         ))}
       </div>
 

@@ -1,8 +1,6 @@
 package world
 
 import (
-	"math"
-
 	"github.com/dogring/bdg/engine/env/climate"
 	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/space/navmap"
@@ -59,12 +57,14 @@ type FloraRenderView struct {
 
 // TerrainRenderView is the full render terrain grid — base layout + climate
 // overrides (via TerrainAt, which is override-aware) + wear (data-contracts §2
-// sim:{run}:terrain / §API /api/terrain). Row-major, Y-major then X (D12).
+// sim:{run}:terrain / §API /api/terrain). Flat-top hex projected to an offset
+// (col,row) rectangular array; index i = row*Cols + col (docs/hex-grid.md).
 type TerrainRenderView struct {
-	CellSize float64
-	W, H     int
-	Terrain  []string  // len W*H
-	Wear     []float64 // len W*H, 0 where no wear
+	CellSize    float64
+	Cols, Rows  int
+	Orientation string    // "flat" (flat-top hex); mirrors navmap.Orientation()
+	Terrain     []string  // len Cols*Rows, offset(col,row)
+	Wear        []float64 // len Cols*Rows, 0 where no wear
 }
 
 // RenderView builds the current render-visible env projection. Called by persist
@@ -254,12 +254,14 @@ func (w *World) frameTerrainDelta() []map[string]any {
 	for c := range byCell {
 		cells = append(cells, c)
 	}
-	sortNavCells(cells) // D12: sorted Y-major then X (reused from env.go)
+	sortNavCells(cells) // D12: sorted R-major then Q (reused from env.go)
 
+	cols, _ := w.nav.OffsetDims()
 	out := make([]map[string]any, 0, len(cells))
 	for _, c := range cells {
 		e := byCell[c]
-		m := map[string]any{"cell": map[string]any{"x": c.X, "y": c.Y}}
+		col, row := w.nav.CellToOffset(c)
+		m := map[string]any{"cell": row*cols + col} // offset index i=row*cols+col (data-contracts §4/§6)
 		if e.hasTerrain {
 			m["terrain"] = e.terrain
 		}
@@ -274,43 +276,44 @@ func (w *World) frameTerrainDelta() []map[string]any {
 // ── Terrain grid (full, for the periodic live key + /api/terrain) ──────────────
 
 // buildTerrainGrid returns the full render terrain grid, or nil when navmap is
-// OFF. Cell (0,0) is the cell containing EnvConfig.Min (matches navmap.Config's
-// own MinX/MinY-anchored geometry — the SAME anchor world already uses to bridge
-// climate GridCells to navmap Cells, see climateCellToNavCells), so terrain_delta
-// cell coordinates (raw navmap.Cell{X,Y}) index directly into this array.
+// OFF. The grid is navmap's offset (col,row) projection of its flat-top hex field
+// (navmap is the hex authority — OffsetDims/OffsetToCell/CellToOffset, hex-grid.md),
+// so terrain_delta's offset index (i=row*Cols+col) addresses the SAME array. offset
+// (0,0) is the (MinX,MinY)-anchored corner hex (axial 0,0), matching the anchor
+// world already uses to bridge climate GridCells to navmap hexes.
 func (w *World) buildTerrainGrid() *TerrainRenderView {
 	if w.nav == nil || w.envCfg.NavmapCellSize <= 0 {
 		return nil
 	}
-	minCell := w.nav.CellOf(w.envCfg.Min)
-	maxApprox := core.Vec2{
-		X: math.Nextafter(w.envCfg.Max.X, w.envCfg.Min.X),
-		Y: math.Nextafter(w.envCfg.Max.Y, w.envCfg.Min.Y),
-	}
-	maxCell := w.nav.CellOf(maxApprox)
-	cols := maxCell.X - minCell.X + 1
-	rows := maxCell.Y - minCell.Y + 1
+	cols, rows := w.nav.OffsetDims()
 	if cols <= 0 || rows <= 0 {
 		return nil
 	}
 
 	terrain := make([]string, cols*rows)
-	for y := 0; y < rows; y++ {
-		for x := 0; x < cols; x++ {
-			c := navmap.Cell{X: minCell.X + x, Y: minCell.Y + y}
-			terrain[y*cols+x] = string(w.nav.TerrainAt(c))
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			c := w.nav.OffsetToCell(col, row)
+			terrain[row*cols+col] = string(w.nav.TerrainAt(c))
 		}
 	}
 	wear := make([]float64, cols*rows)
 	for _, wc := range w.nav.ActiveWear() {
-		x, y := wc.Cell.X-minCell.X, wc.Cell.Y-minCell.Y
-		if x < 0 || x >= cols || y < 0 || y >= rows {
+		col, row := w.nav.CellToOffset(wc.Cell)
+		if col < 0 || col >= cols || row < 0 || row >= rows {
 			continue
 		}
-		wear[y*cols+x] = wc.Wear
+		wear[row*cols+col] = wc.Wear
 	}
 
-	return &TerrainRenderView{CellSize: w.envCfg.NavmapCellSize, W: cols, H: rows, Terrain: terrain, Wear: wear}
+	return &TerrainRenderView{
+		CellSize:    w.envCfg.NavmapCellSize,
+		Cols:        cols,
+		Rows:        rows,
+		Orientation: w.nav.Orientation(),
+		Terrain:     terrain,
+		Wear:        wear,
+	}
 }
 
 // ── Small pure helpers ───────────────────────────────────────────────────────

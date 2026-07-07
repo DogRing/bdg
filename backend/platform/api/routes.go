@@ -5,14 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/dogring/bdg/engine/kernel/core"
 )
 
 const (
-	agentNotFound   = `{"error":"agent not found"}`
-	snapNotFound    = `{"error":"snapshot not found"}`
-	terrainNotFound = `{"error":"terrain not found"}`
+	agentNotFound      = `{"error":"agent not found"}`
+	snapNotFound       = `{"error":"snapshot not found"}`
+	terrainNotFound    = `{"error":"terrain not found"}`
+	restartUnavailable = `{"error":"restart unavailable"}`
+	regenUnavailable   = `{"error":"regen unavailable"}`
+	regenInvalidSeed   = `{"error":"invalid seed"}`
 )
 
 // ── GET /healthz ──────────────────────────────────────────────────────────────
@@ -71,6 +75,50 @@ func (s *Server) handleTerrain(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(blob)
+}
+
+// ── POST /api/restart ────────────────────────────────────────────────────────
+
+// handleRestart forwards a restart signal to the sim writer via the injected
+// cfg.Restart callback and returns immediately (202). It mutates nothing itself
+// — the world rebuild runs on the sim's tick goroutine (D12 single-writer).
+// Wired only when the sim injects a callback; nil (e.g. NewSSE-less tests) ⇒ 503.
+func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
+	if s.restart == nil {
+		http.Error(w, restartUnavailable, http.StatusServiceUnavailable)
+		return
+	}
+	s.restart()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte(`{"status":"restarting"}`))
+}
+
+// ── POST /api/regen ──────────────────────────────────────────────────────────
+
+// handleRegen forwards a regenerate signal (rebuild the world from a NEW seed —
+// random terrain/placements re-rolled) to the sim writer via the injected
+// cfg.Regen callback and returns immediately (202). Optional ?seed=<int64> pins
+// the seed for reproducibility; absent/0 ⇒ the writer draws one. Like restart it
+// mutates nothing itself (D12 single-writer); nil callback (scenario mode) ⇒ 503.
+func (s *Server) handleRegen(w http.ResponseWriter, r *http.Request) {
+	if s.regen == nil {
+		http.Error(w, regenUnavailable, http.StatusServiceUnavailable)
+		return
+	}
+	var seed int64
+	if v := r.URL.Query().Get("seed"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			http.Error(w, regenInvalidSeed, http.StatusBadRequest)
+			return
+		}
+		seed = n
+	}
+	s.regen(seed)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_, _ = w.Write([]byte(`{"status":"regenerating"}`))
 }
 
 // ── GET /api/agents/{id} ─────────────────────────────────────────────────────

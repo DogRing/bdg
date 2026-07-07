@@ -23,11 +23,21 @@ function ctxMock() {
     moveTo: () => ops.push({ op: 'moveTo' }),
     lineTo: () => {},
     closePath: () => {},
-    arc: () => ops.push({ op: 'arc', fillStyle: ctx.fillStyle }),
+    arc: (cx: number, cy: number, r: number) => ops.push({ op: 'arc', cx, cy, r, fillStyle: ctx.fillStyle }),
     fill: () => ops.push({ op: 'fill', fillStyle: ctx.fillStyle }),
+    createRadialGradient: (..._a: number[]) => {
+      ops.push({ op: 'radialGradient' })
+      return { addColorStop: (_o: number, c: string) => ops.push({ op: 'colorStop', c }) } as unknown as CanvasGradient
+    },
     stroke: () => ops.push({ op: 'stroke' }),
     drawImage: (...a: unknown[]) =>
       ops.push({ op: 'drawImage', sx: a[1], sy: a[2], dw: a[7], alpha: ctx.globalAlpha }),
+    font: '',
+    textAlign: '',
+    textBaseline: '',
+    strokeText: (text: string, x: number, y: number) => ops.push({ op: 'strokeText', text, x, y }),
+    fillText: (text: string, x: number, y: number) =>
+      ops.push({ op: 'fillText', text, x, y, alpha: ctx.globalAlpha }),
   }
   return { ctx: ctx as unknown as CanvasRenderingContext2D, ops }
 }
@@ -100,6 +110,17 @@ describe('drawFauna', () => {
     expect(ops.find(o => o.op === 'drawImage')!.sy).toBe(1 * 32) // walk row, not run
   })
 
+  it('writes the action as a small status label above the sprite, upright (post-restore)', () => {
+    const { ctx, ops } = ctxMock()
+    drawFauna(ctx, [animal({ action: 'hunt_deer', heading: 1.2 })], tr, cache({ wolf: SHEET }), 0)
+    const label = ops.find(o => o.op === 'fillText')!
+    expect(label.text).toBe('hunt deer')                     // `_` → space, verbatim otherwise
+    expect(label.y as number).toBeLessThan(300)              // above the sprite centre (canvas y 300)
+    expect(ops.some(o => o.op === 'strokeText')).toBe(true)  // outlined for legibility
+    // Drawn outside the rotated frame: restore precedes the label op.
+    expect(ops.findIndex(o => o.op === 'restore')).toBeLessThan(ops.indexOf(label))
+  })
+
   it('falls back pose→walk when the sheet lacks the row, and to the glyph for unknown species / unready sheets', () => {
     const { ctx, ops } = ctxMock()
     drawFauna(ctx, [animal({ action: 'hunt' })], tr, cache({ wolf: WALK_ONLY }), 0)
@@ -130,10 +151,34 @@ describe('drawFlora', () => {
 
   it('unknown species / unready sheet falls back to the colour glyph', () => {
     const { ctx, ops } = ctxMock()
-    drawFlora(ctx, [plant({ species: 'grass' })], tr, cache(), 0) // no grass sheet
+    drawFlora(ctx, [plant({ species: 'unknown_weed' })], tr, cache(), 0) // no sheet, not ground-cover
     expect(ops.some(o => o.op === 'drawImage')).toBe(false)
     const arc = ops.find(o => o.op === 'arc')!
     expect(arc.fillStyle).toBe(DEFAULT_FLORA_COLOR)
+  })
+
+  it('ground-cover (grass) paints a world-scaled density wash, not a fixed dot or sprite', () => {
+    const { ctx, ops } = ctxMock()
+    // radiusUnits 4.5 × zoom 10 = 45 px stamp (scales with zoom, unlike the old 10px floor).
+    drawFlora(ctx, [plant({ species: 'grass', stage: 2, width: 0.3 })], tr, cache(), 0)
+    expect(ops.some(o => o.op === 'drawImage')).toBe(false)          // no sprite
+    expect(ops.some(o => o.op === 'radialGradient')).toBe(true)      // gradient wash
+    const arc = ops.find(o => o.op === 'arc')!
+    expect(arc.r).toBeCloseTo(45)                                    // world-scaled, not MIN_PX
+    expect(arc.fillStyle).not.toBe(DEFAULT_FLORA_COLOR)              // gradient, not the glyph colour
+  })
+
+  it('coverage stamps accumulate: a denser clump emits more wash ops than a lone tuft', () => {
+    const lone = ctxMock()
+    drawFlora(lone.ctx, [plant({ id: 'g1', species: 'grass', pos: { x: 0, y: 0 } })], tr, cache(), 0)
+    const clump = ctxMock()
+    drawFlora(clump.ctx, [
+      plant({ id: 'g1', species: 'grass', pos: { x: 0, y: 0 } }),
+      plant({ id: 'g2', species: 'grass', pos: { x: 0.5, y: 0 } }),
+      plant({ id: 'g3', species: 'grass', pos: { x: 0, y: 0.5 } }),
+    ], tr, cache(), 0)
+    const washes = (ops: Array<Record<string, unknown>>) => ops.filter(o => o.op === 'fill').length
+    expect(washes(clump.ops)).toBeGreaterThan(washes(lone.ops)) // overlap builds density
   })
 })
 

@@ -618,7 +618,7 @@ func TestWorldTerrainSamplerSemantics(t *testing.T) {
 		}
 		return "soil"
 	}, types)
-	nav.StampFootprint([]navmap.Cell{{X: 0, Y: 0}}, false)
+	nav.StampFootprint([]navmap.Cell{{Q: 0, R: 0}}, false) // origin hex (contains world (2,2))
 	sampler := worldTerrainSampler{nav: nav}
 
 	water := core.Vec2{X: 12, Y: 2}

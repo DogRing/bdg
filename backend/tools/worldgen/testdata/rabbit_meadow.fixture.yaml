@@ -1,0 +1,41 @@
+# rabbit_meadow.fixture.yaml — a MINIMAL random test world: frontend rendering check +
+# fauna movement/respawn + flora propagation observation with nothing else in the way.
+#
+# 300×300 world, terrain{random:true}: the loader materializes an 18×16 flat-top hex
+# offset SimpleTerrain layout (@ CellSize 12, navmap.OffsetDimsOf) from the run seed —
+# same seed ⇒ same map (POST /api/restart), new seed ⇒ new map (POST /api/regen).
+# Exactly 4 grass + 1 rabbit, all pos-less (placed on random soil hexes from the seed);
+# NO other fauna/flora/agents/objects. respawn_targets overrides the rabbit carrying
+# capacity to 10 for THIS run (content/objects.yaml default 20 untouched); only rabbit
+# has an animal_template, so no other species ever respawns. Grass propagates naturally
+# (content propagation rates) — the flora-growth half of the observation.
+
+schema_version: 1
+seed: 20260707
+
+bounds:
+  min: [0.0, 0.0]
+  max: [300.0, 300.0]
+
+terrain:
+  random: true
+
+flora:
+  - { id: grass_1, species: grass, length: 0.3, width: 0.2 }
+  - { id: grass_2, species: grass, length: 0.3, width: 0.2 }
+  - { id: grass_3, species: grass, length: 0.3, width: 0.2 }
+  - { id: grass_4, species: grass, length: 0.3, width: 0.2 }
+
+animals:
+  - { id: rabbit_1, species: rabbit }
+
+animal_templates:
+  rabbit:
+    stats: { Strength: 18, Agility: 85 }
+    drives: { hunger: 0.90, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+
+respawn_targets:
+  rabbit: 10

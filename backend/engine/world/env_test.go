@@ -93,12 +93,47 @@ func TestEnvOffNeutralityShadeEmpty(t *testing.T) {
 
 func TestClimateCellToNavCellsSortedAndExact(t *testing.T) {
 	fx := newFixtureSeeded(t, 12)
-	fx.world.InstallEnv(testEnvConfig(), testNavMap(), nil, nil, nil, nil, nil, nil)
+	cfg := testEnvConfig()
+	nav := testNavMap()
+	fx.world.InstallEnv(cfg, nav, nil, nil, nil, nil, nil, nil)
 
-	got := fx.world.climateCellToNavCells(climate.GridCell{X: 1, Y: 0})
-	want := []navmap.Cell{{X: 2, Y: 0}, {X: 3, Y: 0}, {X: 2, Y: 1}, {X: 3, Y: 1}}
+	gc := climate.GridCell{X: 1, Y: 0}
+	got := fx.world.climateCellToNavCells(gc)
+
+	// Independently derive the expected set (NOT via the fine-sampling under test): every hex whose
+	// CENTRE ∈ coarse cell {1,0}'s continuous region, enumerated exhaustively over navmap's offset grid
+	// and sorted in the D12 hex order (R-major then Q). This guards that fine-sampling discovers exactly
+	// the same hexes as full offset enumeration — no misses, no strays (docs/hex-grid.md).
+	cellW := (cfg.Max.X - cfg.Min.X) / float64(cfg.ClimateGridCols)
+	cellH := (cfg.Max.Y - cfg.Min.Y) / float64(cfg.ClimateGridRows)
+	x0 := cfg.Min.X + float64(gc.X)*cellW
+	y0 := cfg.Min.Y + float64(gc.Y)*cellH
+	x1, y1 := x0+cellW, y0+cellH
+	cols, rows := nav.OffsetDims()
+	var want []navmap.Cell
+	for row := 0; row < rows; row++ {
+		for col := 0; col < cols; col++ {
+			c := nav.OffsetToCell(col, row)
+			if nav.TerrainAt(c) == "" {
+				continue
+			}
+			if pointInClimateRect(nav.CellCenter(c), x0, y0, x1, y1, gc, cfg) {
+				want = append(want, c)
+			}
+		}
+	}
+	sortNavCells(want)
+
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("climateCellToNavCells = %v, want %v", got, want)
+	}
+	if len(got) == 0 {
+		t.Fatalf("expected a non-empty hex set for a covered climate cell")
+	}
+	for i := 1; i < len(got); i++ { // explicit D12 hex sort assertion (R-major then Q)
+		if got[i-1].R > got[i].R || (got[i-1].R == got[i].R && got[i-1].Q >= got[i].Q) {
+			t.Fatalf("climateCellToNavCells not R-major/Q sorted at %d: %v", i, got)
+		}
 	}
 }
 
@@ -121,12 +156,12 @@ func TestClimateCadenceAndBridgeUpdatesNavmap(t *testing.T) {
 	fx.world.InstallEnv(cfg, nav, state, rules, nil, nil, nil, nil)
 
 	fx.world.Tick()
-	if got := nav.TerrainAt(navmap.Cell{X: 0, Y: 0}); got != "wet" {
+	if got := nav.TerrainAt(navmap.Cell{Q: 0, R: 0}); got != "wet" {
 		t.Fatalf("tick 0 climate bridge terrain=%s, want wet", got)
 	}
-	nav.SetTerrain([]navmap.Cell{{X: 0, Y: 0}}, "plain")
+	nav.SetTerrain([]navmap.Cell{{Q: 0, R: 0}}, "plain")
 	fx.world.Tick()
-	if got := nav.TerrainAt(navmap.Cell{X: 0, Y: 0}); got != "plain" {
+	if got := nav.TerrainAt(navmap.Cell{Q: 0, R: 0}); got != "plain" {
 		t.Fatalf("tick 1 should skip climate cadence, terrain=%s", got)
 	}
 }

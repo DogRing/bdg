@@ -6,7 +6,10 @@ deltas, determinism/perf, serialization, frontend, and open questions. It does n
 
 ## 0. Decisions locked
 - **Substrate** — navigation **cost field on a grid _index_** (not a tiled world). Continuous agent
-  positions preserved (D11 supplement, `design.md §5` + `CLAUDE.md` D11).
+  positions preserved (D11 supplement, `design.md §5` + `CLAUDE.md` D11). **Index cells are now flat-top
+  HEXAGONS** (axial `q,r`) for terrain-render aesthetics — see `docs/hex-grid.md` (surgical scope:
+  navmap+pathfind+layout+wire+frontend hex; spatial/scent/climate stay square). Hex is a cell *shape*,
+  still an index — D11 intact.
 - **Roads = emergent `navmap.wear`**, a sparse cell-keyed decaying field — **not** content objects and
   **not** a separate object system. The "road = TTL object" idea is absorbed as the decay/refresh
   semantics of `wear` (use → `+WearOnUse`, idle → `Decay`, pave → `+WearOnPave`).

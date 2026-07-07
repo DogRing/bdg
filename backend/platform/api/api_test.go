@@ -236,7 +236,154 @@ func TestSnapshotEndpointContentType(t *testing.T) {
 	}
 }
 
-// ── 7. Handler returns non-nil ──────────────────────────────────────────────
+// ── 7. POST /api/restart ─────────────────────────────────────────────────────
+
+func TestRestart(t *testing.T) {
+	t.Run("callback set => 202 + invoked once, no store call", func(t *testing.T) {
+		rds := newFakeRedisReader()
+		calls := 0
+		cfg := Config{Addr: ":0", RunID: "test-run", Restart: func() { calls++ }}
+		s := New(cfg, &snapshotLiveStore{}, rds, nil)
+
+		req := httptest.NewRequest("POST", "/api/restart", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusAccepted)
+		}
+		if body := strings.TrimSpace(rec.Body.String()); body != `{"status":"restarting"}` {
+			t.Errorf("body = %q, want %q", body, `{"status":"restarting"}`)
+		}
+		if calls != 1 {
+			t.Errorf("restart callback invoked %d times, want 1", calls)
+		}
+	})
+
+	t.Run("nil callback => 503", func(t *testing.T) {
+		rds := newFakeRedisReader()
+		s := testServer(false, rds) // testServer wires no Restart callback
+
+		req := httptest.NewRequest("POST", "/api/restart", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+		}
+		if body := strings.TrimSpace(rec.Body.String()); body != `{"error":"restart unavailable"}` {
+			t.Errorf("body = %q, want %q", body, `{"error":"restart unavailable"}`)
+		}
+	})
+
+	t.Run("SSE-only server does not register the route", func(t *testing.T) {
+		rds := newFakeRedisReader()
+		s := NewSSE(Config{Addr: ":0", RunID: "test-run", Restart: func() {}}, rds)
+
+		req := httptest.NewRequest("POST", "/api/restart", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+	})
+}
+
+// ── 7b. POST /api/regen ──────────────────────────────────────────────────────
+
+func TestRegen(t *testing.T) {
+	newRegenServer := func(calls *int, seeds *[]int64) *Server {
+		cfg := Config{Addr: ":0", RunID: "test-run", Regen: func(seed int64) {
+			*calls++
+			*seeds = append(*seeds, seed)
+		}}
+		return New(cfg, &snapshotLiveStore{}, newFakeRedisReader(), nil)
+	}
+
+	t.Run("callback set => 202 + invoked once with seed 0", func(t *testing.T) {
+		calls, seeds := 0, []int64{}
+		s := newRegenServer(&calls, &seeds)
+
+		req := httptest.NewRequest("POST", "/api/regen", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusAccepted)
+		}
+		if body := strings.TrimSpace(rec.Body.String()); body != `{"status":"regenerating"}` {
+			t.Errorf("body = %q, want %q", body, `{"status":"regenerating"}`)
+		}
+		if calls != 1 || len(seeds) != 1 || seeds[0] != 0 {
+			t.Errorf("regen callback calls=%d seeds=%v, want one call with seed 0", calls, seeds)
+		}
+	})
+
+	t.Run("?seed=42 pins the seed", func(t *testing.T) {
+		calls, seeds := 0, []int64{}
+		s := newRegenServer(&calls, &seeds)
+
+		req := httptest.NewRequest("POST", "/api/regen?seed=42", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusAccepted)
+		}
+		if calls != 1 || len(seeds) != 1 || seeds[0] != 42 {
+			t.Errorf("regen callback calls=%d seeds=%v, want one call with seed 42", calls, seeds)
+		}
+	})
+
+	t.Run("unparsable seed => 400, callback not invoked", func(t *testing.T) {
+		calls, seeds := 0, []int64{}
+		s := newRegenServer(&calls, &seeds)
+
+		req := httptest.NewRequest("POST", "/api/regen?seed=abc", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+		}
+		if body := strings.TrimSpace(rec.Body.String()); body != `{"error":"invalid seed"}` {
+			t.Errorf("body = %q, want %q", body, `{"error":"invalid seed"}`)
+		}
+		if calls != 0 {
+			t.Errorf("regen callback invoked %d times, want 0", calls)
+		}
+	})
+
+	t.Run("nil callback => 503", func(t *testing.T) {
+		s := testServer(false, newFakeRedisReader()) // testServer wires no Regen callback
+
+		req := httptest.NewRequest("POST", "/api/regen", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+		}
+		if body := strings.TrimSpace(rec.Body.String()); body != `{"error":"regen unavailable"}` {
+			t.Errorf("body = %q, want %q", body, `{"error":"regen unavailable"}`)
+		}
+	})
+
+	t.Run("SSE-only server does not register the route", func(t *testing.T) {
+		s := NewSSE(Config{Addr: ":0", RunID: "test-run", Regen: func(int64) {}}, newFakeRedisReader())
+
+		req := httptest.NewRequest("POST", "/api/regen", nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+	})
+}
+
+// ── 8. Handler returns non-nil ──────────────────────────────────────────────
 
 func TestHandlerReturnsNonNil(t *testing.T) {
 	rds := newFakeRedisReader()

@@ -29,7 +29,7 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 			{ID: "pl:oak1", Species: "oak", Pos: core.Vec2{X: 3, Y: 4}, Stage: 2, Width: 1.5},
 		},
 		Terrain: &world.TerrainRenderView{
-			CellSize: 2, W: 2, H: 1, Terrain: []string{"grass", "water"}, Wear: []float64{0, 0.3},
+			CellSize: 2, Orientation: "flat", Cols: 2, Rows: 1, Terrain: []string{"grass", "water"}, Wear: []float64{0, 0.3},
 		},
 	}
 

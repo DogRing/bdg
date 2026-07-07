@@ -134,18 +134,18 @@ Phase 4-ENV (NEW, env installed only):
 
 ## climate → navmap bridge (world-owned `GridCell` → `[]navmap.Cell` mapping, W2)
 
-climate owns a **coarse** grid; navmap is **fine** (`one climate cell = k×k navmap cells`, W2 rec:
-climate 32-unit cells over 8-unit navmap cells ⇒ 4×4). climate emits a transition per coarse cell;
-the world expands it to the navmap cells covering that coarse cell's continuous region and calls
-`navmap.SetTerrain` (climate never imports navmap, RESOLVED #6):
+climate owns a **coarse SQUARE** grid; navmap is **fine flat-top HEX** (one climate cell covers many
+hex cells; `docs/hex-grid.md` surgical scope keeps climate square). climate emits a transition per
+coarse cell; the world expands it to the navmap HEX cells whose CENTRE falls in that coarse cell's
+continuous region and calls `navmap.SetTerrain` (climate never imports navmap, RESOLVED #6):
 
 ```
-climateCellSize = (envCfg.Max − envCfg.Min) / (ClimateGridCols, ClimateGridRows)   // per axis
+climateCellSize = (envCfg.Max − envCfg.Min) / (ClimateGridCols, ClimateGridRows)   // per axis, SQUARE
 region(gc)      = [ Min + gc·climateCellSize , Min + (gc+1)·climateCellSize )       // continuous, per axis
 climateCellToNavCells(gc) =
-    enumerate navmap.CellOf over region(gc) by stepping NavmapCellSize on each axis,
-    de-duplicated, returned in Y-major-then-X sorted order (D12 — matches navmap.SetTerrain's
-    sorted-slice contract so last-write/accumulation order is fixed).
+    sample region(gc) finely (step ≤ hex inradius on each axis), collect the DISTINCT navmap.CellOf
+    hexes whose centre ∈ region(gc), de-duplicated, returned in R-major-then-Q sorted order (D12 —
+    matches navmap.SetTerrain's sorted-slice contract so last-write/accumulation order is fixed).
 ```
 
 The bounds + both grid geometries come from `EnvConfig` (= `content/world.yaml`), so the mapping is

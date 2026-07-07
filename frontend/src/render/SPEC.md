@@ -22,8 +22,10 @@ render/
   animator.ts    adaptive lerp (Q3): displayPos/displayHeading, walk↔run refinement, FX progress
   terrain.ts     terrain grid → offscreen raster + blit; wear trail overlay
   objects.ts     placed resource objects (berry/water/shelter): kind-styled markers + labels
-  flora.ts       plants: stage-frame sprite scaled by width (glyph fallback)
-  fauna.ts       animals: pose→frame sprite, heading rotation, stamina dim (glyph fallback)
+  flora.ts       plants: stage-frame sprite scaled by width (glyph fallback);
+                 ground-cover species (grass) → density coverage wash instead of a dot
+  fauna.ts       animals: pose→frame sprite, heading rotation, stamina dim (glyph fallback),
+                 small status label (current ActionID) above each animal
   agents.ts      agent dots + cluster colour/aura + selection ring (unchanged look, Q8)
   fx.ts          transient FX evaluation + draw: spawn / death / attack / grow (Q4)
   ambient.ts     day-night tint, temperature vignette, rain, wind arrow (per parent SPEC)
@@ -72,7 +74,10 @@ export function fxProgress(fx: FxInstance, def: FxDef, clockMs: number): number 
 // draw fns — all take (ctx, slice, tr, deps, clockMs); deps are injected (sprites, theme, styles)
 export function drawTerrain(ctx, grid: TerrainGrid | null, tr, raster: TerrainRaster | null): void
 export function makeTerrainRaster(grid: TerrainGrid, doc?: DocLike): TerrainRaster | null
-  // offscreen 1px/cell raster; re-made on grid identity change; doc injectable for tests
+  // WORLD-coordinate offscreen raster of FLAT-TOP HEX cells at TERRAIN_RASTER_SCALE px/unit: each cell
+  // filled as a hexagon at its offset→axial→pixel centre (mirrors navmap hex.go). Returns the raster +
+  // its world placement { originX, originY, worldW, worldH }. Re-made on grid identity change; doc
+  // injectable for tests. drawTerrain only blits it at wx(originX)/wy(originY) sized worldW·sx × worldH·sy.
 export function drawFlora(ctx, flora: PlantState[], tr, sprites: SpriteCache, clockMs,
                           fx?: FxInstance[]): void   // fx: spawn alpha ramp + grow scale tween
 export function drawFauna(ctx, animals: Iterable<AnimalState>, tr, sprites: SpriteCache,
@@ -110,10 +115,21 @@ Per animal: `pos/heading = displayPos/displayHeading` (Q3) → `pose = poseFor(a
 `frameW × SPRITE_SCALE / zoom`-independent world size; `globalAlpha = max(0.3, stamina)`. Fallback:
 category glyph (chevron; predator sharper + red-tinted) per the assets chain. A `dying` pose is
 drawn only via the death FX (below) — live animals never map to `dying` from `poseFor`.
+Above each animal (screen-space, never rotated) a small **status label** shows the current
+ActionID verbatim with `_`→space (data display only — no per-action branching, per the
+open-content invariant), outlined for legibility on any terrain, at the animal's alpha.
 
 ### Flora
-Per plant: frame = `min(stage, stageFrames-1)` of the flora sheet, drawn at world size ∝ `width`
-(no rotation); glyph = species colour circle. Dense + static: no interpolation.
+Two sub-passes over the plant slice (coverage drawn first so sprites occlude it):
+- **Ground-cover species** (those with a `FLORA_COVERAGE[species]` style — e.g. `grass`): a **density
+  coverage wash**, not a per-plant dot. Each plant paints one radial-gradient stamp (`color`→transparent)
+  of **world-scaled** radius `radiusUnits × sx` (floored at `MIN_COVER_PX`, so it grows/shrinks with
+  zoom — the old fixed `MIN_PX` dot is gone for these). Stamps accumulate via source-over: a dense clump
+  reads as a continuous meadow, an isolated tuft as a soft dab. Per-stamp alpha = `style.alpha ×
+  maturity(stage)`, ramped by spawn fx and eased by grow fx. Membership + tuning are manifest DATA
+  (open content) — the pass branches on the looked-up style, **never on a species string** (invariant).
+- **Other flora**: frame = `min(stage, stageFrames-1)` of the flora sheet, drawn at world size ∝ `width`
+  (no rotation); glyph = species colour circle. Dense + static: no interpolation.
 
 ### Transition FX (Q4 — reducer-owned queue, render evaluates by time)
 `FxInstance = { kind:'spawn'|'death'|'attack'|'grow', at:ms, pos:Vec2, species?, heading?, id }`
@@ -128,13 +144,19 @@ pose *entering* `attack` → attack, flora `stage` increase → grow; pruned whe
   side. No backend event needed.
 - **grow** (500 ms): the plant scales from old-stage to new-stage size (ease-out).
 
-### Terrain (Q5)
-`TerrainGrid = { cellSize, w, h, terrain: TerrainID-index[], wear?: Float32Array }` from
-`GET /api/terrain`, kept current by `terrain_delta`. Cells rasterize to an **offscreen canvas**
-(`makeTerrainRaster`) in `TERRAIN_STYLE` flat colours + wear trails (`WEAR_TRAIL_COLOR`, alpha ∝
-wear); `drawTerrain` only blits through the transform. Raster is rebuilt on grid identity change
-(the reducer replaces the grid object on delta merge), never per frame. `grid === null` → draw
-nothing (env-off neutrality; the old decorative map is **deleted**).
+### Terrain (Q5 · hex — `docs/hex-grid.md`)
+`TerrainGrid = { cellSize, cols, rows, terrain: TerrainID-index[], wear?: Float32Array,
+orientation:'flat' }` from `GET /api/terrain`, kept current by `terrain_delta`. Cells are **flat-top
+hexagons**: `terrain[]` is an **offset (col,row) rectangular array** (`i = row·cols + col`), and cell
+`i`'s centre = offset→axial→pixel from `cellSize` (hex circumradius) + `orientation` **read from the
+payload** (never hardcode the convention — navmap is the authority, the frontend mirrors `hex.go`'s
+`offsetToAxial`+`hexToPixel`). Cells rasterize to a **world-coordinate offscreen canvas**
+(`makeTerrainRaster`, `TERRAIN_RASTER_SCALE` px/unit ≈ default zoom): each cell's hexagon path is filled
+in `TERRAIN_STYLE` flat colour + wear trail overlay (`WEAR_TRAIL_COLOR`, alpha ∝ wear). The raster
+records its world placement (`originX/originY/worldW/worldH` — the hex grid dips slightly negative in
+odd columns/row 0); `drawTerrain` only blits it through the transform at that placement. Rebuilt on grid
+identity change, never per frame. `grid === null` → draw nothing (env-off neutrality; the old decorative
+map is **deleted**).
 
 ### Ambient
 As specified in the parent SPEC §Ecosystem rendering: day-night tint from
@@ -174,15 +196,23 @@ As specified in the parent SPEC §Ecosystem rendering: day-night tint from
 - [ ] **Pose × frame** — a wolf with `action:'hunt_deer'` draws the `attack` row; frame index
   cycles at the clip fps as `clockMs` advances; an animal whose sheet lacks the pose falls back
   `walk→idle→glyph` (no throw for `species:'unknown_beast'`).
+- [ ] **Status label** — each drawn animal also emits one `fillText` of its ActionID
+  (`hunt_deer` → “hunt deer”) above the sprite, outside the rotated frame (after `restore`).
 - [ ] **Run refinement** — displacement rate above threshold upgrades pose `walk→run`; near-zero
   displacement with a `flee` action still draws `run` row only if `isRunning` (rule documented).
 - [ ] **Death FX** — after `AnimalDied` (entity removed, fx appended): at +0 ms the sprite still
   draws (fading); at +1500 ms `fxProgress` = null and nothing draws; a corpse mark is drawn in the
   final third. **Spawn FX** — alpha ramps 0→1 over 500 ms. **Attack FX** — sprite offset peaks at
   t=0.5 along heading. **Grow FX** — plant size eases old→new stage size.
-- [ ] **Terrain raster** — a 3×3 grid with `water/plain/forest` blits 9 flat-colour cells; unknown
-  TerrainID paints `TERRAIN_DEFAULT`; wear>0 overlays trail alpha; `drawTerrain` performs no
-  per-cell work when the grid object is unchanged (raster reuse asserted via mock call counts).
+- [ ] **Flora coverage wash** — a ground-cover plant (`species:'grass'`) draws NO sprite and NO fixed
+  `MIN_PX` dot: it emits a `createRadialGradient` + `arc` of **world-scaled** radius (`radiusUnits×sx`,
+  not `MIN_PX`), with a non-glyph fill. Three overlapping grass emit more wash `fill`s than one (density
+  accumulates). Unknown non-cover species still falls back to the `DEFAULT_FLORA_COLOR` glyph.
+- [ ] **Terrain raster (hex)** — a `cols×rows` grid with `water/plain/forest` fills that many flat-top
+  **hexagon** paths (odd columns offset vertically); unknown TerrainID paints `TERRAIN_DEFAULT`; wear>0
+  overlays trail alpha; `drawTerrain` performs no per-cell work when the grid object is unchanged
+  (raster reuse asserted via mock call counts). Cell centres match `offset→pixel` for the payload's
+  `cellSize`/`orientation`.
 - [ ] **Hit-test** — click within 15 px selects the nearest agent over an animal at equal
   distance; empty space → null; animals ARE clickable (returns `kind:'animal'` — used for
   camera-follow, not AgentDetail).

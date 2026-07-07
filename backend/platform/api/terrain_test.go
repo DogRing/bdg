@@ -16,10 +16,11 @@ import (
 func TestTerrain_ReturnsStoredBytesVerbatim(t *testing.T) {
 	rds := newFakeRedisReader()
 	stored, _ := json.Marshal(persist.TerrainView{
-		CellSize: 2,
-		Size:     persist.TerrainSize{W: 2, H: 2},
-		Terrain:  []string{"grass", "grass", "water", "forest"},
-		Wear:     []float64{0, 0.5, 0, 0},
+		CellSize:    2,
+		Orientation: "flat",
+		Size:        persist.TerrainSize{Cols: 2, Rows: 2},
+		Terrain:     []string{"grass", "grass", "water", "forest"},
+		Wear:        []float64{0, 0.5, 0, 0},
 	})
 	keyer := persist.Keyer{Run: "test-run"}
 	rds.blobs[keyer.Terrain()] = stored
@@ -39,17 +40,19 @@ func TestTerrain_ReturnsStoredBytesVerbatim(t *testing.T) {
 	}
 
 	// The frontend contract check (frontend/SPEC.md TerrainGrid): terrain length
-	// equals w*h and cell_size present.
+	// equals cols*rows and cell_size/orientation present.
 	var doc struct {
-		CellSize float64 `json:"cell_size"`
-		Size     struct{ W, H int }
-		Terrain  []string `json:"terrain"`
+		CellSize    float64 `json:"cell_size"`
+		Orientation string  `json:"orientation"`
+		Size        struct{ Cols, Rows int }
+		Terrain     []string `json:"terrain"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("response not JSON: %v", err)
 	}
-	if doc.CellSize != 2 || len(doc.Terrain) != 4 {
-		t.Fatalf("shape mismatch: cell_size=%v len(terrain)=%d", doc.CellSize, len(doc.Terrain))
+	if doc.CellSize != 2 || doc.Orientation != "flat" || len(doc.Terrain) != doc.Size.Cols*doc.Size.Rows {
+		t.Fatalf("shape mismatch: cell_size=%v orientation=%q len(terrain)=%d cols*rows=%d",
+			doc.CellSize, doc.Orientation, len(doc.Terrain), doc.Size.Cols*doc.Size.Rows)
 	}
 }
 

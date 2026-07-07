@@ -200,14 +200,14 @@ object_kinds:
       width_rate:  0.04             # spreads a bit too, but stays a low tuft
       stages: [0.1, 0.3]            # LENGTH thresholds (world units): sprout / blade / tuft
       yield_stage: 2
-      propagate_stage: 1            # grass spreads readily once established
+      propagate_stage: 2            # only fully-grown tufts spread (was 1: young blades too — thinned to curb map overrun)
       shade:
         radius:  "width * 0.05"     # negligible shade — a tuft does not occlude (1d/§1)
         opacity: "width * 0.02"
       propagation:
         radius: 3.0                 # spreads in tight clumps
-        chance: 0.30                # but spreads readily (high base chance)
-      death_threshold: 0.10         # hardy / weedy — tolerates poor sites
+        chance: 0.15                # moderate spread (was 0.30 — halved to keep pastures from carpeting the map)
+      death_threshold: 0.15         # weedy but prunes marginal sites (was 0.10 — raised to thin poor ground)
       death_hysteresis: 3
     harvest:
       action: Forage                # graze / gather; non-destructive

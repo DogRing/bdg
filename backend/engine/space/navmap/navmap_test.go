@@ -1,4 +1,7 @@
 // Package navmap_test covers AC1–AC7, snapshot isolation, and shared test fixtures.
+// Hex (docs/hex-grid.md): cells are flat-top axial (q,r). Geometry-dependent tests derive cells via
+// CellOf(position)+Neighbors instead of hand-computed square coords; adjacent-cell geometric length is
+// √3·CellSize (the 6 hex neighbours are equidistant — the square √2-diagonal case is gone).
 package navmap_test
 
 import (
@@ -19,7 +22,7 @@ var testTypes = map[navmap.TerrainID]navmap.TerrainType{
 	"water":  {BaseCost: 4.0, Passable: false, RequiredTags: nil},
 }
 
-// testCfg is the default config for tests: 100×100 world, 10-unit cells (10×10 grid).
+// testCfg is the default config for tests: 100×100 world, hex circumradius 10.
 var testCfg = navmap.Config{
 	CellSize: 10,
 	MinX:     0, MinY: 0, MaxX: 100, MaxY: 100,
@@ -30,7 +33,10 @@ var testCfg = navmap.Config{
 	WearCostMin: 0.3,
 }
 
-// newMapAllPlain creates a NavMap where every in-bounds cell is "plain".
+// adjLen is the geometric length of a step between adjacent flat-top hexes = √3·CellSize.
+var adjLen = math.Sqrt(3) * testCfg.CellSize
+
+// newMapAllPlain creates a NavMap where every cell is "plain".
 func newMapAllPlain() *navmap.NavMap {
 	return navmap.New(testCfg, func(_ core.Vec2) navmap.TerrainID { return "plain" }, testTypes)
 }
@@ -44,23 +50,22 @@ func newMapFn(fn func(core.Vec2) navmap.TerrainID) *navmap.NavMap {
 
 func TestTerrainCost(t *testing.T) {
 	t.Parallel()
-	// column x<50 → "plain" (BaseCost=1), x≥50 → "forest" (BaseCost=2).
+	// x<50 → "plain" (BaseCost=1), x≥50 → "forest" (BaseCost=2). Position-based sampler, so it works
+	// identically over hex cells (each cell samples at its centre).
 	m := newMapFn(func(p core.Vec2) navmap.TerrainID {
 		if p.X < 50 {
 			return "plain"
 		}
 		return "forest"
 	})
-	plain := navmap.Cell{X: 2, Y: 2}  // centre at (25,25) → plain
-	forest := navmap.Cell{X: 7, Y: 2} // centre at (75,25) → forest
+	plain := m.CellOf(core.Vec2{X: 20, Y: 50})  // centre x<50 → plain
+	forest := m.CellOf(core.Vec2{X: 80, Y: 50}) // centre x≥50 → forest
 
-	costPlain := m.StepCost(navmap.Cell{X: 2, Y: 3}, plain)
-	costForest := m.StepCost(navmap.Cell{X: 7, Y: 3}, forest)
+	costPlain := m.StepCost(m.Neighbors(plain)[0], plain)
+	costForest := m.StepCost(m.Neighbors(forest)[0], forest)
 
-	// Both are cardinal steps; geometric length = CellSize = 10.
-	wantPlain := 1.0 * 1.0 * 10.0  // baseCost × wearMult × geoLen
-	wantForest := 2.0 * 1.0 * 10.0 // forest is 2× plain
-
+	wantPlain := 1.0 * 1.0 * adjLen  // baseCost × wearMult × geoLen(√3·CellSize)
+	wantForest := 2.0 * 1.0 * adjLen // forest is 2× plain
 	if math.Abs(costPlain-wantPlain) > 1e-9 {
 		t.Errorf("plain StepCost = %v, want %v", costPlain, wantPlain)
 	}
@@ -71,11 +76,11 @@ func TestTerrainCost(t *testing.T) {
 		t.Errorf("forest cost should be 2× plain: ratio = %v", costForest/costPlain)
 	}
 
-	// Diagonal step: geoLen = √2 × CellSize.
-	costDiag := m.StepCost(plain, navmap.Cell{X: 3, Y: 3})
-	wantDiag := 1.0 * 1.0 * (math.Sqrt2 * 10.0)
-	if math.Abs(costDiag-wantDiag) > 1e-9 {
-		t.Errorf("diagonal StepCost = %v, want %v", costDiag, wantDiag)
+	// Hex equidistance: every one of the 6 neighbours is exactly √3·CellSize away (no √2 diagonal).
+	for _, n := range m.Neighbors(plain) {
+		if got := m.StepCost(plain, n); math.Abs(got-adjLen) > 1e-9 {
+			t.Errorf("neighbour step into %v = %v, want %v (equidistant)", n, got, adjLen)
+		}
 	}
 }
 
@@ -83,35 +88,35 @@ func TestTerrainCost(t *testing.T) {
 
 func TestImpassable(t *testing.T) {
 	t.Parallel()
-	waterCell := navmap.Cell{X: 5, Y: 5}
+	// x≥50 → water (impassable), else plain.
 	m := newMapFn(func(p core.Vec2) navmap.TerrainID {
-		if p.X >= 50 && p.X < 60 && p.Y >= 50 && p.Y < 60 {
+		if p.X >= 50 {
 			return "water"
 		}
 		return "plain"
 	})
 
-	// Water terrain: Passable:false → impassable.
+	waterCell := m.CellOf(core.Vec2{X: 75, Y: 50})
 	if m.Passable(waterCell) {
 		t.Error("water cell should be impassable via terrain")
 	}
-	if !math.IsInf(m.StepCost(navmap.Cell{X: 4, Y: 5}, waterCell), 1) {
+	if !math.IsInf(m.StepCost(m.Neighbors(waterCell)[0], waterCell), 1) {
 		t.Error("StepCost into water should be +Inf")
 	}
 
 	// Wall footprint on a plain cell → impassable.
-	wallCell := navmap.Cell{X: 2, Y: 2}
+	wallCell := m.CellOf(core.Vec2{X: 25, Y: 25})
 	m.StampFootprint([]navmap.Cell{wallCell}, false)
 	if m.Passable(wallCell) {
 		t.Error("wall-stamped cell should be impassable")
 	}
-	if !math.IsInf(m.StepCost(navmap.Cell{X: 1, Y: 2}, wallCell), 1) {
+	if !math.IsInf(m.StepCost(m.Neighbors(wallCell)[0], wallCell), 1) {
 		t.Error("StepCost into wall should be +Inf")
 	}
 
-	// Door gap: cell NOT stamped as wall within a walled area is passable.
-	doorCell := navmap.Cell{X: 3, Y: 3}
-	m.StampFootprint([]navmap.Cell{{X: 3, Y: 2}, {X: 3, Y: 4}, {X: 2, Y: 3}, {X: 4, Y: 3}}, false)
+	// Door gap: a cell whose 6 neighbours are all walled but itself is unstamped stays passable.
+	doorCell := m.CellOf(core.Vec2{X: 35, Y: 35})
+	m.StampFootprint(m.Neighbors(doorCell), false)
 	if !m.Passable(doorCell) {
 		t.Error("door-gap cell (not stamped) should be passable")
 	}
@@ -122,23 +127,24 @@ func TestImpassable(t *testing.T) {
 func TestWearLowersCost(t *testing.T) {
 	t.Parallel()
 	m := newMapAllPlain()
-	target := navmap.Cell{X: 4, Y: 4}
-	src := navmap.Cell{X: 3, Y: 4}
+	target := m.CellOf(core.Vec2{X: 50, Y: 50})
+	nbrs := m.Neighbors(target)
+	src := nbrs[0]
 
-	wantBase := 1.0 * 1.0 * 10.0
+	wantBase := 1.0 * 1.0 * adjLen
 	if got := m.StepCost(src, target); math.Abs(got-wantBase) > 1e-9 {
 		t.Errorf("pre-wear StepCost = %v, want %v", got, wantBase)
 	}
 
 	// Deposit to WearMax → multiplier becomes WearCostMin.
 	m.Deposit([]navmap.Cell{target}, testCfg.WearMax)
-	wantMax := 1.0 * testCfg.WearCostMin * 10.0
+	wantMax := 1.0 * testCfg.WearCostMin * adjLen
 	if got := m.StepCost(src, target); math.Abs(got-wantMax) > 1e-9 {
 		t.Errorf("max-wear StepCost = %v, want %v", got, wantMax)
 	}
 
-	// Untouched neighbour is unchanged.
-	if got := m.StepCost(target, navmap.Cell{X: 5, Y: 4}); math.Abs(got-wantBase) > 1e-9 {
+	// An untouched neighbour is unchanged (wear is per-cell).
+	if got := m.StepCost(target, nbrs[1]); math.Abs(got-wantBase) > 1e-9 {
 		t.Errorf("untouched neighbour StepCost = %v, want %v", got, wantBase)
 	}
 }
@@ -159,12 +165,12 @@ func TestSetTerrainTransitions(t *testing.T) {
 		{"to-water", "water", false, nil},
 	}
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			m := newMapAllPlain()
-			cell := navmap.Cell{X: 4, Y: 4}
-			src := navmap.Cell{X: 3, Y: 4}
+			cell := m.CellOf(core.Vec2{X: 50, Y: 50})
+			nbrs := m.Neighbors(cell)
+			src := nbrs[0]
 
 			m.Deposit([]navmap.Cell{cell}, 3.0) // pre-transition wear
 			m.SetTerrain([]navmap.Cell{cell}, c.to)
@@ -193,7 +199,7 @@ func TestSetTerrainTransitions(t *testing.T) {
 				}
 			} else {
 				wearMult := 1.0 - (3.0/testCfg.WearMax)*(1.0-testCfg.WearCostMin)
-				wantCost := testTypes[c.to].BaseCost * wearMult * 10.0
+				wantCost := testTypes[c.to].BaseCost * wearMult * adjLen
 				if math.Abs(gotCost-wantCost) > 1e-9 {
 					t.Errorf("StepCost = %v, want %v", gotCost, wantCost)
 				}
@@ -205,8 +211,8 @@ func TestSetTerrainTransitions(t *testing.T) {
 				t.Errorf("ActiveWear = %v; want [{%v 3}]", aw, cell)
 			}
 
-			// Neighbour is unchanged (still plain).
-			if got := m.TerrainAt(navmap.Cell{X: 5, Y: 4}); got != "plain" {
+			// A neighbour is unchanged (still plain).
+			if got := m.TerrainAt(nbrs[1]); got != "plain" {
 				t.Errorf("neighbour TerrainAt = %q, want plain", got)
 			}
 		})
@@ -218,7 +224,7 @@ func TestSetTerrainTransitions(t *testing.T) {
 func TestSetTerrainFootprintIndependence(t *testing.T) {
 	t.Parallel()
 	m := newMapAllPlain()
-	cell := navmap.Cell{X: 5, Y: 5}
+	cell := m.CellOf(core.Vec2{X: 55, Y: 55})
 
 	m.StampFootprint([]navmap.Cell{cell}, false) // wall
 	if m.Passable(cell) {
@@ -244,7 +250,7 @@ func TestSetTerrainFootprintIndependence(t *testing.T) {
 	}
 }
 
-// ── AC7: TerrainOverrides sparse + D12-sorted ──────────────────────────────────
+// ── AC7: TerrainOverrides sparse + D12-sorted (R-major then Q, hex) ────────────
 
 func TestTerrainOverridesSparseAndSorted(t *testing.T) {
 	t.Parallel()
@@ -255,10 +261,10 @@ func TestTerrainOverridesSparseAndSorted(t *testing.T) {
 		t.Errorf("TerrainOverrides before SetTerrain = %v", ovr)
 	}
 
-	// Transition two cells (not in sorted order) — TerrainOverrides must sort Y-major/X.
-	c1 := navmap.Cell{X: 3, Y: 1}             // Y=1 → should come first
-	c2 := navmap.Cell{X: 1, Y: 3}             // Y=3
-	m.SetTerrain([]navmap.Cell{c2}, "forest") // insert Y=3 first (reverse order)
+	// Two in-bounds cells with different R — TerrainOverrides must sort R-major then Q.
+	c1 := navmap.Cell{Q: 3, R: 1}             // R=1 → should come first
+	c2 := navmap.Cell{Q: 1, R: 3}             // R=3
+	m.SetTerrain([]navmap.Cell{c2}, "forest") // insert R=3 first (reverse of sorted order)
 	m.SetTerrain([]navmap.Cell{c1}, "swamp")
 
 	ovr := m.TerrainOverrides()
@@ -285,14 +291,15 @@ func TestTerrainOverridesSparseAndSorted(t *testing.T) {
 func TestSnapshotIsolation(t *testing.T) {
 	t.Parallel()
 	m := newMapAllPlain()
-	cell := navmap.Cell{X: 3, Y: 3}
+	cell := navmap.Cell{Q: 3, R: 1}
+	wall := navmap.Cell{Q: 2, R: 2}
 
 	snap := m.Snapshot()
 
 	// Mutations after snapshot do NOT affect the snapshot.
 	m.SetTerrain([]navmap.Cell{cell}, "forest")
 	m.Deposit([]navmap.Cell{cell}, 5.0)
-	m.StampFootprint([]navmap.Cell{{X: 2, Y: 2}}, false)
+	m.StampFootprint([]navmap.Cell{wall}, false)
 
 	if snap.TerrainAt(cell) != "plain" {
 		t.Errorf("snapshot TerrainAt = %q, want plain", snap.TerrainAt(cell))
@@ -300,7 +307,53 @@ func TestSnapshotIsolation(t *testing.T) {
 	if aw := snap.ActiveWear(); len(aw) != 0 {
 		t.Errorf("snapshot ActiveWear = %v, want empty", aw)
 	}
-	if snap.FootprintBlocked(navmap.Cell{X: 2, Y: 2}) {
+	if snap.FootprintBlocked(wall) {
 		t.Error("snapshot should not see post-snapshot StampFootprint")
+	}
+}
+
+// ── Hex geometry: Neighbors + CellOf↔CellCenter round-trip (navmap-level SPEC ACs) ─
+
+func TestNeighborsCanonicalAndAdjacent(t *testing.T) {
+	t.Parallel()
+	m := newMapAllPlain()
+	c := m.CellOf(core.Vec2{X: 50, Y: 50})
+	ns := m.Neighbors(c)
+	if len(ns) != 6 {
+		t.Fatalf("Neighbors returned %d, want 6", len(ns))
+	}
+	// Each neighbour is distinct, ≠ centre, and adjacent (StepCost = √3·CellSize on plain).
+	seen := map[navmap.Cell]bool{}
+	for _, n := range ns {
+		if n == c {
+			t.Errorf("neighbour equals centre %v", c)
+		}
+		if seen[n] {
+			t.Errorf("duplicate neighbour %v", n)
+		}
+		seen[n] = true
+		if got := m.StepCost(c, n); math.Abs(got-adjLen) > 1e-9 {
+			t.Errorf("neighbour %v not adjacent: StepCost=%v want %v", n, got, adjLen)
+		}
+	}
+	// Canonical order is stable across calls.
+	ns2 := m.Neighbors(c)
+	for i := range ns {
+		if ns[i] != ns2[i] {
+			t.Errorf("Neighbors order not stable at %d: %v vs %v", i, ns[i], ns2[i])
+		}
+	}
+}
+
+func TestCellRoundTrip(t *testing.T) {
+	t.Parallel()
+	m := newMapAllPlain()
+	// CellOf(CellCenter(CellOf(p))) == CellOf(p) — the (MinX,MinY) origin offset is applied
+	// consistently in both directions (a hex centre maps back to its own hex).
+	for _, p := range []core.Vec2{{X: 5, Y: 5}, {X: 50, Y: 50}, {X: 95, Y: 5}, {X: 33, Y: 77}} {
+		c := m.CellOf(p)
+		if got := m.CellOf(m.CellCenter(c)); got != c {
+			t.Errorf("round-trip for p=%v: CellOf(CellCenter(%v))=%v, want %v", p, c, got, c)
+		}
 	}
 }

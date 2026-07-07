@@ -366,7 +366,7 @@ func TestRedisLiveStoreWriteTerrain(t *testing.T) {
 	ctx := context.Background()
 	run := core.RunID("live-terrain")
 
-	v := TerrainView{CellSize: 2, Size: TerrainSize{W: 2, H: 1},
+	v := TerrainView{CellSize: 2, Orientation: "flat", Size: TerrainSize{Cols: 2, Rows: 1},
 		Terrain: []string{"grass", "water"}, Wear: []float64{0, 0.5}}
 	if err := store.WriteTerrain(ctx, run, v); err != nil {
 		t.Fatal(err)
@@ -385,9 +385,12 @@ func TestRedisLiveStoreWriteTerrain(t *testing.T) {
 	if got["cell_size"] != 2.0 {
 		t.Errorf("cell_size = %v, want 2", got["cell_size"])
 	}
+	if got["orientation"] != "flat" {
+		t.Errorf("orientation = %v, want flat", got["orientation"])
+	}
 	size, _ := got["size"].(map[string]any)
-	if size == nil || size["w"] != 2.0 || size["h"] != 1.0 {
-		t.Errorf("size = %v, want {w:2,h:1}", got["size"])
+	if size == nil || size["cols"] != 2.0 || size["rows"] != 1.0 {
+		t.Errorf("size = %v, want {cols:2,rows:1}", got["size"])
 	}
 	terrain, _ := got["terrain"].([]any)
 	if len(terrain) != 2 || terrain[0] != "grass" || terrain[1] != "water" {

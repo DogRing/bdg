@@ -14,6 +14,14 @@ HTTP. It performs **all HTTP IO**; it owns no simulation state and never advance
 mutates). It enforces the **god-view boundary (D8)**: `real_stats` and every `/api/god/*` response
 reach a client only when both startup `GodMode` and a per-request `?god=true` are set.
 
+Two **control routes** exist: `POST /api/restart` delivers a restart *signal* (deterministic
+rebuild, original seed) and `POST /api/regen?seed=<int64>` a regenerate *signal* (rebuild from a
+NEW seed — random when `seed` is absent/0; the test-world/random-terrain path) to the sim writer
+via injected callbacks (`Config.Restart` / `Config.Regen`). The handlers mutate nothing themselves
+— the world rebuild happens on the sim's tick goroutine (single-writer preserved); api only
+forwards the signal. Registered on the writer server (`New`) only, never on the SSE-only server
+(`NewSSE`).
+
 ## Public Interface
 
 > The *only* contract callers (`main` / `cmd/sim`, `cmd/api`) and the implementer depend on. Module
@@ -68,6 +76,10 @@ type Config struct {
     Addr    string     // EnvConfig.HTTPAddr (e.g. ":8080")
     RunID   core.RunID // which sim run to tail/query (EnvConfig.RunID)
     GodMode bool       // startup-only: enables real_stats on /api/agents/{id}?god=true AND all /api/god/*
+    Restart func()     // POST /api/restart signal sink (non-blocking; the sim writer performs the
+                       // actual world rebuild on its tick goroutine). nil ⇒ the route responds 503.
+    Regen   func(seed int64) // POST /api/regen signal sink (non-blocking; seed 0 ⇒ the writer draws
+                       // a random seed and logs it). nil (e.g. scenario mode) ⇒ the route responds 503.
 }
 
 // RedisReader is the minimal Redis surface api needs for the read path. api does NOT own the
@@ -135,8 +147,10 @@ func (s *Server) Handler() http.Handler
 | `GET /readyz` | Readiness — `rds.Ping(ctx)`. | `200` on success · `503` + `{"error":"redis unavailable"}` on PING failure or timeout |
 | `GET /sse` | Tails `keyer.Events()` via `XRead` BLOCK with last-id tracking; flushes each event. | `200` · `text/event-stream`; body is a sequence of `data: <JSON>\n\n` frames |
 | `GET /api/snapshot` | `rds.Get(keyer.SnapshotKey())` (the god-view blob; caller does access control). | `200` + snapshot JSON · `404` + `{"error":"snapshot not found"}` when key absent |
-| `GET /api/terrain` | `rds.Get(keyer.Terrain())` — forwards the stored `sim:{run}:terrain` bytes **verbatim** (WI-P4, data-contracts §2; `persist.TerrainView` is written already shaped as this response: `{cell_size, size:{w,h}, terrain[w*h], wear?[w*h]}` — the frontend `TerrainGrid` contract, `docs/frontend-plan.md` Q5 RESOLVED). Registered on the writer server (`New`) only, **not** on the SSE-only server (`NewSSE`). | `200` + terrain JSON · `404` + `{"error":"terrain not found"}` when the key is absent/empty (env/navmap OFF) |
+| `GET /api/terrain` | `rds.Get(keyer.Terrain())` — forwards the stored `sim:{run}:terrain` bytes **verbatim** (WI-P4, data-contracts §2; `persist.TerrainView` is written already shaped as this response: `{cell_size, orientation:'flat', size:{cols,rows}, terrain[cols*rows], wear?[cols*rows]}` — flat-top hex offset(col,row) array, the frontend `TerrainGrid` contract, `docs/hex-grid.md` / `docs/frontend-plan.md` Q5). Registered on the writer server (`New`) only, **not** on the SSE-only server (`NewSSE`). | `200` + terrain JSON · `404` + `{"error":"terrain not found"}` when the key is absent/empty (env/navmap OFF) |
 | `GET /api/agents/{id}` | `rds.HGetAll(keyer.Agent(id))` → `AgentView`; `?god=true` AND `GodMode` ⇒ also merge `real_stats` from the snapshot blob. | `200` + agent JSON · `404` + `{"error":"agent not found"}` when hash empty |
+| `POST /api/restart` | Invokes `cfg.Restart()` (a non-blocking signal to the sim writer; the writer rebuilds the world from its fixture/scenario with the original seed — deterministic reset of all agent/fauna/flora/terrain state, tick back to 0). Registered on `New` only, **not** `NewSSE`. No store access, no body. | `202` + `{"status":"restarting"}` · `503` + `{"error":"restart unavailable"}` when `cfg.Restart` is nil |
+| `POST /api/regen` | Invokes `cfg.Regen(seed)` (a non-blocking signal; the writer rebuilds the world from its fixture with a NEW seed — random terrain/placements re-rolled, tick back to 0). Optional `?seed=<int64>` pins the seed for reproducibility; absent/0 ⇒ the writer draws one. Registered on `New` only, **not** `NewSSE`. No store access, no body. | `202` + `{"status":"regenerating"}` · `400` + `{"error":"invalid seed"}` on an unparsable `seed` · `503` + `{"error":"regen unavailable"}` when `cfg.Regen` is nil (scenario mode / SSE-only) |
 | `GET /api/god/agent/{id}/divergence` | **God-view** (gate below). 3-way real / self-estimate / others-estimate-mean per stat — see [godview SPEC](godview/SPEC.md). | `200` + divergence JSON · `206` + `{"partial":true,...}` if TomDigest absent · `403` if gate fails |
 | `GET /api/god/reputation/{id}` | **God-view.** D6 reputation distribution (mean/variance + per-faction) per stat — see [godview SPEC](godview/SPEC.md). | `200` + reputation JSON · `206` if TomDigest absent · `403` if gate fails |
 | `GET /api/god/relations` | **God-view.** All agent-pair social edges (affinity/trust/rely_on), sorted by (from,to) — see [godview SPEC](godview/SPEC.md). | `200` + relations JSON · `206` if TomDigest absent · `403` if gate fails |
@@ -249,6 +263,9 @@ The `data:` value is the `core.Event` JSON exactly as `platform/events` wrote it
 - **Read-only HTTP (deployment §1).** No handler advances the tick, writes a live key, or mutates
   engine/world state. api is a reader; the `sim` writer is the sole authority (D12 single-writer).
   The `/api/god/why` Postgres access is a **read** (`QueryEvents`); api never writes events.
+  `POST /api/restart` and `POST /api/regen` are the only control routes and keep this invariant:
+  they call the injected `cfg.Restart`/`cfg.Regen` signal and return — they never touch the world,
+  a store, or a Redis key; the rebuild is executed by the sim writer on its own tick goroutine.
 - **No key strings formatted by hand.** Every Redis key comes from `persist.Keyer`
   (`Events`/`SnapshotKey`/`Agent`). api never concatenates `"sim:"`/`":agent:"` itself — the
   keyspace contract lives in persist (data-contracts §2).
@@ -304,6 +321,20 @@ The `data:` value is the `core.Event` JSON exactly as `platform/events` wrote it
   `GodMode`).
 - [ ] `GET /api/agents/{id}` for an unknown id (empty `HGetAll` result) → `404` + body
   `{"error":"agent not found"}`.
+
+### Restart control
+- [ ] `POST /api/restart` with `Config.Restart` set → `202` + `{"status":"restarting"}` and the
+  injected callback is invoked exactly once (counting fake); no store/Redis call is made.
+- [ ] `POST /api/restart` with `Config.Restart == nil` → `503` + `{"error":"restart unavailable"}`
+  (no panic).
+- [ ] The SSE-only server (`NewSSE`) does **not** register the route (404 there).
+
+### Regen control
+- [ ] `POST /api/regen` with `Config.Regen` set → `202` + `{"status":"regenerating"}` and the
+  callback is invoked exactly once with seed `0`; `?seed=42` invokes it with `42`; no store call.
+- [ ] `POST /api/regen?seed=abc` → `400` + `{"error":"invalid seed"}`; the callback is NOT invoked.
+- [ ] `POST /api/regen` with `Config.Regen == nil` → `503` + `{"error":"regen unavailable"}`
+  (no panic); the SSE-only server (`NewSSE`) does **not** register the route (404 there).
 
 ### God-view inspection endpoints
 > The full per-endpoint ACs (response-shape, faction-variance, competing-candidates, partial-content

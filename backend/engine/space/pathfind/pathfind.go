@@ -7,8 +7,9 @@
 // job). This is what makes "MoveTo cost reflects the real route" and "reroute around obstacles" true.
 //
 // Determinism (D12): the open set is a binary heap whose ties break by a FIXED cell ordering (f, then
-// Cell.Y, then Cell.X) — never insertion order; neighbours expand in a FIXED compass order; no map
-// iteration affects the result. Same (navmap snapshot, start, goal, caps) ⇒ byte-identical path.
+// Cell.R, then Cell.Q) — never insertion order; neighbours come from navmap.Neighbors in its FIXED
+// canonical order (flat-top hex — pathfind hardcodes no offsets); no map iteration affects the result.
+// Same (navmap snapshot, start, goal, caps) ⇒ byte-identical path.
 package pathfind
 
 import (
@@ -30,12 +31,6 @@ type Caps struct {
 // Path/EstimateCost behave as "unreachable" (ok=false). The closed set already bounds the search to the
 // finite cell count — this is a defensive ceiling, an algorithm parameter (not content), per the SPEC.
 const maxExpansions = 1 << 22
-
-// neighbourDirs is the FIXED 8-connected expansion order (N, NE, E, SE, S, SW, W, NW). Fixed order is a
-// determinism requirement: it makes tie-broken expansion reproducible (D12).
-var neighbourDirs = [8][2]int{
-	{0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1},
-}
 
 // Path finds the cheapest route from start to goal over the navmap snapshot. ok=false when the goal is
 // unreachable (walled off / impassable / no capability, or the expansion budget is exhausted). cost is
@@ -79,8 +74,7 @@ func Path(m *navmap.NavMap, start, goal core.Vec2, caps Caps) (waypoints []core.
 		}
 
 		curG := gScore[cur.cell]
-		for _, d := range neighbourDirs {
-			nb := navmap.Cell{X: cur.cell.X + d[0], Y: cur.cell.Y + d[1]}
+		for _, nb := range m.Neighbors(cur.cell) {
 			if closed[nb] || !traversable(m, nb, caps) {
 				continue
 			}
@@ -189,7 +183,7 @@ func stringPull(m *navmap.NavMap, pts []core.Vec2, caps Caps) []core.Vec2 {
 // walk cannot skip a cell. Sampling-based LoS is adequate for P1 string-pulling (the underlying A* path
 // is already valid; this only prunes clearly-redundant points).
 func lineClear(m *navmap.NavMap, a, b core.Vec2, caps Caps) bool {
-	cellSize := m.CellCenter(navmap.Cell{X: 1, Y: 0}).X - m.CellCenter(navmap.Cell{X: 0, Y: 0}).X
+	cellSize := m.CellCenter(navmap.Cell{Q: 1, R: 0}).X - m.CellCenter(navmap.Cell{Q: 0, R: 0}).X
 	if cellSize <= 0 {
 		cellSize = 1
 	}
@@ -217,16 +211,16 @@ type openHeap []node
 
 func (h openHeap) Len() int { return len(h) }
 
-// Less orders by f-score, breaking ties by a FIXED cell ordering (Y then X) so the pop order — and
-// hence the resulting path — is reproducible regardless of push order (D12).
+// Less orders by f-score, breaking ties by a FIXED cell ordering (R then Q — canonical hex) so the pop
+// order — and hence the resulting path — is reproducible regardless of push order (D12).
 func (h openHeap) Less(i, j int) bool {
 	if h[i].f != h[j].f {
 		return h[i].f < h[j].f
 	}
-	if h[i].cell.Y != h[j].cell.Y {
-		return h[i].cell.Y < h[j].cell.Y
+	if h[i].cell.R != h[j].cell.R {
+		return h[i].cell.R < h[j].cell.R
 	}
-	return h[i].cell.X < h[j].cell.X
+	return h[i].cell.Q < h[j].cell.Q
 }
 
 func (h openHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }

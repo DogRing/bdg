@@ -96,21 +96,25 @@ export interface ClimateState {
   yearFraction: number          // [0,1) annual-cycle phase
 }
 
-// One terrain render delta (climate transition / emergent trail wear). cell = navmap index.
+// One terrain render delta (climate transition / emergent trail wear). cell = the
+// flat-top hex OFFSET index i = row·cols + col (data-contracts §4/§6, docs/hex-grid.md).
 export interface TerrainDelta {
-  cell: { x: number; y: number }
+  cell: number                  // offset index i=row·cols+col into the grid
   terrain?: string              // new terrain type id (on a climate transition)
   wear?: number                 // trail wear
 }
 
-// The full terrain grid (GET /api/terrain, plan Q5; kept current by SSE
-// terrain_delta). Row-major w×h TerrainID strings; cell (0,0) at world (0,0),
-// each cell cellSize world units. A render *index* — entities never snap (D11).
+// The full terrain grid (GET /api/terrain, plan Q5 · hex; kept current by SSE
+// terrain_delta). FLAT-TOP HEX cells projected to an offset (col,row) rectangular
+// array (i = row·cols + col); cellSize is the hex circumradius, orientation mirrors
+// navmap ('flat'). offset(0,0) hex centre at world (0,0). A render *index* — entities
+// never snap (D11).
 export interface TerrainGrid {
   cellSize: number
-  w: number
-  h: number
-  terrain: string[]             // length w*h, row-major
+  cols: number
+  rows: number
+  orientation: string           // 'flat' (flat-top hex); read from the payload, never hardcoded
+  terrain: string[]             // length cols*rows, offset(col,row)
   wear?: Float32Array           // trail wear per cell, [0,1]
 }
 

@@ -2,7 +2,6 @@ package worldgen
 
 import (
 	"fmt"
-	"math"
 	"sort"
 
 	"github.com/dogring/bdg/engine/agent"
@@ -33,6 +32,9 @@ type Fixture struct {
 	AnimalTemplates map[core.Tag]AnimalTemplate `yaml:"animal_templates,omitempty"`
 	Flora           []FloraPlacement            `yaml:"flora,omitempty"`
 	Lots            []LotPlacement              `yaml:"lots,omitempty"`
+	// RespawnTargets is a per-run OVERRIDE of the content per-species respawn_target
+	// (F9 carrying capacity); merged over config.RespawnTargets at Load (cfg untouched).
+	RespawnTargets map[core.Tag]int `yaml:"respawn_targets,omitempty"`
 }
 
 type Bounds struct {
@@ -40,10 +42,14 @@ type Bounds struct {
 	Max Vec2 `yaml:"max"`
 }
 
+// TerrainLayout is either EXPLICIT ({Cols,Rows,Cells}) or RANDOM ({Random:true}, no
+// cells): Load materializes the random form into an explicit SimpleTerrain layout over
+// navmap.OffsetDimsOf(bounds) from an fx.Seed-derived rng (SPEC §Fixture; D12).
 type TerrainLayout struct {
-	Cols  int        `yaml:"cols"`
-	Rows  int        `yaml:"rows"`
-	Cells []core.Tag `yaml:"cells"`
+	Cols   int        `yaml:"cols,omitempty"`
+	Rows   int        `yaml:"rows,omitempty"`
+	Cells  []core.Tag `yaml:"cells,omitempty"`
+	Random bool       `yaml:"random,omitempty"`
 }
 
 type ObjectPlacement struct {
@@ -60,10 +66,12 @@ type AgentPlacement struct {
 	Values map[core.Dimension]float64 `yaml:"values,omitempty"`
 }
 
+// AnimalPlacement.Pos is optional (nil): Load places a pos-less animal on a random soil
+// hex from the fx.Seed-derived rng (requires a terrain layout; SPEC §Fixture).
 type AnimalPlacement struct {
 	ID      core.ObjectID `yaml:"id"`
 	Species core.Tag      `yaml:"species"`
-	Pos     Vec2          `yaml:"pos"`
+	Pos     *Vec2         `yaml:"pos,omitempty"`
 	Heading float64       `yaml:"heading,omitempty"`
 }
 
@@ -76,10 +84,11 @@ type AnimalTemplate struct {
 	ActiveUntil   core.Tick                 `yaml:"active_until,omitempty"`
 }
 
+// FloraPlacement.Pos is optional (nil): same random-soil placement rule as AnimalPlacement.
 type FloraPlacement struct {
 	ID      core.ObjectID `yaml:"id"`
 	Species core.Tag      `yaml:"species"`
-	Pos     Vec2          `yaml:"pos"`
+	Pos     *Vec2         `yaml:"pos,omitempty"`
 	Length  float64       `yaml:"length,omitempty"`
 	Width   float64       `yaml:"width,omitempty"`
 }
@@ -130,10 +139,17 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	}
 
 	envCfg, navCfg, climateCfg := fixtureConfigs(fx, cfg)
-	if err := validateTerrain(fx, envCfg, navCfg, cfg); err != nil {
+	fx, err := materialize(fx, navCfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateTerrain(fx, navCfg, cfg); err != nil {
 		return nil, err
 	}
 	if err := validateAnimalTemplates(fx, cfg); err != nil {
+		return nil, err
+	}
+	if err := validateRespawnTargets(fx, cfg); err != nil {
 		return nil, err
 	}
 
@@ -169,7 +185,7 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 		lots = append(lots, decay.Lot{ID: lp.ID, Kind: decay.KindID(lp.Kind), Qty: lp.Qty, DecayAge: lp.DecayAge})
 	}
 
-	terrainAt := terrainSampler(fx, envCfg)
+	terrainAt := terrainSampler(fx, navCfg)
 	nav := navmap.New(navCfg, func(p core.Vec2) navmap.TerrainID { return navmap.TerrainID(terrainAt(p)) }, cfg.TerrainTypes)
 	clim := climate.New(climateCfg, terrainAt)
 	fl := flora.New(plants)
@@ -182,9 +198,10 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	}
 	if len(animals) > 0 {
 		w.InstallFauna(envCfg, cfg.FaunaRules, cfg.ScentEmitters, cfg.CoverKinds, animals)
-		if envCfg.RespawnCadence > 0 && len(cfg.RespawnTargets) > 0 {
+		targets := fixtureRespawnTargets(fx, cfg)
+		if envCfg.RespawnCadence > 0 && len(targets) > 0 {
 			templates, anchors := respawnInputs(fx)
-			w.InstallRespawn(templates, cfg.RespawnTargets, anchors, envCfg.RespawnCadence)
+			w.InstallRespawn(templates, targets, anchors, envCfg.RespawnCadence)
 		}
 	}
 
@@ -266,31 +283,41 @@ func respawnInputs(fx Fixture) (map[core.Tag]fauna.Animal, map[core.Tag]core.Vec
 	return templates, anchors
 }
 
-func terrainSampler(fx Fixture, cfg world.EnvConfig) func(core.Vec2) core.Tag {
+// terrainSampler is the shared navmap↔climate terrainAt(Vec2)→Tag bridge (SPEC §Load): a continuous
+// index read (D11) over the authoring layout. The layout is a FLAT-TOP HEX offset(col,row) grid
+// (hex-grid.md) at navmap resolution, so the point is snapped to its containing hex via navmap's
+// authority helper (OffsetIndexAt), then that offset indexes Cells. navCfg carries the hex geometry
+// (CellSize = circumradius, origin = Min); it agrees 1:1 with the navmap.New this feeds.
+func terrainSampler(fx Fixture, navCfg navmap.Config) func(core.Vec2) core.Tag {
 	if fx.Terrain == nil || len(fx.Terrain.Cells) == 0 {
 		return func(core.Vec2) core.Tag { return "soil" }
 	}
-	layout := *fx.Terrain
+	return layoutSampler(*fx.Terrain, navCfg)
+}
+
+// layoutSampler is the concrete-layout half of terrainSampler, shared with materialize
+// (pos-less placement needs to sample the freshly generated layout before Load's env
+// construction reaches terrainSampler).
+func layoutSampler(layout TerrainLayout, navCfg navmap.Config) func(core.Vec2) core.Tag {
 	return func(p core.Vec2) core.Tag {
-		x := int(math.Floor((p.X - cfg.Min.X) / ((cfg.Max.X - cfg.Min.X) / float64(layout.Cols))))
-		y := int(math.Floor((p.Y - cfg.Min.Y) / ((cfg.Max.Y - cfg.Min.Y) / float64(layout.Rows))))
-		if x < 0 {
-			x = 0
+		col, row := navmap.OffsetIndexAt(navCfg, p)
+		if col < 0 {
+			col = 0
 		}
-		if y < 0 {
-			y = 0
+		if row < 0 {
+			row = 0
 		}
-		if x >= layout.Cols {
-			x = layout.Cols - 1
+		if col >= layout.Cols {
+			col = layout.Cols - 1
 		}
-		if y >= layout.Rows {
-			y = layout.Rows - 1
+		if row >= layout.Rows {
+			row = layout.Rows - 1
 		}
-		return layout.Cells[y*layout.Cols+x]
+		return layout.Cells[row*layout.Cols+col]
 	}
 }
 
-func validateTerrain(fx Fixture, envCfg world.EnvConfig, navCfg navmap.Config, cfg *config.LoadOutput) error {
+func validateTerrain(fx Fixture, navCfg navmap.Config, cfg *config.LoadOutput) error {
 	if fx.Terrain == nil {
 		return nil
 	}
@@ -299,10 +326,11 @@ func validateTerrain(fx Fixture, envCfg world.EnvConfig, navCfg navmap.Config, c
 			return fmt.Errorf("worldgen: terrain cell %d references unknown terrain %s", i, id)
 		}
 	}
-	wantCols := int(math.Round((envCfg.Max.X - envCfg.Min.X) / navCfg.CellSize))
-	wantRows := int(math.Round((envCfg.Max.Y - envCfg.Min.Y) / navCfg.CellSize))
+	// The authoring layout must be exactly the navmap's flat-top hex offset grid (1:1 authoring↔navmap,
+	// hex-grid.md) so each hex samples its own cell and terrain_delta's offset index stays consistent.
+	wantCols, wantRows := navmap.OffsetDimsOf(navCfg)
 	if fx.Terrain.Cols != wantCols || fx.Terrain.Rows != wantRows {
-		return fmt.Errorf("worldgen: terrain grid %dx%d disagrees with bounds/cell size %dx%d", fx.Terrain.Cols, fx.Terrain.Rows, wantCols, wantRows)
+		return fmt.Errorf("worldgen: terrain grid %dx%d disagrees with navmap hex offset dims %dx%d", fx.Terrain.Cols, fx.Terrain.Rows, wantCols, wantRows)
 	}
 	return nil
 }

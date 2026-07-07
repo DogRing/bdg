@@ -7,6 +7,7 @@ interface Props {
   onToggleTheme: () => void
   world: WorldState
   onTogglePause: () => void
+  onRegen: () => void
 }
 
 const STATUS_ICON: Record<WorldState['connectionStatus'], string> = {
@@ -20,7 +21,7 @@ const STATUS_COLOR: Record<WorldState['connectionStatus'], string> = {
   reconnecting: '#c09030',
 }
 
-export function Header({ t, theme, onToggleTheme, world, onTogglePause }: Props) {
+export function Header({ t, theme, onToggleTheme, world, onTogglePause, onRegen }: Props) {
   const starIcon = (
     <svg width="22" height="22" viewBox="0 0 22 22" fill={t.accent} style={{ flexShrink: 0 }}>
       <polygon points="11,0 13.4,7.7 21.5,7.7 15,12.5 17.4,20.2 11,15.4 4.6,20.2 7,12.5 0.5,7.7 8.6,7.7" />
@@ -121,6 +122,24 @@ export function Header({ t, theme, onToggleTheme, world, onTogglePause }: Props)
         }}
       >
         {world.paused ? '▶' : '⏸'}
+      </button>
+
+      {/* New map: backend rebuilds the world from its fixture with a NEW seed (POST /api/regen) */}
+      <button
+        onClick={onRegen}
+        title="Generate a new random map (fresh seed)"
+        style={{
+          background: 'transparent',
+          border: `1px solid ${t.textDim}`,
+          color: t.textDim,
+          fontFamily: t.fontMono,
+          fontSize: 10,
+          padding: '4px 8px',
+          borderRadius: theme === 'light' ? 2 : 0,
+          letterSpacing: '0.06em',
+        }}
+      >
+        🌱 NEW MAP
       </button>
 
       {/* Theme toggle */}

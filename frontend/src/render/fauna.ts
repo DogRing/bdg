@@ -10,6 +10,9 @@ const WORLD_UNITS = 3
 const MIN_PX = 20
 // Attack lunge amplitude (world units) — the forward jab of the attack fx.
 export const LUNGE_UNITS = 1.5
+// Status label (screen-space): small, outlined so it stays legible on any terrain.
+const LABEL_FONT_PX = 9
+const LABEL_GAP_PX = 3
 
 export function faunaSizePx(tr: Transform): number {
   return Math.max(MIN_PX, WORLD_UNITS * tr.sx)
@@ -85,6 +88,25 @@ export function drawFauna(
       drawGlyph(ctx, style.category, style.glyphColor, size)
     }
     ctx.restore()
+
+    // Status label: the current ActionID shown verbatim (`_`→space) above the
+    // sprite — data display only, no per-action branching (open-content
+    // invariant). Drawn outside the rotated frame so text stays upright.
+    const label = animal.action.replace(/_/g, ' ')
+    if (label) {
+      ctx.save()
+      ctx.globalAlpha = alpha
+      ctx.font = `${LABEL_FONT_PX}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      const ly = cy - size / 2 - LABEL_GAP_PX
+      ctx.lineWidth = 2.5
+      ctx.strokeStyle = 'rgba(10,10,10,0.75)'
+      ctx.strokeText(label, cx, ly)
+      ctx.fillStyle = 'rgba(255,255,255,0.95)'
+      ctx.fillText(label, cx, ly)
+      ctx.restore()
+    }
   }
 }
 

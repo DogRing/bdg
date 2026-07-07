@@ -1,6 +1,8 @@
-// Package navmap implements the navigation cost field: a grid-indexed traversal-cost
-// model over continuous space (D11). It is an *index*, not the world — agent positions
-// stay float; this module only quantises *cost*, exactly as spatial quantises *proximity*.
+// Package navmap implements the navigation cost field: a FLAT-TOP HEXAGONAL (axial q,r) grid-indexed
+// traversal-cost model over continuous space (D11, docs/hex-grid.md). It is an *index*, not the world —
+// agent positions stay float; this module only quantises *cost*, exactly as spatial quantises
+// *proximity*. Hex geometry lives in hex.go; navmap is the single hex-convention authority (Neighbors,
+// CellCenter, sort) that pathfind + the frontend consume and never re-derive.
 //
 // Three independent layers:
 //   - Terrain base-cost layer: seeded from a terrainAt sampler at New, mutated only by
@@ -10,7 +12,7 @@
 //   - Wear field: sparse map[Cell]float64; the emergent desire-path mechanic (D2/D3).
 //     Deposit adds wear; Decay fades trails; trails fade absent use (use-it-or-lose-it).
 //
-// D12: all sorted output (ActiveWear / TerrainOverrides / Decay) uses Y-major then X order.
+// D12: all sorted output (ActiveWear / TerrainOverrides / Decay) uses R-major then Q order (hex).
 // No map-iteration drives observable results — raw map keys are sorted before any logic.
 package navmap
 
@@ -21,10 +23,11 @@ import (
 	"github.com/dogring/bdg/engine/kernel/core"
 )
 
-// Cell is the integer grid index of a continuous point.
+// Cell is the AXIAL (q,r) index of a flat-top hexagon containing a continuous point.
 // It is an internal addressing token; it is NEVER written into an agent position (D11).
-// CellOf maps a Vec2 → Cell deterministically.
-type Cell struct{ X, Y int }
+// CellOf maps a Vec2 → Cell via the hex primitive (hex.go). The grid origin (axial 0,0 centre)
+// is the (MinX,MinY) corner of the world bounds.
+type Cell struct{ Q, R int }
 
 // TerrainID names a terrain type from content/terrain.yaml (e.g. "plain", "water", "steep").
 type TerrainID = core.Tag
@@ -52,7 +55,7 @@ type TerrainCell struct {
 // Config holds all tunable knobs for a NavMap.
 // All geometry and cost constants must flow from here — no magic numbers in logic (D10).
 type Config struct {
-	CellSize    float64 // grid cell edge in world units (≈ spatial hash cell; tunable)
+	CellSize    float64 // hex circumradius (centre→vertex) in world units; tunable (hex-grid.md Q3)
 	MinX, MinY  float64 // world bounds — cells outside are impassable
 	MaxX, MaxY  float64
 	WearOnUse   float64 // wear the world should pass to Deposit per traversal tick
@@ -105,20 +108,21 @@ func New(cfg Config, terrainAt func(core.Vec2) TerrainID, types map[TerrainID]Te
 
 // ── Internal helpers ───────────────────────────────────────────────────────────
 
-// inBounds reports whether cell c falls within the configured world bounds.
+// inBounds reports whether cell c's CENTRE falls within the configured world bounds (a hex is
+// in-bounds iff its centre is inside [MinX,MaxX)×[MinY,MaxY) — flat-top hexes near the edge whose
+// centre is outside are out of bounds, hex-grid.md Q4).
 func (m *NavMap) inBounds(c Cell) bool {
-	return c.X >= 0 && c.Y >= 0 &&
-		m.cfg.MinX+float64(c.X)*m.cfg.CellSize < m.cfg.MaxX &&
-		m.cfg.MinY+float64(c.Y)*m.cfg.CellSize < m.cfg.MaxY
+	ctr := m.cellCenter(c)
+	return ctr.X >= m.cfg.MinX && ctr.X < m.cfg.MaxX &&
+		ctr.Y >= m.cfg.MinY && ctr.Y < m.cfg.MaxY
 }
 
-// cellCenter returns the centre of cell c in continuous world coordinates.
-// Used to sample terrainSrc for the cell's base terrain.
+// cellCenter returns the centre of hex cell c in continuous world coordinates (flat-top axial→pixel
+// via hex.go, offset by the grid origin = (MinX,MinY)). Used to sample terrainSrc + as the geometric
+// anchor for StepCost/bounds.
 func (m *NavMap) cellCenter(c Cell) core.Vec2 {
-	return core.Vec2{
-		X: m.cfg.MinX + (float64(c.X)+0.5)*m.cfg.CellSize,
-		Y: m.cfg.MinY + (float64(c.Y)+0.5)*m.cfg.CellSize,
-	}
+	x, y := hexToPixel(c.Q, c.R, m.cfg.CellSize)
+	return core.Vec2{X: m.cfg.MinX + x, Y: m.cfg.MinY + y}
 }
 
 // terrainIDAt returns the current TerrainID for cell c.
@@ -143,7 +147,7 @@ func (m *NavMap) wearMultiplier(c Cell) float64 {
 	return 1.0 - t*(1.0-m.cfg.WearCostMin)
 }
 
-// sortedCellKeys extracts and sorts the keys of a map[Cell]T in D12 order (Y-major, then X).
+// sortedCellKeys extracts and sorts the keys of a map[Cell]T in D12 order (R-major, then Q — hex).
 // This indirection is the canonical way to avoid driving logic by map-iteration order (D12).
 func sortedWearKeys(m map[Cell]float64) []Cell {
 	cells := make([]Cell, 0, len(m))
@@ -163,13 +167,13 @@ func sortedOverrideKeys(m map[Cell]TerrainID) []Cell {
 	return cells
 }
 
-// sortCells sorts a cell slice in-place Y-major then X (D12 canonical order).
+// sortCells sorts a cell slice in-place R-major then Q (D12 canonical hex order).
 func sortCells(cells []Cell) {
 	sort.Slice(cells, func(i, j int) bool {
-		if cells[i].Y != cells[j].Y {
-			return cells[i].Y < cells[j].Y
+		if cells[i].R != cells[j].R {
+			return cells[i].R < cells[j].R
 		}
-		return cells[i].X < cells[j].X
+		return cells[i].Q < cells[j].Q
 	})
 }
 
@@ -179,10 +183,18 @@ func sortCells(cells []Cell) {
 // Deterministic; does not clamp to bounds (out-of-bounds cells are impassable).
 // D11: this is the only quantisation point; the source Vec2 is never mutated.
 func (m *NavMap) CellOf(p core.Vec2) Cell {
-	return Cell{
-		X: int(math.Floor((p.X - m.cfg.MinX) / m.cfg.CellSize)),
-		Y: int(math.Floor((p.Y - m.cfg.MinY) / m.cfg.CellSize)),
+	q, r := pixelToHex(p.X-m.cfg.MinX, p.Y-m.cfg.MinY, m.cfg.CellSize)
+	return Cell{Q: q, R: r}
+}
+
+// Neighbors returns c's 6 flat-top axial neighbors in the fixed canonical order (hexDirs) — the SOLE
+// neighbor authority. pathfind consumes this and hardcodes no offsets (no hex-convention drift, D12).
+func (m *NavMap) Neighbors(c Cell) []Cell {
+	out := make([]Cell, len(hexDirs))
+	for i, d := range hexDirs {
+		out[i] = Cell{Q: c.Q + d[0], R: c.R + d[1]}
 	}
+	return out
 }
 
 // Passable reports whether cell c can be entered.
@@ -212,17 +224,14 @@ func (m *NavMap) TerrainAt(c Cell) TerrainID {
 //
 // Returns +Inf if `to` is impassable (out-of-bounds, footprint-blocked, or terrain-impassable).
 //
-// Geometric-length model: octile / 8-connectivity, Euclidean cell-centre distance.
-// Cardinal step (|dx|=1, |dy|=0): length = CellSize.
-// Diagonal step (|dx|=1, |dy|=1): length = √2·CellSize.
-// This is consistent with the 8-connectivity model decided in engine/space/pathfind.
+// Geometric-length model: flat-top hex, Euclidean cell-centre distance. The 6 hex neighbors are
+// EQUIDISTANT (√3·CellSize centre-to-centre) — the square √2-diagonal case is gone. General for any
+// from/to (uses the hex cell centres, hex-grid.md).
 func (m *NavMap) StepCost(from, to Cell) float64 {
 	if !m.Passable(to) {
 		return math.Inf(1)
 	}
-	dx := float64(to.X - from.X)
-	dy := float64(to.Y - from.Y)
-	geoLen := math.Sqrt(dx*dx+dy*dy) * m.cfg.CellSize
+	geoLen := m.cellCenter(from).Distance(m.cellCenter(to))
 
 	baseCost := m.types[m.terrainIDAt(to)].BaseCost
 	wearMult := m.wearMultiplier(to)
@@ -294,7 +303,7 @@ func (m *NavMap) Deposit(cells []Cell, amount float64) {
 }
 
 // Decay subtracts cfg.WearDecay from every cell in the wear field.
-// Iteration is in D12 sorted order (Y-major then X) — never raw map order.
+// Iteration is in D12 sorted order (R-major then Q, hex) — never raw map order.
 // Cells whose wear reaches ≤0 are removed from the sparse map (fully faded).
 func (m *NavMap) Decay() {
 	cells := sortedWearKeys(m.wear)
@@ -348,56 +357,4 @@ func (m *NavMap) SetTerrain(cells []Cell, t TerrainID) {
 			m.terrainOverrides[c] = t
 		}
 	}
-}
-
-// ── Snapshot & serialisation view ─────────────────────────────────────────────
-
-// Snapshot returns a frozen deep-copy of the NavMap for the plan phase.
-// pathfind receives a Snapshot and must never mutate it.
-// A snapshot taken before a SetTerrain call shows the old terrain.
-// The immutable cfg, types, and terrainSrc are shared (not copied).
-func (m *NavMap) Snapshot() *NavMap {
-	wearCopy := make(map[Cell]float64, len(m.wear))
-	for k, v := range m.wear {
-		wearCopy[k] = v
-	}
-	fpCopy := make(map[Cell]struct{}, len(m.footprint))
-	for k := range m.footprint {
-		fpCopy[k] = struct{}{}
-	}
-	overCopy := make(map[Cell]TerrainID, len(m.terrainOverrides))
-	for k, v := range m.terrainOverrides {
-		overCopy[k] = v
-	}
-	return &NavMap{
-		cfg:              m.cfg,
-		types:            m.types,      // shared; immutable
-		terrainSrc:       m.terrainSrc, // shared; immutable
-		terrainOverrides: overCopy,
-		footprint:        fpCopy,
-		wear:             wearCopy,
-	}
-}
-
-// ActiveWear returns the sparse wear field in D12 sorted order (Y-major then X).
-// Only cells with wear > 0 are included. Used for persist/stream.
-func (m *NavMap) ActiveWear() []WearCell {
-	cells := sortedWearKeys(m.wear)
-	result := make([]WearCell, 0, len(cells))
-	for _, c := range cells {
-		result = append(result, WearCell{Cell: c, Wear: m.wear[c]})
-	}
-	return result
-}
-
-// TerrainOverrides returns the sparse terrain delta (cells changed by SetTerrain away from
-// the New-time base layout) in D12 sorted order. Empty before any SetTerrain is called.
-// Cells reverted to their base terrain are omitted (delta-only).
-func (m *NavMap) TerrainOverrides() []TerrainCell {
-	cells := sortedOverrideKeys(m.terrainOverrides)
-	result := make([]TerrainCell, 0, len(cells))
-	for _, c := range cells {
-		result = append(result, TerrainCell{Cell: c, Terrain: m.terrainOverrides[c]})
-	}
-	return result
 }

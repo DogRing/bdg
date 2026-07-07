@@ -30,34 +30,34 @@ bounds:
   min: [0.0, 0.0]
   max: [192.0, 192.0]
 
-# ── Terrain layout (navmap base layer + climate t=0) — 16 cols × 16 rows, row-major ──────
+# ── Terrain layout (navmap base layer + climate t=0) — FLAT-TOP HEX offset(col,row) grid, 12×11 ──
+# i = row*cols + col (docs/hex-grid.md). CellSize=12 (circumradius) ⇒ navmap.OffsetDims = 12×11 over the
+# 192² bounds. The river is a CONNECTED hex chain (col 6, rows 0→8) flowing N→sea delta; sand banks
+# flank it (cols 5/7). NE mountains (cols 8-9, rows 0-2). Beach (row 8) → sea (rows 9-10). odd columns
+# sit a half-row lower (odd-q); the river is straight down an even column so it reads as river-straight
+# tiles. Placements below are hex-snapped: water_source ON the river column, riparian oaks on the banks.
 terrain:
-  cols: 16
-  rows: 16
+  cols: 12
+  rows: 11
   cells: [
-    soil, soil, soil, soil, soil, soil, soil, soil, soil, soil, soil, soil, mountain, mountain, mountain, soil,   # row 0  (NE mountains)
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, mountain, mountain, mountain, soil,   # row 1  (river head, mountains, ore)
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, mountain, mountain, soil, soil,       # row 2
-    soil, soil, soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil, soil, soil,              # row 3  (river widens)
-    soil, soil, soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil, soil, soil,              # row 4
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 5  (village west, pasture east)
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 6
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 7
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 8
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 9
-    soil, soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 10
-    soil, soil, soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil, soil, soil,              # row 11 (river mouth widens)
-    soil, soil, soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil, soil, soil,              # row 12
-    sand, sand, sand, sand, sand, sand, sand, sand, sand, sand, sand, sand, sand, sand, sand, sand,              # row 13 (beach / delta)
-    sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea,                              # row 14 (sea coast)
-    sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea                               # row 15
+    soil, soil, soil, soil, soil, sand, river, sand, mountain, mountain, soil, soil,   # row 0  (NE mountains, river head)
+    soil, soil, soil, soil, soil, sand, river, sand, mountain, mountain, soil, soil,   # row 1
+    soil, soil, soil, soil, soil, sand, river, sand, soil, mountain, soil, soil,       # row 2
+    soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil,           # row 3
+    soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil,           # row 4  (village west, pasture east)
+    soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil,           # row 5
+    soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil,           # row 6
+    soil, soil, soil, soil, soil, sand, river, sand, soil, soil, soil, soil,           # row 7
+    sand, sand, sand, sand, sand, sand, river, sand, sand, sand, sand, sand,           # row 8  (beach / river delta)
+    sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea,                         # row 9  (sea coast)
+    sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea, sea                          # row 10
   ]
 
 # ── Placed objects (ore_node / water_source / shelter / station) ─────────────────────────
 objects:
   - { id: shelter_0, kind: shelter,      pos: [60.0, 66.0] }            # village shelter (cluster center)
   - { id: bench_0,   kind: tool_bench,   pos: [66.0, 69.0] }            # crafting station (station:bench)
-  - { id: spring_0,  kind: water_source, pos: [99.0, 72.0] }            # on the river (col 8) — drinking water
+  - { id: spring_0,  kind: water_source, pos: [108.0, 72.0] }           # on the river (hex col 6) — drinking water
   - { id: ore_0,     kind: ore_node,     pos: [156.0, 18.0], remaining: 8 }  # on the NE mountain (Mine target)
 
 # ── Agents — CLUSTERED on soil around (40,44), all within ~16 units (W12 social-proximity) ─
@@ -77,16 +77,14 @@ agents:
 # Grass = the deer/goat pasture (east + mountain-base); berry_shrub THICKETS = mature food bushes that
 # double as small-prey cover (cover tag); oak WOODS = cover-tagged forest patches (dense canopy). Lengths
 # set to a mature stage so they bear/emit scent:food + cast full shade immediately (else start as seedlings).
-# All flora sits on soil (never in the river col 8, on the NE mountain, or on the beach/sea rows 13-15).
+# All flora sits on soil/bank (never in the river hex col 6, on the NE mountain, or on the beach/sea rows 9-10).
 flora:
   # GRASS pastures — grazing ground-cover (scent:food)
   - { id: grass_1, species: grass, pos: [129.0, 87.0], length: 0.3, width: 0.2 }   # east pasture (deer graze)
   - { id: grass_2, species: grass, pos: [141.0, 96.0], length: 0.3, width: 0.2 }
   - { id: grass_3, species: grass, pos: [123.0, 102.0], length: 0.3, width: 0.2 }
   - { id: grass_4, species: grass, pos: [147.0, 84.0], length: 0.3, width: 0.2 }
-  - { id: grass_5, species: grass, pos: [135.0, 108.0], length: 0.3, width: 0.2 }
   - { id: grass_6, species: grass, pos: [75.0, 69.0], length: 0.3, width: 0.2 }   # near village
-  - { id: grass_7, species: grass, pos: [84.0, 78.0], length: 0.3, width: 0.2 }
   - { id: grass_8, species: grass, pos: [150.0, 42.0], length: 0.3, width: 0.2 }  # mountain-base pasture (goat grazes, then climbs)
   # THICKETS (berry_shrub) — food + small-prey cover, clustered around the rabbit fields + pasture edge
   - { id: shrub_1, species: berry_shrub, pos: [87.0, 60.0], length: 1.0, width: 0.8 }  # mature (stage 2) → berries + cover
@@ -113,8 +111,8 @@ flora:
   # RIPARIAN gallery (oak) — wooded river banks (a cover corridor by the water crossing)
   - { id: oak_13, species: oak, pos: [90.0, 108.0], length: 8.0, width: 5.0 }   # west bank (col 7)
   - { id: oak_14, species: oak, pos: [90.0, 120.0], length: 8.0, width: 5.0 }
-  - { id: oak_15, species: oak, pos: [114.0, 108.0], length: 8.0, width: 5.0 }  # east bank (col 9)
-  - { id: oak_16, species: oak, pos: [114.0, 120.0], length: 8.0, width: 5.0 }
+  - { id: oak_15, species: oak, pos: [126.0, 108.0], length: 8.0, width: 5.0 }  # east bank (hex col 7)
+  - { id: oak_16, species: oak, pos: [126.0, 120.0], length: 8.0, width: 5.0 }
 
 # ── Animals (fauna) — DORMANT unless InstallFauna runs (empty ⇒ fauna OFF) ────────────────
 # A deer herd grazing the east pasture + a single wolf ranging the NE. Stats sampled from the per-species

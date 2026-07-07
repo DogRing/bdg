@@ -122,7 +122,7 @@ Representative `type`s (payload gist):
 | `ToolBroke` | object_id, kind, owner (Materials FINAL; on a tool reaching 0 durability → object-mortality) |
 | `AnimalBorn` / `AnimalDied` | object_id, species, pos / cause (WI-P4; fauna spawn + object-mortality §7) |
 | `PlantSpawned` / `PlantDied` | object_id, species, pos (WI-P4; flora propagation + object-mortality) |
-| `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, agents[]{id,pos,action}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain,wear} (WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
+| `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, agents[]{id,pos,action}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain,wear} (cell = offset index `i=row·cols+col` into the flat-top hex grid, `docs/hex-grid.md`; WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
 
 - **why-trace** = NFR-3. Put the *selection rationale* (competing candidates, gates, costs) into `GoalSelected` / `PlanBuilt` so "why did it do this" is reconstructable.
 - **SSE view** = the frontend-graphics subset (positions, actions, major events). Sensitive god-view fields (`real_stats`) are not sent over SSE (controlled by an observation-mode flag).
@@ -133,6 +133,11 @@ Representative `type`s (payload gist):
 - On `schema_version` mismatch, persist refuses to load and demands a migration path.
 
 ## 6. Navmap / terrain (map subsystem)
+- **Hex grid** (`docs/hex-grid.md`): terrain cells are **flat-top hexagons**; the initial layout +
+  `terrain_delta.cell` use an **offset (col,row) rectangular array** (`i = row·cols + col`), and
+  `/api/terrain` carries `{cell_size, orientation:'flat', size:{cols,rows}, terrain[], wear?[]}`. The
+  wire stays a rectangular array (offset↔axial conversion is engine-internal). Sorted-cell order is the
+  canonical hex order (R-major then Q). `spatial`/`scent`/`climate` stay SQUARE (surgical scope).
 - Navmap wire = **building footprints** + **sparse `wear`** + **terrain state**. Per `design.md §5`, terrain is **dynamic** (moisture/transition), so it streams like wear — **periodic full + sparse deltas**, NOT a one-time static layout.
 - Determinism (D12): the snapshot is copy-on-write; the running tick deposits `wear` and applies terrain transitions in the **serial apply** phase (sorted cell order), never during plan. Bulk terrain recompute is `tick`-triggered (`tick % N`), never wall-clock.
 - An `ore_node` exhaustion (Xm2/Xm3) is one such terrain transition: on `remaining→0` the world fires ONE `navmap.SetTerrain` over the node's cells → `depleted_terrain` (e.g. `bare_rock`), streamed via `TerrainOverrides()` (the same sparse delta channel as climate transitions). NOT during plan; apply phase, sorted cells (D12).

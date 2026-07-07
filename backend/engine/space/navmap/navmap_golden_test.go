@@ -1,5 +1,7 @@
 // Package navmap_test — AC4 (decay golden), AC8–AC11, and resolved accessor tests.
-// Shares fixtures from navmap_test.go (same package).
+// Shares fixtures from navmap_test.go (same package). Hex (docs/hex-grid.md): cells are flat-top
+// axial (q,r); cells are chosen in-bounds (centre within bounds) and, where terrain matters, by the
+// column x-band. adjLen (√3·CellSize) is the adjacent-hex geometric length.
 package navmap_test
 
 import (
@@ -33,7 +35,7 @@ func TestDecayFadesTrails(t *testing.T) {
 	}
 	m := navmap.New(cfg, func(_ core.Vec2) navmap.TerrainID { return "plain" }, testTypes)
 
-	cell := navmap.Cell{X: 2, Y: 3}
+	cell := navmap.Cell{Q: 2, R: 3}
 	m.Deposit([]navmap.Cell{cell}, 4.0)
 
 	var entries []goldenDecayEntry
@@ -88,8 +90,8 @@ func TestDecayFadesTrails(t *testing.T) {
 func TestOutcomeNeutralPreActivation(t *testing.T) {
 	t.Parallel()
 	m := newMapAllPlain()
-	cell := navmap.Cell{X: 3, Y: 3}
-	src := navmap.Cell{X: 2, Y: 3}
+	cell := navmap.Cell{Q: 3, R: 3}
+	src := navmap.Cell{Q: 2, R: 3} // adjacent (dir -1,0)
 
 	// Never calling SetTerrain: TerrainOverrides must be empty.
 	if ovr := m.TerrainOverrides(); len(ovr) != 0 {
@@ -104,7 +106,7 @@ func TestOutcomeNeutralPreActivation(t *testing.T) {
 
 	// StepCost uses base terrain (plain); unchanged by absence of SetTerrain.
 	wearMult := 1.0 - (5.0/testCfg.WearMax)*(1.0-testCfg.WearCostMin)
-	want := 1.0 * wearMult * 10.0
+	want := 1.0 * wearMult * adjLen
 	if got := m.StepCost(src, cell); math.Abs(got-want) > 1e-9 {
 		t.Errorf("StepCost = %v, want %v", got, want)
 	}
@@ -120,7 +122,7 @@ func TestSetTerrainUnknownIDPanics(t *testing.T) {
 			t.Error("SetTerrain with unknown TerrainID should panic")
 		}
 	}()
-	m.SetTerrain([]navmap.Cell{{X: 1, Y: 1}}, "nope")
+	m.SetTerrain([]navmap.Cell{{Q: 1, R: 1}}, "nope")
 }
 
 // ── AC10: Determinism golden ───────────────────────────────────────────────────
@@ -137,10 +139,10 @@ func TestDeterminism(t *testing.T) {
 
 	run := func() deterministicGoldenEntry {
 		m := newMapAllPlain()
-		m.Deposit([]navmap.Cell{{X: 1, Y: 0}, {X: 3, Y: 2}, {X: 0, Y: 5}}, 7.0)
-		m.Deposit([]navmap.Cell{{X: 3, Y: 2}}, 2.0) // (3,2) total = 9
+		m.Deposit([]navmap.Cell{{Q: 1, R: 0}, {Q: 3, R: 2}, {Q: 0, R: 5}}, 7.0)
+		m.Deposit([]navmap.Cell{{Q: 3, R: 2}}, 2.0) // (3,2) total = 9
 		m.Decay()
-		m.SetTerrain([]navmap.Cell{{X: 2, Y: 1}, {X: 4, Y: 3}}, "forest")
+		m.SetTerrain([]navmap.Cell{{Q: 2, R: 1}, {Q: 4, R: 3}}, "forest")
 		m.Decay()
 		return deterministicGoldenEntry{Wear: m.ActiveWear(), Overrides: m.TerrainOverrides()}
 	}
@@ -176,20 +178,23 @@ func TestDeterminism(t *testing.T) {
 	}
 }
 
-// ── AC11: Bounds ──────────────────────────────────────────────────────────────
+// ── AC11: Bounds (hex: a cell is in-bounds iff its CENTRE is within bounds) ────
 
 func TestBounds(t *testing.T) {
 	t.Parallel()
 	m := newMapAllPlain()
-	inBounds := navmap.Cell{X: 5, Y: 5}
+	inBounds := m.CellOf(core.Vec2{X: 50, Y: 50})
 	if !m.Passable(inBounds) {
 		t.Error("in-bounds plain cell should be passable")
 	}
 
+	// Cells whose flat-top centres fall outside [0,100)×[0,100): x=1.5·10·q, y=√3·10·(q/2+r).
 	oob := []navmap.Cell{
-		{X: -1, Y: 0}, {X: 0, Y: -1},
-		{X: 10, Y: 0}, {X: 0, Y: 10}, // 10×10=100 ≥ MaxX/MaxY=100 → out
-		{X: -5, Y: -5},
+		{Q: -1, R: 0}, // x=-15
+		{Q: 0, R: -1}, // y=-17.3
+		{Q: 7, R: 0},  // x=105
+		{Q: 0, R: 6},  // y≈103.9
+		{Q: -5, R: -5},
 	}
 	for _, c := range oob {
 		if m.Passable(c) {
@@ -200,15 +205,14 @@ func TestBounds(t *testing.T) {
 		}
 	}
 
-	// CellOf corner cases.
-	if c := m.CellOf(core.Vec2{X: 0, Y: 0}); c.X != 0 || c.Y != 0 {
+	// CellOf at the grid origin (MinX,MinY) is axial (0,0).
+	if c := m.CellOf(core.Vec2{X: 0, Y: 0}); c.Q != 0 || c.R != 0 {
 		t.Errorf("CellOf(0,0) = %v, want {0,0}", c)
 	}
-	if c := m.CellOf(core.Vec2{X: 99, Y: 99}); c.X != 9 || c.Y != 9 {
-		t.Errorf("CellOf(99,99) = %v, want {9,9}", c)
-	}
-	if c := m.CellOf(core.Vec2{X: 100, Y: 0}); m.Passable(c) {
-		t.Errorf("cell at MaxX (%v) should be out-of-bounds/impassable", c)
+	// A point well beyond bounds maps to a hex whose centre is out of bounds → impassable.
+	// (A point exactly at MaxX rounds to the last in-bounds column centre, so use a far point.)
+	if c := m.CellOf(core.Vec2{X: 150, Y: 150}); m.Passable(c) {
+		t.Errorf("cell well past bounds (%v) should be out-of-bounds/impassable", c)
 	}
 }
 
@@ -216,13 +220,14 @@ func TestBounds(t *testing.T) {
 
 func TestFootprintBlocked(t *testing.T) {
 	t.Parallel()
-	waterCell := navmap.Cell{X: 5, Y: 5}
+	// x≥50 → water, else plain.
 	m := newMapFn(func(p core.Vec2) navmap.TerrainID {
-		if p.X >= 50 && p.X < 60 && p.Y >= 50 && p.Y < 60 {
+		if p.X >= 50 {
 			return "water"
 		}
 		return "plain"
 	})
+	waterCell := m.CellOf(core.Vec2{X: 75, Y: 50})
 
 	// Water is terrain-impassable but NOT FootprintBlocked.
 	if m.FootprintBlocked(waterCell) {
@@ -233,7 +238,7 @@ func TestFootprintBlocked(t *testing.T) {
 	}
 
 	// Wall stamp → FootprintBlocked true.
-	wallCell := navmap.Cell{X: 3, Y: 3}
+	wallCell := m.CellOf(core.Vec2{X: 25, Y: 25})
 	m.StampFootprint([]navmap.Cell{wallCell}, false)
 	if !m.FootprintBlocked(wallCell) {
 		t.Error("wall-stamped cell should be FootprintBlocked")
@@ -245,8 +250,8 @@ func TestFootprintBlocked(t *testing.T) {
 		t.Error("un-stamped cell should not be FootprintBlocked")
 	}
 
-	// Plain cell with no stamp → not FootprintBlocked.
-	if m.FootprintBlocked(navmap.Cell{X: 1, Y: 1}) {
+	// A plain cell with no stamp → not FootprintBlocked.
+	if m.FootprintBlocked(navmap.Cell{Q: 1, R: 1}) {
 		t.Error("unstamped plain cell should not be FootprintBlocked")
 	}
 }
@@ -255,6 +260,7 @@ func TestFootprintBlocked(t *testing.T) {
 
 func TestBaseCost(t *testing.T) {
 	t.Parallel()
+	// Column x-bands (x = 1.5·10·q): q≤1 (x≤15) plain, q∈{2,3} (x∈{30,45}) forest, q≥4 (x≥60) swamp.
 	m := newMapFn(func(p core.Vec2) navmap.TerrainID {
 		switch {
 		case p.X < 30:
@@ -270,9 +276,9 @@ func TestBaseCost(t *testing.T) {
 		cell navmap.Cell
 		want float64
 	}{
-		{navmap.Cell{X: 1, Y: 0}, 1.0},
-		{navmap.Cell{X: 4, Y: 0}, 2.0},
-		{navmap.Cell{X: 7, Y: 0}, 3.0},
+		{navmap.Cell{Q: 1, R: 0}, 1.0}, // x=15 → plain
+		{navmap.Cell{Q: 3, R: 0}, 2.0}, // x=45 → forest
+		{navmap.Cell{Q: 5, R: 0}, 3.0}, // x=75 → swamp
 	}
 	for _, c := range cases {
 		got := m.BaseCost(c.cell)
@@ -285,21 +291,21 @@ func TestBaseCost(t *testing.T) {
 	}
 
 	// SetTerrain changes BaseCost.
-	cell := navmap.Cell{X: 1, Y: 0}
+	cell := navmap.Cell{Q: 1, R: 0}
 	m.SetTerrain([]navmap.Cell{cell}, "forest")
 	if got := m.BaseCost(cell); math.Abs(got-2.0) > 1e-9 {
 		t.Errorf("BaseCost after SetTerrain(forest) = %v, want 2.0", got)
 	}
 
-	// Footprint does NOT affect BaseCost (layers are independent).
-	wall := navmap.Cell{X: 2, Y: 2}
+	// Footprint does NOT affect BaseCost (layers are independent). Wall on a plain cell (x<30).
+	wall := navmap.Cell{Q: 1, R: 2} // x=15 → plain
 	m.StampFootprint([]navmap.Cell{wall}, false)
 	if got := m.BaseCost(wall); math.Abs(got-1.0) > 1e-9 {
 		t.Errorf("BaseCost of wall-stamped plain cell = %v, want 1.0", got)
 	}
 
 	// Out-of-bounds returns 0 (undefined; callers check bounds before BaseCost).
-	if got := m.BaseCost(navmap.Cell{X: -1, Y: 0}); got != 0 {
+	if got := m.BaseCost(navmap.Cell{Q: -1, R: 0}); got != 0 {
 		t.Errorf("BaseCost out-of-bounds = %v, want 0", got)
 	}
 }

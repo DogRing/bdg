@@ -224,7 +224,7 @@ type RenderView struct {
 }
 type AnimalRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Action string; Heading, Stamina float64 }
 type FloraRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Stage int; Width float64 }
-type TerrainRenderView struct{ CellSize float64; W, H int; Terrain []string; Wear []float64 } // row-major, Y-major then X
+type TerrainRenderView struct{ CellSize float64; Cols, Rows int; Orientation string; Terrain []string; Wear []float64 } // flat-top hex, offset(col,row) i=row*Cols+col (hex-grid.md)
 ```
 
 > The world DEFINES no new vocabulary. `agent.Agent`, `agent.Intent`, `agent.ActionOutcome`,

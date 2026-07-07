@@ -4,18 +4,22 @@
 > Leaf level: `L1`  ·  Owner agent: `<filled by implementer>`
 
 ## Purpose
-The navigation **cost field**: a grid-indexed traversal-cost model over continuous space. It holds
-per-cell terrain base cost, building footprints (impassable cells + door portals), and a **sparse
-`wear` field** (emergent trails). It answers "how expensive / passable is this location?" for
-`pathfind` and accepts wear deposits/decay **and terrain transitions** from `world`. It is an
-**index, not the world** (D11): agent positions stay continuous `float`; this module only quantizes
-*cost*, exactly as `spatial` quantizes *proximity*.
+The navigation **cost field**: a **flat-top hexagonal** grid-indexed traversal-cost model over
+continuous space (axial `(q,r)` cells). It holds per-cell terrain base cost, building footprints
+(impassable cells + door portals), and a **sparse `wear` field** (emergent trails). It answers "how
+expensive / passable is this location?" for `pathfind` and accepts wear deposits/decay **and terrain
+transitions** from `world`. It is an **index, not the world** (D11): agent positions stay continuous
+`float`; this module only quantizes *cost*, exactly as `spatial` quantizes *proximity* — the hex is an
+index-cell shape, NOT a tiling of the world. **navmap is the single hex-convention authority**
+(orientation, neighbor set/order, pixel↔hex mapping, `CellSize`↔hex-size, D12 sort); `pathfind` and the
+frontend CONSUME it (`Neighbors`/`CellCenter` + the wire), never re-derive it (`docs/hex-grid.md`).
 
 ## Public Interface
 ```go
-// Cell is the integer grid index of a continuous point (internal addressing only;
-// never exposed as an agent position). CellOf maps a Vec2 → Cell deterministically.
-type Cell struct{ X, Y int }
+// Cell is the AXIAL hex index (q,r) of a continuous point — FLAT-TOP hexagons; internal
+// addressing only, never exposed as an agent position. CellOf maps a Vec2 → Cell via the
+// flat-top pixel→hex transform + cube rounding (navmap owns this "snap a point to its hex").
+type Cell struct{ Q, R int }
 
 // TerrainID names a terrain type from content/terrain.yaml (e.g. "plain","water","steep").
 type TerrainID = core.Tag
@@ -27,7 +31,7 @@ type NavMap struct{ /* opaque; see Owned Data */ }
 func New(cfg Config, terrainAt func(core.Vec2) TerrainID, types map[TerrainID]TerrainType) *NavMap
 
 type Config struct {
-    CellSize    float64 // grid cell edge in world units (≈ spatial hash cell; tunable)
+    CellSize    float64 // hex CIRCUMRADIUS (centre→vertex) in world units; adjacency spacing derives from it (tunable, hex-grid.md Q3)
     MinX, MinY  float64 // world bounds (cells outside bounds are impassable)
     MaxX, MaxY  float64
     WearOnUse   float64 // wear added to each traversed cell per traversal tick
@@ -44,10 +48,15 @@ type TerrainType struct {
 }
 
 // ── Queries (read-only; used by pathfind during the parallel plan phase) ──────────
-func (m *NavMap) CellOf(p core.Vec2) Cell
+func (m *NavMap) CellOf(p core.Vec2) Cell              // Vec2 → axial hex (flat-top pixel→hex + cube round)
+func (m *NavMap) Neighbors(c Cell) []Cell             // the 6 flat-top axial neighbors in FIXED canonical order —
+                                                       // the SOLE neighbor authority pathfind consumes (no hardcoded
+                                                       // offsets elsewhere ⇒ no hex-convention drift)
 func (m *NavMap) Passable(c Cell) bool                 // terrain passable AND no blocking footprint
 func (m *NavMap) TerrainAt(c Cell) TerrainID
-func (m *NavMap) StepCost(from, to Cell) float64       // base × wear-multiplier × geometric length; +Inf if impassable
+func (m *NavMap) StepCost(from, to Cell) float64       // base × wear-multiplier × geometric length; +Inf if impassable.
+                                                       // geometric length = ‖CellCenter(from)−CellCenter(to)‖ — uniform
+                                                       // for the 6 hex neighbors (the square √2-diagonal case is gone)
 func (m *NavMap) RequiredTags(c Cell) []core.Tag       // capability/action tags to enter c (terrain)
 
 // FootprintBlocked reports whether c carries a building/wall footprint — a HARD blocker for ALL
@@ -65,8 +74,8 @@ func (m *NavMap) FootprintBlocked(c Cell) bool
 // previously had to reconstruct via TerrainAt→terrainTypes join — navmap owns it (cleaner + override-aware).
 func (m *NavMap) BaseCost(c Cell) float64
 
-// CellCenter maps a Cell back to its continuous world-coordinate centre (the inverse of CellOf up to
-// quantisation). navmap is the geometry authority (it owns CellSize + bounds, not otherwise public);
+// CellCenter maps a Cell back to its continuous world-coordinate centre (the flat-top hex centre; the
+// inverse of CellOf up to quantisation). navmap is the geometry authority (owns CellSize + bounds);
 // `engine/space/pathfind` calls it to turn a cell path into continuous `Vec2` waypoints. Pure read,
 // no bound-check (D11 — an index→coordinate read, never a snap of an agent position).
 func (m *NavMap) CellCenter(c Cell) core.Vec2
@@ -75,6 +84,22 @@ func (m *NavMap) CellCenter(c Cell) core.Vec2
 // (= cfg.WearCostMin; valid because BaseCost ≥ 1 and wear-multiplier ∈ [WearCostMin,1]). pathfind uses
 // it for an admissible A* heuristic + EstimateCost (so EstimateCost ≤ true Path cost). Pure read.
 func (m *NavMap) MinCostFactor() float64
+
+// ── Offset (col,row) layout — the render/wire rectangular projection (hex-grid.md Q5) ──────────────
+// navmap is the SINGLE flat-top odd-q authority: worldgen (fixture terrain layout), world (TerrainRenderView
+// + terrain_delta offset index), and persist/api all go through THESE instead of re-deriving the offset↔
+// axial convention. offset(0,0) is the (MinX,MinY) corner (axial 0,0); render index i = row*Cols + col.
+func (m *NavMap) Orientation() string                 // "flat" (flat-top); the wire+frontend mirror this
+func (m *NavMap) OffsetDims() (cols, rows int)         // offset-grid dims covering the world bounds (fringe-generous)
+func (m *NavMap) OffsetToCell(col, row int) Cell       // offset(col,row) → axial Cell
+func (m *NavMap) CellToOffset(c Cell) (col, row int)   // axial Cell → offset(col,row) (inverse of OffsetToCell)
+
+// Pure Config-level variants (no NavMap instance / terrain needed): let an authoring tool (worldgen)
+// index an offset-layout terrain array BEFORE navmap.New exists (New samples terrainAt at construction).
+// The instance methods delegate to these, so there is exactly ONE convention. OffsetIndexAt ≡
+// CellToOffset∘CellOf; OffsetDimsOf ≡ OffsetDims.
+func OffsetDimsOf(cfg Config) (cols, rows int)
+func OffsetIndexAt(cfg Config, p core.Vec2) (col, row int)
 
 // ── Mutations (apply phase only; serial, world-owned) ─────────────────────────────
 func (m *NavMap) Deposit(cells []Cell, amount float64) // add wear along a traversed path
@@ -86,7 +111,7 @@ func (m *NavMap) StampFootprint(cells []Cell, passable bool) // building place/r
 // terrain *transition* (e.g. forest→swamp): each cell's BaseCost / Passable /
 // RequiredTags become those of `t`, so subsequent StepCost/Passable/RequiredTags
 // reflect the new type. Apply-phase only, world-owned, serial — the world passes
-// the cell slice in sorted (Y-major then X) order, EXACTLY like StampFootprint, so
+// the cell slice in sorted (R-major then Q, canonical hex) order, EXACTLY like StampFootprint, so
 // last-write/accumulation order is fixed and reproducible (D12). SetTerrain does
 // NOT touch the wear or footprint layers; a footprint-blocked cell stays
 // impassable regardless of its new terrain type. The world (NOT this module)
@@ -129,11 +154,13 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
   write (preserves the "world is the sole mutator" invariant, RESOLVED #6).
 
 ## Invariants
-- **D11** — `Cell` is an internal index; it is never written into an agent's `Pos`. Positions stay
-  continuous. No public API snaps a position to a cell center.
+- **D11** — `Cell` is an internal AXIAL hex index; it is never written into an agent's `Pos`. Positions
+  stay continuous. No public API snaps a position to a cell center. Hex is an index-cell shape, not a
+  world tiling.
 - **D12** — No `map` iteration drives results: `Decay`, `ActiveWear`, `TerrainOverrides`, and any
-  cell enumeration iterate a **sorted** cell order (Y-major then X, or sorted keys). `SetTerrain`
-  applies its cell slice in the world-supplied sorted order; float/last-write order is fixed.
+  cell enumeration iterate a **canonical sorted** order — **R-major then Q** (the hex replacement for
+  the old "Y-major then X", `docs/hex-grid.md` Q6). `SetTerrain` applies its cell slice in the
+  world-supplied sorted order; float/last-write order is fixed.
 - `StepCost` is symmetric only up to terrain; it returns `+Inf` (not an error) for impassable so
   `pathfind` prunes uniformly.
 - `Snapshot()` is cheap and isolates the plan phase from concurrent apply-phase mutation (the plan
@@ -152,11 +179,17 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
 - [ ] **Decay fades trails** — with no deposits, repeated `Decay` returns a cell's wear to 0 and **removes** it from `ActiveWear` (sparse); golden over N ticks.
 - [ ] **SetTerrain transitions cost** — after `SetTerrain([c], "swamp")` where swamp `BaseCost`>forest, `StepCost`/`TerrainAt`/`RequiredTags` for `c` reflect swamp; a neighbour cell is unchanged; the wear value on `c` is untouched. A `SetTerrain([c], "water")` (`Passable:false`) makes `Passable(c)` false. Table-driven.
 - [ ] **SetTerrain × footprint independence** — a footprint-blocked cell stays `Passable:false` after a `SetTerrain` to a passable type; un-stamping then exposes the new terrain.
-- [ ] **TerrainOverrides is sparse + D12-sorted** — empty before any `SetTerrain`; after transitioning two cells it lists exactly those two in Y-major/X order with their new ids; reverting one to its base type drops it from the list (delta away from base only).
+- [ ] **TerrainOverrides is sparse + D12-sorted** — empty before any `SetTerrain`; after transitioning two cells it lists exactly those two in R-major/Q (canonical hex) order with their new ids; reverting one to its base type drops it from the list (delta away from base only).
 - [ ] **Outcome-neutral pre-activation** — a run that never calls `SetTerrain` produces a byte-identical `ActiveWear()`/`TerrainOverrides()`/`StepCost` field to the pre-`SetTerrain` SPEC (existing goldens hold; regression guard).
 - [ ] **SetTerrain unknown id panics** — `SetTerrain([c], "nope")` for an id absent from `types` panics (content-contract guard).
 - [ ] **Determinism (golden)** — same `(Config, terrain, deposit/decay/SetTerrain sequence)` ⇒ byte-identical `ActiveWear()` + `TerrainOverrides()` ordering and values; no map-iteration leakage.
-- [ ] **Bounds** — cells outside `[MinX,MaxX]×[MinY,MaxY]` are impassable.
+- [ ] **Bounds** — a hex whose CENTRE falls outside `[MinX,MaxX]×[MinY,MaxY]` is impassable.
+- [ ] **Neighbors (flat-top, canonical order)** — `Neighbors(c)` returns exactly the 6 flat-top axial
+  neighbors of `c` in the fixed canonical order on every call (table-driven); each is adjacent
+  (`StepCost` finite when passable) and equidistant from `c`'s centre.
+- [ ] **pixel↔hex round-trip** — `CellCenter(CellOf(p))` lands in `p`'s hex for random points at
+  several offsets; `CellOf(CellCenter(c)) == c` for random cells (cube-round stability, incl. negative
+  coords and cell-boundary points).
 - [ ] **FootprintBlocked isolates the footprint layer** — `FootprintBlocked` is true ONLY for stamped wall/building cells and false for deep-water (`Passable:false`) terrain; a water cell is `!FootprintBlocked` yet `!Passable` (so the fauna `TerrainSampler` treats it as traversable-at-high-cost, not a wall). Table-driven.
 - [ ] **BaseCost is the override-aware per-cell terrain cost** — `BaseCost(c)` equals the cell's terrain `BaseCost` (≥1), updates after `SetTerrain` (override-aware), is independent of wear and footprint stamps, and returns 0 out-of-bounds. Table-driven.
 
@@ -171,9 +204,14 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
 - Serialization wire format → `platform/persist` + `docs/data-contracts.md §6` (this module exposes `ActiveWear()` + `TerrainOverrides()` as the sparse sources).
 
 ## Open Questions
-- **Cell size** (P1-non-blocking): reuse `spatial` cell (8.0) or finer for path fidelity? Tradeoff fidelity vs memory/stream size. Default: start at the spatial cell, make it `Config.CellSize`.
-- **8- vs 4-connectivity** is a `pathfind` concern, but `StepCost`'s geometric length term must agree (diagonal = √2). Decided in `pathfind` SPEC.
-- **Climate grid ↔ navmap cell mapping granularity** (non-blocking): climate owns a *coarse* grid (one climate cell = many navmap cells, RESOLVED #1); the mapping climate-cell → navmap-cells is owned by `world`/`climate` when it builds the `SetTerrain` cell slice, not by this module. navmap stays cell-granular.
+- **Cell size** — `CellSize` is the hex **circumradius**, = the old value for now, **tuned later** once
+  cells are visible (`docs/hex-grid.md` Q3); note a hex at circumradius `R` covers ~2.6× a square cell of
+  edge `R`, so the grid is coarser until retuned.
+- **Connectivity** — RESOLVED: **6-neighbor** flat-top hex (`Neighbors`); `StepCost` geometric length is
+  the uniform centre-to-centre distance (the old square √2-diagonal case is gone).
+- **Climate grid ↔ navmap cell mapping** (non-blocking): climate stays a *coarse SQUARE* grid; the
+  square-climate-cell → hex-navmap-cells enumeration for the `SetTerrain` slice is owned by
+  `world`/`climate` (`docs/hex-grid.md` §H6), not this module. navmap stays hex-cell-granular.
 
 ## Notes
 - The wear model is the ant-trail / desire-path mechanic: `Deposit` on traversal, `Decay` each tick,
@@ -184,3 +222,9 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
   apply-phase writers over a cell slice. Terrain is now *dynamic* (carries climate-driven transitions,
   `docs/design.md §5`); `TerrainOverrides()` makes it stream as a sparse delta like `wear`, not as a
   one-time static layout (`docs/data-contracts.md §6`, RESOLVED #11).
+- **Hex migration** (`docs/hex-grid.md`): cells are flat-top axial `(q,r)`; navmap is the hex-convention
+  authority. Engine/pathfind logic speaks **axial only** (`Cell{Q,R}`, `Neighbors`, `CellCenter`); the
+  offset(col,row) rectangular layout is the render/wire projection, and its offset↔axial conversion is
+  owned HERE too (`Orientation`/`OffsetDims`/`OffsetToCell`/`CellToOffset` + the pure `OffsetDimsOf`/
+  `OffsetIndexAt`) so worldgen/world/persist never re-derive it — ONE convention. `spatial`/`scent`/
+  `climate` stay SQUARE (surgical scope); they must not import `navmap.Cell`.

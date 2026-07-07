@@ -103,7 +103,7 @@ it. It does not restate the SPECs; per-module detail lands in `frontend/SPEC.md`
 ### FE-P4 — Terrain + ambient — ✅ shipped 2026-07-02
 > Frontend side complete; the `/api/terrain` server route remains the pending backend SPEC
 > delta (Q5). Wire shape consumed by `loadTerrain`:
-> `{cell_size, size:{w,h}, terrain: string[] (row-major w·h), wear?: number[]}`.
+> `{cell_size, orientation:'flat', size:{cols,rows}, terrain: string[] (offset(col,row) cols·rows), wear?: number[]}` (flat-top hex — `docs/hex-grid.md`).
 - `render/terrain.ts`: initial full grid (per Q5) + `terrain_delta` merge + `wear` trail overlay,
   styled by `TERRAIN_STYLE`; `render/ambient.ts`: day-night tint, temperature vignette, rain
   overlay, wind arrow (already specified in `frontend/SPEC.md §Ecosystem`). Blocked by: Q5.
@@ -158,7 +158,7 @@ it. It does not restate the SPECs; per-module detail lands in `frontend/SPEC.md`
   entry enqueue `{kind, at, pos, meta}`; render evaluates time-parametrically; the reducer prunes
   expired entries. No backend contract change.
 - **Q5 — Terrain initial load** `RESOLVED: new REST GET /api/terrain` + flat per-cell colour.
-  Response `{cell_size, size:{w,h}, terrain:[[TerrainID-index]] or run-length, wear?}` once at
+  Response `{cell_size, orientation:'flat', size:{cols,rows}, terrain:[TerrainID-index offset array], wear?}` once at
   connect; SSE `terrain_delta` keeps it current. **Pending backend SPEC delta**: add the route to
   `backend/platform/api/SPEC.md` + a world terrain-grid read accessor when the WI-P4/backend phase
   starts (read-only, no god-view; edge blending parked as polish).

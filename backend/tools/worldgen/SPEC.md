@@ -42,22 +42,31 @@ import (
 // hand-authored scenario. Pos values are continuous (D11). All blocks except Seed are optional;
 // an absent block ⇒ that subsystem is OFF (env-neutral).
 type Fixture struct {
-    SchemaVersion int
-    Seed          int64
-    Bounds        *Bounds          // nil ⇒ use world.yaml default (config.WorldEnv)
-    Terrain       *TerrainLayout   // nil ⇒ no env terrain (flat); cells row-major, ids ⊆ terrain.yaml
-    Objects       []ObjectPlacement
-    Agents        []AgentPlacement
-    Animals       []AnimalPlacement // empty ⇒ fauna OFF
-    Flora         []FloraPlacement  // empty ⇒ flora OFF
-    Lots          []LotPlacement
+    SchemaVersion   int
+    Seed            int64
+    Bounds          *Bounds          // nil ⇒ use world.yaml default (config.WorldEnv)
+    Terrain         *TerrainLayout   // nil ⇒ no env terrain; cells = offset(col,row) hex array, ids ⊆ terrain.yaml
+    Objects         []ObjectPlacement
+    Agents          []AgentPlacement
+    Animals         []AnimalPlacement // empty ⇒ fauna OFF
+    Flora           []FloraPlacement  // empty ⇒ flora OFF
+    Lots            []LotPlacement
+    RespawnTargets  map[core.Tag]int  // per-run OVERRIDE of content respawn_target (F9 carrying capacity);
+                                      // merged OVER config.RespawnTargets at Load (cfg untouched). Empty ⇒ content values.
 }
 type Bounds struct{ Min, Max core.Vec2 }
-type TerrainLayout struct{ Cols, Rows int; Cells []core.Tag } // len(Cells) == Cols*Rows (row-major)
+type TerrainLayout struct{ Cols, Rows int; Cells []core.Tag; Random bool }
+// Explicit form: len(Cells)==Cols*Rows; offset(col,row) i=row*Cols+col; FLAT-TOP HEX (odd cols shifted,
+// hex-grid.md); ids ⊆ terrain.yaml. Random form: {Random:true, no cols/rows/cells} ⇒ Load MATERIALIZES the
+// layout via SimpleTerrain over navmap.OffsetDimsOf(bounds) with an fx.Seed-derived rng (same seed ⇒ same
+// terrain, D12). The two forms are mutually exclusive (Parse rejects a mixed block).
 type ObjectPlacement struct{ ID core.ObjectID; Kind core.Tag; Pos core.Vec2; Remaining int; Owner core.AgentID }
 type AgentPlacement  struct{ ID core.AgentID;  Pos core.Vec2; Values map[core.Dimension]float64 }
-type AnimalPlacement struct{ ID core.ObjectID; Species core.Tag; Pos core.Vec2; Heading float64 }
-type FloraPlacement  struct{ ID core.ObjectID; Species core.Tag; Pos core.Vec2; Length, Width float64 }
+type AnimalPlacement struct{ ID core.ObjectID; Species core.Tag; Pos *core.Vec2; Heading float64 }
+type FloraPlacement  struct{ ID core.ObjectID; Species core.Tag; Pos *core.Vec2; Length, Width float64 }
+// Animal/Flora Pos is OPTIONAL (nil): Load places a pos-less entity uniformly at random on a `soil` hex
+// (rejection sampling over bounds with the fx.Seed-derived rng, sorted-ID order — deterministic, D12).
+// A pos-less placement REQUIRES a terrain layout (explicit or random); otherwise Load errors.
 type LotPlacement    struct{ ID core.ObjectID; Kind core.Tag; Qty int; DecayAge float64; Location string }
 
 // ── Parse / Encode (the fixture wire; schema-validated) ──────────────────────────
@@ -82,6 +91,17 @@ func Generate(cfg GenConfig, seed int64) Fixture
 type GenConfig struct{ /* opaque: noise/octaves, sea_level, river_accum_threshold, erosion,
                           ore_density, flora/fauna/agent seeding rates; + bounds/resolution from world.yaml. */ }
 
+// ── SimpleTerrain (dev/test terrain — NOT the WG1-a pipeline) ────────────────────
+// SimpleTerrain fills a cols×rows hex offset grid with a minimal random layout: all soil,
+// one wandering top→bottom river walk, 1-2 sand banks beside it, and an optional mountain
+// blob. It exists so a `terrain:{random:true}` fixture (test worlds, the /api/regen control
+// route) has SOMETHING to render/walk on before Generate (WG1-a) is built; it makes no
+// hydrology/moisture/biome claims and its ids are the fixed dev subset {soil,river,sand,
+// mountain} ⊆ terrain.yaml. Deterministic in the injected rng (D12): same rng state ⇒ same
+// cells. The offset-grid river walk is visually a river; hex-chain connectivity is NOT
+// guaranteed (navmap costs handle any layout).
+func SimpleTerrain(cols, rows int, r *rng.RNG) []core.Tag
+
 // ── Load (RUN-TIME; fixture → states → install) ──────────────────────────────────
 // Load builds the env states from fx + the compiled Rules in reg (config WI-P0), and installs them
 // into the (empty) world w: it builds navmap.New(reg.NavCfg, terrainAt(fx.Terrain), reg.TerrainTypes),
@@ -93,11 +113,22 @@ type GenConfig struct{ /* opaque: noise/octaves, sea_level, river_accum_threshol
 // w.PlaceObject for each ObjectPlacement (Remaining for ore_node). bounds = fx.Bounds ?? reg.WorldEnv.
 // rng is the run's root (the fixture Seed seeds it). When a block is absent, that subsystem stays OFF
 // (env-neutral — existing goldens hold). Returns a typed error on any cross-check failure.
+//
+// MATERIALIZE step (before any state is built): Load resolves the fixture's generated parts into a
+// concrete local fixture — a `terrain:{random:true}` block becomes an explicit SimpleTerrain cell
+// array over navmap.OffsetDimsOf(bounds), and pos-less flora/animal placements are placed on random
+// soil hexes — all draws from ONE fx.Seed-derived sub-stream in a fixed order (terrain, then flora
+// sorted by id, then animals sorted by id), so same (fixture, seed) ⇒ same world (D12). The caller's
+// Fixture is never mutated (a rebuild with a different Seed re-materializes fresh — the /api/regen path).
+// RESPAWN override: fx.RespawnTargets entries replace the content values (config.RespawnTargets) in a
+// merged COPY handed to world.InstallRespawn; unknown species ⇒ typed error; cfg is never mutated.
 func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) error
 ```
 
 > `terrainAt(fx.Terrain)` maps a continuous `Vec2` → the layout cell's terrain id (D11 index read; the
-> grid is navmap-resolution over bounds). Absent `Terrain` ⇒ a constant default terrain (soil) ⇒ no
+> grid is navmap-resolution over bounds). For **flat-top hex** (`docs/hex-grid.md`) it snaps the point to
+> the containing hex, then hex→offset(col,row) to index `Cells`. This sampler is the shared navmap↔climate
+> bridge (signature unchanged), so a hex layout keeps "grids agree at t=0". Absent `Terrain` ⇒ a constant default terrain (soil) ⇒ no
 > climate transitions / no terrain-driven Mine (env-terrain-neutral).
 
 ## Determinism (D12)
@@ -125,9 +156,21 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
   empty world. Existing scenario behavior (agents+objects only) is unchanged.
 - [ ] **Cross-checks** — `Load` rejects a flora/animal `species` absent from `reg.FloraRules`/
   `FaunaRules`, an object `kind` absent from the catalog, a terrain id absent from `reg.TerrainTypes`,
-  or a `Terrain` grid whose `Cols`/`Rows` disagree with `reg.WorldEnv` bounds/`navmap_cell_size`.
+  or a `Terrain` grid whose `Cols`/`Rows` disagree with the navmap flat-top hex offset dims
+  (`navmap.OffsetDimsOf(navCfg)` over `reg.WorldEnv` bounds/`navmap_cell_size`, hex-grid.md).
 - [ ] **Determinism golden** — `Generate(seed)`→`Encode`→`Parse`→`Load`→N ticks is byte-identical to a
   second run from the same seed; the generated fixture digest is stable across processes.
+- [ ] **SimpleTerrain is seeded-deterministic** — same rng seed ⇒ identical cells (twice); dims match
+  `navmap.OffsetDimsOf`; every cell ∈ {soil,river,sand,mountain}; a river cell exists in every row.
+- [ ] **Random-terrain materialization** — `Load` of a `terrain:{random:true}` fixture builds a terrain
+  layout matching the navmap offset dims; two Loads of the SAME fixture agree; the same fixture with a
+  different Seed differs; the caller's Fixture value is unchanged after Load.
+- [ ] **Pos-less placement** — a flora/animal entry without `pos` lands on a `soil` hex inside bounds,
+  deterministically (same seed twice ⇒ same pos); pos-less placement without any terrain layout ⇒ typed
+  error; explicit `pos` entries are honored verbatim.
+- [ ] **Respawn override** — a fixture `respawn_targets:{rabbit:10}` yields a world whose respawn tops
+  rabbit up to 10 (not the content 20); `config.RespawnTargets` is unchanged after Load; an unknown
+  species in the override ⇒ typed error.
 
 ## Out of Scope
 - **The WG1-a algorithm COEFFICIENTS** (noise octaves, sea level, river/erosion thresholds, ore/flora/
