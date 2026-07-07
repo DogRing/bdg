@@ -74,9 +74,12 @@ export function WorldCanvas3D(props: Props) {
       const h = handleRef.current
       if (!h) return
       e.preventDefault()
-      if (e.altKey) h.tiltBy(-e.deltaY * 0.0016)
-      else if (e.shiftKey) h.orbitBy(e.deltaY * 0.004)
-      else h.zoomBy(Math.exp(-e.deltaY * 0.0015))
+      // Browsers remap Alt/Shift + vertical wheel to horizontal scroll (deltaX), so read
+      // whichever axis carries the notch — otherwise Alt-tilt / Shift-rotate silently do nothing.
+      const dv = e.deltaY || e.deltaX
+      if (e.altKey) h.tiltBy(-dv * 0.0016)
+      else if (e.shiftKey) h.orbitBy(dv * 0.004)
+      else h.zoomBy(Math.exp(dv * 0.0015)) // scroll up = zoom in (dolly closer), down = out
     }
     glc.addEventListener('wheel', onWheel, { passive: false })
     return () => glc.removeEventListener('wheel', onWheel)

@@ -12,7 +12,7 @@ import type { Theme } from './types'
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>('light')
-  const [view, setView] = useState<'2d' | '3d'>('2d')
+  const [view, setView] = useState<'2d' | '3d'>('3d')
   const t = theme === 'dark' ? DARK : LIGHT
   const isLight = theme === 'light'
 
