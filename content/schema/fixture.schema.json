@@ -9,6 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "seed": { "type": "integer", "description": "the run seed (D12) — the world-gen RNG seed AND the sim root seed source; same seed ⇒ same world." },
+    "cell_size": { "type": "number", "exclusiveMinimum": 0, "description": "navmap hex circumradius (world units) for THIS fixture — overrides content/world.yaml grids.navmap_cell_size. EXPLICIT-terrain fixtures MUST pin the size their cells/cols/rows were authored at. Absent ⇒ world.yaml default." },
     "bounds": {
       "type": "object",
       "description": "The finite rectangle the env grids span (W1). Overrides content/world.yaml's default bounds. Absent ⇒ use the world.yaml default.",

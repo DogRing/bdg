@@ -1104,12 +1104,6 @@ cadence:
 			wantErr: "scent_cell_size",
 		},
 		{
-			name:    "grid sync",
-			file:    "world.yaml",
-			data:    strings.Replace(validWorldYAML, "navmap_cell_size: 8.0", "navmap_cell_size: 4.0", 1),
-			wantErr: "grid sync",
-		},
-		{
 			name:    "bounds",
 			file:    "world.yaml",
 			data:    strings.Replace(validWorldYAML, "max: [64.0, 64.0]", "max: [0.0, 64.0]", 1),

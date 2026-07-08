@@ -24,6 +24,7 @@ import (
 type Fixture struct {
 	SchemaVersion   int                         `yaml:"schema_version"`
 	Seed            int64                       `yaml:"seed"`
+	CellSize        float64                     `yaml:"cell_size,omitempty"`
 	Bounds          *Bounds                     `yaml:"bounds,omitempty"`
 	Terrain         *TerrainLayout              `yaml:"terrain,omitempty"`
 	Objects         []ObjectPlacement           `yaml:"objects,omitempty"`
@@ -229,6 +230,10 @@ func fixtureConfigs(fx Fixture, cfg *config.LoadOutput) (world.EnvConfig, navmap
 	envCfg := *cfg.WorldEnv
 	navCfg := *cfg.NavCfg
 	climateCfg := *cfg.ClimateCfg
+	if fx.CellSize > 0 {
+		navCfg.CellSize = fx.CellSize
+		envCfg.NavmapCellSize = fx.CellSize
+	}
 	if fx.Bounds != nil {
 		min, max := fx.Bounds.Min.Core(), fx.Bounds.Max.Core()
 		envCfg.Min, envCfg.Max = min, max

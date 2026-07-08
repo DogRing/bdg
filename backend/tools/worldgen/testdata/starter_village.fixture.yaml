@@ -24,6 +24,7 @@
 
 schema_version: 1
 seed: 20260628
+cell_size: 12.0   # explicit terrain baked at cell 12 (192/12 ⇒ 12×11); pin so the world.yaml default (5) does not resize it
 
 # ── Bounds (W1) — overrides content/world.yaml's 512² default for this small starter run ──
 bounds:

@@ -47,6 +47,8 @@ Concept & rationale: `docs/design.md §5` (동적 지형). SPECs now exist:
 > OPEN 으로 열거할 대상이다. **체감온도 자체는 fauna 소관**(fauna F40) — 여기 climate 의 책임은 **operand 노출 + 단위 + 바람
 > 생성**이지 apparent_temp 계산이 아니다. 교차참조는 fauna §1.3 F40/F33/F43/F44, **중복 금지**.
 > **operand 명칭(두 문서 공유, 고정):** `temperature` · `moisture` · `wind.dir` · `wind.mag` · (fauna 측) `apparent_temp`.
+>
+> **바람의 지역 차폐(벽/건물/동굴 = shelter)는 climate 밖.** climate는 world-uniform `Wind()`만 생성하고, 그 값을 셀별 노출도 ε로 감쇠(local wind = global × ε)하는 것은 별도 서브시스템 `docs/shelter.md`(Tier-2) 소관 — climate는 건드리지 않는다(shelter.md §0).
 
 ### Resolutions — 사람 확정 (2026-06-26)
 > CA1·CA2·CA3 + worldtime 캘린더 RESOLVED. 아래 옵션 상세는 근거 기록(재논쟁 금지).

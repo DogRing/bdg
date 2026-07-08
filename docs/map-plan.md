@@ -141,6 +141,8 @@ intent/completion/cap machinery stays.
   (fixtures for scenario tests, world-gen for live).
 - **Terrain in the render snapshot** — terrain is now **dynamic** (moisture/transition, `design.md §5` + `docs/climate.md`): stream as periodic full + sparse deltas like wear, not static-once. Open: full-vs-delta cadence.
 - **Toll / deliberate paving needs an economy** — "pave → charge for use → block for profit" requires **money · ownership · private-property** primitives that **don't exist yet** (`Inventory` does; money/ownership don't). New design thread; parks alongside Degree 2 above.
+- **Caves + wind-shadow of walls/buildings** — a place being *sheltered from world forcing* is its own cross-cutting subsystem now tracked in **`docs/shelter.md`** (Tier-2): caves = interior-state, wall/building wind-shielding = per-cell exposure ε. Not decided here.
+- **Terrain/nav grid resolution vs perception radius** — `config/world_content.go:110` currently hard-errors unless `navmap_cell_size == spatial_hash_cell` (a pre-hex-migration coupling). Decoupling them (finer terrain hexes without changing perception) is enumerated as `docs/shelter.md` Q-M1.
 
 ## 7. Build order (slots into `docs/architecture.md §5`)
 `navmap` joins stage 2 (with spatial), `pathfind` stage 3. Then the integration deltas land in

@@ -1,8 +1,8 @@
 # rabbit_meadow.fixture.yaml — a MINIMAL random test world: frontend rendering check +
 # fauna movement/respawn + flora propagation observation with nothing else in the way.
 #
-# 500×500 world, terrain{random:true}: the loader materializes a 29×26 flat-top hex
-# offset GenerateTerrain layout (@ CellSize 12, navmap.OffsetDimsOf) from the run seed —
+# 500×500 world, terrain{random:true}: the loader materializes a 68×59 flat-top hex
+# offset GenerateTerrain layout (@ cell_size 5, navmap.OffsetDimsOf) from the run seed —
 # elevation-noise + flow-accumulation hydrology (sea/lakes/dendritic rivers/mountains,
 # WG1-a terrain stages) with per-cell elevation (3D hex height) and a water-proximity
 # initial climate moisture seed. Same seed ⇒ same map (POST /api/restart), new seed ⇒
@@ -14,6 +14,7 @@
 
 schema_version: 1
 seed: 20260707
+cell_size: 5.0   # finer terrain/path/render hexes (docs/shelter.md Q-M1); 500/5 ⇒ 68×59 hexes. Perception (spatial_hash_cell=12) unchanged.
 
 bounds:
   min: [0.0, 0.0]

@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *actions.Registry, bal *Balance) (worldContent, error) {
+func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *actions.Registry) (worldContent, error) {
 	var out worldContent
 
 	var terrain terrainDoc
@@ -36,7 +36,7 @@ func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *a
 		if err := yaml.Unmarshal(raw["world.yaml"], &wd); err != nil {
 			return out, fmt.Errorf("config: world parse: %w", err)
 		}
-		env, nav, err := buildWorldEnv(wd, bal)
+		env, nav, err := buildWorldEnv(wd)
 		if err != nil {
 			return out, err
 		}
@@ -98,7 +98,7 @@ func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *a
 	return out, nil
 }
 
-func buildWorldEnv(wd worldDoc, bal *Balance) (*world.EnvConfig, *navmap.Config, error) {
+func buildWorldEnv(wd worldDoc) (*world.EnvConfig, *navmap.Config, error) {
 	if len(wd.Bounds.Min) != 2 || len(wd.Bounds.Max) != 2 {
 		return nil, nil, fmt.Errorf("config: world bounds min/max must have two values")
 	}
@@ -107,9 +107,9 @@ func buildWorldEnv(wd worldDoc, bal *Balance) (*world.EnvConfig, *navmap.Config,
 	if max.X <= min.X || max.Y <= min.Y {
 		return nil, nil, fmt.Errorf("config: world bounds invalid: max must exceed min on both axes")
 	}
-	if wd.Grids.NavmapCellSize != bal.World.SpatialHashCell {
-		return nil, nil, fmt.Errorf("config: grid sync: navmap_cell_size %.6g != balance world.spatial_hash_cell %.6g", wd.Grids.NavmapCellSize, bal.World.SpatialHashCell)
-	}
+	// navmap_cell_size (hex terrain/path/render fidelity) is DECOUPLED from spatial_hash_cell
+	// (square perception grid) — post-hex-migration they are independent indices over the same
+	// continuous space (docs/hex-grid.md, docs/shelter.md Q-M1). No sync constraint between them.
 	floor := wd.Motion.MaxSpeed * float64(wd.Cadence.ScentSpread)
 	if wd.Grids.ScentCellSize < floor {
 		return nil, nil, fmt.Errorf("config: scent_cell_size %.6g < max_speed %.6g * scent_spread %d", wd.Grids.ScentCellSize, wd.Motion.MaxSpeed, wd.Cadence.ScentSpread)

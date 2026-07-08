@@ -393,7 +393,7 @@ func Load(contentDir string) (*LoadOutput, error) {
 		return nil, fmt.Errorf("config: balance parse: %w", err)
 	}
 
-	worldRegs, err := buildWorldContent(raw, statReg, actReg, &bal)
+	worldRegs, err := buildWorldContent(raw, statReg, actReg)
 	if err != nil {
 		return nil, err
 	}
