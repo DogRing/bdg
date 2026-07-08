@@ -58,6 +58,15 @@ is `OPEN` (CLAUDE.md gate).
 > - **Q-M1 = (a) DECOUPLE** — drop the `navmap_cell_size == spatial_hash_cell` config check; keep
 >   `spatial_hash_cell = 12` (perception); set **`navmap_cell_size = 5`** ⇒ 500×500 world = **68×59 hexes**.
 >   *(Actioned outside the shelter build — see §5.)*
+> - **SH1 SPEC-design (2026-07-08, spec-architect review of the drafts):**
+>   - **(i) scent consumption = per-position only.** Exposure attenuates `fauna.EnvSample.Wind` at the
+>     animal position; `scent.Read(pos,r,wind)` inherits it via fauna. `scent.Spread` (bulk diffusion,
+>     single-wind API) stays on world-uniform wind — no scent API change (plan §0/§3). Per-cell scent
+>     *diffusion* (a wall blocking scent drift) is a later increment, not SH1.
+>   - **(ii) shadow ε formula** pinned in `env/exposure/SPEC.md`: linear per-cell falloff, **multiplicative**
+>     blocker combination (order-independent ⇒ the D12 sort is belt-and-suspenders, not load-bearing).
+>   - **(iii) SH1 builds the exposure leaf + wind injection only.** SH2 (portals/interiors/enter-exit) stays
+>     design-ahead in `world/SPEC-world-shelter.md`, not this build; SH1 calls `Build` with `interiors=nil`.
 
 ### Cave (feature 2)
 - **Q-C1 — Cave interior model.**
@@ -171,7 +180,9 @@ cave-entrance decal on rock hexes, optional wind-shadow debug overlay, "inside" 
 ## 3. Per-module integration deltas (beyond the new `exposure` leaf)
 - **climate** — unchanged; still emits world-uniform `Wind()` (§0).
 - **navmap** — exposes blocker footprints (cells covered by a `blocks_wind` object) for the exposure leaf to
-  read; no wind dependency added to navmap itself.
+  read; no wind dependency added to navmap itself. **SH1 delta:** promote the private `inBounds` to a public
+  `InBounds(Cell) bool` (the world→exposure `Topology` adapter needs it; `Neighbors`/`CellCenter`/`CellOf`
+  are already public). No cell enumerator needed (exposure field is sparse).
 - **world** — owns exposure recompute cadence (Q-W4) + the `global×ε` multiply + injection into scent/fauna;
   owns cave enter/exit state transitions and (if Q-C3=b) occupancy accounting.
 - **fauna** — reads local `wind.dir/wind.mag` (already) now attenuated; SH3 adds sheltered temperature to
