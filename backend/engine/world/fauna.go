@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dogring/bdg/engine/env/climate"
 	"github.com/dogring/bdg/engine/env/flora"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
@@ -73,17 +74,17 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 
 func (w *World) buildFaunaEnvSamples() map[core.ObjectID]fauna.EnvSample {
 	env := make(map[core.ObjectID]fauna.EnvSample, len(w.animalIDs))
-	var wind scent.Wind
+	var global climate.Wind
 	if w.climateState != nil {
-		cw := w.climateState.Wind()
-		wind = scent.Wind{Dir: cw.Dir, Mag: cw.Mag}
+		global = w.climateState.Wind()
 	}
 	for _, id := range w.animalIDs {
 		a := w.animals[id]
 		if a == nil {
 			continue
 		}
-		sample := fauna.EnvSample{Wind: wind}
+		// SH1: per-position local wind = global × ε(cell). Shelter-OFF ⇒ global unchanged.
+		sample := fauna.EnvSample{Wind: w.localWindAt(a.Pos, global)}
 		if w.climateState != nil {
 			cell := w.climateState.CellAt(a.Pos)
 			sample.Temperature = cell.Temperature

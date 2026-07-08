@@ -80,6 +80,11 @@ func (m *NavMap) BaseCost(c Cell) float64
 // no bound-check (D11 — an index→coordinate read, never a snap of an agent position).
 func (m *NavMap) CellCenter(c Cell) core.Vec2
 
+// InBounds reports whether cell c's centre falls within the configured world bounds
+// ([MinX,MaxX)×[MinY,MaxY)). Pure read; used by callers that walk the hex graph outside navmap
+// (e.g. the world→exposure Topology adapter, docs/shelter.md SH1). Index read, no agent snap (D11).
+func (m *NavMap) InBounds(c Cell) bool
+
 // MinCostFactor returns a guaranteed lower bound on a cell's effective cost per unit geometric length
 // (= cfg.WearCostMin; valid because BaseCost ≥ 1 and wear-multiplier ∈ [WearCostMin,1]). pathfind uses
 // it for an admissible A* heuristic + EstimateCost (so EstimateCost ≤ true Path cost). Pure read.

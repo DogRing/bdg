@@ -118,10 +118,10 @@ func New(cfg Config, terrainAt func(core.Vec2) TerrainID, types map[TerrainID]Te
 
 // ── Internal helpers ───────────────────────────────────────────────────────────
 
-// inBounds reports whether cell c's CENTRE falls within the configured world bounds (a hex is
+// InBounds reports whether cell c's CENTRE falls within the configured world bounds (a hex is
 // in-bounds iff its centre is inside [MinX,MaxX)×[MinY,MaxY) — flat-top hexes near the edge whose
 // centre is outside are out of bounds, hex-grid.md Q4).
-func (m *NavMap) inBounds(c Cell) bool {
+func (m *NavMap) InBounds(c Cell) bool {
 	ctr := m.cellCenter(c)
 	return ctr.X >= m.cfg.MinX && ctr.X < m.cfg.MaxX &&
 		ctr.Y >= m.cfg.MinY && ctr.Y < m.cfg.MaxY
@@ -210,7 +210,7 @@ func (m *NavMap) Neighbors(c Cell) []Cell {
 // Passable reports whether cell c can be entered.
 // Returns false for: out-of-bounds, footprint-blocked (wall stamp), or terrain-impassable cells.
 func (m *NavMap) Passable(c Cell) bool {
-	if !m.inBounds(c) {
+	if !m.InBounds(c) {
 		return false
 	}
 	if _, blocked := m.footprint[c]; blocked {
@@ -222,7 +222,7 @@ func (m *NavMap) Passable(c Cell) bool {
 // TerrainAt returns the current TerrainID for cell c.
 // Returns "" for out-of-bounds cells (terrain undefined outside world bounds).
 func (m *NavMap) TerrainAt(c Cell) TerrainID {
-	if !m.inBounds(c) {
+	if !m.InBounds(c) {
 		return ""
 	}
 	return m.terrainIDAt(c)
@@ -251,7 +251,7 @@ func (m *NavMap) StepCost(from, to Cell) float64 {
 // RequiredTags returns the capability/action tags needed to enter cell c.
 // Returns nil for out-of-bounds cells or terrain with no requirements.
 func (m *NavMap) RequiredTags(c Cell) []core.Tag {
-	if !m.inBounds(c) {
+	if !m.InBounds(c) {
 		return nil
 	}
 	return append([]core.Tag(nil), m.types[m.terrainIDAt(c)].RequiredTags...)
@@ -270,7 +270,7 @@ func (m *NavMap) FootprintBlocked(c Cell) bool {
 // Ignores wear and footprint. Returns 0 for out-of-bounds cells (undefined).
 // Used by the fauna TerrainSampler to compute traversal cost independent of passability.
 func (m *NavMap) BaseCost(c Cell) float64 {
-	if !m.inBounds(c) {
+	if !m.InBounds(c) {
 		return minCostFallback
 	}
 	return m.types[m.terrainIDAt(c)].BaseCost

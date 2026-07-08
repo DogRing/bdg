@@ -12,6 +12,7 @@ import (
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/env/climate"
 	"github.com/dogring/bdg/engine/env/decay"
+	"github.com/dogring/bdg/engine/env/exposure"
 	"github.com/dogring/bdg/engine/env/flora"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
@@ -154,6 +155,11 @@ type World struct {
 	scentEmitters map[core.Tag][]core.Tag
 	coverKinds    map[core.Tag]bool
 	nextAnimalSeq int64
+
+	// SH1 shelter/exposure (docs/shelter.md): nil cache ⇒ OFF (ε ≡ 1, local wind == global wind,
+	// byte-identical). Installed via InstallShelter; blockers are static per run in SH1.
+	exposureCache    *exposure.Cache
+	exposureBlockers []exposure.Blocker
 
 	// pendingFloraFrame is the current tick's sparse flora spawn/grow render delta
 	// (WI-P4 WorldFrame.flora_delta) — built in runFloraEnv, cleared at the top of
