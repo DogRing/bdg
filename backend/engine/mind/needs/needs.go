@@ -18,6 +18,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	minNeedLevel = 0.0
+	maxNeedLevel = 1.0
+)
+
 // ── NeedID alias ──────────────────────────────────────────────────────────────
 
 // NeedID names a need / value Dimension (glossary §"Values & goals" Dimension:
@@ -146,7 +151,12 @@ func Load(needsDoc, balanceDoc io.Reader) (*Registry, error) {
 	// 4. Check that every balance needs: key names a known consumable dimension
 	// (would have been caught above as "no matching entry", but a balance key
 	// referencing an entirely unknown dimension also needs an error).
+	balanceIDs := make([]string, 0, len(balanceNeeds))
 	for balID := range balanceNeeds {
+		balanceIDs = append(balanceIDs, balID)
+	}
+	sort.Strings(balanceIDs)
+	for _, balID := range balanceIDs {
 		if _, exists := defs[NeedID(balID)]; !exists {
 			return nil, fmt.Errorf("needs.Load: balance.yaml needs: key %q does not name a dimension defined in needs.yaml", balID)
 		}
@@ -225,11 +235,11 @@ func (d Def) Level(level0 float64, minutes core.GameMinutes) float64 {
 	}
 	decay := d.Rate * float64(minutes)
 	v := level0 - decay
-	if v < 0 {
-		return 0
+	if v < minNeedLevel {
+		return minNeedLevel
 	}
-	if v > 1 {
-		return 1
+	if v > maxNeedLevel {
+		return maxNeedLevel
 	}
 	return v
 }
@@ -248,18 +258,18 @@ func (d Def) Demand(minutes core.GameMinutes) float64 {
 // provisioning is needed (forward-sim); it does not insert the subgoal — that is
 // the planner.
 func (d Def) BreachAt(level0, setpoint float64, horizon core.GameMinutes) (at core.GameMinutes, ok bool) {
-	if d.Kind == Conditional || d.Rate == 0 {
+	if d.Kind == Conditional || d.Rate == minNeedLevel {
 		return 0, false
 	}
 	if level0 <= setpoint {
 		// Already below setpoint — breach at time 0.
-		return 0, true
+		return core.GameMinutes(0), true
 	}
 	// level0 - Rate * t < setpoint  =>  t > (level0 - setpoint) / Rate
 	breachMinutes := (level0 - setpoint) / d.Rate
 	bm := int64(math.Ceil(breachMinutes))
-	if bm < 0 {
-		bm = 0
+	if bm < int64(0) {
+		bm = int64(0)
 	}
 	if core.GameMinutes(bm) > horizon {
 		return 0, false
@@ -278,8 +288,8 @@ func (d Def) Salience(level, setpoint float64) float64 {
 		raw = 1 - level
 	}
 	s := raw * d.Gain
-	if s < 0 {
-		return 0
+	if s < minNeedLevel {
+		return minNeedLevel
 	}
 	return s
 }
@@ -305,14 +315,14 @@ func (d Def) UpdateConditionalNeeds(cur float64, threats []core.AgentID, perThre
 	}
 	if len(threats) == 0 {
 		newVal := cur - decayPerTick
-		if newVal < 0 {
-			return 0
+		if newVal < minNeedLevel {
+			return minNeedLevel
 		}
 		return newVal
 	}
 	newVal := cur + perThreatGain*float64(len(threats))
-	if newVal > 1 {
-		return 1
+	if newVal > maxNeedLevel {
+		return maxNeedLevel
 	}
 	return newVal
 }
@@ -491,8 +501,15 @@ func parseBalanceNeeds(r io.Reader) (map[string]balanceEntry, error) {
 		return nil, fmt.Errorf("needs.Load: balance.yaml needs: block is empty or missing; at least one consumable need entry required")
 	}
 
+	keys := make([]string, 0, len(doc.Needs))
+	for key := range doc.Needs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
 	result := make(map[string]balanceEntry, len(doc.Needs))
-	for key, bn := range doc.Needs {
+	for _, key := range keys {
+		bn := doc.Needs[key]
 		if bn.DecayPerTick <= 0 {
 			return nil, fmt.Errorf("needs.Load: balance.yaml needs:%s: decay_per_tick must be > 0, got %v", key, bn.DecayPerTick)
 		}

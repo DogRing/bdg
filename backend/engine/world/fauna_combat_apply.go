@@ -10,7 +10,7 @@ import (
 )
 
 func (w *World) commitAnimalVital(a *fauna.Animal, intent fauna.Intent) {
-	if intent.Vital == 0 && intent.VitalCap == 0 && a.Vital > 0 {
+	if intent.Vital == zeroScalar && intent.VitalCap == zeroScalar && a.Vital > zeroScalar {
 		return
 	}
 	a.Vital = clamp01(intent.Vital)
@@ -40,18 +40,18 @@ func (w *World) applyAnimalAttack(attacker *fauna.Animal, intent fauna.Intent) {
 	target.HiddenUntil = 0
 	target.NextExchangeTick = intent.NextExchangeTick
 	target.EngageCooldownUntil = intent.EngageCooldownUntil
-	if target.Vital <= 0 {
+	if target.Vital <= zeroScalar {
 		// The killer eats its fresh kill immediately: the carcass Feed action rarely fires in time because
 		// the predator resumes hunting the next prey before the carrion scent registers, so a successful
 		// KILL directly nourishes the attacker (hunger ↓ by its feed §6). The carcass still forms for
 		// scavengers (FC8/FC9). Data-driven (D10 via feed §6); no-op if the attacker has no hunger drive.
 		if attacker.Drives != nil {
-			if _, ok := attacker.Drives["hunger"]; ok {
+			if _, ok := attacker.Drives[driveHunger]; ok {
 				gain := w.faunaRules.Feed(attacker.Species, animalFeedContext{animal: attacker})
-				attacker.Drives["hunger"] = clamp01(attacker.Drives["hunger"] - gain)
+				attacker.Drives[driveHunger] = clamp01(attacker.Drives[driveHunger] - gain)
 			}
 		}
-		w.killAnimal(target.ID, "predation")
+		w.killAnimal(target.ID, causePredation)
 	}
 }
 
@@ -64,17 +64,17 @@ func (w *World) applyAnimalFeed(predator *fauna.Animal, intent fauna.Intent) {
 		return
 	}
 	supply := w.carcassSupply(id)
-	if supply <= 0 {
+	if supply <= zeroScalar {
 		return
 	}
 	mult := w.faunaRules.Feed(predator.Species, animalFeedContext{animal: predator})
-	if mult <= 0 {
+	if mult <= zeroScalar {
 		return
 	}
 	if predator.Drives == nil {
 		predator.Drives = make(map[fauna.DriveID]float64)
 	}
-	predator.Drives["hunger"] = clamp01(predator.Drives["hunger"] - supply*mult)
+	predator.Drives[driveHunger] = clamp01(predator.Drives[driveHunger] - supply*mult)
 	w.consumeCarcass(id)
 }
 
@@ -87,13 +87,13 @@ func (w *World) applyAnimalGraze(a *fauna.Animal) {
 		return
 	}
 	mult := w.faunaRules.Graze(a.Species, animalFeedContext{animal: a})
-	if mult <= 0 {
+	if mult <= zeroScalar {
 		return
 	}
 	if a.Drives == nil {
 		a.Drives = make(map[fauna.DriveID]float64)
 	}
-	a.Drives["hunger"] = clamp01(a.Drives["hunger"] - mult)
+	a.Drives[driveHunger] = clamp01(a.Drives[driveHunger] - mult)
 }
 
 func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
@@ -113,7 +113,7 @@ func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
 		return
 	}
 	chance := w.faunaRules.HideChance(a.Species, animalFeedContext{animal: a})
-	if chance <= 0 {
+	if chance <= zeroScalar {
 		return
 	}
 	if hideRNG.Float64() < chance {
@@ -158,30 +158,30 @@ func (w *World) nearCoverFlora(a *fauna.Animal) bool {
 // the species' cover_cost. Pure/deterministic (D12).
 func (w *World) coverResistance(species fauna.SpeciesID, p core.Vec2) float64 {
 	if w.faunaRules == nil {
-		return 1
+		return unitScalar
 	}
 	cc := w.faunaRules.CoverCost(species)
-	if cc <= 0 {
-		return 1
+	if cc <= zeroScalar {
+		return unitScalar
 	}
-	return 1 + w.coverDensity(p)*cc
+	return unitScalar + w.coverDensity(p)*cc
 }
 
 func (w *World) coverDensity(p core.Vec2) float64 {
 	if w.floraState == nil {
-		return 0
+		return zeroScalar
 	}
-	density := 0.0
+	density := zeroScalar
 	for _, pl := range w.floraState.Plants() {
 		if !w.kindIsCover(core.Tag(pl.Species)) {
 			continue
 		}
 		radius := w.envCfg.FaunaCombat.CoverRadiusFactor * pl.Width
-		if radius <= 0 {
+		if radius <= zeroScalar {
 			continue
 		}
 		if d := p.Distance(pl.Pos); d < radius {
-			density += 1 - d/radius
+			density += unitScalar - d/radius
 		}
 	}
 	return density
@@ -189,7 +189,7 @@ func (w *World) coverDensity(p core.Vec2) float64 {
 
 func (w *World) kindEmitsFood(kind core.Tag) bool {
 	for _, tag := range w.scentEmitters[kind] {
-		if tag == "scent:food" {
+		if tag == tagScentFood {
 			return true
 		}
 	}
@@ -218,7 +218,7 @@ func (w *World) resolveFeedCarcass(predator *fauna.Animal, preferred core.Object
 
 func (w *World) isCarcassObject(id core.ObjectID) bool {
 	obj, ok := w.objects[id]
-	return ok && obj.Kind == "carcass"
+	return ok && obj.Kind == kindCarcass
 }
 
 func (w *World) carcassSupply(id core.ObjectID) float64 {
@@ -228,7 +228,7 @@ func (w *World) carcassSupply(id core.ObjectID) float64 {
 				continue
 			}
 			state := w.decayRules.StateAt(lot.Kind, lot.DecayAge)
-			if supply := sumSupply(w.decayRules.SupplyAt(lot.Kind, state)); supply > 0 {
+			if supply := sumSupply(w.decayRules.SupplyAt(lot.Kind, state)); supply > zeroScalar {
 				return supply * float64(lot.Qty)
 			}
 			break
@@ -260,7 +260,7 @@ func (w *World) consumeCarcass(id core.ObjectID) {
 
 func sumSupply(supply map[core.Dimension]float64) float64 {
 	if len(supply) == 0 {
-		return 0
+		return zeroScalar
 	}
 	dims := make([]core.Dimension, 0, len(supply))
 	for dim := range supply {
@@ -305,8 +305,8 @@ func (w *World) killAnimal(id core.ObjectID, cause string) {
 
 func (w *World) spawnCarcass(pos core.Vec2) core.ObjectID {
 	id := w.allocObjectID()
-	w.PlaceObject(id, "carcass", pos, nil)
-	lot := decay.Lot{ID: id, Kind: "carcass", Qty: 1}
+	w.PlaceObject(id, kindCarcass, pos, nil)
+	lot := decay.Lot{ID: id, Kind: kindCarcass, Qty: 1}
 	if w.decayState == nil {
 		w.decayState = decay.New([]decay.Lot{lot})
 	} else {
@@ -322,7 +322,7 @@ type animalFeedContext struct {
 
 func (c animalFeedContext) Stat(id core.StatID) float64 {
 	if c.animal == nil {
-		return 0
+		return zeroScalar
 	}
 	return c.animal.Stats[id]
 }

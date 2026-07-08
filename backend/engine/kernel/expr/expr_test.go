@@ -2,6 +2,8 @@ package expr_test
 
 import (
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"math"
 	"os"
 	"strings"
@@ -645,28 +647,36 @@ func TestNoForbiddenImports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.ReadDir: %v", err)
 	}
-	forbidden := []string{
-		`"os"`, `"os/`,
-		`"net`,
-		`"time"`,
-		`math/rand`, `crypto/rand`,
-		`"io/fs"`,
-		`engine/kernel/rng`,
-		`engine/mind/stats`,
-		`engine/mind/gates`,
+	forbiddenExact := map[string]struct{}{
+		"os":           {},
+		"time":         {},
+		"math/rand":    {},
+		"math/rand/v2": {},
+		"crypto/rand":  {},
+		"io/fs":        {},
+		"github.com/dogring/bdg/engine/kernel/rng": {},
+		"github.com/dogring/bdg/engine/mind/stats": {},
+		"github.com/dogring/bdg/engine/mind/gates": {},
 	}
+	forbiddenPrefixes := []string{"os/", "net"}
+	fset := token.NewFileSet()
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(e.Name())
+		file, err := parser.ParseFile(fset, e.Name(), nil, parser.ImportsOnly)
 		if err != nil {
-			t.Fatalf("read %s: %v", e.Name(), err)
+			t.Fatalf("parse imports %s: %v", e.Name(), err)
 		}
-		content := string(src)
-		for _, f := range forbidden {
-			if strings.Contains(content, f) {
-				t.Errorf("%s: contains forbidden import/reference %q", e.Name(), f)
+		for _, imp := range file.Imports {
+			path := strings.Trim(imp.Path.Value, `"`)
+			if _, bad := forbiddenExact[path]; bad {
+				t.Errorf("%s: forbidden import %q", e.Name(), path)
+			}
+			for _, prefix := range forbiddenPrefixes {
+				if strings.HasPrefix(path, prefix) {
+					t.Errorf("%s: forbidden import %q", e.Name(), path)
+				}
 			}
 		}
 	}

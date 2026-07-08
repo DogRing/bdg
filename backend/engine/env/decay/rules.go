@@ -5,6 +5,15 @@ import (
 	"github.com/dogring/bdg/engine/kernel/expr"
 )
 
+const (
+	neutralAccel               = 1.0
+	minDecayAccel              = 0.0
+	unknownBaseRate            = 0.0
+	initialStateIndex          = 0
+	attrTemperature   core.Tag = "temperature"
+	attrMoisture      core.Tag = "moisture"
+)
+
 // ── decayContext: expr.Context adapter ───────────────────────────────────────
 
 // decayContext adapts EnvInput to the expr.Context interface for §6 accel evaluation (Dm3(a)).
@@ -25,9 +34,9 @@ func (c decayContext) Stat(_ core.StatID) float64 {
 
 func (c decayContext) Attr(name core.Tag) (float64, bool) {
 	switch name {
-	case "temperature":
+	case attrTemperature:
 		return c.in.Temperature, true
-	case "moisture":
+	case attrMoisture:
 		return c.in.Moisture, true
 	}
 	return 0, false
@@ -79,9 +88,31 @@ type Rules struct {
 func NewRules(kinds map[KindID]KindRule) *Rules {
 	m := make(map[KindID]KindRule, len(kinds))
 	for k, v := range kinds {
+		v.States = cloneStateRules(v.States)
 		m[k] = v
 	}
 	return &Rules{byKind: m}
+}
+
+func cloneStateRules(states []StateRule) []StateRule {
+	out := make([]StateRule, len(states))
+	for i, state := range states {
+		state.Supply = cloneSupply(state.Supply)
+		state.Transform = append([]TransformRule(nil), state.Transform...)
+		out[i] = state
+	}
+	return out
+}
+
+func cloneSupply(supply map[core.Dimension]float64) map[core.Dimension]float64 {
+	if supply == nil {
+		return nil
+	}
+	out := make(map[core.Dimension]float64, len(supply))
+	for k, v := range supply {
+		out[k] = v
+	}
+	return out
 }
 
 // ── Rules accessors ───────────────────────────────────────────────────────────
@@ -94,11 +125,11 @@ func NewRules(kinds map[KindID]KindRule) *Rules {
 // Returns 0 for an unknown kind (decay-off; no species record means no transitions).
 func (r *Rules) StateAt(kind KindID, decayAge float64) int {
 	if r == nil {
-		return 0
+		return initialStateIndex
 	}
 	kr, ok := r.byKind[kind]
 	if !ok {
-		return 0
+		return initialStateIndex
 	}
 	return stateFromKind(kr, decayAge)
 }
@@ -118,7 +149,7 @@ func (r *Rules) SupplyAt(kind KindID, state int) map[core.Dimension]float64 {
 	if state < 0 || state >= len(kr.States) {
 		return nil
 	}
-	return kr.States[state].Supply
+	return cloneSupply(kr.States[state].Supply)
 }
 
 // BaseRate returns the kind's data base decay rate (Q2), in effective-decay-time units per tick
@@ -126,11 +157,11 @@ func (r *Rules) SupplyAt(kind KindID, state int) map[core.Dimension]float64 {
 // Returns 0 for an unknown kind (decay-off; no advancement without a rule).
 func (r *Rules) BaseRate(kind KindID) float64 {
 	if r == nil {
-		return 0
+		return unknownBaseRate
 	}
 	kr, ok := r.byKind[kind]
 	if !ok {
-		return 0
+		return unknownBaseRate
 	}
 	return kr.BaseRate
 }
@@ -142,19 +173,19 @@ func (r *Rules) BaseRate(kind KindID) float64 {
 // clamped ≥ 0. Returns 1 for an unknown kind or nil Accel program (neutral multiplier).
 func (r *Rules) Accel(kind KindID, in EnvInput) float64 {
 	if r == nil {
-		return 1
+		return neutralAccel
 	}
 	kr, ok := r.byKind[kind]
 	if !ok {
-		return 1
+		return neutralAccel
 	}
 	if kr.Accel == nil {
-		return 1 // nil program ⇒ constant 1 (per KindRule doc)
+		return neutralAccel // nil program ⇒ constant 1 (per KindRule doc)
 	}
 	ctx := decayContext{in: in}
 	v := kr.Accel.EvalNumber(ctx)
-	if v < 0 {
-		v = 0 // domain clamp ≥ 0 (matches climate/flora clamp contract)
+	if v < minDecayAccel {
+		v = minDecayAccel // domain clamp ≥ 0 (matches climate/flora clamp contract)
 	}
 	return v
 }

@@ -42,9 +42,9 @@ type Config struct {
 	RunID   core.RunID // which sim run to tail/query
 	GodMode bool       // startup-only: enables real_stats on /api/agents/{id}?god=true
 	Restart func()     // POST /api/restart signal sink (non-blocking; the sim writer rebuilds
-	                   // the world on its own tick goroutine). nil ⇒ the route responds 503.
+	// the world on its own tick goroutine). nil ⇒ the route responds 503.
 	Regen func(seed int64) // POST /api/regen signal sink (non-blocking; new-seed rebuild — seed 0
-	                   // ⇒ the writer draws one). nil (e.g. scenario mode) ⇒ the route responds 503.
+	// ⇒ the writer draws one). nil (e.g. scenario mode) ⇒ the route responds 503.
 }
 
 // RedisReader is the minimal Redis surface api needs for the read path.

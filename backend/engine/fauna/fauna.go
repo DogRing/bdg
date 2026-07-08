@@ -178,21 +178,21 @@ type Intent struct {
 func AttrOperands() []core.Tag {
 	// Fixed list, pre-sorted alphabetically (D12).
 	fixed := []core.Tag{
-		"apparent_temp",
-		"dist.food",
-		"dist.predator",
-		"dist.prey",
-		"is_current",
-		"moisture",
-		"scent.carrion",
-		"scent.food",
-		"scent.predator",
-		"scent.prey",
-		"sight.predator",
-		"target.threat",
-		"temperature",
-		"wind.dir",
-		"wind.mag",
+		attrApparentTemp,
+		attrDistFood,
+		attrDistPredator,
+		attrDistPrey,
+		attrIsCurrent,
+		attrMoisture,
+		attrScentCarrion,
+		attrScentFood,
+		attrScentPredator,
+		attrScentPrey,
+		attrSightPredator,
+		attrTargetThreat,
+		attrTemperature,
+		attrWindDir,
+		attrWindMag,
 	}
 	out := make([]core.Tag, len(fixed))
 	copy(out, fixed)

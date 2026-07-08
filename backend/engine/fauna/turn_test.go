@@ -78,7 +78,7 @@ func TestSteerFullTurnRateClampAndOffNeutral(t *testing.T) {
 		}
 		ctx := &animalContext{animal: &a}
 		return steerFull(
-			a, EnvSample{}, "Flee", scent.Reading{}, &core.Vec2{X: 1, Y: 0}, 1,
+			a, EnvSample{}, "Flee", scent.Reading{}, &core.Vec2{X: 1, Y: 0}, nil, 1,
 			snap, rules, ctx, 0, 5, 5,
 		)
 	}

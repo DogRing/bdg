@@ -8,6 +8,24 @@ import (
 	"github.com/dogring/bdg/engine/kernel/rng"
 )
 
+const (
+	probabilityMin                         = 0.0
+	probabilityMax                         = 1.0
+	nonNegativeFloor                       = 0.0
+	lengthScaleBase                        = 1.0
+	fullCircleRadians                      = 2 * math.Pi
+	densityWeightNumerator                 = 1.0
+	densityWeightBaseNeighbors             = 1
+	seedlingLength                         = 0.0
+	seedlingWidth                          = 0.0
+	freshDeathStreak                       = 0
+	statDexterity              core.StatID = "Dexterity"
+	attrMoisture               core.Tag    = "moisture"
+	attrTemperature            core.Tag    = "temperature"
+	attrWidth                  core.Tag    = "width"
+	attrLength                 core.Tag    = "length"
+)
+
 // ── floraContext: expr.Context adapter ────────────────────────────────────────
 
 // floraContext adapts SiteInput + Plant to the expr.Context interface for §6 rule evaluation.
@@ -29,7 +47,7 @@ type floraContext struct {
 }
 
 func (c floraContext) Stat(id core.StatID) float64 {
-	if id == "Dexterity" {
+	if id == statDexterity {
 		return c.dexterity
 	}
 	return 0
@@ -37,13 +55,13 @@ func (c floraContext) Stat(id core.StatID) float64 {
 
 func (c floraContext) Attr(name core.Tag) (float64, bool) {
 	switch name {
-	case "moisture":
+	case attrMoisture:
 		return c.site.Moisture, true
-	case "temperature":
+	case attrTemperature:
 		return c.site.Temperature, true
-	case "width":
+	case attrWidth:
 		return c.plant.Width, true
-	case "length":
+	case attrLength:
 		return c.plant.Length, true
 	}
 	if v, ok := c.site.TerrainAttrs[name]; ok {
@@ -113,6 +131,8 @@ type Rules struct {
 func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 	m := make(map[SpeciesID]SpeciesRule, len(species))
 	for k, v := range species {
+		v.Stages = append([]float64(nil), v.Stages...)
+		v.Yields = append([]YieldRule(nil), v.Yields...)
 		m[k] = v
 	}
 	return &Rules{bySpecies: m}
@@ -134,11 +154,11 @@ func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64 {
 	}
 	ctx := floraContext{site: in}
 	v := evalNum(sr.Suitability, ctx)
-	if v < 0 {
-		return 0
+	if v < probabilityMin {
+		return probabilityMin
 	}
-	if v > 1 {
-		return 1
+	if v > probabilityMax {
+		return probabilityMax
 	}
 	return v
 }
@@ -232,14 +252,14 @@ func (r *Rules) Yield(sp SpeciesID, length, dexterity float64, rnd *rng.RNG) []Y
 	}
 	ctx := floraContext{dexterity: dexterity}
 	// Qty scaling: monotone increasing with length (documented choice above).
-	lengthScale := 1.0 + math.Floor(length)
+	lengthScale := lengthScaleBase + math.Floor(length)
 	var items []YieldItem
 	for _, yr := range sr.Yields {
 		chance := evalNum(yr.Chance, ctx)
-		if chance < 0 {
-			chance = 0
-		} else if chance > 1 {
-			chance = 1
+		if chance < probabilityMin {
+			chance = probabilityMin
+		} else if chance > probabilityMax {
+			chance = probabilityMax
 		}
 		if rnd.Float64() >= chance {
 			continue // miss

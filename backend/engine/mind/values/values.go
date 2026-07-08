@@ -27,6 +27,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	minScalar = 0.0
+	maxScalar = 1.0
+
+	defaultOtherLowIntelThreshold = 0.5
+	defaultCollectiveMode         = "mean"
+	collectiveModeMean            = "mean"
+	collectiveModeMin             = "min"
+
+	// Belief carries means but not stat definitions; callers normalize where they
+	// have registry access. These defaults preserve the legacy in-package fallback.
+	defaultStatMax = 100.0
+)
+
 // ── Scalar types ─────────────────────────────────────────────────────────────────
 
 // Standing indicates how well a need is currently satisfied, in [0,1].
@@ -50,16 +64,16 @@ type Priority float64
 // A maxIntensity <= 0 yields Standing 1 (a need that cannot be unmet is always satisfied).
 func ComputeStanding(need needs.Def, currentIntensity float64) Standing {
 	maxIntensity := need.Threshold
-	if maxIntensity <= 0 {
-		return Standing(1)
+	if maxIntensity <= minScalar {
+		return Standing(maxScalar)
 	}
-	return Standing(clamp01(1 - currentIntensity/maxIntensity))
+	return Standing(clamp01(maxScalar - currentIntensity/maxIntensity))
 }
 
 // ComputeSalience returns 1 - Standing, clamped to [0,1].
 // Higher Salience = more urgent. Equivalently currentIntensity / maxIntensity.
 func ComputeSalience(s Standing) Salience {
-	return Salience(clamp01(1 - float64(s)))
+	return Salience(clamp01(maxScalar - float64(s)))
 }
 
 // ComputeEffValue returns Salience x expectedEffect, clamped to >= 0.
@@ -67,8 +81,8 @@ func ComputeSalience(s Standing) Salience {
 // normalized to [0,1] by the max possible delta. A negative expectedEffect is clamped
 // to 0 (an action that worsens a need has no positive value toward it).
 func ComputeEffValue(sal Salience, expectedEffect float64) EffValue {
-	if expectedEffect < 0 {
-		return EffValue(0)
+	if expectedEffect < minScalar {
+		return EffValue(minScalar)
 	}
 	return EffValue(float64(sal) * expectedEffect)
 }
@@ -154,33 +168,30 @@ func DeriveReferentInput(
 			// is resolved from the registry, not the scale).
 			sd, ok := belief.EstStats[moodStatID]
 			if !ok {
-				currentIntensity = 1.0 // worst case: cannot discern → assume suffering
+				currentIntensity = maxScalar // worst case: cannot discern -> assume suffering
 			} else {
 				moodMean := sd.Mean
-				// Normalize mood from [-1, 1] to [0, 1], then invert for intensity.
-				// (moodMean + 1) / 2 maps [-1,1] → [0,1]; 0.5 = neutral.
-				normalizedMood := (moodMean + 1.0) / 2.0
-				currentIntensity = 1 - clamp01(normalizedMood)
+				// Normalize mood from [-1,1] to [0,1], then invert for intensity.
+				normalizedMood := (moodMean + maxScalar) / 2.0
+				currentIntensity = maxScalar - clamp01(normalizedMood)
 			}
 		} else {
 			// High-foresight: unmet-need proxy.
 			// Mean over EstStats of (1 - clamp01(mean(s) / max(s))).
 			// Iterate in sorted StatID order (D12).
-			// The stat max defaults to 100.0 (the shipped stats.yaml range [0,100]).
 			statIDs := sortedStatKeys(belief.EstStats)
 			var sum float64
 			var count int
-			maxVal := 100.0
 			for _, sid := range statIDs {
 				sd := belief.EstStats[sid]
-				ratio := clamp01(sd.Mean / maxVal)
-				sum += 1 - ratio
+				ratio := clamp01(sd.Mean / defaultStatMax)
+				sum += maxScalar - ratio
 				count++
 			}
 			if count > 0 {
 				currentIntensity = sum / float64(count)
 			} else {
-				currentIntensity = 1.0
+				currentIntensity = maxScalar
 			}
 		}
 
@@ -192,8 +203,8 @@ func DeriveReferentInput(
 	case core.Place:
 		// Place: placeQuality ∈ [0,1]; CurrentIntensity = 1 - placeQuality.
 		return ReferentInput{
-			CurrentIntensity: 1 - clamp01(placeQuality),
-			MaxIntensity:     1.0,
+			CurrentIntensity: maxScalar - clamp01(placeQuality),
+			MaxIntensity:     maxScalar,
 		}
 
 	case core.Collective:
@@ -214,7 +225,7 @@ func DeriveReferentInput(
 		}
 		n := float64(len(members))
 		currentIntensity := sumCurrent / n
-		if cfg.CollectiveAggregationMode == "min" {
+		if cfg.CollectiveAggregationMode == collectiveModeMin {
 			currentIntensity = minCurrent
 		}
 		return ReferentInput{
@@ -241,19 +252,6 @@ func sortedStatKeys(estStats map[core.StatID]tom.StatDist) []core.StatID {
 		return string(keys[i]) < string(keys[j])
 	})
 	return keys
-}
-
-// getStatDefFromBelief retrieves the stat range info from the belief's EstStats.
-// Since the Belief type doesn't carry min/max, we derive a pseudo-def from the
-// mean value using a heuristic default range of [0, 100].
-func getStatDefFromBelief(belief tom.Belief, statID core.StatID) (struct{ Min, Max float64 }, bool) {
-	_, ok := belief.EstStats[statID]
-	if !ok {
-		return struct{ Min, Max float64 }{Min: 0, Max: 100}, false
-	}
-	// We don't have the actual min/max from the registry — use the same default
-	// range that shipped stats.yaml uses.
-	return struct{ Min, Max float64 }{Min: 0, Max: 100}, true
 }
 
 // ── Config (the values: block of content/balance.yaml) ───────────────────────────
@@ -330,8 +328,8 @@ func Load(r io.Reader) (*Config, error) {
 		return string(dims[i]) < string(dims[j])
 	})
 
-	// Read intelligence.other_intel_threshold (P5). Default 0.5 if missing.
-	otherLowIntelThreshold := 0.5
+	// Read intelligence.other_intel_threshold (P5).
+	otherLowIntelThreshold := defaultOtherLowIntelThreshold
 	if intelBlock, ok := raw["intelligence"]; ok {
 		if intelMap, ok := intelBlock.(map[string]any); ok {
 			if thrRaw, ok := intelMap["other_intel_threshold"]; ok {
@@ -342,11 +340,11 @@ func Load(r io.Reader) (*Config, error) {
 		}
 	}
 
-	// Read values.collective_aggregation_mode (P5). Default "mean" if missing.
-	collectiveAggregationMode := "mean"
+	// Read values.collective_aggregation_mode (P5).
+	collectiveAggregationMode := defaultCollectiveMode
 	if aggRaw, ok := valuesMap["collective_aggregation_mode"]; ok {
 		if aggStr, ok := aggRaw.(string); ok {
-			if aggStr == "mean" || aggStr == "min" {
+			if aggStr == collectiveModeMean || aggStr == collectiveModeMin {
 				collectiveAggregationMode = aggStr
 			}
 		}
@@ -366,7 +364,7 @@ func (c *Config) Weight(d core.Dimension) float64 {
 	if w, ok := c.weights[d]; ok {
 		return w
 	}
-	return 1.0
+	return maxScalar
 }
 
 // Dimensions returns the weighted dimension ids in canonical fixed order (sorted
@@ -381,11 +379,11 @@ func (c *Config) Dimensions() []core.Dimension {
 
 // clamp01 clamps v to [0, 1].
 func clamp01(v float64) float64 {
-	if v < 0 {
-		return 0
+	if v < minScalar {
+		return minScalar
 	}
-	if v > 1 {
-		return 1
+	if v > maxScalar {
+		return maxScalar
 	}
 	return v
 }

@@ -71,7 +71,7 @@ func (w *World) runClimateEnv() {
 
 	forcing := climate.Forcing{
 		HourOfDay:    w.clock.HourOfDay(w.tick),
-		AbsHour:      int64(w.clock.Minutes(w.tick)) / 60,
+		AbsHour:      int64(w.clock.Minutes(w.tick)) / gameMinutesPerHour,
 		YearFraction: w.clock.YearFraction(w.tick),
 	}
 	next, transitions := climate.Step(w.climateState, forcing, w.climateRules, w.envFork(w.tick, "climate"))
@@ -330,7 +330,7 @@ func (w *World) decayEnvInputs() map[core.ObjectID]decay.EnvInput {
 			moisture = cell.Moisture
 			temperature = cell.Temperature
 		}
-		mult := 1.0
+		mult := unitScalar
 		if v, ok := w.decayStorageMult[lot.ID]; ok {
 			mult = v
 		}

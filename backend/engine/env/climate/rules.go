@@ -5,6 +5,11 @@ import (
 	"github.com/dogring/bdg/engine/kernel/expr"
 )
 
+const (
+	attrMoisture    core.Tag = "moisture"
+	attrTemperature core.Tag = "temperature"
+)
+
 // ── cellContext: expr.Context adapter for CellState ──────────────────────────
 
 // cellContext adapts a CellState to the expr.Context interface for rule evaluation.
@@ -25,9 +30,9 @@ func (c cellContext) Stat(_ core.StatID) float64 {
 
 func (c cellContext) Attr(name core.Tag) (float64, bool) {
 	switch name {
-	case "moisture":
+	case attrMoisture:
 		return c.state.Moisture, true
-	case "temperature":
+	case attrTemperature:
 		return c.state.Temperature, true
 	}
 	return 0, false

@@ -38,6 +38,15 @@ Phase 2 — PLAN (parallel-safe, read-only):
     sorted-id position (not by goroutine scheduling order), the gathered intents are independent of
     the order goroutines happened to run in. cfg.PlanWorkers == 1 degenerates to the sequential
     walk; the two paths MUST be byte-identical (see Acceptance — Scale & performance).
+  - TIME-SLICING (round-robin replan) — ⚠ **STATUS: DEFERRED / NOT YET IMPLEMENTED (2026-07-08).**
+    The design below is the intended future agent-side planner-LOD; it is **not wired today**. The
+    execute-only (no-replan) fast path does not exist, so every agent runs the FULL plan every tick
+    regardless of `cfg.PlanInterval`. The `PlanInterval` config is reserved for this future work
+    (the analogous cadence LOD already ships for fauna — see `docs/fauna.md` F45 DORMANT/ACTIVE +
+    `engine/fauna/cheap.go`). ⚠ **Determinism note for the future implementer:** a real no-replan
+    path that skips the planner's RNG draws would DIVERGE the RNG stream from the full-plan path —
+    "same fork regardless of slicing" only holds while both paths run full deliberation, so
+    completing this is not free. Until implemented, treat this section as design intent, not behavior.
   - TIME-SLICING (round-robin replan): an agent runs the FULL plan (agent.Tick deliberation) on a
     given tick only when it is in this tick's plan slot:
         planSlot(agentID) = sortedIndex(agentID) mod cfg.PlanInterval   (PlanInterval 0/1 ⇒ always)

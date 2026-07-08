@@ -18,6 +18,14 @@ import (
 	"github.com/dogring/bdg/engine/kernel/core"
 )
 
+const (
+	moistureMin      = 0.0
+	moistureMax      = 1.0
+	windMin          = 0.0
+	windMax          = 1.0
+	cellCenterOffset = 0.5
+)
+
 // ── Identity & state ─────────────────────────────────────────────────────────
 
 // GridCell is the integer index of a coarse climate cell. One climate cell spans many navmap
@@ -146,17 +154,17 @@ func New(cfg Config, terrainAt func(core.Vec2) navTerrainID) *State {
 		cells[y] = make([]CellState, cfg.GridCols)
 		for x := 0; x < cfg.GridCols; x++ {
 			// Cell center in continuous world coordinates.
-			cx := cfg.WorldMin.X + (float64(x)+0.5)*cellW
-			cy := cfg.WorldMin.Y + (float64(y)+0.5)*cellH
+			cx := cfg.WorldMin.X + (float64(x)+cellCenterOffset)*cellW
+			cy := cfg.WorldMin.Y + (float64(y)+cellCenterOffset)*cellH
 			center := core.Vec2{X: cx, Y: cy}
 			moisture := cfg.InitMoisture
 			if cfg.InitMoistureAt != nil {
 				moisture = cfg.InitMoistureAt(center)
-				if moisture < 0 {
-					moisture = 0
+				if moisture < moistureMin {
+					moisture = moistureMin
 				}
-				if moisture > 1 {
-					moisture = 1
+				if moisture > moistureMax {
+					moisture = moistureMax
 				}
 			}
 			cells[y][x] = CellState{

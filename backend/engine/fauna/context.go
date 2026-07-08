@@ -8,6 +8,29 @@ import (
 	"github.com/dogring/bdg/engine/space/scent"
 )
 
+const (
+	scalarZero = 0.0
+	scalarOne  = 1.0
+
+	fullCircleRadians = 2 * math.Pi
+
+	attrScentFood     core.Tag = "scent.food"
+	attrScentPrey     core.Tag = "scent.prey"
+	attrScentPredator core.Tag = "scent.predator"
+	attrScentCarrion  core.Tag = "scent.carrion"
+	attrDistFood      core.Tag = "dist.food"
+	attrDistPrey      core.Tag = "dist.prey"
+	attrDistPredator  core.Tag = "dist.predator"
+	attrSightPredator core.Tag = "sight.predator"
+	attrTargetThreat  core.Tag = "target.threat"
+	attrApparentTemp  core.Tag = "apparent_temp"
+	attrTemperature   core.Tag = "temperature"
+	attrMoisture      core.Tag = "moisture"
+	attrWindDir       core.Tag = "wind.dir"
+	attrWindMag       core.Tag = "wind.mag"
+	attrIsCurrent     core.Tag = "is_current"
+)
+
 // ── animalContext — expr.Context adapter ─────────────────────────────────────
 
 // animalContext adapts one Animal's state + sense data + climate to the
@@ -54,55 +77,55 @@ func (c *animalContext) Stat(id core.StatID) float64 {
 func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 	// Scent channels (F32/F34) — intensity scalars.
 	switch name {
-	case "scent.food":
+	case attrScentFood:
 		return c.reading.Food.Intensity, true
-	case "scent.prey":
+	case attrScentPrey:
 		return c.reading.Prey.Intensity, true
-	case "scent.predator":
+	case attrScentPredator:
 		return c.reading.Predator.Intensity, true
-	case "scent.carrion":
+	case attrScentCarrion:
 		return c.reading.Carrion.Intensity, true
 
 	// Coarse distance estimates derived from scent intensity (D11 — no snap).
 	// Formula: smellRadius / (1 + intensity).
 	// High intensity ⇒ near 0; absent (intensity=0) ⇒ smellRadius.
-	case "dist.food":
+	case attrDistFood:
 		return c.scentDist(c.reading.Food.Intensity, c.smellRadius), true
-	case "dist.prey":
+	case attrDistPrey:
 		return c.scentDist(c.reading.Prey.Intensity, c.smellRadius), true
 
 	// Sight predator distance: Euclidean from spatial query, or sightRadius if absent.
-	case "dist.predator":
+	case attrDistPredator:
 		return c.distPred, true
 
 	// Sight predator presence (1.0 / 0.0) from the FOV spatial query (F44).
-	case "sight.predator":
+	case attrSightPredator:
 		return c.sightPred, true
 
 	// Combat candidate target danger (FC2).
-	case "target.threat":
+	case attrTargetThreat:
 		return c.targetThreat, true
 
 	// Apparent temperature (pre-computed from AppTemp program, F40).
-	case "apparent_temp":
+	case attrApparentTemp:
 		return c.appTemp, true
 
 	// Climate operands (injected from EnvSample, F33/F40).
-	case "temperature":
+	case attrTemperature:
 		return c.env.Temperature, true
-	case "moisture":
+	case attrMoisture:
 		return c.env.Moisture, true
-	case "wind.dir":
+	case attrWindDir:
 		return c.env.Wind.Dir, true
-	case "wind.mag":
+	case attrWindMag:
 		return c.env.Wind.Mag, true
 
 	// is_current: 1.0 iff the candidate being evaluated == CurrentAction (F30/F45/R5).
-	case "is_current":
+	case attrIsCurrent:
 		if c.isCurrent {
-			return 1.0, true
+			return scalarOne, true
 		}
-		return 0.0, true
+		return scalarZero, true
 	}
 
 	// Drive ids (open content, F27 — a drive id IS its §6 Attr operand name).
@@ -110,7 +133,7 @@ func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 		return v, true
 	}
 
-	return 0, false
+	return scalarZero, false
 }
 
 // Pred always returns false. fauna uses no boolean predicates in P_fa1.
@@ -121,9 +144,9 @@ func (c *animalContext) Pred(_ string, _ core.Tag) bool { return false }
 // When intensity→∞: approaches 0 (right at source).
 func (c *animalContext) scentDist(intensity, radius float64) float64 {
 	if radius <= 0 {
-		return 0
+		return scalarZero
 	}
-	return radius / (1 + intensity)
+	return radius / (scalarOne + intensity)
 }
 
 // ── phase — deterministic dormant-jitter hash ─────────────────────────────────
@@ -135,7 +158,7 @@ func (c *animalContext) scentDist(intensity, radius float64) float64 {
 // Returns 0 if period ≤ 0.
 func phase(id core.ObjectID, period int) core.Tick {
 	if period <= 0 {
-		return 0
+		return core.Tick(0)
 	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(id))
@@ -146,11 +169,11 @@ func phase(id core.ObjectID, period int) core.Tick {
 
 // angularDiff returns the signed angular difference a−b, wrapped to (−π, π].
 func angularDiff(a, b float64) float64 {
-	d := math.Mod(a-b, 2*math.Pi)
+	d := math.Mod(a-b, fullCircleRadians)
 	if d > math.Pi {
-		d -= 2 * math.Pi
+		d -= fullCircleRadians
 	} else if d <= -math.Pi {
-		d += 2 * math.Pi
+		d += fullCircleRadians
 	}
 	return d
 }

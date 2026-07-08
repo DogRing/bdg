@@ -10,13 +10,40 @@ import (
 	"github.com/dogring/bdg/engine/mind/planner"
 )
 
-const interactionRadius = 5.0 // world units; range for near_other predicate
+const (
+	interactionRadius = 5.0 // world units; range for near_other predicate
 
-// approachScanRadius bounds the search for the nearest agent an Approach action heads
-// toward. It is wide enough to span the village (which clusters near the origin) yet
-// small enough that the spatial-hash cell sweep stays cheap; it is a loop bound, not a
-// behavioural tunable, so it lives here rather than in balance.yaml.
-const approachScanRadius = 100.0
+	// approachScanRadius bounds the search for the nearest agent an Approach action heads
+	// toward. It is wide enough to span the village (which clusters near the origin) yet
+	// small enough that the spatial-hash cell sweep stays cheap; it is a loop bound, not a
+	// behavioural tunable, so it lives here rather than in balance.yaml.
+	approachScanRadius = 100.0
+
+	tickMinutesPerExecute = core.GameMinutes(1)
+	noEffortLevel         = 0.0
+	apathyMinBudget       = 1
+	apathyDepthDivisor    = 4
+
+	sleepRestRateThreshold = 0.0030
+
+	honestyStatID  core.StatID = "Honesty"
+	statPercentMax             = 100.0
+
+	actionOffer       actions.ActionID = "Offer"
+	actionAcceptTrade actions.ActionID = "AcceptTrade"
+	actionRejectTrade actions.ActionID = "RejectTrade"
+
+	signalKindOffer  SignalKind = "Offer"
+	signalKindAccept SignalKind = "Accept"
+	signalKindReject SignalKind = "Reject"
+
+	offerValence    = 0.5
+	offerIntensity  = 0.7
+	acceptValence   = 0.8
+	acceptIntensity = 0.6
+	rejectValence   = -0.3
+	rejectIntensity = 0.5
+)
 
 // ── Phase 5: replan ────────────────────────────────────────────────────────────
 
@@ -124,9 +151,9 @@ func (a *Agent) replan(world WorldView, now core.Tick, rng *rng.RNG, svc Service
 	if a.Coping == Apathy && a.Cfg.ApathyBudgetPenalty > 0 {
 		factor := 1.0 - a.Cfg.ApathyBudgetPenalty
 		reducedNodes := effectiveNodes
-		reducedNodes = max(int(float64(reducedNodes)*factor), 1)
-		reducedActions := max(int(float64(a.Cfg.BudgetBase)*factor), 1)
-		reducedDepth := max(int(float64(a.Cfg.BudgetBase/4)*factor), 1)
+		reducedNodes = max(int(float64(reducedNodes)*factor), apathyMinBudget)
+		reducedActions := max(int(float64(a.Cfg.BudgetBase)*factor), apathyMinBudget)
+		reducedDepth := max(int(float64(a.Cfg.BudgetBase/apathyDepthDivisor)*factor), apathyMinBudget)
 		budget := planner.Budget{
 			MaxNodes:   reducedNodes,
 			MaxActions: reducedActions,
@@ -161,7 +188,7 @@ func (a *Agent) execute(now core.Tick, actReg *actions.Registry, world WorldView
 	}
 
 	actionID := a.Plan.Actions[a.PlanIdx]
-	tickMinutes := core.GameMinutes(1)
+	tickMinutes := tickMinutesPerExecute
 	target := a.bindTarget(actionID, actReg, world)
 	// Locomotion (MoveTo/Approach) carries an absolute destination in Intent.Move;
 	// the world steps the agent toward it and ends the action on arrival. Non-move
@@ -316,7 +343,7 @@ func (a *Agent) applyStaminaDelta(actionID actions.ActionID, actReg *actions.Reg
 
 	// ── Regen: Rest/Sleep (detected by zero effort + effect_per_minute on Rest) ──
 	regen := 0.0
-	if effortLevel == 0 && a.hasRestEffectPerMinute(def) {
+	if effortLevel == noEffortLevel && a.hasRestEffectPerMinute(def) {
 		regen = a.resolveRegenRate(def)
 	}
 
@@ -331,7 +358,7 @@ func (a *Agent) resolveEffortLevel(tags []core.Tag) float64 {
 			return level
 		}
 	}
-	return 0.0 // default: no effort tag → effort:none = 0
+	return noEffortLevel // default: no effort tag -> effort:none = 0
 }
 
 // hasRestEffectPerMinute returns true if the action has an effect_per_minute
@@ -351,9 +378,7 @@ func (a *Agent) resolveRegenRate(def actions.ActionDef) float64 {
 	if !ok {
 		return 0
 	}
-	// Sleep has a higher Rest effect_per_minute (0.0030) vs Rest (0.0010).
-	// Use the magnitude to distinguish: >= 0.0030 → Sleep, otherwise Rest.
-	if restRate >= 0.0030 {
+	if restRate >= sleepRestRateThreshold {
 		return a.Cfg.RegenSleep
 	}
 	return a.Cfg.RegenRest
@@ -370,7 +395,7 @@ func (a *Agent) emitSignal(now core.Tick, world WorldView) Intent {
 
 	actionID := a.Plan.Actions[a.PlanIdx]
 	switch actionID {
-	case "Offer":
+	case actionOffer:
 		target := a.nearestOtherAgentID(world)
 		if target == "" {
 			return Intent{Kind: IntentNone, Agent: a.ID, Tick: now}
@@ -378,7 +403,7 @@ func (a *Agent) emitSignal(now core.Tick, world WorldView) Intent {
 		// ClaimedValue is inflated inversely with Honesty (D8: reads ToM[self]).
 		// It lerps from the honest floor to the dishonest ceiling as perceived Honesty
 		// falls (D10: band from balance.yaml trade.claim_inflate_{min,max}; no literal).
-		honesty := clamp01(a.perceivedStat("Honesty") / 100.0)
+		honesty := clamp01(a.perceivedStat(honestyStatID) / statPercentMax)
 		claimedValue := a.Cfg.ClaimInflateMin + (1.0-honesty)*(a.Cfg.ClaimInflateMax-a.Cfg.ClaimInflateMin)
 		truth := honesty * claimedValue // truth proportional to honesty
 		return Intent{
@@ -386,16 +411,16 @@ func (a *Agent) emitSignal(now core.Tick, world WorldView) Intent {
 			Agent: a.ID,
 			Tick:  now,
 			Signal: &Signal{
-				Kind:         "Offer",
+				Kind:         signalKindOffer,
 				Toward:       target,
-				Valence:      0.5,
+				Valence:      offerValence,
 				ClaimedValue: claimedValue,
 				Truth:        truth,
-				Intensity:    0.7,
+				Intensity:    offerIntensity,
 			},
 		}
 
-	case "AcceptTrade":
+	case actionAcceptTrade:
 		target := a.nearestOtherAgentID(world)
 		if target == "" {
 			return Intent{Kind: IntentNone, Agent: a.ID, Tick: now}
@@ -405,14 +430,14 @@ func (a *Agent) emitSignal(now core.Tick, world WorldView) Intent {
 			Agent: a.ID,
 			Tick:  now,
 			Signal: &Signal{
-				Kind:      "Accept",
+				Kind:      signalKindAccept,
 				Toward:    target,
-				Valence:   0.8,
-				Intensity: 0.6,
+				Valence:   acceptValence,
+				Intensity: acceptIntensity,
 			},
 		}
 
-	case "RejectTrade":
+	case actionRejectTrade:
 		target := a.nearestOtherAgentID(world)
 		if target == "" {
 			return Intent{Kind: IntentNone, Agent: a.ID, Tick: now}
@@ -422,10 +447,10 @@ func (a *Agent) emitSignal(now core.Tick, world WorldView) Intent {
 			Agent: a.ID,
 			Tick:  now,
 			Signal: &Signal{
-				Kind:      "Reject",
+				Kind:      signalKindReject,
 				Toward:    target,
-				Valence:   -0.3,
-				Intensity: 0.5,
+				Valence:   rejectValence,
+				Intensity: rejectIntensity,
 			},
 		}
 	}

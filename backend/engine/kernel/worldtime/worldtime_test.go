@@ -29,6 +29,13 @@ func TestDefaultConfig_Validate(t *testing.T) {
 	if cfg.SeasonsPerYear != 4 {
 		t.Errorf("DefaultConfig().SeasonsPerYear = %d, want 4", cfg.SeasonsPerYear)
 	}
+	clk, err := NewClock(cfg)
+	if err != nil {
+		t.Fatalf("NewClock(DefaultConfig()) = %v", err)
+	}
+	if got := clk.DaysPerYear(); got != 120 {
+		t.Errorf("DefaultConfig DaysPerYear() = %d, want 120", got)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -97,17 +104,18 @@ func TestClock_Accessors_HandComputed(t *testing.T) {
 		wantMinOfDay int64
 		wantHour     int
 		wantDay      int64
+		wantDayYear  int64
 		wantSeason   int
 		wantYear     int64
 	}{
-		{"t=0 (epoch)", 0, 0, 0, 0, 0, 0, 0},
-		{"t=1439 (end day 0)", 1439, 1439, 1439, 23, 0, 0, 0},
-		{"t=1440 (start day 1)", 1440, 1440, 0, 0, 1, 0, 0},
-		{"t=2880 (start day 2)", 2880, 2880, 0, 0, 2, 0, 0},
-		{"t=43199 (end day 29)", 43199, 43199, 1439, 23, 29, 0, 0},
-		{"t=43200 (start season 1)", 43200, 43200, 0, 0, 30, 1, 0},
-		{"t=172799 (end year 0)", 172799, 172799, 1439, 23, 119, 3, 0},
-		{"t=172800 (start year 1)", 172800, 172800, 0, 0, 120, 0, 1},
+		{"t=0 (epoch)", 0, 0, 0, 0, 0, 0, 0, 0},
+		{"t=1439 (end day 0)", 1439, 1439, 1439, 23, 0, 0, 0, 0},
+		{"t=1440 (start day 1)", 1440, 1440, 0, 0, 1, 1, 0, 0},
+		{"t=2880 (start day 2)", 2880, 2880, 0, 0, 2, 2, 0, 0},
+		{"t=43199 (end day 29)", 43199, 43199, 1439, 23, 29, 29, 0, 0},
+		{"t=43200 (start season 1)", 43200, 43200, 0, 0, 30, 30, 1, 0},
+		{"t=172799 (end year 0)", 172799, 172799, 1439, 23, 119, 119, 3, 0},
+		{"t=172800 (start year 1)", 172800, 172800, 0, 0, 120, 0, 0, 1},
 	}
 
 	for _, tc := range cases {
@@ -123,6 +131,9 @@ func TestClock_Accessors_HandComputed(t *testing.T) {
 			}
 			if got := clk.DayOfRun(tc.t); got != tc.wantDay {
 				t.Errorf("DayOfRun(%d) = %d, want %d", tc.t, got, tc.wantDay)
+			}
+			if got := clk.DayOfYear(tc.t); got != tc.wantDayYear {
+				t.Errorf("DayOfYear(%d) = %d, want %d", tc.t, got, tc.wantDayYear)
 			}
 			if got := clk.Season(tc.t); got != tc.wantSeason {
 				t.Errorf("Season(%d) = %d, want %d", tc.t, got, tc.wantSeason)
@@ -160,6 +171,61 @@ func TestClock_Bounds_Property(t *testing.T) {
 			t.Errorf("tick=%d: Season=%d out of [0, %d)", tick, season, cfg.SeasonsPerYear)
 			break
 		}
+		dayOfYear := clk.DayOfYear(tick)
+		if dayOfYear < 0 || dayOfYear >= clk.DaysPerYear() {
+			t.Errorf("tick=%d: DayOfYear=%d out of [0, %d)", tick, dayOfYear, clk.DaysPerYear())
+			break
+		}
+		yf := clk.YearFraction(tick)
+		if yf < 0 || yf >= 1 {
+			t.Errorf("tick=%d: YearFraction=%v out of [0,1)", tick, yf)
+			break
+		}
+	}
+}
+
+func TestClock_DayOfYearAndYearFraction(t *testing.T) {
+	clk := defaultClock(t)
+	cfg := DefaultConfig()
+	ticksPerDay := core.Tick(cfg.DayMinutes / cfg.TickMinutes)
+	ticksPerYear := ticksPerDay * core.Tick(clk.DaysPerYear())
+
+	cases := []struct {
+		t       core.Tick
+		wantDay int64
+	}{
+		{0, 0},
+		{ticksPerDay - 1, 0},
+		{ticksPerDay, 1},
+		{ticksPerYear - 1, clk.DaysPerYear() - 1},
+		{ticksPerYear, 0},
+		{ticksPerYear + ticksPerDay, 1},
+	}
+	for _, tc := range cases {
+		if got := clk.DayOfYear(tc.t); got != tc.wantDay {
+			t.Errorf("DayOfYear(%d) = %d, want %d", tc.t, got, tc.wantDay)
+		}
+		if got := clk.At(tc.t).DayOfYear; got != clk.DayOfYear(tc.t) {
+			t.Errorf("At(%d).DayOfYear = %d, want accessor %d", tc.t, got, clk.DayOfYear(tc.t))
+		}
+	}
+
+	prev := clk.YearFraction(0)
+	for tick := core.Tick(1); tick < ticksPerYear; tick++ {
+		cur := clk.YearFraction(tick)
+		if cur < prev {
+			t.Fatalf("YearFraction decreased within year at tick=%d: %v < %v", tick, cur, prev)
+		}
+		prev = cur
+	}
+	if got := clk.YearFraction(ticksPerYear); got != 0 {
+		t.Errorf("YearFraction(year boundary) = %v, want 0", got)
+	}
+	fixed := clk.YearFraction(12345)
+	for i := 0; i < 10000; i++ {
+		if got := clk.YearFraction(12345); got != fixed {
+			t.Fatalf("YearFraction not deterministic at iter %d: %v != %v", i, got, fixed)
+		}
 	}
 }
 
@@ -181,6 +247,9 @@ func TestClock_At_CrossCheck(t *testing.T) {
 		}
 		if cal.DayOfRun != clk.DayOfRun(tick) {
 			t.Errorf("tick=%d: At.DayOfRun=%d != DayOfRun=%d", tick, cal.DayOfRun, clk.DayOfRun(tick))
+		}
+		if cal.DayOfYear != clk.DayOfYear(tick) {
+			t.Errorf("tick=%d: At.DayOfYear=%d != DayOfYear=%d", tick, cal.DayOfYear, clk.DayOfYear(tick))
 		}
 		if cal.Season != clk.Season(tick) {
 			t.Errorf("tick=%d: At.Season=%d != Season=%d", tick, cal.Season, clk.Season(tick))
@@ -316,5 +385,32 @@ func TestClock_NonDefaultTickMinutes(t *testing.T) {
 	}
 	if got := clk.MinuteOfDay(288); got != 0 {
 		t.Errorf("MinuteOfDay(288) = %d, want 0", got)
+	}
+}
+
+// HourOfDay is the day-relative diurnal phase [0,24): it spans the whole day exactly once at ANY
+// DayMinutes (24 = phase-hours per day, not DayMinutes/60). On a 2880-minute (48-hour) day, midday
+// must map to hour 12 — one cycle — rather than hour 0 (the old `%24` wrap gave two cycles) or hour
+// 24 (the pre-refactor unwrapped form left [0,24)). Regression guard for the review's finding #1.
+func TestHourOfDayDayRelativeToDayMinutes(t *testing.T) {
+	clk, err := NewClock(Config{TickMinutes: 1, DayMinutes: 2880, DaysPerSeason: 30, SeasonsPerYear: 4})
+	if err != nil {
+		t.Fatalf("NewClock: %v", err)
+	}
+	cases := []struct {
+		tick core.Tick
+		want int
+	}{
+		{0, 0},     // start of day
+		{720, 6},   // quarter day
+		{1440, 12}, // midday of a 48h day → hour 12 (not 0, not 24)
+		{2160, 18}, // three-quarters
+		{2879, 23}, // last minute stays < 24
+		{2880, 0},  // next day wraps to 0
+	}
+	for _, tc := range cases {
+		if got := clk.HourOfDay(tc.tick); got != tc.want {
+			t.Errorf("HourOfDay(%d) on 2880-min day = %d, want %d", tc.tick, got, tc.want)
+		}
 	}
 }

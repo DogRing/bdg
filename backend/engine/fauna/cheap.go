@@ -13,7 +13,7 @@ func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick)
 	// Drive advance: only accumulators + fear decay (no full sense, no sight query).
 	newDrives := rules.cheapDriveAdvance(a.Species, a.Drives, snap.DT)
 
-	if a.HiddenUntil > 0 && a.HiddenUntil >= snap.Tick {
+	if a.HiddenUntil > core.Tick(0) && a.HiddenUntil >= snap.Tick {
 		return Intent{
 			Animal:              a.ID,
 			Action:              a.CurrentAction,
@@ -43,8 +43,8 @@ func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick)
 	}
 
 	speed := rules.Speed(a.Species, sCtx)
-	if speed < 0 {
-		speed = 0
+	if speed < scalarZero {
+		speed = scalarZero
 	}
 
 	// Direction: current heading.
@@ -52,7 +52,7 @@ func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick)
 
 	var nextPos core.Vec2
 	var nextHeading float64
-	if speed <= 0 {
+	if speed <= scalarZero {
 		nextPos = a.Pos
 		nextHeading = a.Heading
 	} else {
@@ -66,8 +66,8 @@ func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick)
 		} else {
 			baseCost := snap.Terrain.BaseCost(tentative)
 			effectiveCost := baseCost * mult
-			if effectiveCost < 1 {
-				effectiveCost = 1
+			if effectiveCost < minEffectiveTerrainCost {
+				effectiveCost = minEffectiveTerrainCost
 			}
 			effectiveSpeed := speed / effectiveCost
 			nextPos = a.Pos.Add(dir.Scale(effectiveSpeed * snap.DT))

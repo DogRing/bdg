@@ -25,6 +25,44 @@ import (
 	"github.com/dogring/bdg/engine/space/spatial"
 )
 
+const (
+	defaultSpatialHashCell          = 8.0
+	defaultRoleConvergenceThreshold = 0.5
+	defaultOutcomeDifficultyBase    = 50.0
+	defaultBackupEveryTicks         = 60
+	defaultMoveSpeedPerTick         = 0.5
+	defaultArrivalEpsilon           = 1.0
+	defaultPlanInterval             = 1
+	defaultPruneThreshold           = 0
+
+	neutralSelfPerception = 0.5
+	zeroScalar            = 0.0
+	unitScalar            = 1.0
+	centeredRandomOffset  = 0.5
+
+	defaultTerrainCost      = 1.0
+	defaultScentMagnitude   = 1.0
+	defaultFreshAnimalVital = 1.0
+	effortHighCost          = 0.90
+	effortMediumCost        = 0.50
+	effortLowCost           = 0.20
+
+	tagScentPredator = core.Tag("scent:predator")
+	tagScentPrey     = core.Tag("scent:prey")
+	tagScentFood     = core.Tag("scent:food")
+	tagScentCarrion  = core.Tag("scent:carrion")
+	tagEffortHigh    = core.Tag("effort:high")
+	tagEffortMedium  = core.Tag("effort:med")
+	tagEffortLow     = core.Tag("effort:low")
+	tagEffortNone    = core.Tag("effort:none")
+	tagNoiseHigh     = core.Tag("noise:high")
+	tagNoiseMedium   = core.Tag("noise:med")
+
+	kindCarcass    = core.Tag("carcass")
+	driveHunger    = fauna.DriveID("hunger")
+	causePredation = "predation"
+)
+
 // ── Config ─────────────────────────────────────────────────────────────────────
 
 // Config bundles the world-level tunables, injected by the caller (read from
@@ -37,21 +75,21 @@ type Config struct {
 	BackupEveryTicks         int
 	MoveSpeedPerTick         float64 // fraction of remaining distance covered per tick (0,1]
 	ArrivalEpsilon           float64 // locomotion (MoveTo/Approach) completes when within this distance of Intent.Move
-	PlanInterval             int     // plan_interval: agents per planning slice; 1 = all agents plan every tick. Higher spreads planner load across ticks.
+	PlanInterval             int     // plan_interval: agents per planning slice; 1 = all agents plan every tick. Higher is meant to spread planner load across ticks. ⚠ RESERVED — NOT YET WIRED (2026-07-08): the time-slicing execute-only path is unimplemented, so every agent replans every tick regardless of this value. Kept as the future agent-side planner-LOD knob; see engine/world/SPEC-tick.md TIME-SLICING.
 	PruneThreshold           int     // prune_threshold: max ticks since LastSeen before ToM beliefs are pruned; 0 = never prune.
 }
 
 // DefaultConfig returns the canonical Config from content/balance.yaml world.*.
 func DefaultConfig() Config {
 	return Config{
-		SpatialHashCell:          8.0,
-		RoleConvergenceThreshold: 0.5,
-		OutcomeDifficultyBase:    50.0,
-		BackupEveryTicks:         60,
-		MoveSpeedPerTick:         0.5,
-		ArrivalEpsilon:           1.0,
-		PlanInterval:             1,
-		PruneThreshold:           0,
+		SpatialHashCell:          defaultSpatialHashCell,
+		RoleConvergenceThreshold: defaultRoleConvergenceThreshold,
+		OutcomeDifficultyBase:    defaultOutcomeDifficultyBase,
+		BackupEveryTicks:         defaultBackupEveryTicks,
+		MoveSpeedPerTick:         defaultMoveSpeedPerTick,
+		ArrivalEpsilon:           defaultArrivalEpsilon,
+		PlanInterval:             defaultPlanInterval,
+		PruneThreshold:           defaultPruneThreshold,
 	}
 }
 
@@ -228,7 +266,7 @@ func (w *World) Spawn(id core.AgentID, pos core.Vec2, agentCfg agent.Config, rng
 	realStats := sampleRealStats(w.svc.Stats, rng)
 
 	// Build ToM[self] with calibrated noise (D8).
-	selfPerception := 0.5 // P1: mid-range
+	selfPerception := neutralSelfPerception // P1: mid-range
 	selfToM := tom.NewToM(id, realStats, selfPerception, rng, w.svc.Stats, agentCfg.Rates)
 
 	// Construct the agent.

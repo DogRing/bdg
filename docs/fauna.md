@@ -349,7 +349,7 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
   scent 채널은 F34 omni 그대로(food/prey homing + predator 조기경보/Wary).
 - **⚠ D11 가드:** cell-based 든 continuous 든 동물은 연속 Pos+Heading 유지·칸 스냅 없음. **⚠ D12:** FOV 셀 선택/bearing 테스트는
   고정순서·결정적(map-순회 로직 금지). **⚠ F34 결합:** F44(c) 확정이 F34 의 omni 규칙을 *scent-only* 로 좁힌다 — **F34/F44 함께 resolve.**
-  **(RESOLVED — 클러스터 6 상단 블록.)**
+  **(RESOLVED — 클러스터 6 상단 블록.)** ⚠ **후속(M7, RESOLVED 2026-07-08):** F44 는 sight 를 **단일 최근접 포식자**로 해소했다 — 다수 포식자 동시 가시 시 회피 벡터는 **클러스터 10 M7 (b)** 에서 거리가중 반발 합산으로 정련(≤1 포식자는 F44 경로 byte-identical).
 
 ### 클러스터 7 — 적응형 cadence · 수영 · 성향 반응 (F45~F46 + 개정) — 사람 확정 (2026-06-27)
 > R1~R5 RESOLVED. `backend/engine/fauna/SPEC.md`에 반영됨. F16/F24/F29/F30/F35/F41 개정·§1.2 glossary 추가.
@@ -412,6 +412,7 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
   창발(D11). WEST/EAST WOODS + riparian gallery + 토끼밭 thicket. **`cover` 태그는 M3 전까지 INERT**(거동 0 변화; 스모크·전체 스위트 GREEN).
 
 **Open questions (사람 확정 필요 — resolve 전 SPEC/구현 금지, 발명=결함):**
+> M3/M4/M5/M6 = RESOLVED(2026-07-02). **M7(2026-07-08) = RESOLVED (b)** — 다중 포식자 회피 벡터(리팩토링 리뷰 중 발견한 단일-대상 시야 한계); SPEC 착수·빌드 중.
 
 *M3 — cover 은신(cover-hiding). 사람 의도: "prey가 풀숲에 들어가면 일정 확률로 ~100틱 안 보이게". **RESOLVED 2026-07-02 (추천대로) → SPEC 착수·빌드 중.***
 - **M3-a 발동 조건 — RESOLVED: (ii) `flee`(선택 steer=`flee:predator`) 중일 때만** 판정.
@@ -443,7 +444,16 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
 
 > **SPEC design (2026-07-02, 게이트 resolve로부터 유도 — 발명 아님; Speed/HideChance §6 accessor + `angularDiff` 재사용).** **전부 fauna-side**(world/config/content만; world 코드 무변경). ① `SpeciesRule.TurnRate *expr.Program` + `func (r *Rules) TurnRate(sp, ctx) float64`(Speed 동형; 미저작·nil ⇒ **0 반환 = "무제한, 클램프 안 함"** — 0을 "회전정지"로 오해 금지). ② `steerFull`에서 desired heading 계산 후 클램프: `desired := Atan2(dir)+wander; tr := rules.TurnRate(sp,ctx); if tr>0 { maxTurn := tr×snap.DT; d := angularDiff(desired, a.Heading); if |d|>maxTurn { heading = normalize(a.Heading + sign(d)×maxTurn) } else { heading = desired } } else { heading = desired }`. 이후 `dir={cos,sin}(heading)`로 기존 이동(오버슈트 = 못 꺾어 더 직진). `nextHeading=heading`(클램프됨). ③ content: prey `turn_rate`↑(juke)·predator↓(오버슈트) 비대칭 §6(objects.yaml `fauna:`, platform/config가 speed/hide_chance처럼 컴파일). **신규 Snapshot/Intent/operand/RNG 없음**(기존 `ctx`·`angularDiff` 사용). **OFF-neutral:** `turn_rate` 미저작(∨ ≥π/DT로 매우 큼) → `tr≤0`∨클램프 미발동 → `heading=desired` → 이동 byte-identical(골든 불변). ⚠ 캡 site = `steerFull`(fullPipeline); DORMANT `cheap.go`가 heading을 크게 바꾸면 거기도 동일 클램프 필요(구현 시 확인) — 대개 heading 유지라 저우선.
 
-**균형(공통):** M3~M6 착지 후 balance.yaml + `tools/tuner`로 **~15% 포식 성공률** 타겟 튜닝. 측정 시나리오: 토끼-늑대,
+*M7 — 다중 포식자 회피 벡터(multi-predator flee steering). 사람 의도: prey 시야에 포식자가 둘 이상일 때 둘 다 반영해 도망친다. **RESOLVED 2026-07-08 (추천대로 (b)) → SPEC 착수·빌드 중.***
+- **사실 확인(2026-07-08):** 현행 `sightQuery`(fauna/step.go)는 시야(FOV) 안 포식자 중 **최근접 1마리**의 위치(`nearPredPos`)만 반환하고, `baseSteerDir`의 `flee:predator`/`wary:predator` 분기는 `fleeDir = normalize(Pos − nearPredPos)` — 즉 **한 마리에서만 정반대로** 도망친다. (최근 리팩토링이 추가한 `dist==bestDist ∧ ID<bestID` 거리-동률 타이브레이크는 이 **단일-대상 모델을 결정적으로** 만드는 패치일 뿐 대상 수를 늘리지 않는다.) ⚠ **비대칭:** 냄새 경로(`reading.Predator`, F34 omni 그리드)는 이미 다수 발생원을 **하나의 그라디언트 필드로 합산**한다 — 오직 **시야 경로만 단일-대상**이다. **협공(pincer) 결함:** A(북)·B(남)가 협공하고 A가 근소히 가까우면 prey는 A의 정반대인 **남(=B 쪽)으로 직진** → 가장 위험한 순간 2번째 포식자에게 돌진(실제 유제류는 둘 사이 **측면**으로 빠짐).
+- options: (a) **현행 유지 — 단일 최근접 + ID 타이브레이크.** 최단순·추가비용 0이나 pincer-blind·sight≠scent 비대칭 유지. (b) **시야 내 전(全) 가시 포식자 거리가중 반발 합산** — `fleeDir = normalize(Σᵢ (Pos − predᵢ)/distᵢ^p)`(p=1 역거리 / 2 역제곱, balance). `sightQuery`가 **이미 순회하는 `nearby` 슬라이스를 그대로 합산**(신규 spatial 쿼리 0); scent 필드 합산과 일관; pincer에서 측면 회피가 **창발**(D2/D3, 코너링 FSM 없이); 타이브레이크 **무의미화**(두 마리 다 기여). (c) **top-k(예 k=2) 가중 합산** — (b)와 (a)의 절충, k=balance; 복잡도만 늘고 (b) 대비 이점 미미.
+- **RESOLVED: (b)** — 냄새가 이미 필드 합산인데 시야만 단일인 비대칭을 해소, pincer 측면 회피를 per-species 하드코딩 없이 창발(D2/D3), 기존 순회 재사용이라 추가 쿼리 없음.
+- **(b) 하위 RESOLVED:** (i) `p=2`(형식 `Σ(Pos−predᵢ)/distᵢ²` = 단위 반발벡터를 1/dist 가중 → 근접 우세하되 2번째 근접 포식자가 escape를 측면으로 굽힘). 현재는 fauna 상수(hot loop `dist*dist`); 튜닝 필요 시 balance 승격은 후행. (ii) `distPred` = **최근접 유지**(가장 임박한 위협=공포·flush 반경 자연 비례; DriveUpdate/F43 fear·M3 flush 불변). (iii) 반발 **방향**은 순수 기하(값 아님)라 §6 competence 수식 불요(D4 무관) — 확인.
+- **⚠ D11:** 연속 Pos·bearing, 칸 스냅 없음. **⚠ D12:** `nearby`는 ObjectID-정렬(spatial 보장)이라 **고정순서 합산**(부동소수 합 순서 결정적); map-순회 로직 금지. **⚠ D2/D3:** 측면 회피 = 합산 벡터의 자연 결과(창발), juke/코너링 FSM 금지. **OFF-neutral(byte-identity 보장):** 가시 포식자 ≤1이면 **기존 단일-대상 코드경로 그대로**(합산 미발동) → **시야 내 최대 1 포식자인 기존 world/ecosim 골든 byte-identical**. 2+ 동시 가시일 때만 aggregated fleeDir 발동; 합산 벡터가 ~0(대칭 협공)이면 최근접 fallback(결정적). **F44**(시야=단일 최근접 결과)를 다중-대상으로 정련.
+
+> **SPEC design (2026-07-08, 게이트 resolve로부터 유도 — 발명 아님; 기존 `sightQuery` 순회·`baseSteerDir` flee 분기 재사용).** **전부 fauna-side**(world/config/content 무변경). ① `sightQuery`가 FOV·concealment 게이트를 통과한 **각** 포식자마다 반발 기여 `(a.Pos − ent.Pos)/dist²`를 `nearby`(ObjectID-정렬) 순서로 누적(`predCount`도 카운트) — 최근접 추적(distPred/nearPredPos)은 불변. 반환에 `fleeDir *core.Vec2` 추가: `predCount≥2 ∧ |Σ|>0`이면 `normalize(Σ)`, 아니면 `nil`. ② `steerFull`/`baseSteerDir`에 `fleeDir` 전달; `flee/wary:predator` 분기는 `fleeDir!=nil`이면 그걸 반환, 아니면 **기존 `normalize(Pos−nearPredPos)` 경로 그대로**(≤1 포식자 byte-identical). ③ scent-flee fallback·`distPred` 소비처(fear·flush·M3 hidden)·cheap.go(DORMANT는 sight-flee 안 함) 전부 불변. **신규 Snapshot seam/operand/RNG/config 없음.** 가중지수 `p=2`는 fauna 상수(M7-b(i)).
+
+**균형(공통):** M3~M7 착지 후 balance.yaml + `tools/tuner`로 **~15% 포식 성공률** 타겟 튜닝. 측정 시나리오: 토끼-늑대,
 사슴-늑대/곰(스모크 digest 확장 or scenario fixture). 종별 성공률·평균 추격시간·개체군 안정성 로그.
 
 ---

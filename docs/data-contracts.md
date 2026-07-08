@@ -34,6 +34,8 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
                  stamina, vital, vital_cap, heading, current_action, active_until,
                  engaged_with?, next_exchange_tick?, engage_cooldown_until?,
                  hidden_until?, concealment? }  // fauna incl. Phase-6 combat/hiding fields (§10, WI-P4); periodic-full
+    shelters?  { interiors[]{id, bounds, portals[]{id, kind, exterior_pos, interior_pos}, occupants[]},
+                 active_spaces[]{object_id, space_kind, space_id?, pos} } // SH2 cave/interior state; absent ⇒ shelter OFF
     climate    { cells[]{cell, moisture, temperature, terrain}, rain{raining, rain_ends_at_hour,
                  p_rain, hours_since_rain}, wind{dir, mag} }          // climate field (§10, WI-P4); periodic-full
     emerged_roles[] { function, holder }         // P6 (D2-derived)
@@ -66,6 +68,11 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
   `TerrainOverrides()` sparse delta (§6) — the base layout comes from the fixture. When env is OFF
   (`InstallEnv`/`InstallFauna` not called) these blocks are **absent/empty** — existing snapshots are
   byte-unchanged (the schema_version bump is additive; absent ⇒ env-off).
+- **Shelter state (SH2).** `shelters` is present only when `InstallShelter` is called. `interiors[]`
+  is the periodic-full source for cave/house interior regions and their portal links; `active_spaces[]`
+  records entities currently inside an interior plus their local continuous `pos`. Exterior entities
+  need no row. The exposure field itself is derived from blockers/interiors and is not serialized
+  except optional debug/render deltas (§6).
 
 ## 2. Redis — live state
 Keyspace (`{run}` = RunID):
@@ -124,6 +131,7 @@ Representative `type`s (payload gist):
 | `AnimalBorn` / `AnimalDied` | object_id, species, pos / cause (WI-P4; fauna spawn + object-mortality §7) |
 | `PlantSpawned` / `PlantDied` | object_id, species, pos (WI-P4; flora propagation + object-mortality) |
 | `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, agents[]{id,pos,action}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain,wear} (cell = offset index `i=row·cols+col` into the flat-top hex grid, `docs/hex-grid.md`; WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
+| `EnteredShelter` / `ExitedShelter` | actor_id, portal_id, interior_id, pos (SH2; active-space transition) |
 
 - **why-trace** = NFR-3. Put the *selection rationale* (competing candidates, gates, costs) into `GoalSelected` / `PlanBuilt` so "why did it do this" is reconstructable.
 - **SSE view** = the frontend-graphics subset (positions, actions, major events). Sensitive god-view fields (`real_stats`) are not sent over SSE (controlled by an observation-mode flag).
@@ -145,6 +153,9 @@ Representative `type`s (payload gist):
 - Navmap wire = **building footprints** + **sparse `wear`** + **terrain state**. Per `design.md §5`, terrain is **dynamic** (moisture/transition), so it streams like wear — **periodic full + sparse deltas**, NOT a one-time static layout.
 - Determinism (D12): the snapshot is copy-on-write; the running tick deposits `wear` and applies terrain transitions in the **serial apply** phase (sorted cell order), never during plan. Bulk terrain recompute is `tick`-triggered (`tick % N`), never wall-clock.
 - An `ore_node` exhaustion (Xm2/Xm3) is one such terrain transition: on `remaining→0` the world fires ONE `navmap.SetTerrain` over the node's cells → `depleted_terrain` (e.g. `bare_rock`), streamed via `TerrainOverrides()` (the same sparse delta channel as climate transitions). NOT during plan; apply phase, sorted cells (D12).
+- Shelter/exposure render/debug wire is optional and sparse: `exposure_delta[]{cell, epsilon}` lists
+  cells whose epsilon differs from 1 for the current wind sector. It is derived state; replay/resume
+  rebuilds it from blockers/interiors + wind sector.
 - The exact navmap snapshot shape is finalized when `engine/space/navmap` serialization lands — see `docs/map-plan.md` M5 + `docs/climate.md`.
 
 ## 7. Recipes (Materials & Crafting — content, `content/recipes.yaml`)

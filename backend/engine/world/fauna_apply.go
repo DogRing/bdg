@@ -132,11 +132,11 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	intended := w.clampToBounds(intent.NextPos)
 	pos := intended
 	if res := w.coverResistance(a.Species, intended); res > 1 {
-		pos = a.Pos.Add(intended.Sub(a.Pos).Scale(1.0 / res))
+		pos = a.Pos.Add(intended.Sub(a.Pos).Scale(unitScalar / res))
 	}
 	w.spatial.Move(a.ID, pos)
 	a.Pos = pos
-	a.Concealment = 0
+	a.Concealment = zeroScalar
 	if cf := w.envCfg.FaunaCombat.ConcealFactor; cf > 0 {
 		a.Concealment = w.coverDensity(pos) * cf
 	}
@@ -166,12 +166,12 @@ func (w *World) applyAnimalFatigue(a *fauna.Animal, action actions.ActionID) {
 	}
 	var delta float64
 	switch {
-	case w.actionHasTag(action, "effort:high"):
+	case w.actionHasTag(action, tagEffortHigh):
 		delta = w.envCfg.FaunaCombat.FatiguePursuitPerTick
-	case w.actionHasTag(action, "effort:none"), w.actionHasTag(action, "effort:low"):
+	case w.actionHasTag(action, tagEffortNone), w.actionHasTag(action, tagEffortLow):
 		delta = -w.envCfg.FaunaCombat.FatigueRecoverPerTick
 	}
-	if delta != 0 {
+	if delta != zeroScalar {
 		a.Drives["fatigue"] = clamp01(a.Drives["fatigue"] + delta)
 	}
 }
@@ -195,7 +195,7 @@ func (w *World) applyAnimalCombat(intent fauna.Intent) {
 		w.applyAnimalGraze(a)
 	}
 	if a.Vital <= 0 {
-		w.killAnimal(a.ID, "predation")
+		w.killAnimal(a.ID, causePredation)
 	}
 }
 

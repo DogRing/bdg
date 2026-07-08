@@ -23,6 +23,11 @@ import (
 	"github.com/dogring/bdg/engine/kernel/core"
 )
 
+const (
+	noWearMultiplier = 1.0
+	minCostFallback  = 0.0
+)
+
 // Cell is the AXIAL (q,r) index of a flat-top hexagon containing a continuous point.
 // It is an internal addressing token; it is NEVER written into an agent position (D11).
 // CellOf maps a Vec2 → Cell via the hex primitive (hex.go). The grid origin (axial 0,0 centre)
@@ -96,9 +101,14 @@ type NavMap struct {
 //
 // Both terrainAt and types must remain valid for the lifetime of the NavMap.
 func New(cfg Config, terrainAt func(core.Vec2) TerrainID, types map[TerrainID]TerrainType) *NavMap {
+	typeCopy := make(map[TerrainID]TerrainType, len(types))
+	for id, tt := range types {
+		tt.RequiredTags = append([]core.Tag(nil), tt.RequiredTags...)
+		typeCopy[id] = tt
+	}
 	return &NavMap{
 		cfg:              cfg,
-		types:            types,
+		types:            typeCopy,
 		terrainSrc:       terrainAt,
 		terrainOverrides: make(map[Cell]TerrainID),
 		footprint:        make(map[Cell]struct{}),
@@ -141,10 +151,10 @@ func (m *NavMap) terrainIDAt(c Cell) TerrainID {
 func (m *NavMap) wearMultiplier(c Cell) float64 {
 	w := m.wear[c] // absent ⇒ 0
 	if w <= 0 {
-		return 1.0
+		return noWearMultiplier
 	}
 	t := w / m.cfg.WearMax
-	return 1.0 - t*(1.0-m.cfg.WearCostMin)
+	return noWearMultiplier - t*(noWearMultiplier-m.cfg.WearCostMin)
 }
 
 // sortedCellKeys extracts and sorts the keys of a map[Cell]T in D12 order (R-major, then Q — hex).
@@ -244,7 +254,7 @@ func (m *NavMap) RequiredTags(c Cell) []core.Tag {
 	if !m.inBounds(c) {
 		return nil
 	}
-	return m.types[m.terrainIDAt(c)].RequiredTags
+	return append([]core.Tag(nil), m.types[m.terrainIDAt(c)].RequiredTags...)
 }
 
 // FootprintBlocked reports whether cell c carries an impassable wall footprint.
@@ -261,7 +271,7 @@ func (m *NavMap) FootprintBlocked(c Cell) bool {
 // Used by the fauna TerrainSampler to compute traversal cost independent of passability.
 func (m *NavMap) BaseCost(c Cell) float64 {
 	if !m.inBounds(c) {
-		return 0
+		return minCostFallback
 	}
 	return m.types[m.terrainIDAt(c)].BaseCost
 }

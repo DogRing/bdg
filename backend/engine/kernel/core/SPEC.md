@@ -147,7 +147,7 @@ const (
     SignalReject                     // decline a previously received offer
     SignalGreet                      // social acknowledgement, no commitment
     SignalThreaten                   // assert intent to harm unless compliance
-    SignalVote                       // P6: publicly delegate a Function to `Toward` (emergent politics)
+    SignalVote                       // P6: publicly delegate a Function to `Target` (emergent politics)
 )
 
 // Signal is a structured social communication passed between agents.
@@ -166,6 +166,8 @@ type Signal struct {
     Truth        float64    // sender's actual veracity [0, 1]; NOT visible to receiver
     Intensity    float64    // urgency / emotional force [0, 1]
     Function     Function   // P6: for SignalVote — the delegated Function (empty otherwise)
+    Source       AgentID    // P6: for SignalVote/gossip — the sender/telling agent (empty otherwise)
+    Target       AgentID    // P6: for SignalVote/gossip — the voted holder/subject (empty otherwise)
 }
 
 // Function names a service an agent relies on another to provide (glossary: Reliance edge):
@@ -173,6 +175,12 @@ type Signal struct {
 // or role type; an emergent role is a CLUSTER of RelyOn edges over a Function, not a Function.
 // Mirrors tom.Function (this is the canonical L0 declaration the other packages alias).
 type Function string
+
+const (
+    FuncSafety    Function = "Safety"
+    FuncJudgment  Function = "Judgment"
+    FuncKnowledge Function = "Knowledge"
+)
 ```
 
 ## Dependencies
@@ -208,9 +216,10 @@ Only value types and interfaces. No heap-allocated state owned by this package.
   one is not assignable to another without a conversion — prevents id-kind drift).
 - [ ] All zero values are valid and predictable (no panics on zero `AgentID`, `Tick`, etc.).
 - [ ] Package has no side-effects on import (no `init()` with global state).
-- [ ] `SignalKind` constants have iota values 0–4 matching Offer/Accept/Reject/Greet/Threaten order.
+- [ ] `SignalKind` constants have iota values 0–5 matching Offer/Accept/Reject/Greet/Threaten/Vote order.
 - [ ] `Signal` zero value is valid (Kind=SignalOffer, all floats=0, Intent="").
 - [ ] `Signal` fields `Valence`, `Truth`, `Intensity` accept the full float64 range without clamping at this layer (clamping is the caller's responsibility).
+- [ ] `Function` constants expose the P6 base functions `Safety`, `Judgment`, and `Knowledge`.
 
 ## Out of Scope
 

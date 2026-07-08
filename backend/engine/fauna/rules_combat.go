@@ -9,15 +9,15 @@ import (
 // absent so non-combat content remains outcome-neutral.
 func (r *Rules) AttackPower(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.attackPower == nil {
-		return 0
+		return scalarZero
 	}
 	v := sd.attackPower.EvalNumber(ctx)
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -26,15 +26,15 @@ func (r *Rules) AttackPower(sp SpeciesID, ctx expr.Context) float64 {
 // when absent so AttackPower may stand alone for simple content.
 func (r *Rules) Hit(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 1
+		return scalarOne
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.hit == nil {
-		return 1
+		return scalarOne
 	}
 	v := sd.hit.EvalNumber(ctx)
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -43,15 +43,15 @@ func (r *Rules) Hit(sp SpeciesID, ctx expr.Context) float64 {
 // absent so non-combat content remains outcome-neutral.
 func (r *Rules) Feed(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.feed == nil {
-		return 0
+		return scalarZero
 	}
 	v := sd.feed.EvalNumber(ctx)
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -60,15 +60,15 @@ func (r *Rules) Feed(sp SpeciesID, ctx expr.Context) float64 {
 // absent so non-grazing content remains outcome-neutral.
 func (r *Rules) Graze(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.graze == nil {
-		return 0
+		return scalarZero
 	}
 	v := sd.graze.EvalNumber(ctx)
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -77,15 +77,15 @@ func (r *Rules) Graze(sp SpeciesID, ctx expr.Context) float64 {
 // species with no hide_chance never hides (OFF-neutral). Parallels Graze/Feed/AttackPower/Hit.
 func (r *Rules) HideChance(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.hideChance == nil {
-		return 0
+		return scalarZero
 	}
 	v := sd.hideChance.EvalNumber(ctx)
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -95,11 +95,11 @@ func (r *Rules) HideChance(sp SpeciesID, ctx expr.Context) float64 {
 // displacement through cover. Pure.
 func (r *Rules) CoverCost(sp SpeciesID) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok {
-		return 0
+		return scalarZero
 	}
 	return sd.coverCost
 }

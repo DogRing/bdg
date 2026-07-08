@@ -174,7 +174,11 @@ type Intent struct {
 //   1. SENSE (F44 two-channel; scent-only-omni after F34↔F44): Scent.Read at Pos (omni neighbor/upwind,
 //      smell radius) → scent.{food,prey,predator} + dist.{food,prey} + per-channel coarse direction;
 //      spatial query within sight radius for predator ANIMALS whose relative bearing is within
-//      Heading ± fov_arc → sight.predator (1/0) + dist.predator (nearest).
+//      Heading ± fov_arc → sight.predator (1/0) + dist.predator (nearest). When ≥2 predators are
+//      simultaneously in FOV, an aggregated flee direction is also accumulated over ALL of them
+//      (M7): Σ (Pos − predᵢ)/distᵢ² in ObjectID order (D12), normalized — nearer predators dominate
+//      yet a second bends the escape sideways (pincer). ≤1 visible ⇒ no aggregate (single-target
+//      path unchanged, byte-identical); dist.predator stays the nearest (fear/flush unaffected).
 //   2. DRIVES (F25(c)): advance the drive vector — accumulators (hunger/fatigue/repro_readiness) by
 //      Rules rate constants (D9); fear SET-from-context from the predator scent/sight channels (the
 //      needs UpdateConditionalNeeds shape, replicated — fauna does not import needs); thermal SET from
@@ -187,7 +191,8 @@ type Intent struct {
 //      where terrain Cost = TerrainSampler.BaseCost × Rules.TerrainCost(species,terrain).mult — the
 //      per-species cost map, W10b: a swimmer is fast in water, a climber on mountains);
 //      direction = the resolved channel direction the chosen action seeks/avoids (Graze/Hunt→toward
-//      food/prey, Flee→away from predator, Wary→slowly away, Rest→none); NextPos = Pos + dir·speed·DT
+//      food/prey, Flee→away from predator [the aggregated repulsion of ALL visible predators when
+//      ≥2, else away from the single nearest — M7], Wary→slowly away, Rest→none); NextPos = Pos + dir·speed·DT
 //      clamped by TerrainSampler (blocked iff FootprintBlocked OR !TerrainCost(species,terrain).passable —
 //      so water is traversable for a swimmer, impassable for a fish-on-land; D11); NextHeading turns toward dir.
 // rng is the injected per-tick fork world supplies (per-step fork(tick), F41). Arbitration, drive

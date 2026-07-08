@@ -63,11 +63,11 @@ func (w *World) runRespawn() {
 			a.Pos = w.respawnPos(sp, members[sp], fork)
 			a.Species = fauna.SpeciesID(sp)
 			if a.Vital <= 0 {
-				a.Vital = 1
+				a.Vital = defaultFreshAnimalVital
 			}
-			a.VitalCap = 1 // fresh: no combat scars
+			a.VitalCap = defaultFreshAnimalVital // fresh: no combat scars
 			if a.Stamina <= 0 {
-				a.Stamina = 1
+				a.Stamina = defaultFreshAnimalVital
 			}
 			a.EngagedWith = ""
 			w.animals[a.ID] = &a
@@ -99,11 +99,11 @@ func (w *World) respawnPos(sp core.Tag, live []core.Vec2, fork *rng.RNG) core.Ve
 	}
 	off := w.envCfg.ScentCellSize
 	if off <= 0 {
-		off = 1
+		off = defaultScentMagnitude
 	}
 	return w.clampToBounds(core.Vec2{
-		X: base.X + (fork.Float64()-0.5)*off,
-		Y: base.Y + (fork.Float64()-0.5)*off,
+		X: base.X + (fork.Float64()-centeredRandomOffset)*off,
+		Y: base.Y + (fork.Float64()-centeredRandomOffset)*off,
 	})
 }
 

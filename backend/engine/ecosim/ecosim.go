@@ -36,6 +36,9 @@ const (
 	MagPred     = 1.0   // predator scent deposit magnitude
 	MagPrey     = 0.5   // prey scent deposit magnitude
 	MagFood     = 0.8   // food scent deposit magnitude
+
+	initialStamina = 1.0
+	initialVital   = 1.0
 )
 
 // Terrain layout thresholds (D11: continuous coordinates).
@@ -47,8 +50,61 @@ const (
 	SeaYMin   = 85.0 // sea strip y≥85
 )
 
-// faunaCadence is the F45 adaptive per-animal cadence for this harness (balance data).
-var faunaCadence = fauna.Cadence{DormantPeriod: 20, WakeCooldown: 10}
+const (
+	faunaDormantPeriod = 20
+	faunaWakeCooldown  = 10
+
+	spatialCellSize = 8.0
+
+	soilBaseCost     = 1.0
+	riverBaseCost    = 2.5
+	mountainBaseCost = 2.0
+	seaBaseCost      = 5.0
+
+	navNoWear       = 0.0
+	navWearMax      = 1.0
+	navWearCostMin  = 0.5
+	navCostFallback = 1.0
+
+	climateGridCols     = 4
+	climateGridRows     = 4
+	initMoisture        = 0.3
+	initTemperature     = 15.0
+	rainProbPerHour     = 0.05
+	rainHardCapHours    = 720
+	rainDurMinHours     = 2
+	rainDurMaxHours     = 12
+	moistureRainRate    = 0.05
+	evapBaseRate        = 0.01
+	evapTempScale       = 0.001
+	annualMidTemp       = 12.5
+	annualTempAmplitude = 17.5
+	annualPhaseOffset   = -math.Pi / 2
+	tempDayPeak         = 5.0
+	tempNightLow        = -3.0
+	tempRainDrop        = 2.0
+	windPrevailingDir   = math.Pi / 4
+	windDirDrift        = 0.1
+	windDirReversion    = 0.1
+	windMagMean         = 0.5
+	windMagNoise        = 0.05
+
+	hungerDrainPerTick = 0.00005
+	feedingRelief      = 0.05
+	restFatigueRelief  = 0.03
+	minDriveValue      = 0.0
+	minVitalValue      = 0.0
+
+	hoursPerDay  = 24
+	hoursPerYear = 720
+
+	faunaSeedMultiplier   int64 = 10007
+	climateSeedMultiplier int64 = 20011
+	tickSeedMultiplier    int64 = 1000003
+	climateForkOffset     int64 = 1
+)
+
+var faunaCadence = fauna.Cadence{DormantPeriod: faunaDormantPeriod, WakeCooldown: faunaWakeCooldown}
 
 // WorldState holds the complete mutable simulation state.
 // world is the SOLE mutator (D12): all mutations happen inside TickOnce.
@@ -86,7 +142,7 @@ func (a NavAdapter) TerrainAt(p core.Vec2) core.Tag {
 func (a NavAdapter) BaseCost(p core.Vec2) float64 {
 	c := a.Nav.BaseCost(a.Nav.CellOf(p))
 	if c <= 0 {
-		return 1.0 // out-of-bounds default (navmap returns 0)
+		return navCostFallback
 	}
 	return c
 }
@@ -118,37 +174,37 @@ func NewWorldState(seed int64) *WorldState {
 
 	// ── Navmap ────────────────────────────────────────────────────────────────
 	types := map[navmap.TerrainID]navmap.TerrainType{
-		"soil":     {BaseCost: 1.0, Passable: true},
-		"river":    {BaseCost: 2.5, Passable: true}, // high cost for land; cheap for swimmers
-		"mountain": {BaseCost: 2.0, Passable: true}, // moderate; goat/bear are cheap climbers
-		"sea":      {BaseCost: 5.0, Passable: true}, // very high cost; impassable for most land animals
+		"soil":     {BaseCost: soilBaseCost, Passable: true},
+		"river":    {BaseCost: riverBaseCost, Passable: true},
+		"mountain": {BaseCost: mountainBaseCost, Passable: true},
+		"sea":      {BaseCost: seaBaseCost, Passable: true},
 	}
 	w.Nav = navmap.New(navmap.Config{
 		CellSize: NavCell, MinX: WorldMin, MinY: WorldMin, MaxX: WorldMax, MaxY: WorldMax,
-		WearOnUse: 0, WearOnPave: 0, WearDecay: 0, WearMax: 1.0, WearCostMin: 0.5,
+		WearOnUse: navNoWear, WearOnPave: navNoWear, WearDecay: navNoWear, WearMax: navWearMax, WearCostMin: navWearCostMin,
 	}, terrainAt, types)
 
 	// ── Climate ───────────────────────────────────────────────────────────────
-	// 4×4 coarse grid; real wind+temperature so scent spreads downwind + thermal affects speed.
+	// Coarse grid; real wind+temperature so scent spreads downwind + thermal affects speed.
 	w.ClimState = climate.New(climate.Config{
-		GridCols: 4, GridRows: 4,
+		GridCols: climateGridCols, GridRows: climateGridRows,
 		WorldMin:     core.Vec2{X: WorldMin, Y: WorldMin},
 		WorldMax:     core.Vec2{X: WorldMax, Y: WorldMax},
-		InitMoisture: 0.3, InitTemperature: 15.0,
-		RainProbPerHour: 0.05, RainHardCapHours: 720,
-		RainDurMinHours: 2, RainDurMaxHours: 12, MoistureRainRate: 0.05,
-		EvapBaseRate: 0.01, EvapTempScale: 0.001,
-		AnnualMid: 12.5, AnnualAmp: 17.5, AnnualPhase: -math.Pi / 2,
-		TempDayPeak: 5.0, TempNightLow: -3.0, TempRainDrop: 2.0,
-		WindPrevailingDir: math.Pi / 4, // NE prevailing wind
-		WindDirDrift:      0.1, WindDirReversion: 0.1,
-		WindMagMean: 0.5, WindMagNoise: 0.05,
+		InitMoisture: initMoisture, InitTemperature: initTemperature,
+		RainProbPerHour: rainProbPerHour, RainHardCapHours: rainHardCapHours,
+		RainDurMinHours: rainDurMinHours, RainDurMaxHours: rainDurMaxHours, MoistureRainRate: moistureRainRate,
+		EvapBaseRate: evapBaseRate, EvapTempScale: evapTempScale,
+		AnnualMid: annualMidTemp, AnnualAmp: annualTempAmplitude, AnnualPhase: annualPhaseOffset,
+		TempDayPeak: tempDayPeak, TempNightLow: tempNightLow, TempRainDrop: tempRainDrop,
+		WindPrevailingDir: windPrevailingDir,
+		WindDirDrift:      windDirDrift, WindDirReversion: windDirReversion,
+		WindMagMean: windMagMean, WindMagNoise: windMagNoise,
 	}, terrainAt)
 	w.ClimRules = climate.NewRules(nil) // no terrain transitions in this harness
 
 	// ── Scent grid & spatial hash ─────────────────────────────────────────────
 	w.ScentGrid = scent.New(ScentCell)
-	w.SpatHash = spatial.New(8.0) // cell ≈ prey sight radius
+	w.SpatHash = spatial.New(spatialCellSize)
 
 	// ── Fauna rules ───────────────────────────────────────────────────────────
 	w.Rules = buildRules()
@@ -173,7 +229,7 @@ func NewWorldState(seed int64) *WorldState {
 		drives map[fauna.DriveID]float64, act actions.ActionID) fauna.Animal {
 		return fauna.Animal{
 			ID: id, Species: sp, Pos: pos, Stats: stats, Drives: drives,
-			Stamina: 1.0, Vital: 1.0, CurrentAction: act,
+			Stamina: initialStamina, Vital: initialVital, CurrentAction: act,
 		}
 	}
 
@@ -301,9 +357,9 @@ func (w *WorldState) applyIntents(intents []fauna.Intent) {
 
 		// Step 5: Vital — slow hunger-driven drain (F3; animals survive well past 2000 ticks).
 		if h, ok := a.Drives["hunger"]; ok {
-			v := a.Vital - h*0.00005
-			if v < 0 {
-				v = 0
+			v := a.Vital - h*hungerDrainPerTick
+			if v < minVitalValue {
+				v = minVitalValue
 			}
 			a.Vital = v
 		}
@@ -326,9 +382,9 @@ func layerActionEffect(act actions.ActionID, drives map[fauna.DriveID]float64,
 		}
 		if sg.IntensityAt(ch, pos) > 0 {
 			if h, ok := next["hunger"]; ok {
-				v := h - 0.05
-				if v < 0 {
-					v = 0
+				v := h - feedingRelief
+				if v < minDriveValue {
+					v = minDriveValue
 				}
 				next["hunger"] = v
 			}
@@ -336,9 +392,9 @@ func layerActionEffect(act actions.ActionID, drives map[fauna.DriveID]float64,
 	case "Rest":
 		// Resting reduces fatigue.
 		if f, ok := next["fatigue"]; ok {
-			v := f - 0.03
-			if v < 0 {
-				v = 0
+			v := f - restFatigueRelief
+			if v < minDriveValue {
+				v = minDriveValue
 			}
 			next["fatigue"] = v
 		}
@@ -380,8 +436,8 @@ func (w *WorldState) stepClimate() {
 	absHour := int64(w.Tick) / ClimCadence
 	f := climate.Forcing{
 		AbsHour:      absHour,
-		HourOfDay:    int(absHour % 24),
-		YearFraction: float64(absHour%720) / 720.0,
+		HourOfDay:    int(absHour % hoursPerDay),
+		YearFraction: float64(absHour%hoursPerYear) / float64(hoursPerYear),
 	}
 	next, _ := climate.Step(w.ClimState, f, w.ClimRules, climateFork(w.baseSeed, w.Tick))
 	w.ClimState = next
@@ -392,12 +448,12 @@ func (w *WorldState) stepClimate() {
 // faunaFork returns a deterministic per-tick RNG for fauna.Step (D12: no global rand).
 // Uses a distinct prime multiplier from climateFork to guarantee disjoint streams.
 func faunaFork(seed int64, tick core.Tick) *rng.RNG {
-	return rng.New(seed*10007 + int64(tick)*1000003)
+	return rng.New(seed*faunaSeedMultiplier + int64(tick)*tickSeedMultiplier)
 }
 
 // climateFork returns a deterministic per-tick RNG for climate.Step (D12).
 func climateFork(seed int64, tick core.Tick) *rng.RNG {
-	return rng.New(seed*20011 + int64(tick)*1000003 + 1)
+	return rng.New(seed*climateSeedMultiplier + int64(tick)*tickSeedMultiplier + climateForkOffset)
 }
 
 // cloneDrives returns a shallow copy of a drive map (no mutation of the original).

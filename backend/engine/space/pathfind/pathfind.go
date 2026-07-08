@@ -32,6 +32,11 @@ type Caps struct {
 // finite cell count — this is a defensive ceiling, an algorithm parameter (not content), per the SPEC.
 const maxExpansions = 1 << 22
 
+const (
+	lineClearSampleCellFraction = 0.5
+	lineClearDefaultCellSize    = 1.0
+)
+
 // Path finds the cheapest route from start to goal over the navmap snapshot. ok=false when the goal is
 // unreachable (walled off / impassable / no capability, or the expansion budget is exhausted). cost is
 // the summed navmap.StepCost; waypoints is start→…→goal in continuous coordinates (string-pulled).
@@ -185,11 +190,11 @@ func stringPull(m *navmap.NavMap, pts []core.Vec2, caps Caps) []core.Vec2 {
 func lineClear(m *navmap.NavMap, a, b core.Vec2, caps Caps) bool {
 	cellSize := m.CellCenter(navmap.Cell{Q: 1, R: 0}).X - m.CellCenter(navmap.Cell{Q: 0, R: 0}).X
 	if cellSize <= 0 {
-		cellSize = 1
+		cellSize = lineClearDefaultCellSize
 	}
 	d := b.Sub(a)
 	dist := math.Hypot(d.X, d.Y)
-	n := int(math.Ceil(dist/(cellSize*0.5))) + 1
+	n := int(math.Ceil(dist/(cellSize*lineClearSampleCellFraction))) + 1
 	for k := 0; k <= n; k++ {
 		t := float64(k) / float64(n)
 		p := a.Add(d.Scale(t))

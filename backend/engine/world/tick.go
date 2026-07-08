@@ -13,59 +13,61 @@ import (
 	"github.com/dogring/bdg/engine/mind/tom"
 )
 
+const (
+	phaseSeedScale          = 1e15
+	defaultIntentCapHint    = 2
+	minBeliefsAfterPrune    = 5
+	gameMinutesPerHour      = 60
+	neutralActualProgress   = 1.0
+	neutralExpectedProgress = 1.0
+)
+
 // ── Tick: the 4-phase loop (D12 read → plan → collect → apply) ─────────────────
 
 // Tick advances the simulation by exactly ONE tick. It is deterministic: same
 // (world state, root rng state, Config, Services, content) → byte-identical state
 // and event sequence.
 func (w *World) Tick() {
+	w.readPhase()
+	allIntents := w.planAgentIntents()
+	animalIntents := w.planFaunaIntents()
+
+	// ── Phase 3: COLLECT (stable-sort by AgentID, D12) ────────────────────
+	sortAgentIntents(allIntents)
+
+	// ── Phase 4: APPLY (serial, sorted AgentID order, D12) ────────────────
+	// Advance root RNG once for this tick's apply phase.
+	applySeed := w.nextPhaseSeed()
+	var newSounds []perception.SoundEvent
+
+	if w.faunaInstalled() {
+		w.applyCombinedIntents(allIntents, animalIntents, applySeed, &newSounds)
+		w.finishApplyPhase(allIntents, w.buildConflictGroups(allIntents), newSounds, true)
+		return
+	}
+
+	conflictGroups := w.buildConflictGroups(allIntents)
+	w.applyAgentIntents(allIntents, conflictGroups, applySeed, &newSounds)
+	w.finishApplyPhase(allIntents, conflictGroups, newSounds, false)
+}
+
+func (w *World) readPhase() {
 	// ── Phase 1: READ (snapshot) ──────────────────────────────────────────
-	// Clear pending signals from the previous tick before taking the snapshot.
-	// The snapshot freezes the cleared state; signals collected in this tick's
-	// apply phase will be available through the NEXT tick's snapshot.
+	// Clear previous-tick transient buffers before taking the snapshot. Signals
+	// collected during this tick's apply phase become visible on the next tick.
 	w.pendingSignals = make(map[core.AgentID][]core.Signal)
-	w.pendingFloraFrame = nil // WI-P4: this tick's flora_delta buffer (see renderframe.go)
+	w.pendingFloraFrame = nil
 	w.currentSnap = newSnapshot(w)
+}
 
+func (w *World) planAgentIntents() []agent.Intent {
 	// ── Phase 2: PLAN (per-agent Tick, read-only on shared state) ─────────
-	// Advance root RNG once for this tick's plan phase (deterministic anchor).
-	planSeed := int64(w.rootRNG.Float64() * 1e15)
-
-	// Pre-allocate with estimated capacity (2 intents per agent is a safe upper bound).
-	allIntents := make([]agent.Intent, 0, len(w.agentIDs)*2)
+	planSeed := w.nextPhaseSeed()
+	allIntents := make([]agent.Intent, 0, len(w.agentIDs)*defaultIntentCapHint)
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-
-	// Iterate w.agentIDs (sorted, D12) to assign goroutines. Each goroutine
-	// resolves its own agent reference from w.agents (read-only map access).
 	for i, agentID := range w.agentIDs {
-
-		// Time slicing (plan_interval): when PlanInterval > 1, only a subset
-		// of agents plan each tick. Agents outside the current slice still
-		// advance their current durative action by calling a.Tick (which is
-		// read-only on shared state) but with a cheaper path (no replan).
-		// The subset is: (i % PlanInterval) == (tick % PlanInterval).
-		if w.cfg.PlanInterval > 1 && (i%w.cfg.PlanInterval) != (int(w.tick)%w.cfg.PlanInterval) {
-			// This agent is outside the current planning slice.
-			// Call a.Tick as normal — the agent will still execute its current
-			// action (phase 6 of the agent loop) even if it doesn't replan.
-			// Determinism preserved: same RNG fork regardless of slicing, so
-			// an agent's own Tick outcome is independent of which tick slot it
-			// occupies.
-			wg.Add(1)
-			go func(agentID core.AgentID, idx int) {
-				defer wg.Done()
-				fork := rng.New(planSeed + int64(idx))
-				intents := w.agents[agentID].Tick(w.currentSnap, w.tick, fork, w.svc, w.emit)
-				mu.Lock()
-				allIntents = append(allIntents, intents...)
-				mu.Unlock()
-			}(agentID, i)
-			continue
-		}
-
-		// Full planning path (or PlanInterval == 1, the default).
 		wg.Add(1)
 		go func(agentID core.AgentID, idx int) {
 			defer wg.Done()
@@ -76,46 +78,22 @@ func (w *World) Tick() {
 			mu.Unlock()
 		}(agentID, i)
 	}
-
 	wg.Wait()
+	return allIntents
+}
 
-	animalIntents := w.planFaunaIntents()
-
-	// ── Phase 3: COLLECT (stable-sort by AgentID, D12) ────────────────────
-	sort.SliceStable(allIntents, func(i, j int) bool {
-		return string(allIntents[i].Agent) < string(allIntents[j].Agent)
+func sortAgentIntents(intents []agent.Intent) {
+	sort.SliceStable(intents, func(i, j int) bool {
+		return string(intents[i].Agent) < string(intents[j].Agent)
 	})
+}
 
-	// ── Phase 4: APPLY (serial, sorted AgentID order, D12) ────────────────
-	// Advance root RNG once for this tick's apply phase.
-	applySeed := int64(w.rootRNG.Float64() * 1e15)
-
-	// Collect sound events emitted this tick.
-	var newSounds []perception.SoundEvent
-
-	if w.faunaInstalled() {
-		w.applyCombinedIntents(allIntents, animalIntents, applySeed, &newSounds)
-
-		// ── Phase 4-ENV: APPLY env modules (serial, fixed order) ──────────────
-		w.runEnvPhase()
-		w.runRespawn()
-
-		// ── Post-apply ────────────────────────────────────────────────────────
-		w.tick++
-		w.currentSounds = newSounds
-		w.resentmentTriggers = w.conflictResentmentTriggers(allIntents, w.buildConflictGroups(allIntents))
-		w.relianceScan()
-		w.pruneToMBeliefs()
-		w.emitTickDone()
-		if w.cfg.BackupEveryTicks > 0 && int(w.tick)%w.cfg.BackupEveryTicks == 0 {
-			w.emitSnapshotReady()
-		}
-		return
-	}
-
-	// Track conflicting targets: target → []intentIndex.
-	conflictGroups := w.buildConflictGroups(allIntents)
-
+func (w *World) applyAgentIntents(
+	allIntents []agent.Intent,
+	conflictGroups map[conflictKey][]int,
+	applySeed int64,
+	newSounds *[]perception.SoundEvent,
+) {
 	for i, intent := range allIntents {
 		if intent.Kind == agent.IntentNone {
 			continue
@@ -138,7 +116,7 @@ func (w *World) Tick() {
 
 		// Apply world state changes for successful intents.
 		if outcome.Status == agent.Succeeded {
-			w.applyIntent(intent, outcome, &newSounds)
+			w.applyIntent(intent, outcome, newSounds)
 		}
 
 		// Deliver outcome back to the agent.
@@ -147,9 +125,19 @@ func (w *World) Tick() {
 			a.ApplyOutcome(outcome, w.tick, fork, a.Cfg, w.svc.Stats, w.emit)
 		}
 	}
+}
 
+func (w *World) finishApplyPhase(
+	allIntents []agent.Intent,
+	conflictGroups map[conflictKey][]int,
+	newSounds []perception.SoundEvent,
+	runFaunaRespawn bool,
+) {
 	// ── Phase 4-ENV: APPLY env modules (serial, fixed order) ──────────────
 	w.runEnvPhase()
+	if runFaunaRespawn {
+		w.runRespawn()
+	}
 
 	// ── Post-apply ────────────────────────────────────────────────────────
 	w.tick++
@@ -172,6 +160,10 @@ func (w *World) Tick() {
 	}
 }
 
+func (w *World) nextPhaseSeed() int64 {
+	return int64(w.rootRNG.Float64() * phaseSeedScale)
+}
+
 // pruneToMBeliefs prunes stale ToM beliefs for every agent. Never prunes
 // self-belief (D8). Skips if PruneThreshold == 0 (default = never prune).
 func (w *World) pruneToMBeliefs() {
@@ -179,14 +171,12 @@ func (w *World) pruneToMBeliefs() {
 		return
 	}
 	maxAge := core.Tick(w.cfg.PruneThreshold)
-	// Keep at least 5 beliefs for social context.
-	const minKeep = 5
 	for _, agentID := range w.agentIDs {
 		a := w.agents[agentID]
 		if a == nil {
 			continue
 		}
-		a.ToM.PruneBeliefs(w.tick, maxAge, minKeep)
+		a.ToM.PruneBeliefs(w.tick, maxAge, minBeliefsAfterPrune)
 	}
 }
 
@@ -318,7 +308,7 @@ func (w *World) resolveOutcome(intent agent.Intent, status agent.OutcomeStatus, 
 	// Resolve against RealStats (D8).
 	statIDs := statsFromTags(actDef.Tags, w.svc.Stats)
 	effortLevel := effortLevelFromTags(actDef.Tags)
-	difficulty := w.cfg.OutcomeDifficultyBase * (1.0 + effortLevel)
+	difficulty := w.cfg.OutcomeDifficultyBase * (neutralActualProgress + effortLevel)
 
 	var outcomeStatus agent.OutcomeStatus
 	var actual float64
@@ -326,7 +316,7 @@ func (w *World) resolveOutcome(intent agent.Intent, status agent.OutcomeStatus, 
 		// No uses:X tag — no capability requirement; action always succeeds
 		// (e.g., Eat, basic social actions).
 		outcomeStatus = agent.Succeeded
-		actual = 1.0
+		actual = neutralActualProgress
 	} else {
 		realLevel := composeStat(a.RealStats, statIDs)
 		if realLevel >= difficulty {
@@ -347,7 +337,7 @@ func (w *World) resolveOutcome(intent agent.Intent, status agent.OutcomeStatus, 
 		// runs after resolveOutcome). The distance-derived cap guarantees termination so
 		// a moving / unreachable target can never freeze the agent.
 		dist := a.Pos.Distance(intent.Move)
-		travelCap := core.GameMinutes(dist) + actDef.Duration + 1
+		travelCap := core.GameMinutes(dist) + actDef.Duration + core.GameMinutes(unitScalar)
 		completed = dist <= w.cfg.ArrivalEpsilon || a.Elapsed >= travelCap
 	} else {
 		completed = a.Elapsed >= w.scaleDuration(actDef.Duration, actDef.Tags, a)
@@ -378,7 +368,7 @@ func (w *World) resolveOutcome(intent agent.Intent, status agent.OutcomeStatus, 
 func (w *World) computeExpected(a *agent.Agent, statIDs []core.StatID, difficulty float64) float64 {
 	selfBelief, ok := a.ToM.Self(a.ToM.SelfID())
 	if !ok {
-		return 1.0 // neutral expectation: assume success
+		return neutralExpectedProgress // neutral expectation: assume success
 	}
 	var sum float64
 	var count int
@@ -389,7 +379,7 @@ func (w *World) computeExpected(a *agent.Agent, statIDs []core.StatID, difficult
 		}
 	}
 	if count == 0 {
-		return 1.0 // neutral expectation: no stat data → assume success
+		return neutralExpectedProgress // neutral expectation: no stat data → assume success
 	}
 	selfLevel := sum / float64(count)
 	return clamp01(selfLevel / difficulty)
@@ -458,7 +448,7 @@ func (w *World) applyIntent(intent agent.Intent, outcome agent.ActionOutcome, so
 
 	// Check for loud actions → emit sound events for next tick.
 	for _, t := range actDef.Tags {
-		if t == "noise:high" || t == "noise:med" {
+		if t == tagNoiseHigh || t == tagNoiseMedium {
 			*sounds = append(*sounds, perception.SoundEvent{
 				SourceID: core.ObjectID(intent.Agent),
 				ActionID: intent.Action,

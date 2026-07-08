@@ -2,9 +2,11 @@ package rng
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"math"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -200,31 +202,47 @@ func TestRNGStateJSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNoForbiddenImports checks that rng.go does not import "time" or use
-// the global rand functions (no bare rand.Float64, rand.Intn, etc.).
+// TestNoForbiddenImports checks actual imports/calls, not raw source text, so
+// comments that mention forbidden packages do not false-positive.
 func TestNoForbiddenImports(t *testing.T) {
-	src, err := os.ReadFile("rng.go")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "rng.go", nil, parser.ImportsOnly)
 	if err != nil {
-		t.Fatalf("os.ReadFile(rng.go): %v", err)
+		t.Fatalf("parse imports: %v", err)
 	}
-	content := string(src)
-
-	if strings.Contains(content, `"time"`) {
-		t.Error(`rng.go must not import "time"`)
-	}
-	// Global rand calls in math/rand/v2 would look like rand.Float64() — the package-level func.
-	// Our wrapper only calls methods on r.r (a *rand.Rand value), so we check for
-	// the global-call pattern: "rand.Float64()" / "rand.Intn(" / "rand.NormFloat64()" etc.
-	globalCalls := []string{
-		"rand.Float64()",
-		"rand.Intn(",
-		"rand.NormFloat64()",
-		"rand.Shuffle(",
-		"rand.IntN(",
-	}
-	for _, g := range globalCalls {
-		if strings.Contains(content, g) {
-			t.Errorf("rng.go must not use global rand call %q", g)
+	for _, imp := range file.Imports {
+		if imp.Path.Value == `"time"` {
+			t.Error(`rng.go must not import "time"`)
 		}
 	}
+
+	file, err = parser.ParseFile(fset, "rng.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse file: %v", err)
+	}
+	forbiddenRandCalls := map[string]struct{}{
+		"Float64":     {},
+		"Intn":        {},
+		"IntN":        {},
+		"NormFloat64": {},
+		"Shuffle":     {},
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok || ident.Name != "rand" {
+			return true
+		}
+		if _, bad := forbiddenRandCalls[sel.Sel.Name]; bad {
+			t.Errorf("rng.go must not use global rand call rand.%s", sel.Sel.Name)
+		}
+		return true
+	})
 }

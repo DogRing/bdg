@@ -70,22 +70,22 @@ func Step(
 
 		// Suitability drives BOTH growth axes and death hysteresis; clamped ∈ [0,1].
 		suit := evalNum(sr.Suitability, ctx)
-		if suit < 0 {
-			suit = 0
-		} else if suit > 1 {
-			suit = 1
+		if suit < probabilityMin {
+			suit = probabilityMin
+		} else if suit > probabilityMax {
+			suit = probabilityMax
 		}
 
 		// Two-axis growth (RESOLVED §1 refinement): each axis integrates independently.
 		// Length += LengthRate·suit ; Width += WidthRate·suit ; both clamped ≥ 0.
 		// Float accumulation order: Length first, then Width (fixed for D12).
 		newLength := p.Length + evalNum(sr.LengthRate, ctx)*suit
-		if newLength < 0 {
-			newLength = 0
+		if newLength < nonNegativeFloor {
+			newLength = nonNegativeFloor
 		}
 		newWidth := p.Width + evalNum(sr.WidthRate, ctx)*suit
-		if newWidth < 0 {
-			newWidth = 0
+		if newWidth < nonNegativeFloor {
+			newWidth = nonNegativeFloor
 		}
 
 		// Death hysteresis (RESOLVED 1b option a):
@@ -169,7 +169,7 @@ func Step(
 			propRadius := evalNum(sr.PropRadius, ctx)
 
 			// RNG draw 1: angle (uniform [0, 2π)) — determines direction of seed travel.
-			angle := r.Float64() * 2 * math.Pi
+			angle := r.Float64() * fullCircleRadians
 			// RNG draw 2: distance fraction (uniform [0, 1)) × PropRadius.
 			// Documented choice: uniform in [0, PropRadius] (not sqrt-corrected for circle
 			// uniformity). Gives higher density near parent; simpler + still within PropRadius.
@@ -183,18 +183,18 @@ func Step(
 			// Spawn probability: PropChance × suitability × densityWeight(NeighborCount).
 			// Documented density-weighting: 1/(1+n), monotone decreasing (see package doc).
 			suit := evalNum(sr.Suitability, ctx)
-			if suit < 0 {
-				suit = 0
-			} else if suit > 1 {
-				suit = 1
+			if suit < probabilityMin {
+				suit = probabilityMin
+			} else if suit > probabilityMax {
+				suit = probabilityMax
 			}
 			propChance := evalNum(sr.PropChance, ctx)
-			densityWeight := 1.0 / float64(1+in.NeighborCount)
+			densityWeight := densityWeightNumerator / float64(densityWeightBaseNeighbors+in.NeighborCount)
 			spawnProb := propChance * suit * densityWeight
-			if spawnProb < 0 {
-				spawnProb = 0
-			} else if spawnProb > 1 {
-				spawnProb = 1
+			if spawnProb < probabilityMin {
+				spawnProb = probabilityMin
+			} else if spawnProb > probabilityMax {
+				spawnProb = probabilityMax
 			}
 
 			// RNG draw 3: spawn test.
@@ -204,9 +204,9 @@ func Step(
 					ID:          idAlloc(),
 					Species:     p.Species,
 					Pos:         childPos,
-					Length:      0,  // seedling starts at zero height (RESOLVED 1a)
-					Width:       0,  // seedling starts at zero canopy (RESOLVED 1a)
-					DeathStreak: 0,  // fresh: no accumulated unsuitability
+					Length:      seedlingLength,
+					Width:       seedlingWidth,
+					DeathStreak: freshDeathStreak,
 					Owner:       "", // wild (RESOLVED 1f)
 				}
 				workMap[child.ID] = child

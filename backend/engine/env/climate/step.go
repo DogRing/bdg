@@ -6,6 +6,13 @@ import (
 	"github.com/dogring/bdg/engine/kernel/rng"
 )
 
+const (
+	rainDurationInclusiveOffset int64 = 1
+	fullCircleRadians                 = 2 * math.Pi
+	hoursPerDay                       = 24
+	diurnalPeakHour                   = 14
+)
+
 // Step advances the whole climate field ONE climate step (= 1 game-hour; cadence is world's).
 //
 // Pure function of (prev, f, rules, rng): does NOT mutate prev, Rules, or Forcing.
@@ -50,14 +57,14 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 	} else {
 		// Accumulate probability.
 		rain.HoursSinceRain++
-		rain.PRain = math.Min(rain.PRain+cfg.RainProbPerHour, 1.0)
+		rain.PRain = math.Min(rain.PRain+cfg.RainProbPerHour, moistureMax)
 
 		// Draw trigger (always consumed when not raining, even if forced — D12 byte-stable order).
 		trigger := r.Float64()
 		forced := rain.HoursSinceRain >= cfg.RainHardCapHours
 		if trigger < rain.PRain || forced {
 			// Rain starts: draw duration Uniform[RainDurMin, RainDurMax] (inclusive).
-			durRange := int(cfg.RainDurMaxHours - cfg.RainDurMinHours + 1)
+			durRange := int(cfg.RainDurMaxHours - cfg.RainDurMinHours + rainDurationInclusiveOffset)
 			dur := int64(r.Intn(durRange)) + cfg.RainDurMinHours
 			rain.Raining = true
 			rain.PRain = 0
@@ -75,24 +82,24 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 	// but is deterministic and consistent. See SPEC Notes on the random-walk design.
 	newDir := prev.wind.Dir*(1-cfg.WindDirReversion) + cfg.WindPrevailingDir*cfg.WindDirReversion
 	newDir += r.NormFloat64() * cfg.WindDirDrift
-	newDir = math.Mod(newDir, 2*math.Pi)
+	newDir = math.Mod(newDir, fullCircleRadians)
 	if newDir < 0 {
-		newDir += 2 * math.Pi
+		newDir += fullCircleRadians
 	}
 
 	// Mag: mean + Gaussian noise, clamped [0,1].
 	newMag := cfg.WindMagMean + r.NormFloat64()*cfg.WindMagNoise
-	if newMag < 0 {
-		newMag = 0
-	} else if newMag > 1 {
-		newMag = 1
+	if newMag < windMin {
+		newMag = windMin
+	} else if newMag > windMax {
+		newMag = windMax
 	}
 	next.wind = Wind{Dir: newDir, Mag: newMag}
 
 	// ── 3. Temperature (world-uniform per step) and Moisture (per cell) ───────
 	// Temperature formula (CA1/CA3, NOT clamped):
 	//   T = AnnualMid + AnnualAmp·sin(2π·YearFraction+AnnualPhase) + dailyDelta(HourOfDay) − TempRainDrop·raining
-	annualT := cfg.AnnualMid + cfg.AnnualAmp*math.Sin(2*math.Pi*f.YearFraction+cfg.AnnualPhase)
+	annualT := cfg.AnnualMid + cfg.AnnualAmp*math.Sin(fullCircleRadians*f.YearFraction+cfg.AnnualPhase)
 	daily := dailyDelta(f.HourOfDay, cfg.TempNightLow, cfg.TempDayPeak)
 	isRaining := next.rain.Raining
 	rainDrop := 0.0
@@ -106,8 +113,8 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 	evapRate := 0.0
 	if !isRaining {
 		evapRate = cfg.EvapBaseRate + cfg.EvapTempScale*math.Max(0, temperature)
-		if evapRate < 0 {
-			evapRate = 0 // total evap is floored at 0 per SPEC
+		if evapRate < moistureMin {
+			evapRate = moistureMin // total evap is floored at 0 per SPEC
 		}
 	}
 
@@ -117,14 +124,14 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 			cell.Temperature = temperature
 			if isRaining {
 				m := cell.Moisture + cfg.MoistureRainRate
-				if m > 1 {
-					m = 1
+				if m > moistureMax {
+					m = moistureMax
 				}
 				cell.Moisture = m
 			} else {
 				m := cell.Moisture - evapRate
-				if m < 0 {
-					m = 0
+				if m < moistureMin {
+					m = moistureMin
 				}
 				cell.Moisture = m
 			}
@@ -157,18 +164,16 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 // Documented functional-form choice (SPEC specifies "interpolating TempNightLow..TempDayPeak
 // over the day" but not the exact curve shape):
 //
-//	dailyDelta(h) = mid + amp · cos(2π · (h − 14) / 24)
+//	dailyDelta(h) = mid + amp · cos(2π · (h − diurnalPeakHour) / hoursPerDay)
 //	  where mid = (TempNightLow + TempDayPeak) / 2
 //	        amp = (TempDayPeak  − TempNightLow) / 2
 //
-// This gives TempDayPeak at hour 14 (2 pm) and TempNightLow at hour 2 (2 am),
+// This gives TempDayPeak at diurnalPeakHour and TempNightLow half a day later,
 // matching the standard meteorological diurnal temperature cycle (peak in the afternoon,
 // trough in the pre-dawn hours). Both TempDayPeak and TempNightLow are signed °C deltas
 // around the annual midline: TempDayPeak > 0, TempNightLow < 0.
 func dailyDelta(hourOfDay int, nightLow, dayPeak float64) float64 {
 	mid := (nightLow + dayPeak) / 2
 	amp := (dayPeak - nightLow) / 2
-	// peak at hour 14 (14 - 14 = 0 → cos(0) = 1 → mid + amp = dayPeak)
-	// trough at hour 2  (2  - 14 = -12 → cos(-π) = -1 → mid - amp = nightLow)
-	return mid + amp*math.Cos(2*math.Pi*float64(hourOfDay-14)/24)
+	return mid + amp*math.Cos(fullCircleRadians*float64(hourOfDay-diurnalPeakHour)/hoursPerDay)
 }

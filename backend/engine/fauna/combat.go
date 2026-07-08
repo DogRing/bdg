@@ -6,6 +6,8 @@ import (
 	"github.com/dogring/bdg/engine/mind/actions"
 )
 
+const predatorTargetThreat = 1.0
+
 type combatTargetInfo struct {
 	id       core.ObjectID
 	pos      core.Vec2
@@ -48,9 +50,9 @@ func combatTarget(a Animal, snap *Snapshot, rules *Rules, targetRange float64) c
 		if targetID == "" && other.HiddenUntil > 0 && other.HiddenUntil >= snap.Tick && dist > snap.Combat.HiddenFlushFactor*snap.ScentCellSize {
 			continue
 		}
-		threat := 0.0
+		threat := scalarZero
 		if rules.IsPredator(other.Species) {
-			threat = 1.0
+			threat = predatorTargetThreat
 		}
 		info := combatTargetInfo{id: other.ID, pos: other.Pos, threat: threat, distance: dist, found: true}
 		if targetID != "" {
@@ -96,13 +98,13 @@ func resolveCombat(
 	if tag != TagAttack {
 		if state.engagedWith != "" && shouldDisengage(a, target, snap.Combat, snap.ScentCellSize) {
 			state.engagedWith = ""
-			state.nextExchangeTick = 0
+			state.nextExchangeTick = core.Tick(0)
 		}
 		return state
 	}
 	if state.engagedWith != "" && shouldDisengage(a, target, snap.Combat, snap.ScentCellSize) {
 		state.engagedWith = ""
-		state.nextExchangeTick = 0
+		state.nextExchangeTick = core.Tick(0)
 		return state
 	}
 	if state.engagedWith == "" {
@@ -118,8 +120,8 @@ func resolveCombat(
 	state.target = state.engagedWith
 	if target.found && snap.Tick >= a.NextExchangeTick {
 		state.damage = rules.AttackPower(a.Species, ctx) * rules.Hit(a.Species, ctx)
-		if state.damage < 0 {
-			state.damage = 0
+		if state.damage < scalarZero {
+			state.damage = scalarZero
 		}
 		state.targetVitalCapDamage = state.damage * snap.Combat.VitalCapDamageFraction
 		state.nextExchangeTick = snap.Tick + randTickRange(r, snap.Combat.ExchangeMinTicks, snap.Combat.ExchangeMaxTicks)
@@ -145,8 +147,8 @@ func randTickRange(r *rng.RNG, minTicks, maxTicks int) core.Tick {
 }
 
 func effectiveVitalCap(a Animal) float64 {
-	if a.VitalCap <= 0 || a.VitalCap > 1 {
-		return 1
+	if a.VitalCap <= scalarZero || a.VitalCap > scalarOne {
+		return scalarOne
 	}
 	return a.VitalCap
 }
@@ -157,8 +159,8 @@ func regenVital(a Animal, dt float64, params CombatParams) float64 {
 	if v > cap {
 		return cap
 	}
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -174,11 +176,11 @@ func nextStamina(a Animal, engaged bool, dt float64, params CombatParams) float6
 	} else {
 		s += params.StaminaRecoverPerTick * dt
 	}
-	if s > 1 {
-		return 1
+	if s > scalarOne {
+		return scalarOne
 	}
-	if s < 0 {
-		return 0
+	if s < scalarZero {
+		return scalarZero
 	}
 	return s
 }

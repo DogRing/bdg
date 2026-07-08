@@ -179,7 +179,7 @@ func Step(
 // kind's ordered thresholds. Returns 0 when the kind has no states or decayAge is below
 // all thresholds. Used internally by Step.
 func stateFromKind(kr KindRule, decayAge float64) int {
-	state := 0
+	state := initialStateIndex
 	for i, sr := range kr.States {
 		if decayAge >= sr.Threshold {
 			state = i

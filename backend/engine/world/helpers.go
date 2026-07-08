@@ -77,13 +77,13 @@ func composeStat(realStats stats.Stats, statIDs []core.StatID) float64 {
 func effortLevelFromTags(tags []core.Tag) float64 {
 	for _, t := range tags {
 		switch t {
-		case "effort:high":
-			return 0.90
-		case "effort:med":
-			return 0.50
-		case "effort:low":
-			return 0.20
+		case tagEffortHigh:
+			return effortHighCost
+		case tagEffortMedium:
+			return effortMediumCost
+		case tagEffortLow:
+			return effortLowCost
 		}
 	}
-	return 0.0
+	return zeroScalar
 }

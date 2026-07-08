@@ -51,6 +51,7 @@ type Fixture struct {
     Animals         []AnimalPlacement // empty ⇒ fauna OFF
     Flora           []FloraPlacement  // empty ⇒ flora OFF
     Lots            []LotPlacement
+    Shelters        *ShelterLayout    // nil ⇒ shelter/cave OFF; cave portals + generated/fixture interiors (SH2)
     RespawnTargets  map[core.Tag]int  // per-run OVERRIDE of content respawn_target (F9 carrying capacity);
                                       // merged OVER config.RespawnTargets at Load (cfg untouched). Empty ⇒ content values.
 }
@@ -70,6 +71,26 @@ type FloraPlacement  struct{ ID core.ObjectID; Species core.Tag; Pos *core.Vec2;
 // A pos-less placement REQUIRES a terrain layout (explicit or random); otherwise Load errors.
 type LotPlacement    struct{ ID core.ObjectID; Kind core.Tag; Qty int; DecayAge float64; Location string }
 
+// ShelterLayout is the SH2 cave/interior fixture block. It carries portal-linked continuous interior
+// regions; worldgen.Generate may produce it from seeded mountain/bare_rock cave placement, and hand
+// fixtures may author it directly. nil/absent ⇒ shelter OFF. Every Portal.Kind must be an object_kind
+// carrying the `shelters` tag; every blocker object/terrain that affects exposure is still declared
+// through normal object/terrain tags (`blocks_wind`) and compiled by config/world.
+type ShelterLayout struct {
+    Interiors []InteriorPlacement
+}
+type InteriorPlacement struct {
+    ID      core.ObjectID
+    Bounds  Bounds
+    Portals []PortalPlacement
+}
+type PortalPlacement struct {
+    ID          core.ObjectID
+    Kind        core.Tag
+    ExteriorPos core.Vec2
+    InteriorPos core.Vec2
+}
+
 // ── Parse / Encode (the fixture wire; schema-validated) ──────────────────────────
 // Parse decodes + schema-validates a fixture blob (content/schema/fixture.schema.json) into a Fixture.
 // It REJECTS (typed error) a malformed blob, a schema_version mismatch, or a Cells length != Cols*Rows.
@@ -80,7 +101,8 @@ func Encode(fx Fixture) ([]byte, error)
 // ── Generate (AUTHOR-TIME; seeded, deterministic — WG1-a) ────────────────────────
 // Generate runs the water-centric procedural pipeline (docs/world-gen.md §1) on a seeded RNG and
 // returns a Fixture: elevation(noise) → slope → flow-accumulation rivers/lakes/sea → moisture →
-// base material (§6/threshold) → resource distribution (affinity, ore_node) → flora/fauna/agent
+// base material (§6/threshold) → resource distribution (affinity, ore_node) → cave entrance/interior
+// placement (mountain/bare_rock elevation threshold, docs/shelter.md Q-C2) → flora/fauna/agent
 // seeding (suitability + Value/threat lever). PURE function of (cfg, seed): same seed ⇒ byte-
 // identical Fixture (D12; runtime generation 0 — this is author-time only). The pipeline COEFFICIENTS
 // (noise octaves, sea level, river threshold, erosion, ore density) are GenConfig data (world-gen.md §2).
@@ -120,7 +142,8 @@ func GenerateTerrain(cols, rows int, navCfg navmap.Config, r *rng.RNG) (cells []
 // climate.New(reg.ClimateCfg, terrainAt) [SAME terrainAt ⇒ grids agree at t=0], flora.New(fx.Flora→
 // plants), decay.New(fx.Lots→lots), the fauna.Animal set (fx.Animals), then calls
 // w.InstallEnv(reg.WorldEnv, nav, climate, reg.ClimateRules, flora, reg.FloraRules, decay,
-// reg.DecayRules) and (iff Animals non-empty) w.InstallFauna(reg.WorldEnv, reg.FaunaRules, reg.ScentEmitters, reg.CoverKinds, animals);
+// reg.DecayRules), w.InstallShelter(...) if fx.Shelters is present, and (iff Animals non-empty)
+// w.InstallFauna(reg.WorldEnv, reg.FaunaRules, reg.ScentEmitters, reg.CoverKinds, animals);
 // finally w.Spawn(agent) for each AgentPlacement (RealStats SAMPLED from the GenSpec via rng) and
 // w.PlaceObject for each ObjectPlacement (Remaining for ore_node). bounds = fx.Bounds ?? reg.WorldEnv.
 // rng is the run's root (the fixture Seed seeds it). When a block is absent, that subsystem stays OFF
@@ -167,6 +190,9 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
 - [ ] **Load builds + installs env** — `Load` of a fixture with terrain+flora+animals builds navmap/
   climate (grids agree at t=0), installs env + fauna, spawns agents (RealStats sampled), places objects
   (ore_node `Remaining` set); a subsequent `world.Tick()` runs the env sub-phase.
+- [ ] **Shelter load** — `Load` of a fixture with `shelters.interiors[]` validates portal kinds carry
+  `shelters`, installs cave interiors via `world.InstallShelter`, and places portal objects at their
+  exterior positions. Absent `Shelters` leaves shelter OFF and existing fixtures unchanged.
 - [ ] **Absent-block neutrality** — a fixture with no terrain/animals/flora loads an env-OFF world
   (InstallEnv/InstallFauna effectively neutral; no env render keys); a minimal `{seed}` fixture loads an
   empty world. Existing scenario behavior (agents+objects only) is unchanged.
@@ -201,7 +227,7 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
   `fauna.Rules`/`decay.Rules`/`TerrainTypes`/`WorldEnv`) → `platform/config` (WI-P0,
   `backend/platform/config/SPEC-world.md`). Load CONSUMES `*config.Registries`; it compiles nothing.
 - **`InstallEnv`/`InstallFauna` semantics + the env sub-phase** → `engine/world`
-  (`SPEC-world-env.md`/`SPEC-world-fauna.md`). Load only CALLS them with the built states.
+  (`SPEC-world-env.md`/`SPEC-world-fauna.md`/`SPEC-world-shelter.md`). Load only CALLS them with the built states.
 - **The engine module constructors** (`navmap.New`/`climate.New`/`flora.New`/`decay.New`/`scent.New`/
   `world.Spawn`/`PlaceObject`/`InstallEnv`/`InstallFauna`) → each module's SPEC. Load wires them.
 - **Snapshot serialization / resume** → `platform/persist` (`SPEC-world.md`, WI-P4 output). Load is the

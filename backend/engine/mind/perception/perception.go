@@ -17,6 +17,22 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	coincidentDistanceEpsilon = 1e-12
+
+	lineOfSightBaseStep       = 1.0
+	lineOfSightHalfDistance   = 0.5
+	lineOfSightMinStepCount   = 3.0
+	lineOfSightMinStep        = 0.1
+	lineOfSightQueryRadiusMul = 0.6
+	lineOfSightMinQueryRadius = 0.5
+
+	defaultScentBaseStrength = 1.0
+	scentFalloffBase         = 1.0
+
+	scentedTag core.Tag = "scented"
+)
+
 // PerceptionConfig holds the three sense radii loaded from content/balance.yaml's
 // `perception:` block. World units (free coordinates, D11). Immutable after Load.
 type PerceptionConfig struct {
@@ -100,7 +116,7 @@ func (s *Sensor) Sight(observer core.Vec2, world WorldSnapshot) []PerceivedEntit
 	for _, c := range candidates {
 		d := observer.Distance(c.Pos)
 		// Exclude observer's own entity (distance ~= 0).
-		if d < 1e-12 {
+		if d < coincidentDistanceEpsilon {
 			continue
 		}
 		// Check occlusion: is there an opaque entity strictly between observer and target?
@@ -131,7 +147,7 @@ func (s *Sensor) Sight(observer core.Vec2, world WorldSnapshot) []PerceivedEntit
 func (s *Sensor) isOccluded(observer, target core.Vec2, targetID core.ObjectID, targetDist float64, world WorldSnapshot) bool {
 	dir := target.Sub(observer)
 	// If observer and target are essentially coincident, nothing occludes.
-	if targetDist < 1e-12 {
+	if targetDist < coincidentDistanceEpsilon {
 		return false
 	}
 
@@ -139,25 +155,24 @@ func (s *Sensor) isOccluded(observer, target core.Vec2, targetID core.ObjectID, 
 	ux := dir.X / targetDist
 	uy := dir.Y / targetDist
 
-	// Step size: ~1 world unit, or as small as needed to not skip over opaque entities.
-	// We use min(1.0, targetDist/2) so we always take at least 2 steps.
-	step := 1.0
-	if step > targetDist*0.5 {
-		step = targetDist * 0.5
+	// Step size: ~1 world unit, or as small as needed to not skip opaque entities.
+	step := lineOfSightBaseStep
+	if step > targetDist*lineOfSightHalfDistance {
+		step = targetDist * lineOfSightHalfDistance
 	}
 	// Ensure at least 3 steps for short distances so we have intermediate points.
-	if targetDist > 0 && step*3 > targetDist {
-		step = targetDist / 3.0
+	if targetDist > 0 && step*lineOfSightMinStepCount > targetDist {
+		step = targetDist / lineOfSightMinStepCount
 	}
-	if step < 0.1 {
-		step = 0.1
+	if step < lineOfSightMinStep {
+		step = lineOfSightMinStep
 	}
 
 	// The spatial hash's cell size. Use it as the query radius for nearby checks at each step.
 	// We use a small radius (half the step) to catch entities whose center is near the segment.
-	queryRadius := step * 0.6
-	if queryRadius < 0.5 {
-		queryRadius = 0.5
+	queryRadius := step * lineOfSightQueryRadiusMul
+	if queryRadius < lineOfSightMinQueryRadius {
+		queryRadius = lineOfSightMinQueryRadius
 	}
 
 	steps := int(targetDist / step)
@@ -196,15 +211,14 @@ func (s *Sensor) Smell(observer core.Vec2, world WorldSnapshot) []ScentSignal {
 		return nil
 	}
 
-	smellTag := core.Tag("scented")
 	var result []ScentSignal
 	for _, c := range candidates {
 		tags := world.Tags(c.ID)
-		if !hasTag(tags, smellTag) {
+		if !hasTag(tags, scentedTag) {
 			continue
 		}
 		dSq := observer.DistSq(c.Pos)
-		strength := 1.0 / (1.0 + dSq) // base_strength = 1.0 per SPEC "baseStrength defaults to 1.0"
+		strength := defaultScentBaseStrength / (scentFalloffBase + dSq)
 		result = append(result, ScentSignal{
 			ID:       c.ID,
 			Strength: strength,

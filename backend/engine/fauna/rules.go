@@ -9,6 +9,10 @@ import (
 	"github.com/dogring/bdg/engine/mind/actions"
 )
 
+const defaultTerrainCost = 1.0
+
+var absentUtilityScore = math.Inf(-1)
+
 // ── DriveRule / SpeciesRule (NewRules inputs) ─────────────────────────────────
 
 // DriveRule is one drive's compiled params (F25(c)/F43). The drive id is also its
@@ -193,15 +197,15 @@ func (r *Rules) Candidates(sp SpeciesID) []actions.ActionID {
 // by max, ties impossible). Pure, no RNG.
 func (r *Rules) Utility(sp SpeciesID, act actions.ActionID, ctx expr.Context) float64 {
 	if r == nil {
-		return math.Inf(-1)
+		return absentUtilityScore
 	}
 	sd, ok := r.species[sp]
 	if !ok {
-		return math.Inf(-1)
+		return absentUtilityScore
 	}
 	prog, ok := sd.utilities[act]
 	if !ok || prog == nil {
-		return math.Inf(-1)
+		return absentUtilityScore
 	}
 	return prog.EvalNumber(ctx)
 }
@@ -221,8 +225,8 @@ func (r *Rules) DriveUpdate(sp SpeciesID, cur map[DriveID]float64, ctx expr.Cont
 	}
 
 	// Pre-read context operands used by conditional drives (sorted access, not map-range).
-	scentPred, _ := ctx.Attr("scent.predator")
-	sightPred, _ := ctx.Attr("sight.predator")
+	scentPred, _ := ctx.Attr(attrScentPredator)
+	sightPred, _ := ctx.Attr(attrSightPredator)
 
 	// AppTemp for thermal drive (if any thermal drives exist; 0 in P1).
 	appTemp := r.AppTemp(sp, ctx)
@@ -233,14 +237,14 @@ func (r *Rules) DriveUpdate(sp SpeciesID, cur map[DriveID]float64, ctx expr.Cont
 	for _, dr := range sd.drives {
 		v := next[dr.ID]
 		switch {
-		case dr.Rate > 0:
+		case dr.Rate > scalarZero:
 			// Accumulator: rise by rate * dt (D9: no future field).
 			v += dr.Rate * dt
-		case dr.WaryLevel > 0 || dr.FleeLevel > 0:
+		case dr.WaryLevel > scalarZero || dr.FleeLevel > scalarZero:
 			// Fear drive: SET-from-context (F43).
-			if sightPred > 0 {
+			if sightPred > scalarZero {
 				v = dr.FleeLevel
-			} else if scentPred > 0 {
+			} else if scentPred > scalarZero {
 				v = dr.WaryLevel
 			} else {
 				// Neither signal: decay toward 0.
@@ -271,10 +275,10 @@ func (r *Rules) cheapDriveAdvance(sp SpeciesID, cur map[DriveID]float64, dt floa
 	for _, dr := range sd.drives {
 		v := next[dr.ID]
 		switch {
-		case dr.Rate > 0:
+		case dr.Rate > scalarZero:
 			// Accumulator: rise by rate.
 			v += dr.Rate * dt
-		case dr.WaryLevel > 0 || dr.FleeLevel > 0:
+		case dr.WaryLevel > scalarZero || dr.FleeLevel > scalarZero:
 			// Fear: decay only (no SET on cheap path).
 			v -= dr.Decay * dt
 		default:
@@ -290,11 +294,11 @@ func (r *Rules) cheapDriveAdvance(sp SpeciesID, cur map[DriveID]float64, dt floa
 // Returns 0 if the species has no AppTemp program.
 func (r *Rules) AppTemp(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.appTemp == nil {
-		return 0
+		return scalarZero
 	}
 	return sd.appTemp.EvalNumber(ctx)
 }
@@ -303,15 +307,15 @@ func (r *Rules) AppTemp(sp SpeciesID, ctx expr.Context) float64 {
 // species has no Speed program. Pure, no RNG.
 func (r *Rules) Speed(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.speed == nil {
-		return 0
+		return scalarZero
 	}
 	v := sd.speed.EvalNumber(ctx)
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -321,15 +325,15 @@ func (r *Rules) Speed(sp SpeciesID, ctx expr.Context) float64 {
 // NOT clamp (OFF-neutral). Pure.
 func (r *Rules) TurnRate(sp SpeciesID, ctx expr.Context) float64 {
 	if r == nil {
-		return 0
+		return scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok || sd.turnRate == nil {
-		return 0
+		return scalarZero
 	}
 	v := sd.turnRate.EvalNumber(ctx)
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
 	return v
 }
@@ -347,11 +351,11 @@ func (r *Rules) IsPredator(sp SpeciesID) bool {
 // Returns zeros for an unknown species.
 func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64) {
 	if r == nil {
-		return 0, 0, 0
+		return scalarZero, scalarZero, scalarZero
 	}
 	sd, ok := r.species[sp]
 	if !ok {
-		return 0, 0, 0
+		return scalarZero, scalarZero, scalarZero
 	}
 	return sd.smellRadius, sd.sightRadius, sd.fovArc
 }
@@ -361,18 +365,18 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64) 
 // ⇒ 1.0. passable=false ⇒ the species cannot enter that terrain (fish on land).
 func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passable bool) {
 	if r == nil {
-		return 1.0, true
+		return defaultTerrainCost, true
 	}
 	sd, ok := r.species[sp]
 	if !ok {
-		return 1.0, true
+		return defaultTerrainCost, true
 	}
 	if sd.impassable[terrain] {
-		return 1.0, false
+		return defaultTerrainCost, false
 	}
 	m, found := sd.terrainCost[terrain]
 	if !found {
-		m = 1.0
+		m = defaultTerrainCost
 	}
 	return m, true
 }
@@ -407,11 +411,11 @@ func cloneTags(in []core.Tag) []core.Tag {
 }
 
 func clamp01(v float64) float64 {
-	if v < 0 {
-		return 0
+	if v < scalarZero {
+		return scalarZero
 	}
-	if v > 1 {
-		return 1
+	if v > scalarOne {
+		return scalarOne
 	}
 	return v
 }

@@ -8,8 +8,8 @@ type AgentID string
 type ObjectID string
 type RunID string
 
-// Tick is the engine's time unit. 1 Tick = 1 game-minute (default scale).
-// Real-time ↔ game-time conversion (12×) is in engine/worldtime.
+// Tick is the engine's time unit. Real-time ↔ game-time conversion is in
+// engine/kernel/worldtime.
 type Tick int64
 
 // GameMinutes is the human-facing time unit: an absolute count of in-world minutes.
@@ -32,9 +32,10 @@ type Tag string
 // Dimension names a need / value axis (glossary §"Values & goals" Dimension:
 // Satiety, Hydration, Rest, Safety, Standing, Openness, …). Canonical values are defined
 // in content/needs.yaml. A Value{Dimension,Ref,Posture,Setpoint} targets a Dimension, and
-// engine/needs aliases it as `type NeedID = core.Dimension`. Defined here (not in needs)
-// because both engine/needs and engine/values reference it; like StatID/Tag/Pred it is an
-// uninterpreted string at this layer — the engine/needs Registry gives it semantics (D10).
+// engine/mind/needs aliases it as `type NeedID = core.Dimension`. Defined here
+// because both engine/mind/needs and engine/mind/values reference it; like
+// StatID/Tag/Pred it is an uninterpreted string at this layer — the needs
+// Registry gives it semantics (D10).
 type Dimension string
 
 // Pred is a world-state predicate key used by the GOAP planner (e.g. "hasFood").

@@ -15,6 +15,10 @@ import (
 // threshold/radius literal (D10 guard). Same seed ⇒ identical steering (D12).
 const defaultWanderAngle = 0.15
 
+const (
+	minEffectiveTerrainCost = 1.0
+)
+
 // Step scores all animals and returns ONE Intent each, in sorted Animal-ObjectID
 // order (D12). Pure function of (snap, rules, rng): never mutates snap (incl.
 // snap.Animals, the scent grid, the spatial index) or Rules. Panics if snap.Env
@@ -43,7 +47,7 @@ func Step(snap *Snapshot, rules *Rules, r *rng.RNG) []Intent {
 		// ── Step 0: CADENCE / WAKE (F45) ─────────────────────────────────────
 		// O(1) predator intensity probe on COMMITTED buffer (next-tick latency, F33).
 		predIntensity := snap.Scent.IntensityAt(scent.ChanPredator, a.Pos)
-		predBit := predIntensity > 0
+		predBit := predIntensity > scalarZero
 		isPred := rules.IsPredator(a.Species)
 
 		newActiveUntil := a.ActiveUntil
@@ -96,7 +100,7 @@ func fullPipeline(
 
 	// Sight: spatial forward-FOV predator query (F44(c-ii) / D11 / D12).
 	// NearbyEntities is ObjectID-sorted (D12). Agents NOT classified in P_fa1 (F46).
-	sightPred, distPred, nearPredPos := sightQuery(a, snap, rules, sightRadius, fovArc)
+	sightPred, distPred, nearPredPos, fleePredDir := sightQuery(a, snap, rules, sightRadius, fovArc)
 	target := combatTarget(a, snap, rules, sightRadius)
 
 	// ── Step 2: DRIVES (F25(c)) ───────────────────────────────────────────────
@@ -139,20 +143,20 @@ func fullPipeline(
 	combat := resolveCombat(a, target, bestAction, snap, rules, sCtx, r)
 
 	// ── Step 4: STEER (F35) ───────────────────────────────────────────────────
-	wander := 0.0
+	wander := scalarZero
 	if combat.engagedWith == "" {
 		// Stochastic wander draw (once per ACTIVE/re-arb animal that locomotes, in sorted ID order, D12).
 		wander = r.NormFloat64() * defaultWanderAngle
 	}
 
-	nextPos, nextHeading := steerFull(a, env, bestAction, reading, nearPredPos, sightPred,
+	nextPos, nextHeading := steerFull(a, env, bestAction, reading, nearPredPos, fleePredDir, sightPred,
 		snap, rules, sCtx, wander, smellRadius, sightRadius)
 	if combat.engagedWith != "" {
 		nextPos = a.Pos
 		nextHeading = a.Heading
 	}
 	flushRadius := snap.Combat.HiddenFlushFactor * snap.ScentCellSize
-	flushed := sightPred > 0 && distPred <= flushRadius
+	flushed := sightPred > scalarZero && distPred <= flushRadius
 	if a.HiddenUntil > 0 && a.HiddenUntil >= snap.Tick && !flushed {
 		nextPos = a.Pos
 		nextHeading = a.Heading
@@ -178,17 +182,20 @@ func fullPipeline(
 }
 
 // sightQuery performs the F44 forward-FOV spatial predator query.
-// Returns (sightPred, distPred, nearestPredPos):
+// Returns (sightPred, distPred, nearestPredPos, fleeDir):
 //   - sightPred = 1.0 if a predator animal is within FOV, else 0.0
 //   - distPred  = distance to nearest qualifying predator, or sightRadius if none
 //   - nearPredPos: pointer to the nearest qualifying predator position (nil if none)
+//   - fleeDir: aggregated unit flee direction over ALL visible predators (M7), non-nil
+//     ONLY when ≥2 predators are in FOV and their repulsion sum is non-degenerate; nil
+//     for ≤1 (the single-target away-from-nearest path is used, byte-identical to pre-M7).
 //
 // Iterates NearbyEntities (ObjectID-sorted, D12). Only checks entities that are
 // also in snap.Animals (P_fa1 — agents NOT classified, F46). Bearing test uses
 // continuous angle (D11); rear blind spot: |bearing − Heading| > fovArc.
-func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc float64) (float64, float64, *core.Vec2) {
-	if sightRadius <= 0 {
-		return 0, sightRadius, nil
+func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc float64) (float64, float64, *core.Vec2, *core.Vec2) {
+	if sightRadius <= scalarZero {
+		return scalarZero, sightRadius, nil, nil
 	}
 
 	// Build a temporary ObjectID → index map for snap.Animals (key lookup, not iteration).
@@ -203,8 +210,16 @@ func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc floa
 	// NearbyEntities is already ObjectID-sorted (spatial.NearbyEntities guarantee, D12).
 
 	bestDist := sightRadius
+	var bestID core.ObjectID
 	var bestPos *core.Vec2
 	found := false
+
+	// M7: accumulate a distance-weighted repulsion sum over EVERY visible predator so that
+	// when ≥2 are in FOV the prey flees the resultant threat field (sideways out of a pincer)
+	// rather than straight away from the single nearest. Summed in nearby's ObjectID order
+	// (deterministic float accumulation, D12).
+	var sumX, sumY float64
+	predCount := 0
 
 	for _, ent := range nearby {
 		if ent.ID == a.ID {
@@ -229,21 +244,42 @@ func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc floa
 		}
 
 		dist := math.Sqrt(dx*dx + dy*dy)
-		if dist > sightRadius/(1+other.Concealment) {
+		if dist > sightRadius/(scalarOne+other.Concealment) {
 			continue // M5-b: concealed predators are seen only at reduced range.
 		}
-		if !found || dist < bestDist {
+
+		// M7 repulsion contribution: (Pos − predᵢ)/distᵢ² — a unit away-vector scaled by
+		// 1/dist (p=2 in Σ(Pos−pred)/dist^p; nearer predators dominate, a 2nd nearby one
+		// bends the escape sideways). Only consumed when predCount ≥ 2.
+		predCount++
+		if dist > scalarZero {
+			inv := scalarOne / (dist * dist)
+			sumX += -dx * inv // −dx = a.Pos.X − ent.Pos.X (away from predator)
+			sumY += -dy * inv
+		}
+
+		if !found || dist < bestDist || (dist == bestDist && ent.ID < bestID) {
 			bestDist = dist
+			bestID = ent.ID
 			pos := ent.Pos
 			bestPos = &pos
 			found = true
 		}
 	}
 
-	if found {
-		return 1.0, bestDist, bestPos
+	// M7: aggregated flee direction, only when ≥2 predators are visible and their weighted
+	// repulsion does not cancel (a symmetric pincer sums to ~0 → nil, falls back to nearest).
+	var fleeDir *core.Vec2
+	if predCount >= 2 {
+		if mag := math.Sqrt(sumX*sumX + sumY*sumY); mag > scalarZero {
+			fleeDir = &core.Vec2{X: sumX / mag, Y: sumY / mag}
+		}
 	}
-	return 0.0, sightRadius, nil
+
+	if found {
+		return scalarOne, bestDist, bestPos, fleeDir
+	}
+	return scalarZero, sightRadius, nil, nil
 }
 
 // computeAppTemp evaluates the AppTemp program using a climate-only context.
@@ -288,7 +324,7 @@ func scoreAction(a Animal, rules *Rules, ctx *animalContext) (actions.ActionID, 
 // Direction is determined by the steer-channel tag of the chosen action (D4):
 //   - TagSteerFood   → toward food scent Dir
 //   - TagSteerPrey   → toward prey scent Dir
-//   - TagFleePred    → away from predator (reversed Dir or away from nearPredPos)
+//   - TagFleePred    → away from predator (aggregated fleePredDir if ≥2 visible, else away from nearPredPos)
 //   - TagWaryPred    → slowly away from predator
 //   - TagNoLoco      → no movement (NextPos == Pos, speed = 0 regardless of §6)
 //   - ""             → continue along current Heading (random walk)
@@ -298,7 +334,7 @@ func scoreAction(a Animal, rules *Rules, ctx *animalContext) (actions.ActionID, 
 // FootprintBlocked OR !TerrainCost(species,terrain).passable.
 func steerFull(
 	a Animal, env EnvSample, act actions.ActionID,
-	reading scent.Reading, nearPredPos *core.Vec2,
+	reading scent.Reading, nearPredPos, fleePredDir *core.Vec2,
 	sightPred float64,
 	snap *Snapshot, rules *Rules, ctx *animalContext,
 	wander, smellRadius, sightRadius float64,
@@ -313,18 +349,18 @@ func steerFull(
 
 	// Evaluate §6 speed (F35).
 	speed := rules.Speed(a.Species, ctx)
-	if speed <= 0 {
+	if speed <= scalarZero {
 		// Speed program returned 0 (e.g., authored Rest-equivalent).
 		return a.Pos, a.Heading
 	}
 
 	// Resolve base direction from steer channel.
-	dir := baseSteerDir(a, tag, reading, nearPredPos, sightPred)
+	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred)
 
 	// Apply angular jitter to heading (stochastic wander, D12), then cap turn
 	// rate when authored (M6). turn_rate <= 0 means unlimited/off-neutral.
 	desired := math.Atan2(dir.Y, dir.X) + wander
-	if tr := rules.TurnRate(a.Species, ctx); tr > 0 {
+	if tr := rules.TurnRate(a.Species, ctx); tr > scalarZero {
 		if maxTurn := tr * snap.DT; math.Abs(angularDiff(desired, a.Heading)) > maxTurn {
 			desired = a.Heading + math.Copysign(maxTurn, angularDiff(desired, a.Heading))
 		}
@@ -346,8 +382,8 @@ func steerFull(
 	// Effective cost: BaseCost × species mult (W10b).
 	baseCost := snap.Terrain.BaseCost(tentative)
 	effectiveCost := baseCost * mult
-	if effectiveCost < 1 {
-		effectiveCost = 1 // cost floored at 1 (base convention)
+	if effectiveCost < minEffectiveTerrainCost {
+		effectiveCost = minEffectiveTerrainCost
 	}
 
 	// Actual speed modulated by terrain cost (higher cost = slower effective movement).
@@ -364,33 +400,41 @@ func steerFull(
 // Zero vector fallback → continue along heading (caller applies wander to heading).
 func baseSteerDir(
 	a Animal, tag core.Tag,
-	reading scent.Reading, nearPredPos *core.Vec2, sightPred float64,
+	reading scent.Reading, nearPredPos, fleePredDir *core.Vec2, sightPred float64,
 ) core.Vec2 {
 	switch tag {
 	case TagSteerFood:
-		if reading.Food.Intensity > 0 {
+		if reading.Food.Intensity > scalarZero {
 			return reading.Food.Dir
 		}
 	case TagSteerPrey:
-		if reading.Prey.Intensity > 0 {
+		if reading.Prey.Intensity > scalarZero {
 			return reading.Prey.Dir
 		}
 	case TagFeed:
-		if reading.Carrion.Intensity > 0 {
+		if reading.Carrion.Intensity > scalarZero {
 			return reading.Carrion.Dir
 		}
 	case TagFleePred, TagWaryPred:
 		// Flee / wary: away from predator. Sight has priority over scent.
-		if sightPred > 0 && nearPredPos != nil {
-			// Away from the nearest visible predator (continuous, D11).
-			dx := a.Pos.X - nearPredPos.X
-			dy := a.Pos.Y - nearPredPos.Y
-			mag := math.Sqrt(dx*dx + dy*dy)
-			if mag > 0 {
-				return core.Vec2{X: dx / mag, Y: dy / mag}
+		if sightPred > scalarZero {
+			// M7: with ≥2 predators visible, sightQuery supplies the aggregated repulsion
+			// direction (flee the threat field — sideways out of a pincer). With ≤1 it is
+			// nil and we fall back to away-from-nearest (byte-identical to pre-M7).
+			if fleePredDir != nil {
+				return *fleePredDir
+			}
+			if nearPredPos != nil {
+				// Away from the single nearest visible predator (continuous, D11).
+				dx := a.Pos.X - nearPredPos.X
+				dy := a.Pos.Y - nearPredPos.Y
+				mag := math.Sqrt(dx*dx + dy*dy)
+				if mag > scalarZero {
+					return core.Vec2{X: dx / mag, Y: dy / mag}
+				}
 			}
 		}
-		if reading.Predator.Intensity > 0 {
+		if reading.Predator.Intensity > scalarZero {
 			// Scent Dir points TOWARD source; reverse for flee.
 			return core.Vec2{X: -reading.Predator.Dir.X, Y: -reading.Predator.Dir.Y}
 		}

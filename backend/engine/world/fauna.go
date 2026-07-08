@@ -114,11 +114,11 @@ func (s worldTerrainSampler) TerrainAt(p core.Vec2) core.Tag {
 
 func (s worldTerrainSampler) BaseCost(p core.Vec2) float64 {
 	if s.nav == nil {
-		return 1
+		return defaultTerrainCost
 	}
 	cost := s.nav.BaseCost(s.nav.CellOf(p))
 	if cost <= 0 {
-		return 1
+		return defaultTerrainCost
 	}
 	return cost
 }
@@ -201,13 +201,13 @@ func (w *World) depositObjectScent() {
 
 func scentChannelFromTag(tag core.Tag) (scent.Channel, bool) {
 	switch tag {
-	case "scent:predator":
+	case tagScentPredator:
 		return scent.ChanPredator, true
-	case "scent:prey":
+	case tagScentPrey:
 		return scent.ChanPrey, true
-	case "scent:food":
+	case tagScentFood:
 		return scent.ChanFood, true
-	case "scent:carrion":
+	case tagScentCarrion:
 		return scent.ChanCarrion, true
 	default:
 		return 0, false
@@ -216,7 +216,7 @@ func scentChannelFromTag(tag core.Tag) (scent.Channel, bool) {
 
 func animalScentMagnitude(a *fauna.Animal) float64 {
 	if a == nil || a.Vital <= 0 {
-		return 0
+		return zeroScalar
 	}
 	return a.Vital
 }
@@ -224,14 +224,14 @@ func animalScentMagnitude(a *fauna.Animal) float64 {
 func floraScentMagnitude(p flora.Plant) float64 {
 	mag := p.Length + p.Width
 	if mag < 0 {
-		return 0
+		return zeroScalar
 	}
 	return mag
 }
 
 func objectScentMagnitude(obj objectRecord) float64 {
 	if len(obj.Supply) == 0 {
-		return 1
+		return defaultScentMagnitude
 	}
 	dims := make([]core.Dimension, 0, len(obj.Supply))
 	for dim := range obj.Supply {
@@ -245,7 +245,7 @@ func objectScentMagnitude(obj objectRecord) float64 {
 		}
 	}
 	if mag <= 0 {
-		return 1
+		return defaultScentMagnitude
 	}
 	return mag
 }
