@@ -224,7 +224,17 @@ type RenderView struct {
 }
 type AnimalRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Action string; Heading, Stamina float64 }
 type FloraRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Stage int; Width float64 }
-type TerrainRenderView struct{ CellSize float64; Cols, Rows int; Orientation string; Terrain []string; Wear []float64 } // flat-top hex, offset(col,row) i=row*Cols+col (hex-grid.md)
+type TerrainRenderView struct{ CellSize float64; Cols, Rows int; Orientation string; Terrain []string; Wear []float64; Elevation []float64 } // flat-top hex, offset(col,row) i=row*Cols+col (hex-grid.md); Elevation ∈[0,1] len Cols*Rows or nil (render-only relief — engine behavior never reads it)
+
+// SetTerrainElevation installs the optional per-cell elevation field the fixture loader
+// generated/carried (worldgen GenerateTerrain) — RENDER-ONLY state: it rides
+// TerrainRenderView (→ sim:{run}:terrain / GET /api/terrain, full grid only, never
+// terrain_delta), and nothing in the engine's behavior (navmap costs, gates, climate)
+// reads it (D11 — grids are indices). Like the terrain LAYOUT itself it is install-time
+// state, NOT part of the snapshot: a resume re-installs it via the fixture loader (the
+// same contract as InstallEnv's Rules). len must equal the navmap offset grid
+// (Cols*Rows) or the field is dropped.
+func (w *World) SetTerrainElevation(elev []float64)
 ```
 
 > The world DEFINES no new vocabulary. `agent.Agent`, `agent.Intent`, `agent.ActionOutcome`,

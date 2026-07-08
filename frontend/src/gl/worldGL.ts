@@ -22,16 +22,22 @@ const LIGHT = (() => { const v = [-0.45, 0.82, 0.40]; const l = Math.hypot(v[0],
 const TILE_INDEX: Record<string, number> = {
   soil: 0, plain: 0, grass: 0, forest: 0, sand: 1,
   mountain: 2, steep: 2, bare_rock: 2, stone: 2,
-  river: 3, sea: 3, water: 3, swamp: 4,
+  river: 3, sea: 3, lake: 3, water: 3, swamp: 4,
 }
 const ELEV_FRAC: Record<string, number> = {
   soil: 0.55, plain: 0.55, grass: 0.55, forest: 0.72, swamp: 0.35, sand: 0.24,
   mountain: 1.6, steep: 1.4, bare_rock: 1.1, stone: 1.4,
-  river: 0.0, sea: 0.0, water: 0.0,
+  river: 0.0, sea: 0.0, lake: 0.0, water: 0.0,
 }
 const SKIRT_FRAC = -0.30
+// Per-cell relief mapping (gl/SPEC.md): a grid carrying `elevation[]` (generated worlds,
+// /api/terrain) extrudes each hex to ELEV_BASE + e·ELEV_SPAN hex-radii from ITS OWN
+// e ∈ [0,1]; without it, the per-type ELEV_FRAC table keeps the pre-elevation look.
+const ELEV_BASE = 0.06, ELEV_SPAN = 1.7
 const tileIdx = (id: string) => TILE_INDEX[id] ?? 0
 const elevFrac = (id: string) => ELEV_FRAC[id] ?? 0.55
+const cellElevFrac = (grid: TerrainGrid, idx: number): number =>
+  grid.elevation ? ELEV_BASE + grid.elevation[idx] * ELEV_SPAN : elevFrac(grid.terrain[idx])
 const OBJECT_COLOR: Record<string, string> = { berry_bush: '#4a9030', water_source: '#3a86d0', shelter: '#9a6a3a', berry: '#4a9030', water: '#3a86d0' }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
@@ -174,13 +180,13 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
     for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
       const idx = row * cols + col, id = grid.terrain[idx], c = hexCentre(col, row, cellSize)
-      const elev = elevFrac(id) * cellSize; elevAt[idx] = elev
+      const elev = cellElevFrac(grid, idx) * cellSize; elevAt[idx] = elev
       const o = idx * 10
       data[o] = c.x; data[o + 1] = c.y; data[o + 2] = tileIdx(id); data[o + 3] = elev
       for (let k = 0; k < 6; k++) {
         const nb = neighbourOffset(col, row, k)
         const inb = nb.col >= 0 && nb.col < cols && nb.row >= 0 && nb.row < rows
-        data[o + 4 + k] = (inb ? elevFrac(grid.terrain[nb.row * cols + nb.col]) : SKIRT_FRAC) * cellSize
+        data[o + 4 + k] = (inb ? cellElevFrac(grid, nb.row * cols + nb.col) : SKIRT_FRAC) * cellSize
       }
       if (c.x < minX) minX = c.x; if (c.x > maxX) maxX = c.x; if (c.y < minY) minY = c.y; if (c.y > maxY) maxY = c.y
     }

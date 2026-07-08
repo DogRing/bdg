@@ -65,6 +65,8 @@ type TerrainRenderView struct {
 	Orientation string    // "flat" (flat-top hex); mirrors navmap.Orientation()
 	Terrain     []string  // len Cols*Rows, offset(col,row)
 	Wear        []float64 // len Cols*Rows, 0 where no wear
+	Elevation   []float64 // len Cols*Rows ∈[0,1] or nil — render-only relief (SetTerrainElevation);
+	//                       static, full-grid only (never in terrain_delta)
 }
 
 // RenderView builds the current render-visible env projection. Called by persist
@@ -313,6 +315,7 @@ func (w *World) buildTerrainGrid() *TerrainRenderView {
 		Orientation: w.nav.Orientation(),
 		Terrain:     terrain,
 		Wear:        wear,
+		Elevation:   w.terrainElev, // nil when no generated relief (SetTerrainElevation)
 	}
 }
 

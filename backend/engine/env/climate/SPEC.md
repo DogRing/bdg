@@ -91,6 +91,11 @@ type Config struct {
                                  // source navmap.New uses, so New's cell centers AND CellAt(pos) agree
                                  // with navmap (CA3 read path — made explicit; was implied by terrainAt).
     InitMoisture       float64   // starting Moisture ∈ [0,1] (climate.yaml init.initial_moisture; default 0.5)
+    InitMoistureAt     func(core.Vec2) float64 // OPTIONAL per-cell initial-moisture field (WG1-a stage 4:
+                                 // water-proximity moisture seeding — worldgen supplies it for generated
+                                 // terrain). nil ⇒ the uniform InitMoisture (all existing fixtures/goldens
+                                 // unchanged). Sampled ONCE at New per cell centre, clamped to [0,1];
+                                 // Restore ignores it (cell moisture round-trips from the snapshot).
     InitTemperature    float64   // starting Temperature in °C (CA3; climate.yaml init.initial_temperature; default ≈ AnnualMid)
 
     // ── Rain process (1a; fixed 10d/30d/2–12h SHAPE, rate-only tuning) ──

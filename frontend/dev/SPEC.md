@@ -25,9 +25,11 @@ emission) does not exist yet:
 - **Routes** (same paths/shapes the real `platform/api` serves — no `/mock-*` prefixes):
   - `GET /api/snapshot` — `{tick, agents:[{id,pos,goal,action,mood}], objects:[{id,kind,pos}]}`.
   - `GET /api/terrain` — the Q5 · hex shape: `{cell_size, orientation:'flat', size:{cols,rows},
-    terrain:[...], wear:[...]}` — a flat-top hex offset(col,row) array (`i=row·cols+col`, mirrors
-    navmap hex.go) with a small authored map: **river (N–S band), soil (grass), forest (NE), sand
-    (village fields)**. `terrain_delta.cell` is the offset index (not `{x,y}`).
+    terrain:[...], wear:[...], elevation:[...]}` — a flat-top hex offset(col,row) array
+    (`i=row·cols+col`, mirrors navmap hex.go) with a seeded map: **river (N–S band, carved low),
+    soil (grass), forest (NE), sand (village fields), rolling-hill `elevation` ∈[0,1] (seeded
+    cosine bumps; peaks read as mountain)** — parity with the backend's GenerateTerrain relief.
+    `terrain_delta.cell` is the offset index (not `{x,y}`).
   - `GET /sse` — `text/event-stream`; every `tick-ms` emits one `TickDone` and one `WorldFrame`
     (data-contracts §4 keys: `hour_of_day, day_night, temperature, raining, wind{dir,mag},
     agents[], animals[]{id,pos,species,action,heading}, flora_delta[], terrain_delta[]`), plus

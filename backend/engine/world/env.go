@@ -37,6 +37,23 @@ func (w *World) InstallEnv(
 	w.decayRules = decayRules
 }
 
+// SetTerrainElevation installs the optional per-cell relief field the fixture loader
+// generated/carried (worldgen GenerateTerrain; SPEC §render projection) — RENDER-ONLY:
+// it rides TerrainRenderView (full grid, never terrain_delta) and no engine behavior
+// (navmap costs, gates, climate) reads it (D11). Install-time state like the terrain
+// layout itself — NOT in the snapshot; a resume re-installs it via the loader. Length
+// must match the navmap offset grid or the field is dropped. Call after InstallEnv.
+func (w *World) SetTerrainElevation(elev []float64) {
+	if w.nav == nil {
+		return
+	}
+	cols, rows := w.nav.OffsetDims()
+	if len(elev) != cols*rows {
+		return
+	}
+	w.terrainElev = append([]float64(nil), elev...)
+}
+
 func (w *World) runEnvPhase() {
 	w.runClimateEnv()
 	w.runFloraEnv()

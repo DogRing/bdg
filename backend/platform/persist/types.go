@@ -79,6 +79,9 @@ type TerrainView struct {
 	Size        TerrainSize `json:"size"`
 	Terrain     []string    `json:"terrain"`
 	Wear        []float64   `json:"wear,omitempty"`
+	Elevation   []float64   `json:"elevation,omitempty"` // per-cell relief ∈[0,1] (generated worlds);
+	//                                                      static render-only — absent ⇒ frontend
+	//                                                      falls back to per-type heights
 }
 
 // RunMeta is the sim:{run}:meta hash payload (§2).

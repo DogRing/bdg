@@ -82,13 +82,20 @@ func TestRunLoop_RegenRebuildsWithNewSeed(t *testing.T) {
 		t.Error("regen with a new seed produced identical terrain; want a re-rolled map")
 	}
 
-	// Reproducibility: the same pinned seed rebuilds the same terrain.
-	again, err := build(12345)
+	// Reproducibility: replaying the SAME pinned-seed regen through the loop yields the
+	// same terrain. (Compare like-for-like — the first climate step may already apply
+	// content transitions, e.g. wet beach sand→soil, so a 2-tick world is legitimately
+	// not byte-equal to a fresh t=0 build.)
+	w2, err := build(0)
 	if err != nil {
-		t.Fatalf("rebuild(12345): %v", err)
+		t.Fatalf("rebuild(0): %v", err)
 	}
-	if !equalCells(regenerated, terrainCells(t, again)) {
-		t.Error("two rebuilds with the same pinned seed disagree (determinism, D12)")
+	regen2 := make(chan int64, 1)
+	regen2 <- 12345
+	got2 := runLoop(context.Background(), w2, 2, "test-run", 0, nil, nil, nil, 0,
+		loopControl{regen: regen2, rebuild: build})
+	if !equalCells(regenerated, terrainCells(t, got2)) {
+		t.Error("two pinned-seed regen replays disagree (determinism, D12)")
 	}
 }
 

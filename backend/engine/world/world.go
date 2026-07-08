@@ -102,6 +102,7 @@ type World struct {
 	floraRules   *flora.Rules
 	decayState   *decay.State
 	decayRules   *decay.Rules
+	terrainElev  []float64 // optional per-cell relief (offset order) — render-only (SetTerrainElevation)
 
 	terrainAttrs     map[navmap.TerrainID]map[core.Tag]float64
 	decayLotPos      map[core.ObjectID]core.Vec2

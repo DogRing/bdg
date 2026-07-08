@@ -37,6 +37,28 @@ func OffsetIndexAt(cfg Config, p core.Vec2) (col, row int) {
 	return axialToOffset(q, r)
 }
 
+// OffsetCenterOf is the inverse read of OffsetIndexAt: the continuous world-space centre of the hex at
+// offset(col,row). An authoring tool (worldgen GenerateTerrain) samples noise/fields here so generated
+// terrain is isotropic in WORLD space, not grid space. OffsetIndexAt(cfg, OffsetCenterOf(cfg,c,r)) == (c,r).
+func OffsetCenterOf(cfg Config, col, row int) core.Vec2 {
+	q, r := offsetToAxial(col, row)
+	x, y := hexToPixel(q, r, cfg.CellSize)
+	return core.Vec2{X: cfg.MinX + x, Y: cfg.MinY + y}
+}
+
+// OffsetNeighborsOf enumerates the 6 hex-adjacent offset coords of offset(col,row) in the canonical
+// hexDirs order (fixed, D12). Convention-only (no Config — offset adjacency is geometry-independent);
+// entries may fall outside the grid, callers bound-check against OffsetDimsOf.
+func OffsetNeighborsOf(col, row int) [6][2]int {
+	q, r := offsetToAxial(col, row)
+	var out [6][2]int
+	for i, d := range hexDirs {
+		nc, nr := axialToOffset(q+d[0], r+d[1])
+		out[i] = [2]int{nc, nr}
+	}
+	return out
+}
+
 // Orientation reports the hex orientation the wire + frontend must mirror ("flat" = flat-top).
 func (m *NavMap) Orientation() string { return "flat" }
 

@@ -55,10 +55,11 @@ type Fixture struct {
                                       // merged OVER config.RespawnTargets at Load (cfg untouched). Empty ⇒ content values.
 }
 type Bounds struct{ Min, Max core.Vec2 }
-type TerrainLayout struct{ Cols, Rows int; Cells []core.Tag; Random bool }
+type TerrainLayout struct{ Cols, Rows int; Cells []core.Tag; Elevation []float64; Random bool }
 // Explicit form: len(Cells)==Cols*Rows; offset(col,row) i=row*Cols+col; FLAT-TOP HEX (odd cols shifted,
-// hex-grid.md); ids ⊆ terrain.yaml. Random form: {Random:true, no cols/rows/cells} ⇒ Load MATERIALIZES the
-// layout via SimpleTerrain over navmap.OffsetDimsOf(bounds) with an fx.Seed-derived rng (same seed ⇒ same
+// hex-grid.md); ids ⊆ terrain.yaml; Elevation OPTIONAL (∈[0,1], len Cols*Rows — render-only relief).
+// Random form: {Random:true, no cols/rows/cells/elevation} ⇒ Load MATERIALIZES cells+elevation via
+// GenerateTerrain over navmap.OffsetDimsOf(bounds) with an fx.Seed-derived rng (same seed ⇒ same
 // terrain, D12). The two forms are mutually exclusive (Parse rejects a mixed block).
 type ObjectPlacement struct{ ID core.ObjectID; Kind core.Tag; Pos core.Vec2; Remaining int; Owner core.AgentID }
 type AgentPlacement  struct{ ID core.AgentID;  Pos core.Vec2; Values map[core.Dimension]float64 }
@@ -91,16 +92,27 @@ func Generate(cfg GenConfig, seed int64) Fixture
 type GenConfig struct{ /* opaque: noise/octaves, sea_level, river_accum_threshold, erosion,
                           ore_density, flora/fauna/agent seeding rates; + bounds/resolution from world.yaml. */ }
 
-// ── SimpleTerrain (dev/test terrain — NOT the WG1-a pipeline) ────────────────────
-// SimpleTerrain fills a cols×rows hex offset grid with a minimal random layout: all soil,
-// one wandering top→bottom river walk, 1-2 sand banks beside it, and an optional mountain
-// blob. It exists so a `terrain:{random:true}` fixture (test worlds, the /api/regen control
-// route) has SOMETHING to render/walk on before Generate (WG1-a) is built; it makes no
-// hydrology/moisture/biome claims and its ids are the fixed dev subset {soil,river,sand,
-// mountain} ⊆ terrain.yaml. Deterministic in the injected rng (D12): same rng state ⇒ same
-// cells. The offset-grid river walk is visually a river; hex-chain connectivity is NOT
-// guaranteed (navmap costs handle any layout).
-func SimpleTerrain(cols, rows int, r *rng.RNG) []core.Tag
+// ── GenerateTerrain (WG1-a terrain stages, dev coefficients) ─────────────────────
+// GenerateTerrain is the elevation-based terrain generator behind `terrain:{random:true}`
+// fixtures — the WG1-a pipeline's TERRAIN stages (world-gen.md §1 stages 1-5) with dev
+// coefficients (an unexported defaults struct; promoting them to GenConfig data is the
+// full-Generate follow-up). Stages, all draws from the injected rng in fixed order (D12):
+//   1. elevation — value-noise fBm (perm table from r.Shuffle) sampled at hex-centre WORLD
+//      coords (navmap.OffsetCenterOf — isotropic in world space), min-max normalized [0,1].
+//   2. sea       — elev below the pSea quantile (quantile ⇒ stable water fraction per seed).
+//   3. hydrology — flow accumulation (WG2-a): land cells in descending-elev order drain to
+//      their lowest hex neighbor; outflow-less pit ⇒ `lake`; accumulation ≥ threshold ⇒
+//      `river`, eroded (elev lowered) into valleys.
+//   4. material  — elev ≥ pMountain ⇒ `mountain`, ≥ pRock ⇒ `bare_rock`; low land beside
+//      water ⇒ `sand` (beach); else `soil` (thresholds keep soil dominant — pos-less
+//      placement needs soil hexes).
+//   5. moisture  — hex-BFS distance to nearest water ⇒ initial-moisture field
+//      (clamp(0.25+0.7·e^(−d/3))) — the WG1-a stage-4 climate seed (climate.InitMoistureAt).
+// Returns (cells, elevation, moisture), each len cols*rows; elevation is post-erosion
+// [0,1] and is RENDER-ONLY downstream (TerrainRenderView → /api/terrain → 3D hex height).
+// Ids ⊆ {soil,sand,river,lake,sea,mountain,bare_rock} ⊆ terrain.yaml. Same rng state ⇒
+// byte-identical outputs. (Replaces the earlier SimpleTerrain river-walk dev stand-in.)
+func GenerateTerrain(cols, rows int, navCfg navmap.Config, r *rng.RNG) (cells []core.Tag, elevation, moisture []float64)
 
 // ── Load (RUN-TIME; fixture → states → install) ──────────────────────────────────
 // Load builds the env states from fx + the compiled Rules in reg (config WI-P0), and installs them
@@ -115,11 +127,15 @@ func SimpleTerrain(cols, rows int, r *rng.RNG) []core.Tag
 // (env-neutral — existing goldens hold). Returns a typed error on any cross-check failure.
 //
 // MATERIALIZE step (before any state is built): Load resolves the fixture's generated parts into a
-// concrete local fixture — a `terrain:{random:true}` block becomes an explicit SimpleTerrain cell
-// array over navmap.OffsetDimsOf(bounds), and pos-less flora/animal placements are placed on random
-// soil hexes — all draws from ONE fx.Seed-derived sub-stream in a fixed order (terrain, then flora
-// sorted by id, then animals sorted by id), so same (fixture, seed) ⇒ same world (D12). The caller's
-// Fixture is never mutated (a rebuild with a different Seed re-materializes fresh — the /api/regen path).
+// concrete local fixture — a `terrain:{random:true}` block becomes an explicit GenerateTerrain
+// cells+Elevation layout over navmap.OffsetDimsOf(bounds), and pos-less flora/animal placements are
+// placed on random soil hexes — all draws from ONE fx.Seed-derived sub-stream in a fixed order
+// (terrain, then flora sorted by id, then animals sorted by id), so same (fixture, seed) ⇒ same world
+// (D12). The caller's Fixture is never mutated (a rebuild with a different Seed re-materializes fresh
+// — the /api/regen path). GENERATED-WORLD couplings Load wires (random:true only — explicit fixtures
+// keep the uniform climate seed, existing goldens unchanged): the stage-5 moisture field becomes
+// climate.Config.InitMoistureAt (water-proximity initial moisture, WG1-a stage 4), and the Elevation
+// layout is installed render-only via world.SetTerrainElevation (3D hex height).
 // RESPAWN override: fx.RespawnTargets entries replace the content values (config.RespawnTargets) in a
 // merged COPY handed to world.InstallRespawn; unknown species ⇒ typed error; cfg is never mutated.
 func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) error
@@ -160,11 +176,16 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
   (`navmap.OffsetDimsOf(navCfg)` over `reg.WorldEnv` bounds/`navmap_cell_size`, hex-grid.md).
 - [ ] **Determinism golden** — `Generate(seed)`→`Encode`→`Parse`→`Load`→N ticks is byte-identical to a
   second run from the same seed; the generated fixture digest is stable across processes.
-- [ ] **SimpleTerrain is seeded-deterministic** — same rng seed ⇒ identical cells (twice); dims match
-  `navmap.OffsetDimsOf`; every cell ∈ {soil,river,sand,mountain}; a river cell exists in every row.
+- [ ] **GenerateTerrain is seeded-deterministic** — same rng seed ⇒ identical (cells, elevation,
+  moisture) twice; different seed differs; dims match `navmap.OffsetDimsOf`; every cell ∈
+  {soil,sand,river,lake,sea,mountain,bare_rock}; water (sea|lake|river) exists; **soil fraction ≥ 0.4
+  across seeds 1..5** (pos-less placement needs soil); elevation len==cols*rows ∈[0,1] with mean(sea) <
+  mean(mountain); moisture higher beside water than at the driest inland cell.
 - [ ] **Random-terrain materialization** — `Load` of a `terrain:{random:true}` fixture builds a terrain
-  layout matching the navmap offset dims; two Loads of the SAME fixture agree; the same fixture with a
-  different Seed differs; the caller's Fixture value is unchanged after Load.
+  layout (cells+Elevation) matching the navmap offset dims; two Loads of the SAME fixture agree; the
+  same fixture with a different Seed differs; the caller's Fixture value is unchanged after Load; the
+  loaded world's RenderView().Terrain carries the Elevation array, and its climate initial moisture
+  is water-proximity-seeded (a near-water cell starts wetter than the driest inland cell).
 - [ ] **Pos-less placement** — a flora/animal entry without `pos` lands on a `soil` hex inside bounds,
   deterministically (same seed twice ⇒ same pos); pos-less placement without any terrain layout ⇒ typed
   error; explicit `pos` entries are honored verbatim.

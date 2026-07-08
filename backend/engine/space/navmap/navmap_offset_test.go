@@ -61,3 +61,50 @@ func TestPureOffsetHelpersMatchInstance(t *testing.T) {
 		}
 	}
 }
+
+// TestOffsetCenterRoundTrip asserts OffsetCenterOf is OffsetIndexAt's inverse read: the centre of
+// every grid cell maps back to that cell (the coordinate an authoring tool samples fields at).
+func TestOffsetCenterRoundTrip(t *testing.T) {
+	t.Parallel()
+	cfg := testCfg
+	cols, rows := navmap.OffsetDimsOf(cfg)
+	for r := range rows {
+		for c := range cols {
+			p := navmap.OffsetCenterOf(cfg, c, r)
+			gc, gr := navmap.OffsetIndexAt(cfg, p)
+			if gc != c || gr != r {
+				t.Fatalf("centre round-trip (%d,%d) → %v → (%d,%d)", c, r, p, gc, gr)
+			}
+		}
+	}
+}
+
+// TestOffsetNeighborsMutual asserts hex adjacency is symmetric and 6-way: if B is a neighbour of A,
+// A is a neighbour of B, and all 6 entries are distinct and ≠ self.
+func TestOffsetNeighborsMutual(t *testing.T) {
+	t.Parallel()
+	for _, cell := range [][2]int{{0, 0}, {1, 0}, {0, 1}, {3, 4}, {4, 3}, {7, 7}} {
+		nbrs := navmap.OffsetNeighborsOf(cell[0], cell[1])
+		seen := map[[2]int]bool{}
+		for _, n := range nbrs {
+			if n == cell {
+				t.Fatalf("cell %v lists itself as neighbour", cell)
+			}
+			if seen[n] {
+				t.Fatalf("cell %v has duplicate neighbour %v", cell, n)
+			}
+			seen[n] = true
+			back := navmap.OffsetNeighborsOf(n[0], n[1])
+			mutual := false
+			for _, b := range back {
+				if b == cell {
+					mutual = true
+					break
+				}
+			}
+			if !mutual {
+				t.Fatalf("adjacency not symmetric: %v→%v but not back", cell, n)
+			}
+		}
+	}
+}

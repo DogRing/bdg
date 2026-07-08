@@ -478,6 +478,9 @@ export function useWorld() {
       if (Array.isArray(doc.wear) && (doc.wear as unknown[]).length === cols * rows) {
         grid.wear = Float32Array.from((doc.wear as unknown[]).map(Number))
       }
+      if (Array.isArray(doc.elevation) && (doc.elevation as unknown[]).length === cols * rows) {
+        grid.elevation = Float32Array.from((doc.elevation as unknown[]).map(Number))
+      }
       dispatch({ type: 'TERRAIN_LOADED', payload: grid })
     } catch {
       // terrain endpoint not available yet — that's OK

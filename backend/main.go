@@ -564,6 +564,7 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID, li
 			Size:        persist.TerrainSize{Cols: rv.Terrain.Cols, Rows: rv.Terrain.Rows},
 			Terrain:     rv.Terrain.Terrain,
 			Wear:        rv.Terrain.Wear,
+			Elevation:   rv.Terrain.Elevation,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteTerrain: %v\n", err)
 		}

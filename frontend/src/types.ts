@@ -116,6 +116,9 @@ export interface TerrainGrid {
   orientation: string           // 'flat' (flat-top hex); read from the payload, never hardcoded
   terrain: string[]             // length cols*rows, offset(col,row)
   wear?: Float32Array           // trail wear per cell, [0,1]
+  elevation?: Float32Array      // per-cell relief [0,1] (generated worlds; static — never in
+  //                               terrain_delta). Present ⇒ 3D extrudes real per-cell height;
+  //                               absent ⇒ per-type heights (data-contracts §6).
 }
 
 // The SSE graphics frame payload (data-contracts §4 `WorldFrame`; WIRE shape, snake_case to

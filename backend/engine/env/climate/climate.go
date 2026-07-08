@@ -63,7 +63,13 @@ type Config struct {
 	GridCols, GridRows int       // coarse-grid dimensions
 	WorldMin, WorldMax core.Vec2 // continuous extent the coarse grid spans (world units)
 	InitMoisture       float64   // starting Moisture ∈ [0,1]
-	InitTemperature    float64   // starting Temperature in °C (CA3)
+	// InitMoistureAt is an OPTIONAL per-cell initial-moisture field (WG1-a stage 4:
+	// water-proximity seeding — worldgen supplies it for generated terrain). nil ⇒ the
+	// uniform InitMoisture (all existing fixtures/goldens unchanged). Sampled once at New
+	// per cell centre, clamped to [0,1]; Restore ignores it (moisture round-trips from
+	// the snapshot).
+	InitMoistureAt  func(core.Vec2) float64
+	InitTemperature float64 // starting Temperature in °C (CA3)
 
 	// Rain process (1a; fixed 10d/30d/2–12h shape; only rates are content)
 	RainProbPerHour  float64 // per-game-hour increment to PRain
@@ -142,10 +148,21 @@ func New(cfg Config, terrainAt func(core.Vec2) navTerrainID) *State {
 			// Cell center in continuous world coordinates.
 			cx := cfg.WorldMin.X + (float64(x)+0.5)*cellW
 			cy := cfg.WorldMin.Y + (float64(y)+0.5)*cellH
+			center := core.Vec2{X: cx, Y: cy}
+			moisture := cfg.InitMoisture
+			if cfg.InitMoistureAt != nil {
+				moisture = cfg.InitMoistureAt(center)
+				if moisture < 0 {
+					moisture = 0
+				}
+				if moisture > 1 {
+					moisture = 1
+				}
+			}
 			cells[y][x] = CellState{
-				Moisture:    cfg.InitMoisture,
+				Moisture:    moisture,
 				Temperature: cfg.InitTemperature,
-				Terrain:     terrainAt(core.Vec2{X: cx, Y: cy}),
+				Terrain:     terrainAt(center),
 			}
 		}
 	}

@@ -51,6 +51,12 @@ export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; e
   → grass), side walls dropped **only toward a lower neighbour** (`min(elev, nbr)`) so equal-height
   seams collapse (no z-fight) and cliffs are exactly as deep as the drop. Off-grid neighbours use a
   skirt so the map edge shows a wall. Rebuilt on grid identity change (small static buffer).
+- **Per-cell elevation.** When the grid carries `elevation[]` (`/api/terrain`, generated worlds —
+  data-contracts §6), each cell's prism height = `(ELEV_BASE + e·ELEV_SPAN)·cellSize` from ITS OWN
+  `e ∈ [0,1]` (and its neighbours' for the walls) — real relief: mountains tall, river valleys carved,
+  lakes sitting at their basin's height. Grid without `elevation` (hand-authored fixtures, old runs)
+  falls back to the per-type `ELEV_FRAC` table — the pre-elevation look, unchanged. Entity seating uses
+  the same per-cell sampler, so agents/animals ride the relief automatically.
 - **Curved / rolling world.** View-space `y -= curv·z²` bends distant ground below the horizon;
   **distance fog** fades tiles into the gradient **sky** (horizon colour == fog colour → seamless).
 - **Height ↔ tilt.** Relief = `0.6 + 0.4·smoothstep(pitch)` — real height even when top-down, rising

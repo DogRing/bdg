@@ -42,14 +42,18 @@ type Bounds struct {
 	Max Vec2 `yaml:"max"`
 }
 
-// TerrainLayout is either EXPLICIT ({Cols,Rows,Cells}) or RANDOM ({Random:true}, no
-// cells): Load materializes the random form into an explicit SimpleTerrain layout over
-// navmap.OffsetDimsOf(bounds) from an fx.Seed-derived rng (SPEC §Fixture; D12).
+// TerrainLayout is either EXPLICIT ({Cols,Rows,Cells[,Elevation]}) or RANDOM
+// ({Random:true}, no cells): Load materializes the random form into an explicit
+// GenerateTerrain cells+Elevation layout over navmap.OffsetDimsOf(bounds) from an
+// fx.Seed-derived rng (SPEC §Fixture; D12). Elevation is optional per-cell relief
+// ∈[0,1] (len Cols*Rows) — render-only downstream (3D hex height); engine behavior
+// never reads it.
 type TerrainLayout struct {
-	Cols   int        `yaml:"cols,omitempty"`
-	Rows   int        `yaml:"rows,omitempty"`
-	Cells  []core.Tag `yaml:"cells,omitempty"`
-	Random bool       `yaml:"random,omitempty"`
+	Cols      int        `yaml:"cols,omitempty"`
+	Rows      int        `yaml:"rows,omitempty"`
+	Cells     []core.Tag `yaml:"cells,omitempty"`
+	Elevation []float64  `yaml:"elevation,omitempty"`
+	Random    bool       `yaml:"random,omitempty"`
 }
 
 type ObjectPlacement struct {
@@ -139,9 +143,15 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	}
 
 	envCfg, navCfg, climateCfg := fixtureConfigs(fx, cfg)
-	fx, err := materialize(fx, navCfg)
+	fx, initMoisture, err := materialize(fx, navCfg)
 	if err != nil {
 		return nil, err
+	}
+	// Generated worlds only (SPEC §Load): the stage-5 water-proximity moisture field seeds
+	// climate's initial per-cell moisture (WG1-a stage 4). Explicit fixtures keep the
+	// uniform InitMoisture — existing goldens unchanged.
+	if initMoisture != nil && fx.Terrain != nil {
+		climateCfg.InitMoistureAt = gridSampler(initMoisture, fx.Terrain.Cols, fx.Terrain.Rows, navCfg)
 	}
 	if err := validateTerrain(fx, navCfg, cfg); err != nil {
 		return nil, err
@@ -191,6 +201,9 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	fl := flora.New(plants)
 	dec := decay.New(lots)
 	w.InstallEnv(envCfg, nav, clim, cfg.ClimateRules, fl, cfg.FloraRules, dec, cfg.DecayRules)
+	if fx.Terrain != nil && len(fx.Terrain.Elevation) > 0 {
+		w.SetTerrainElevation(fx.Terrain.Elevation) // render-only relief (3D hex height)
+	}
 
 	animals, err := buildAnimals(fx, cfg)
 	if err != nil {

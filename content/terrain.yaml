@@ -40,6 +40,12 @@ terrains:
     required_tags: []              # swimmable for fauna (TerrainSampler); a Swim-gated ford for agents is a frontier
     attrs: { grain_size: 0.4, moisture: 1.0, depth: 0.5, slope: 0.0, salinity: 0.0 }
 
+  - id: lake                       # still fresh water — outflow-less basin (world-gen WG2-a hydrology).
+    base_cost: 3.0                 #   Swimmable at river-like cost so an inland lake never TRAPS land
+    passable: true                 #   fauna (R2); only sea truly blocks.
+    required_tags: []
+    attrs: { grain_size: 0.4, moisture: 1.0, depth: 0.7, slope: 0.0, salinity: 0.0 }
+
   - id: mountain                   # steep rock — high traversal cost, mineral-bearing (resources R7)
     base_cost: 2.5
     passable: true

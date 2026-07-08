@@ -167,7 +167,7 @@ interface AnimalState  { id; pos; species; action; heading; stamina;
 interface PlantState   { id; pos; species; stage; width }
 interface ClimateState { temperature; apparentTemp|null; moisture; raining;
                          windDir; windMag; hourOfDay; dayNight:'day'|'night'; yearFraction }
-interface TerrainGrid  { cellSize; cols; rows; terrain:string[]; wear?:Float32Array; orientation:'flat' } // /api/terrain + deltas; flat-top hex, offset(col,row) array (hex-grid.md)
+interface TerrainGrid  { cellSize; cols; rows; terrain:string[]; wear?:Float32Array; elevation?:Float32Array; orientation:'flat' } // /api/terrain + deltas; flat-top hex, offset(col,row) array (hex-grid.md); elevation ∈[0,1] static (generated worlds — 3D per-cell height; absent ⇒ per-type heights)
 interface FxInstance   { kind:'spawn'|'death'|'attack'|'grow'; at:ms; pos; id; species?; heading? }
 interface RenderConfig { bounds:{min,max}; pixelsPerUnit }
 interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connectionStatus;

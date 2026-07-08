@@ -61,9 +61,9 @@ func validateFixtureShape(fx Fixture) error {
 	if fx.Terrain != nil {
 		if fx.Terrain.Random {
 			// Random and explicit layouts are mutually exclusive (SPEC §Fixture; the
-			// loader materializes the cells itself).
-			if fx.Terrain.Cols != 0 || fx.Terrain.Rows != 0 || len(fx.Terrain.Cells) != 0 {
-				return fmt.Errorf("worldgen: terrain random:true excludes explicit cols/rows/cells")
+			// loader materializes the cells + elevation itself).
+			if fx.Terrain.Cols != 0 || fx.Terrain.Rows != 0 || len(fx.Terrain.Cells) != 0 || len(fx.Terrain.Elevation) != 0 {
+				return fmt.Errorf("worldgen: terrain random:true excludes explicit cols/rows/cells/elevation")
 			}
 		} else {
 			if fx.Terrain.Cols <= 0 || fx.Terrain.Rows <= 0 {
@@ -71,6 +71,9 @@ func validateFixtureShape(fx Fixture) error {
 			}
 			if len(fx.Terrain.Cells) != fx.Terrain.Cols*fx.Terrain.Rows {
 				return fmt.Errorf("worldgen: terrain cells len %d != cols*rows %d", len(fx.Terrain.Cells), fx.Terrain.Cols*fx.Terrain.Rows)
+			}
+			if len(fx.Terrain.Elevation) != 0 && len(fx.Terrain.Elevation) != fx.Terrain.Cols*fx.Terrain.Rows {
+				return fmt.Errorf("worldgen: terrain elevation len %d != cols*rows %d", len(fx.Terrain.Elevation), fx.Terrain.Cols*fx.Terrain.Rows)
 			}
 		}
 	}

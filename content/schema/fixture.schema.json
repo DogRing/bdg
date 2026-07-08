@@ -34,6 +34,12 @@
               "description": "row-major terrain ids (length MUST equal cols*rows; loader enforces). Each ∈ content/terrain.yaml.",
               "items": { "$ref": "#/$defs/identifier" },
               "minItems": 1
+            },
+            "elevation": {
+              "type": "array",
+              "description": "OPTIONAL per-cell relief ∈[0,1], row-major, length cols*rows (loader enforces). Render-only (3D hex height, data-contracts §6); engine behavior never reads it. Generated worlds carry it via GenerateTerrain; hand-authored fixtures may omit.",
+              "items": { "type": "number", "minimum": 0, "maximum": 1 },
+              "minItems": 1
             }
           }
         },

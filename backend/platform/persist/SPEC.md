@@ -180,6 +180,10 @@ type TerrainView struct {
     Size        TerrainSize `json:"size"`
     Terrain     []string    `json:"terrain"`     // offset(col,row) array, i=row*Cols+col
     Wear        []float64   `json:"wear,omitempty"`
+    Elevation   []float64   `json:"elevation,omitempty"` // per-cell relief ∈[0,1], len cols*rows; absent
+                                                          // for worlds without generated elevation (the
+                                                          // frontend falls back to per-type heights). Static
+                                                          // — full grid only, never in terrain_delta.
 }
 
 // RunMeta is the sim:{run}:meta hash payload (§2).

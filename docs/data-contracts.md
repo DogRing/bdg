@@ -78,7 +78,8 @@ sim:{run}:animal:{id}   HASH     live animal summary (render): pos, species, act
 sim:{run}:flora         STRING   live plant render set: [{object_id, species, pos, stage, width}] (WI-P4)
 sim:{run}:climate       HASH     ambient: temperature, apparent_temp?, moisture, raining, wind_dir, wind_mag,
                                  hour_of_day, day_night, year_fraction (WI-P4 — frontend ambient FX)
-sim:{run}:terrain       STRING   render terrain: base layout + overrides (climate transitions) + wear (trails) (WI-P4)
+sim:{run}:terrain       STRING   render terrain: base layout + overrides (climate transitions) + wear (trails)
+                                 + optional per-cell elevation[] ∈[0,1] (generated worlds; render-only relief) (WI-P4)
 sim:{run}:events        STREAM   events (§4). XADD append; SSE tails
 sim:{run}:frame         STREAM   per-frame render deltas (WorldFrame, §4); SSE tails for the graphics client (WI-P4)
 ```
@@ -135,9 +136,12 @@ Representative `type`s (payload gist):
 ## 6. Navmap / terrain (map subsystem)
 - **Hex grid** (`docs/hex-grid.md`): terrain cells are **flat-top hexagons**; the initial layout +
   `terrain_delta.cell` use an **offset (col,row) rectangular array** (`i = row·cols + col`), and
-  `/api/terrain` carries `{cell_size, orientation:'flat', size:{cols,rows}, terrain[], wear?[]}`. The
-  wire stays a rectangular array (offset↔axial conversion is engine-internal). Sorted-cell order is the
-  canonical hex order (R-major then Q). `spatial`/`scent`/`climate` stay SQUARE (surgical scope).
+  `/api/terrain` carries `{cell_size, orientation:'flat', size:{cols,rows}, terrain[], wear?[], elevation?[]}`.
+  `elevation` (∈[0,1], len cols*rows) is present only for generated worlds (worldgen GenerateTerrain) and is
+  **static render-only relief** — full grid only, never in `terrain_delta`; absent ⇒ the frontend uses
+  per-type heights. The wire stays a rectangular array (offset↔axial conversion is engine-internal).
+  Sorted-cell order is the canonical hex order (R-major then Q). `spatial`/`scent`/`climate` stay SQUARE
+  (surgical scope).
 - Navmap wire = **building footprints** + **sparse `wear`** + **terrain state**. Per `design.md §5`, terrain is **dynamic** (moisture/transition), so it streams like wear — **periodic full + sparse deltas**, NOT a one-time static layout.
 - Determinism (D12): the snapshot is copy-on-write; the running tick deposits `wear` and applies terrain transitions in the **serial apply** phase (sorted cell order), never during plan. Bulk terrain recompute is `tick`-triggered (`tick % N`), never wall-clock.
 - An `ore_node` exhaustion (Xm2/Xm3) is one such terrain transition: on `remaining→0` the world fires ONE `navmap.SetTerrain` over the node's cells → `depleted_terrain` (e.g. `bare_rock`), streamed via `TerrainOverrides()` (the same sparse delta channel as climate transitions). NOT during plan; apply phase, sorted cells (D12).

@@ -653,3 +653,34 @@ func TestClimateOffNeutrality(t *testing.T) {
 		}
 	}
 }
+
+// ── AC: per-cell initial moisture (WG1-a stage 4 seed; nil ⇒ uniform) ─────────
+
+func TestInitMoistureAtSeedsPerCell(t *testing.T) {
+	cfg := testCfg() // 2×2 over 100×100 → cell centres at (25,25),(75,25),(25,75),(75,75)
+	cfg.InitMoistureAt = func(p core.Vec2) float64 {
+		if p.X < 50 {
+			return 0.9 // "near water" west column
+		}
+		return -0.2 // clamps to 0
+	}
+	s := climate.New(cfg, fixedTerrainAt("soil"))
+
+	west := s.CellAt(core.Vec2{X: 10, Y: 10}).Moisture
+	east := s.CellAt(core.Vec2{X: 90, Y: 10}).Moisture
+	if west != 0.9 {
+		t.Errorf("west cell moisture = %v, want 0.9 (InitMoistureAt)", west)
+	}
+	if east != 0 {
+		t.Errorf("east cell moisture = %v, want 0 (clamped)", east)
+	}
+
+	// nil field ⇒ the uniform InitMoisture, byte-for-byte the old behavior.
+	cfg2 := testCfg()
+	s2 := climate.New(cfg2, fixedTerrainAt("soil"))
+	for _, gcs := range s2.Cells() {
+		if gcs.State.Moisture != cfg2.InitMoisture {
+			t.Fatalf("cell %v moisture = %v, want uniform %v", gcs.Cell, gcs.State.Moisture, cfg2.InitMoisture)
+		}
+	}
+}

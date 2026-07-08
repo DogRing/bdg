@@ -22,29 +22,34 @@ const genSeedSalt = 0x6d617431 // "mat1"
 const maxPlaceTries = 10_000
 
 // materialize resolves the generated parts of fx into a concrete fixture (SPEC §Load):
-// a terrain{random:true} block becomes an explicit SimpleTerrain layout over the navmap
-// offset dims, and pos-less flora/animal placements land on random soil hexes
-// (rejection-sampled over bounds). The caller's Fixture is never written through
-// (pointers/slices are replaced), so a rebuild with a different Seed re-rolls fresh —
-// the /api/regen path.
-func materialize(fx Fixture, navCfg navmap.Config) (Fixture, error) {
+// a terrain{random:true} block becomes an explicit GenerateTerrain cells+Elevation layout
+// over the navmap offset dims, and pos-less flora/animal placements land on random soil
+// hexes (rejection-sampled over bounds). The second return is the generated initial-
+// moisture field (len cols*rows, offset order) — the WG1-a stage-4 climate seed; nil for
+// explicit fixtures (uniform climate seed, existing goldens unchanged). The caller's
+// Fixture is never written through (pointers/slices are replaced), so a rebuild with a
+// different Seed re-rolls fresh — the /api/regen path.
+func materialize(fx Fixture, navCfg navmap.Config) (Fixture, []float64, error) {
 	random := fx.Terrain != nil && fx.Terrain.Random
 	if !random && !hasPoslessPlacement(fx) {
-		return fx, nil
+		return fx, nil, nil
 	}
 	r := rng.New(fx.Seed + genSeedSalt)
 
+	var initMoisture []float64
 	if random {
 		cols, rows := navmap.OffsetDimsOf(navCfg)
 		if cols <= 0 || rows <= 0 {
-			return fx, fmt.Errorf("worldgen: terrain random:true needs positive world bounds/cell size")
+			return fx, nil, fmt.Errorf("worldgen: terrain random:true needs positive world bounds/cell size")
 		}
-		fx.Terrain = &TerrainLayout{Cols: cols, Rows: rows, Cells: SimpleTerrain(cols, rows, r)}
+		cells, elev, moist := GenerateTerrain(cols, rows, navCfg, r)
+		fx.Terrain = &TerrainLayout{Cols: cols, Rows: rows, Cells: cells, Elevation: elev}
+		initMoisture = moist
 	}
 
 	if hasPoslessPlacement(fx) {
 		if fx.Terrain == nil || len(fx.Terrain.Cells) == 0 {
-			return fx, fmt.Errorf("worldgen: flora/animal placements without pos require a terrain layout")
+			return fx, nil, fmt.Errorf("worldgen: flora/animal placements without pos require a terrain layout")
 		}
 		sample := layoutSampler(*fx.Terrain, navCfg)
 		place := func(id core.ObjectID) (*Vec2, error) {
@@ -67,7 +72,7 @@ func materialize(fx Fixture, navCfg navmap.Config) (Fixture, error) {
 			}
 			p, err := place(flora[i].ID)
 			if err != nil {
-				return fx, err
+				return fx, nil, err
 			}
 			flora[i].Pos = p
 		}
@@ -80,13 +85,35 @@ func materialize(fx Fixture, navCfg navmap.Config) (Fixture, error) {
 			}
 			p, err := place(animals[i].ID)
 			if err != nil {
-				return fx, err
+				return fx, nil, err
 			}
 			animals[i].Pos = p
 		}
 		fx.Animals = animals
 	}
-	return fx, nil
+	return fx, initMoisture, nil
+}
+
+// gridSampler bridges a generated per-cell field (offset order, len cols*rows) to a
+// continuous read (D11 index read) — the climate.InitMoistureAt shape. Same hex snap +
+// clamp as layoutSampler.
+func gridSampler(vals []float64, cols, rows int, navCfg navmap.Config) func(core.Vec2) float64 {
+	return func(p core.Vec2) float64 {
+		col, row := navmap.OffsetIndexAt(navCfg, p)
+		if col < 0 {
+			col = 0
+		}
+		if row < 0 {
+			row = 0
+		}
+		if col >= cols {
+			col = cols - 1
+		}
+		if row >= rows {
+			row = rows - 1
+		}
+		return vals[row*cols+col]
+	}
 }
 
 func hasPoslessPlacement(fx Fixture) bool {

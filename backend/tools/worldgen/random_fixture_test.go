@@ -11,42 +11,111 @@ import (
 	"github.com/dogring/bdg/platform/config"
 )
 
-// ── SimpleTerrain (SPEC AC: seeded-deterministic dev terrain) ────────────────────
+// genTestCfg is a 500×500 world @ CellSize 12 — the rabbit_meadow geometry (29×26 hexes).
+func genTestCfg() navmap.Config {
+	return navmap.Config{MinX: 0, MinY: 0, MaxX: 500, MaxY: 500, CellSize: 12}
+}
 
-func TestSimpleTerrainDeterministicAndValid(t *testing.T) {
-	const cols, rows = 18, 16
-	a := SimpleTerrain(cols, rows, rng.New(42))
-	b := SimpleTerrain(cols, rows, rng.New(42))
-	if !reflect.DeepEqual(a, b) {
-		t.Fatalf("same seed produced different terrain")
+var genTerrainIDs = map[core.Tag]bool{
+	"soil": true, "sand": true, "river": true, "lake": true,
+	"sea": true, "mountain": true, "bare_rock": true,
+}
+
+// ── GenerateTerrain (SPEC AC: seeded-deterministic WG1-a terrain stages) ─────────
+
+func TestGenerateTerrainDeterministicAndValid(t *testing.T) {
+	navCfg := genTestCfg()
+	cols, rows := navmap.OffsetDimsOf(navCfg)
+
+	c1, e1, m1 := GenerateTerrain(cols, rows, navCfg, rng.New(42))
+	c2, e2, m2 := GenerateTerrain(cols, rows, navCfg, rng.New(42))
+	if !reflect.DeepEqual(c1, c2) || !reflect.DeepEqual(e1, e2) || !reflect.DeepEqual(m1, m2) {
+		t.Fatalf("same seed produced different terrain/elevation/moisture")
 	}
-	c := SimpleTerrain(cols, rows, rng.New(43))
-	if reflect.DeepEqual(a, c) {
+	c3, _, _ := GenerateTerrain(cols, rows, navCfg, rng.New(43))
+	if reflect.DeepEqual(c1, c3) {
 		t.Fatalf("different seeds produced identical terrain (suspicious)")
 	}
 
-	valid := map[core.Tag]bool{"soil": true, "river": true, "sand": true, "mountain": true}
-	for i, id := range a {
-		if !valid[id] {
-			t.Fatalf("cell %d has id %q outside the dev subset", i, id)
+	if len(c1) != cols*rows || len(e1) != cols*rows || len(m1) != cols*rows {
+		t.Fatalf("output lengths %d/%d/%d, want cols*rows=%d", len(c1), len(e1), len(m1), cols*rows)
+	}
+	for i, id := range c1 {
+		if !genTerrainIDs[id] {
+			t.Fatalf("cell %d has id %q outside the generator subset", i, id)
 		}
 	}
-	for row := 0; row < rows; row++ {
-		found := false
-		for col := 0; col < cols; col++ {
-			if a[row*cols+col] == "river" {
-				found = true
-				break
-			}
+	for i, e := range e1 {
+		if e < 0 || e > 1 {
+			t.Fatalf("elevation[%d] = %v outside [0,1]", i, e)
 		}
-		if !found {
-			t.Fatalf("row %d has no river cell", row)
+	}
+	for i, m := range m1 {
+		if m < 0 || m > 1 {
+			t.Fatalf("moisture[%d] = %v outside [0,1]", i, m)
 		}
 	}
 }
 
+func TestGenerateTerrainShape(t *testing.T) {
+	navCfg := genTestCfg()
+	cols, rows := navmap.OffsetDimsOf(navCfg)
+
+	for seed := int64(1); seed <= 5; seed++ {
+		cells, elev, moist := GenerateTerrain(cols, rows, navCfg, rng.New(seed))
+
+		counts := map[core.Tag]int{}
+		for _, id := range cells {
+			counts[id]++
+		}
+		water := counts["sea"] + counts["lake"] + counts["river"]
+		if water == 0 {
+			t.Errorf("seed %d: no water cells at all", seed)
+		}
+		if frac := float64(counts["soil"]) / float64(len(cells)); frac < 0.4 {
+			t.Errorf("seed %d: soil fraction %.2f < 0.4 (pos-less placement needs soil): %v", seed, frac, counts)
+		}
+
+		// Relief sanity: sea sits below mountains.
+		var seaSum, mtSum float64
+		var seaN, mtN int
+		// Moisture sanity: beside water wetter than the driest cell.
+		minMoist, maxWaterAdjMoist := 1.0, 0.0
+		for i, id := range cells {
+			switch id {
+			case "sea":
+				seaSum += elev[i]
+				seaN++
+			case "mountain", "bare_rock":
+				mtSum += elev[i]
+				mtN++
+			}
+			if moist[i] < minMoist {
+				minMoist = moist[i]
+			}
+			if hasWaterNeighbor(waterMask(cells), cols, rows, i%cols, i/cols) && moist[i] > maxWaterAdjMoist {
+				maxWaterAdjMoist = moist[i]
+			}
+		}
+		if seaN > 0 && mtN > 0 && seaSum/float64(seaN) >= mtSum/float64(mtN) {
+			t.Errorf("seed %d: mean sea elevation %.3f >= mean mountain elevation %.3f", seed, seaSum/float64(seaN), mtSum/float64(mtN))
+		}
+		if maxWaterAdjMoist <= minMoist {
+			t.Errorf("seed %d: water-adjacent moisture %.3f not above driest cell %.3f", seed, maxWaterAdjMoist, minMoist)
+		}
+	}
+}
+
+func waterMask(cells []core.Tag) []bool {
+	w := make([]bool, len(cells))
+	for i, id := range cells {
+		w[i] = id == "sea" || id == "lake" || id == "river"
+	}
+	return w
+}
+
 // ── rabbit_meadow: random terrain materialization + pos-less placement + respawn
-//    override (SPEC AC ×3) over the real content ─────────────────────────────────
+//    override + moisture/elevation couplings over the real content ──────────────
 
 func TestRabbitMeadowRandomFixture(t *testing.T) {
 	contentDir := findExisting(t, "../../../content", "../content", "content")
@@ -76,7 +145,7 @@ func TestRabbitMeadowRandomFixture(t *testing.T) {
 	}
 
 	// The caller's fixture and the shared config must be untouched (regen re-rolls).
-	if !fx.Terrain.Random || len(fx.Terrain.Cells) != 0 {
+	if !fx.Terrain.Random || len(fx.Terrain.Cells) != 0 || len(fx.Terrain.Elevation) != 0 {
 		t.Fatalf("Load mutated the caller's fixture terrain: %+v", fx.Terrain)
 	}
 	for _, fp := range fx.Flora {
@@ -94,11 +163,36 @@ func TestRabbitMeadowRandomFixture(t *testing.T) {
 		t.Fatalf("initial animals = %+v, want exactly one rabbit", animals)
 	}
 
-	// Terrain materialized to the navmap hex offset dims: sampling any point works and
-	// the loader accepted the dims cross-check (Load would have failed otherwise). The
-	// world spans 300×300 (fixture bounds), so the far corner must be sampleable.
-	if _, ok := w.ClimateCellAt(core.Vec2{X: 299, Y: 299}); !ok {
+	// Terrain + relief materialized over the fixture bounds (500×500): the render view
+	// carries the elevation array (3D height wire), and the far corner is sampleable.
+	rv := w.RenderView()
+	if rv.Terrain == nil {
+		t.Fatalf("no terrain render view")
+	}
+	if len(rv.Terrain.Elevation) != rv.Terrain.Cols*rv.Terrain.Rows {
+		t.Fatalf("render elevation len %d, want cols*rows=%d", len(rv.Terrain.Elevation), rv.Terrain.Cols*rv.Terrain.Rows)
+	}
+	if _, ok := w.ClimateCellAt(core.Vec2{X: 499, Y: 499}); !ok {
 		t.Fatalf("climate/terrain not installed over the fixture bounds")
+	}
+
+	// Water-proximity moisture seeding (WG1-a stage 4): the climate field is non-uniform
+	// at t=0 (a uniform seed would make every sampled cell identical).
+	minM, maxM := 1.0, 0.0
+	for x := 10.0; x < 500; x += 60 {
+		for y := 10.0; y < 500; y += 60 {
+			if cell, ok := w.ClimateCellAt(core.Vec2{X: x, Y: y}); ok {
+				if cell.Moisture < minM {
+					minM = cell.Moisture
+				}
+				if cell.Moisture > maxM {
+					maxM = cell.Moisture
+				}
+			}
+		}
+	}
+	if maxM <= minM {
+		t.Errorf("climate initial moisture is uniform (%.3f) — InitMoistureAt coupling not applied", maxM)
 	}
 
 	// Respawn override: the first cadence tick tops rabbit up to 10 (not the content
@@ -141,13 +235,19 @@ func TestRabbitMeadowSeedDeterminism(t *testing.T) {
 		navCfg := *cfg.NavCfg
 		navCfg.MinX, navCfg.MinY = f.Bounds.Min[0], f.Bounds.Min[1]
 		navCfg.MaxX, navCfg.MaxY = f.Bounds.Max[0], f.Bounds.Max[1]
-		m, err := materialize(f, navCfg)
+		m, moist, err := materialize(f, navCfg)
 		if err != nil {
 			t.Fatalf("materialize(seed %d): %v", seed, err)
 		}
 		wantCols, wantRows := navmap.OffsetDimsOf(navCfg)
 		if m.Terrain.Cols != wantCols || m.Terrain.Rows != wantRows {
 			t.Fatalf("materialized dims %dx%d, want %dx%d", m.Terrain.Cols, m.Terrain.Rows, wantCols, wantRows)
+		}
+		if len(m.Terrain.Elevation) != wantCols*wantRows {
+			t.Fatalf("materialized elevation len %d, want %d", len(m.Terrain.Elevation), wantCols*wantRows)
+		}
+		if len(moist) != wantCols*wantRows {
+			t.Fatalf("materialized moisture len %d, want %d", len(moist), wantCols*wantRows)
 		}
 		// Every pos-less placement landed on a soil hex inside bounds.
 		sample := layoutSampler(*m.Terrain, navCfg)

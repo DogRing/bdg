@@ -99,6 +99,7 @@ export const TERRAIN_STYLE: Record<string, string> = Object.freeze({
   soil:     '#9a7a4a',
   sand:     '#c8b078',
   river:    '#4a8ec2', // fresh flowing water (lighter than sea)
+  lake:     '#3f7eb5', // still fresh water (outflow-less basin; between river and sea)
   mountain: '#8a8078', // steep rock
   sea:      '#2f5c8a', // deep salt water
   bare_rock: '#9a938a', // depleted ore node reroute

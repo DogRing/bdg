@@ -100,6 +100,14 @@ func (m *NavMap) CellToOffset(c Cell) (col, row int)   // axial Cell → offset(
 // CellToOffset∘CellOf; OffsetDimsOf ≡ OffsetDims.
 func OffsetDimsOf(cfg Config) (cols, rows int)
 func OffsetIndexAt(cfg Config, p core.Vec2) (col, row int)
+// OffsetCenterOf is the inverse read of OffsetIndexAt: the world-space centre of the hex at
+// offset(col,row) — the coordinate an authoring tool samples noise/fields at so generated terrain
+// is isotropic in WORLD space, not grid space. OffsetIndexAt(cfg, OffsetCenterOf(cfg,c,r)) == (c,r).
+func OffsetCenterOf(cfg Config, col, row int) core.Vec2
+// OffsetNeighborsOf enumerates the 6 hex-adjacent offset coords of offset(col,row) (flat-top odd-q,
+// fixed order for D12; may include out-of-grid coords — callers bound-check against OffsetDimsOf).
+// Convention-only (no Config): offset adjacency is geometry-independent.
+func OffsetNeighborsOf(col, row int) [6][2]int
 
 // ── Mutations (apply phase only; serial, world-owned) ─────────────────────────────
 func (m *NavMap) Deposit(cells []Cell, amount float64) // add wear along a traversed path

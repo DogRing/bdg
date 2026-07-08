@@ -56,24 +56,37 @@ const COLS = Math.ceil(WORLD / (1.5 * CELL)) + 1
 const ROWS = Math.ceil(WORLD / (SQRT3 * CELL)) + 1
 const ORIENTATION = 'flat'
 // Terrain is rebuilt on POST /api/regen (new seed ⇒ river/forest/fields move) —
-// mock parity with the backend's SimpleTerrain materialization. Deterministic per
-// seed: same seed ⇒ same layout (its PRNG stream is separate from the scripted rng).
+// mock parity with the backend's GenerateTerrain materialization, including a per-cell
+// `elevation[]` ∈[0,1] (smooth seeded bumps, river carved low — the 3D height wire).
+// Deterministic per seed: same seed ⇒ same layout (PRNG stream separate from the
+// scripted rng).
 let terrain = []
+let elevation = []
 function buildTerrain(seedVal) {
   const rand = mulberry32(seedVal ^ 0x7e11a1)
   const riverX = 96 + Math.floor(rand() * 320)               // river N-S band
   const forest = { x: 64 + rand() * 384, y: 64 + rand() * 256 } // forest ellipse
   const field = { x: 96 + rand() * 320, y: 96 + rand() * 320 } // village fields
+  // 3 seeded cosine bumps ≈ rolling hills (cheap stand-in for the backend's fBm noise)
+  const bumps = [0, 1, 2].map(() => ({ x: rand() * WORLD, y: rand() * WORLD, r: 140 + rand() * 160, h: 0.35 + rand() * 0.5 }))
   terrain = []
+  elevation = []
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const { q, r } = offsetToAxial(col, row)
       const { x, y } = hexToPixel(q, r)          // world centre of this hex
       const fx = x - forest.x, fy = y - forest.y
-      if (x >= riverX && x < riverX + 16) terrain.push('river')
+      let e = 0.18
+      for (const b of bumps) {
+        const d = Math.hypot(x - b.x, y - b.y)
+        if (d < b.r) e += b.h * 0.5 * (1 + Math.cos(Math.PI * d / b.r))
+      }
+      e = Math.min(1, e)
+      if (x >= riverX && x < riverX + 16) { terrain.push('river'); e = Math.min(e, 0.10) }
       else if ((fx * fx) / 7680 + (fy * fy) / 3840 < 1) terrain.push('forest')
       else if (Math.abs(x - field.x) < 40 && Math.abs(y - field.y) < 40) terrain.push('sand')
-      else terrain.push('soil')
+      else terrain.push(e > 0.85 ? 'mountain' : 'soil')
+      elevation.push(Math.round(e * 1000) / 1000)
     }
   }
 }
@@ -316,6 +329,7 @@ const server = http.createServer((req, res) => {
       size: { cols: COLS, rows: ROWS },
       terrain,
       wear: [...wear].map(v => Math.round(v * 100) / 100),
+      elevation,
     }))
   } else if (url.startsWith('/sse')) {
     res.writeHead(200, {
