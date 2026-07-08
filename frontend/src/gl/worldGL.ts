@@ -33,7 +33,10 @@ const SKIRT_FRAC = -0.30
 // Per-cell relief mapping (gl/SPEC.md): a grid carrying `elevation[]` (generated worlds,
 // /api/terrain) extrudes each hex to ELEV_BASE + e·ELEV_SPAN hex-radii from ITS OWN
 // e ∈ [0,1]; without it, the per-type ELEV_FRAC table keeps the pre-elevation look.
-const ELEV_BASE = 0.06, ELEV_SPAN = 1.7
+const ELEV_BASE = 0.06, ELEV_SPAN = 2.1   // real relief (taller peaks / deeper valleys)
+// Curved-world bend + height-expression tuning (gl/SPEC.md "Curved / rolling world" + "Height ↔ tilt").
+const CURVE_AMT = 0.06                     // rolling-world roll-off strength (uCurv = CURVE_AMT/dist)
+const RELIEF_MIN = 0.85, RELIEF_GAIN = 0.5 // relief = MIN + GAIN·smoothstep(pitch) — height exaggeration
 const tileIdx = (id: string) => TILE_INDEX[id] ?? 0
 const elevFrac = (id: string) => ELEV_FRAC[id] ?? 0.55
 const cellElevFrac = (grid: TerrainGrid, idx: number): number =>
@@ -166,7 +169,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
   let elevAt: Float32Array | null = null   // world elevation per offset cell (entity seating)
   let gCols = 0, gRows = 0
   let bMinX = 0, bMinY = 0, bMaxX = 0, bMaxY = 0
-  let fx = 0, fz = 0, yaw = 0, pitch = 42 * DEG, dist = 200, curveAmt = 0.03
+  let fx = 0, fz = 0, yaw = 0, pitch = 42 * DEG, dist = 200
   let fitDist = 200, minDist = 20, maxDist = 600
   let lastAgents: AgentState[] = [], lastAnimals: AnimalState[] = []
   const proj = new Float32Array(16), view = new Float32Array(16)
@@ -216,7 +219,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
     const vx = view[0] * wx + view[4] * wy + view[8] * wz + view[12]
     const vy = view[1] * wx + view[5] * wy + view[9] * wz + view[13]
     const vz = view[2] * wx + view[6] * wy + view[10] * wz + view[14]
-    const by = vy - (curveAmt / dist) * (vz * vz)
+    const by = vy - (CURVE_AMT / dist) * (vz * vz)
     const cw = proj[3] * vx + proj[7] * by + proj[11] * vz + proj[15]
     if (cw <= 0.0001) return null
     const cx = proj[0] * vx + proj[4] * by + proj[8] * vz + proj[12]
@@ -243,13 +246,13 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
     perspective(proj, FOV, bw / bh, Math.max(0.5, dist * 0.02), dist * 6)
     const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw)
     lookAt(view, [fx + dist * cp * sy, dist * sp, fz + dist * cp * cy], [fx, 0, fz], [0, 1, 0])
-    relief = 0.6 + 0.4 * smoothstep(12 * DEG, 52 * DEG, pitch)
+    relief = RELIEF_MIN + RELIEF_GAIN * smoothstep(12 * DEG, 52 * DEG, pitch)
 
     // terrain prisms
     if (instCount > 0) {
       gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.useProgram(tileP)
       gl.uniformMatrix4fv(T.uProj, false, proj); gl.uniformMatrix4fv(T.uView, false, view)
-      gl.uniform1f(T.uCurv, curveAmt / dist); gl.uniform1f(T.uRelief, relief)
+      gl.uniform1f(T.uCurv, CURVE_AMT / dist); gl.uniform1f(T.uRelief, relief)
       gl.uniform3fv(T.uLight, LIGHT); gl.uniform1f(T.uTime, clockMs * 0.001)
       gl.uniform1f(T.uHexR, cellSize); gl.uniform1f(T.uRipple, 0.05 * cellSize)
       gl.uniform2f(T.uCell, CELL / atlas.width, CELL / atlas.height); gl.uniform1f(T.uCols, ACOLS)

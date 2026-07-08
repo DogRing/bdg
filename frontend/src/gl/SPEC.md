@@ -59,8 +59,8 @@ export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; e
   the same per-cell sampler, so agents/animals ride the relief automatically.
 - **Curved / rolling world.** View-space `y -= curv·z²` bends distant ground below the horizon;
   **distance fog** fades tiles into the gradient **sky** (horizon colour == fog colour → seamless).
-- **Height ↔ tilt.** Relief = `0.6 + 0.4·smoothstep(pitch)` — real height even when top-down, rising
-  toward a diorama as the camera leans back. One directional light shades the walls; water tops ripple
+- **Height ↔ tilt.** Relief = `RELIEF_MIN + RELIEF_GAIN·smoothstep(pitch)` (`0.85 + 0.5`) — real height
+  even when top-down, rising toward a diorama as the camera leans back. One directional light shades the walls; water tops ripple
   and shimmer (a continuous loop drives `uTime`).
 - **Entities.** Agents/animals/objects are projected on the CPU (same view→curve→proj as the shader,
   seated on the sampled terrain elevation) and drawn on the 2D overlay: agent dots (+ selection ring),
