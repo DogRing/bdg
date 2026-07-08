@@ -48,7 +48,9 @@ type Sector uint8
 const NumSectors = 6
 
 // SectorOf maps wind.Dir to one of six deterministic 60° bins:
-//   sector = int(floor(wrap(w.Dir) / (pi/3)))   with w.Dir wrapped into [0, 2*pi)
+//   sector = floor(wrap(w.Dir) / (pi/3))   with w.Dir wrapped into [0, 2*pi)
+// An exact 60°-multiple boundary (wind aligned to a hex axis) resolves UP into its bin — the impl
+// adds a tiny epsilon so float rounding of the bin width cannot drop e.g. pi from bin 3 to bin 2.
 // wind.Mag does not affect the sector. This 6-bin convention is the shared contract with Topology:
 // Neighbors(c)[sector] is the downwind neighbor for that sector (see Topology).
 func SectorOf(w Wind) Sector
