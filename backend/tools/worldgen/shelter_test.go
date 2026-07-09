@@ -63,3 +63,47 @@ func TestBuildWindBlockers(t *testing.T) {
 		}
 	}
 }
+
+// No `covers` kinds (or no navmap / no match) ⇒ nil ⇒ SH3 stays OFF.
+func TestBuildCoverersOff(t *testing.T) {
+	nav := shelterTestNav()
+	objs := []ObjectPlacement{{ID: "o1", Kind: "hut", Pos: Vec2{10, 10}}}
+	if got := buildCoverers(objs, nil, nav); got != nil {
+		t.Errorf("no coverer kinds: got %v, want nil", got)
+	}
+	if got := buildCoverers(objs, map[core.Tag]bool{"hut": true}, nil); got != nil {
+		t.Errorf("nil navmap: got %v, want nil", got)
+	}
+	if got := buildCoverers(objs, map[core.Tag]bool{"roof": true}, nav); got != nil {
+		t.Errorf("no matching placed objects: got %v, want nil", got)
+	}
+}
+
+// Placed objects of a `covers` kind become one coverer each, footprint = the object's cell, in
+// sorted-ID order (D12), with the SH3 uniform coverage. Untagged kinds are skipped.
+func TestBuildCoverers(t *testing.T) {
+	nav := shelterTestNav()
+	kinds := map[core.Tag]bool{"roof": true}
+	objs := []ObjectPlacement{
+		{ID: "r2", Kind: "roof", Pos: Vec2{55, 60}},
+		{ID: "tree", Kind: "oak", Pos: Vec2{5, 5}}, // untagged ⇒ skipped
+		{ID: "r1", Kind: "roof", Pos: Vec2{10, 12}},
+	}
+	got := buildCoverers(objs, kinds, nav)
+	if len(got) != 2 {
+		t.Fatalf("coverer count = %d, want 2 (untagged skipped)", len(got))
+	}
+	if got[0].ID != "r1" || got[1].ID != "r2" {
+		t.Errorf("coverer IDs = [%s %s], want sorted [r1 r2]", got[0].ID, got[1].ID)
+	}
+	for i, want := range []Vec2{{10, 12}, {55, 60}} {
+		cv := got[i]
+		wc := nav.CellOf(want.Core())
+		if len(cv.Footprint) != 1 || cv.Footprint[0].Q != wc.Q || cv.Footprint[0].R != wc.R {
+			t.Errorf("%s footprint = %v, want [{%d %d}]", cv.ID, cv.Footprint, wc.Q, wc.R)
+		}
+		if cv.Coverage != shelterCoverCoverage {
+			t.Errorf("%s coverage = %v, want %v", cv.ID, cv.Coverage, shelterCoverCoverage)
+		}
+	}
+}

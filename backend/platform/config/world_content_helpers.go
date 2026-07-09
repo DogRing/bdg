@@ -135,10 +135,22 @@ func buildCoverKinds(doc objectsDoc) map[core.Tag]bool {
 // turns each placed instance of such a kind into an exposure.Blocker (wind-shadow caster). No
 // tagged kinds ⇒ nil ⇒ shelter stays OFF (ε ≡ 1, byte-identical). Mirrors buildCoverKinds.
 func buildWindBlockerKinds(doc objectsDoc) map[core.Tag]bool {
+	return buildTaggedKinds(doc, "blocks_wind")
+}
+
+// buildCovererKinds collects object kinds tagged `covers` (docs/shelter.md SH3). worldgen turns each
+// placed instance into an exposure.Coverer (overhead-cover caster). No tagged kinds ⇒ nil ⇒ SH3 OFF
+// (ε_cover ≡ 1, byte-identical). Mirrors buildWindBlockerKinds.
+func buildCovererKinds(doc objectsDoc) map[core.Tag]bool {
+	return buildTaggedKinds(doc, "covers")
+}
+
+// buildTaggedKinds returns the set of object-kind IDs carrying the given tag (nil if none).
+func buildTaggedKinds(doc objectsDoc, tag core.Tag) map[core.Tag]bool {
 	out := make(map[core.Tag]bool)
 	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
-		for _, tag := range obj.Tags {
-			if tag == "blocks_wind" {
+		for _, t := range obj.Tags {
+			if core.Tag(t) == tag {
 				out[core.Tag(obj.ID)] = true
 				break
 			}

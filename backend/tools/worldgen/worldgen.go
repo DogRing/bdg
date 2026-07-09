@@ -208,8 +208,10 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	}
 	// SH1 shelter: objects tagged `blocks_wind` become wind-shadow casters (docs/shelter.md).
 	// No such objects ⇒ no blockers ⇒ InstallShelter skipped ⇒ shelter stays OFF (byte-identical).
-	if blockers := buildWindBlockers(fx.Objects, cfg.WindBlockerKinds, nav); len(blockers) > 0 {
-		w.InstallShelter(shelterConfig(), blockers, nil)
+	blockers := buildWindBlockers(fx.Objects, cfg.WindBlockerKinds, nav)
+	coverers := buildCoverers(fx.Objects, cfg.CovererKinds, nav)
+	if len(blockers) > 0 || len(coverers) > 0 {
+		w.InstallShelter(shelterConfig(), blockers, coverers)
 	}
 
 	animals, err := buildAnimals(fx, cfg)
@@ -408,6 +410,8 @@ const (
 	shelterMinEpsilon           = 0.0
 	shelterBlockerHeight        = 3.0
 	shelterBlockerOpacity       = 1.0
+	// SH3 overhead cover: uniform coverage per `covers` object (full overhead ⇒ ε_cover → 0).
+	shelterCoverCoverage = 1.0
 )
 
 func shelterConfig() exposure.Config {
@@ -436,6 +440,28 @@ func buildWindBlockers(objects []ObjectPlacement, kinds map[core.Tag]bool, nav *
 			Footprint: []exposure.Cell{{Q: c.Q, R: c.R}},
 			Height:    shelterBlockerHeight,
 			Opacity:   shelterBlockerOpacity,
+		})
+	}
+	return out
+}
+
+// buildCoverers turns each placed object whose kind is tagged `covers` into one overhead-cover caster
+// (SH3), footprint = the object's navmap cell, in sorted-ID order (D12). SH3 uses a uniform coverage
+// strength (per-kind strength from tag data is a follow-up). No tagged kinds / no navmap ⇒ nil ⇒ SH3 OFF.
+func buildCoverers(objects []ObjectPlacement, kinds map[core.Tag]bool, nav *navmap.NavMap) []exposure.Coverer {
+	if len(kinds) == 0 || nav == nil {
+		return nil
+	}
+	var out []exposure.Coverer
+	for _, obj := range sortedObjects(objects) {
+		if !kinds[obj.Kind] {
+			continue
+		}
+		c := nav.CellOf(obj.Pos.Core())
+		out = append(out, exposure.Coverer{
+			ID:        obj.ID,
+			Footprint: []exposure.Cell{{Q: c.Q, R: c.R}},
+			Coverage:  shelterCoverCoverage,
 		})
 	}
 	return out

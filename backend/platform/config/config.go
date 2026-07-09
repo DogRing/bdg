@@ -59,6 +59,7 @@ type LoadOutput struct {
 	ScentEmitters    map[core.Tag][]core.Tag
 	CoverKinds       map[core.Tag]bool
 	WindBlockerKinds map[core.Tag]bool
+	CovererKinds     map[core.Tag]bool
 	RespawnTargets   map[core.Tag]int
 
 	// configHash is the SHA-256 of the canonical content fingerprint.
@@ -424,6 +425,7 @@ func Load(contentDir string) (*LoadOutput, error) {
 		ScentEmitters:    worldRegs.ScentEmitters,
 		CoverKinds:       worldRegs.CoverKinds,
 		WindBlockerKinds: worldRegs.WindBlockerKinds,
+		CovererKinds:     worldRegs.CovererKinds,
 		RespawnTargets:   worldRegs.RespawnTargets,
 		configHash:       hash,
 	}, nil

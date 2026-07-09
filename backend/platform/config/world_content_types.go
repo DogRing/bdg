@@ -23,6 +23,7 @@ type worldContent struct {
 	ScentEmitters    map[core.Tag][]core.Tag
 	CoverKinds       map[core.Tag]bool
 	WindBlockerKinds map[core.Tag]bool
+	CovererKinds     map[core.Tag]bool
 	RespawnTargets   map[core.Tag]int
 }
 
