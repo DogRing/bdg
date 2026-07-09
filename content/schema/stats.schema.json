@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/stats.schema.json",
   "title": "content/stats.yaml — stat registry (D7/D10)",
-  "description": "Data-driven stat definitions loaded by platform/config into the engine/stats Registry. Adding a stat is a data edit, not a code edit (D10). Identifiers must match the canonical names in docs/glossary.md (no schema enum, so adding a stat needs no schema change; platform/config cross-checks references against this file).",
+  "description": "Data-driven stat definitions loaded by platform/config into the engine/stats Registry. Adding a stat is a data edit, not a code edit (D10). Identifiers must match the canonical names in docs/core/glossary.md (no schema enum, so adding a stat needs no schema change; platform/config cross-checks references against this file).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "stats"],
@@ -17,7 +17,7 @@
   "$defs": {
     "identifier": {
       "type": "string",
-      "description": "Canonical StatID (docs/glossary.md). Must start with a letter.",
+      "description": "Canonical StatID (docs/core/glossary.md). Must start with a letter.",
       "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
     },
     "stat": {

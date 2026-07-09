@@ -9,7 +9,7 @@
 A standalone, headless **balance auto-tuning CLI**. It searches `content/balance.yaml`'s seven
 emergence-critical constants for a value set that drives the simulation into a target band of four
 **emergence metrics** (crime rate, faction-reputation variance, role convergence, provisioning
-gap), the future tool that `docs/testing.md §5` explicitly defers. It evaluates each candidate by
+gap), the future tool that `docs/core/testing.md §5` explicitly defers. It evaluates each candidate by
 running the deterministic engine (`engine/world`) for a fixed seed set, scores the emitted per-tick
 event stream against the metric targets, and writes a recommended `best_params.yaml` plus an
 auditable `results_table.csv`. It writes **no engine code** and never mutates the simulation; it is
@@ -210,7 +210,7 @@ state — each candidate's `*World` is created, run, and discarded inside `Evalu
   with `pass=false` and a non-empty `error` column, and the run CONTINUES. One bad candidate never
   aborts the search.
 - **Role-convergence metric is defined over seeds 1,2,3.** The `role_convergence` boolean requires
-  `RoleEmerged` in ALL THREE of seeds 1,2,3 by definition (`docs/testing.md §5`). If `-seeds` is
+  `RoleEmerged` in ALL THREE of seeds 1,2,3 by definition (`docs/core/testing.md §5`). If `-seeds` is
   overridden, the tool still requires emergence in EVERY listed seed (the contract generalizes to
   "all seeds"), and logs a warning that the canonical metric uses 1,2,3.
 - **No naming drift / no new vocabulary.** The seven keys, the four metrics, and the action names
@@ -249,7 +249,7 @@ state — each candidate's `*World` is created, run, and discarded inside `Evalu
   cohort split reads perceived Intelligence (ToM[self]), not RealStats.
 - [ ] **End-to-end determinism (golden).** `RunTuner` over a tiny lattice (e.g. 2 knobs × 2 points,
   `-ticks` small, seeds `1,2,3`) run twice produces byte-identical `results_table.csv` and identical
-  `best`/`ok`. A second process reproduces it (cross-process determinism, `docs/testing.md §1`).
+  `best`/`ok`. A second process reproduces it (cross-process determinism, `docs/core/testing.md §1`).
 - [ ] **Parallelism is result-invariant (`-race`).** The same tiny lattice run with `-workers 1` and
   `-workers 4` produces identical `results_table.csv` content (modulo row ORDER, which is
   re-sorted by the fixed param-tuple key before comparison) and an identical `best`. Race detector
@@ -297,7 +297,7 @@ state — each candidate's `*World` is created, run, and discarded inside `Evalu
   "starved" event. P1 proposal: score starvation as "Satiety OR Hydration satisfaction below the
   `needs.*.satisfaction_threshold` at end of run" read via the world's public agent state. If a
   cleaner marker is wanted, that is an `engine/agent` SPEC change to escalate. Flag before finalizing
-  the metric definition (`docs/testing.md §5` says metric defs are finalized late, P7).
+  the metric definition (`docs/core/testing.md §5` says metric defs are finalized late, P7).
 - **CMA-ES on a discrete lattice.** CMA-ES is continuous; Phase 2 proposes continuous points within
   each `[Min,Max]` and either snaps to the nearest lattice step (keeping the discrete contract) or
   evaluates off-lattice (richer but breaks the LHS-grid framing). P1 proposal: snap to step. Confirm.
@@ -365,9 +365,9 @@ state — each candidate's `*World` is created, run, and discarded inside `Evalu
 
 ### References
 
-- `docs/testing.md §5` (auto-tuning targets — this tool's mandate), `§1` (determinism / cross-process
+- `docs/core/testing.md §5` (auto-tuning targets — this tool's mandate), `§1` (determinism / cross-process
   reproducibility the tuner relies on), `§4` (scenario G = the role-convergence source).
-- `docs/data-contracts.md` (`RoleEmerged{function, holder, reliance_share}`; `config_hash`).
+- `docs/core/data-contracts.md` (`RoleEmerged{function, holder, reliance_share}`; `config_hash`).
 - `content/balance.yaml` (the seven keys, all present today) and its `content/schema/balance.schema.json`.
 - `backend/main.go` (the canonical engine-assembly sequence to mirror).
 - D2 (no Faction type — clusters are emergent), D6 (reputation = ToM distribution, never a scalar),

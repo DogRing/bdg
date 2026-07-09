@@ -13,8 +13,8 @@ Given the current climate state, the time-derived forcing (rain process + time-o
 own *when* it runs (cadence) nor *the navmap write* (those are `engine/world`), nor does it compute
 `apparent_temp` (that is **fauna F40** — climate only GENERATES + EXPOSES `temperature`/`moisture`/
 `wind.dir`/`wind.mag`; `world` feeds them onward). No IO, no wall-clock, no global rand: every output
-is a function of `(state, forcing/RNG, rules)` (D12). Concept & rationale: `docs/design.md §5/§6` +
-`docs/climate.md` (all resolutions binding; the CA1–CA3 resolutions of §1c **supersede** the old
+is a function of `(state, forcing/RNG, rules)` (D12). Concept & rationale: `docs/core/design.md §5/§6` +
+`docs/plans/climate.md` (all resolutions binding; the CA1–CA3 resolutions of §1c **supersede** the old
 normalized-temperature 1b model and the RESOLVED-#2 season/wind park).
 
 ## Public Interface
@@ -307,7 +307,7 @@ func (s *State) CellAt(pos core.Vec2) CellState
 - **Outcome-neutral until activated** — the introduction phases ship with `Rules` empty so `Step`
   emits **no** transitions and existing world/navmap goldens hold; the °C + wind golden re-baseline
   (annual/daily °C, wind digest, climate.yaml thresholds in °C) is the deliberate later climate M-phase
-  (RESOLVED #10, `docs/climate.md` §2), **not** this SPEC edit.
+  (RESOLVED #10, `docs/plans/climate.md` §2), **not** this SPEC edit.
 - **Read-only inputs** — `Step` never mutates `prev`, `Rules`, or `Forcing`.
 
 ## Acceptance Criteria (testable)
@@ -369,7 +369,7 @@ func (s *State) CellAt(pos core.Vec2) CellState
 - *When* to call `Step` (the `tick % 60` cadence, shared by wind, CA2), deriving `Forcing` (incl.
   `YearFraction` from `worldtime.YearFraction`), the per-step RNG-fork derivation, mapping `GridCell`
   → `[]navmap.Cell`, and calling `navmap.SetTerrain` in the apply phase → `engine/world`
-  (`docs/climate.md` §0/§1, `backend/engine/world/SPEC-tick.md`).
+  (`docs/plans/climate.md` §0/§1, `backend/engine/world/SPEC-tick.md`).
 - **Consuming** `Wind` — the downwind scent-spread stencil (fauna **F33**) and `apparent_temp`
   computation (fauna **F40**) live in `fauna`; `world` adapts `CellAt`/`Wind` into the fauna animal
   Context (F27). climate only GENERATES + EXPOSES the operands (cross-ref fauna §1.3; no duplication).
@@ -378,22 +378,22 @@ func (s *State) CellAt(pos core.Vec2) CellState
 - Parsing/validating `content/climate.yaml` + `content/terrain.yaml`, compiling the `Rules` (incl.
   compiling `when` via `expr`), and cross-checking terrain ids + condition operands → `platform/config`
   (`content/schema/climate.schema.json`). The **actual climate.yaml °C threshold edit + golden
-  re-baseline** lands at the climate activation M-phase (`docs/climate.md` §2 M4-analog), NOT this SPEC.
+  re-baseline** lands at the climate activation M-phase (`docs/plans/climate.md` §2 M4-analog), NOT this SPEC.
 - Serialization wire format / Redis / SSE streaming of the climate field (grid + rain + wind) →
-  `platform/persist` + `docs/data-contracts.md §6` (this module exposes `Cells()`/`Rain()`/`Wind()`).
+  `platform/persist` + `docs/core/data-contracts.md §6` (this module exposes `Cells()`/`Rain()`/`Wind()`).
 - Path-cost effects of Temperature (agent comfort/stamina) → **parked** (RESOLVED #8). Per-cell wind
   field, sun, elevation, season *labels* → parked.
 
 ## Open Questions
-- **CA1 — annual temperature cycle: RESOLVED (`docs/climate.md §1c`).** day-of-year sinusoid +
+- **CA1 — annual temperature cycle: RESOLVED (`docs/plans/climate.md §1c`).** day-of-year sinusoid +
   additive daily offset, in °C: `T = AnnualMid + AnnualAmp·sin(2π·YearFraction + AnnualPhase) +
   dailyDelta(HourOfDay) − TempRainDrop·raining`; `Forcing.YearFraction` injected by world from the
   120-day `worldtime` calendar; no season enum. (Implemented above — Forcing/Config/Temperature model.)
-- **CA2 — wind: RESOLVED (`docs/climate.md §1c`).** world-uniform prevailing-dir + seeded directional
+- **CA2 — wind: RESOLVED (`docs/plans/climate.md §1c`).** world-uniform prevailing-dir + seeded directional
   random-walk on the per-step fork at the climate-step cadence; `Wind{Dir radians [0,2π), Mag [0,1]}`
   stored in State; exposed via `Wind()` + operands `wind.dir`/`wind.mag`. **`dir` units = radians:
   RESOLVED.** (Implemented above.)
-- **CA3 — full °C + read API: RESOLVED (option ii) (`docs/climate.md §1c`).** `CellState.Temperature`
+- **CA3 — full °C + read API: RESOLVED (option ii) (`docs/plans/climate.md §1c`).** `CellState.Temperature`
   is actual °C with the `[0,1]` clamp removed (Moisture still clamped); evaporation restated per-°C
   with a 0-floor; `CellAt(pos)` + `Wind()` read paths added; operands `temperature`(°C)/`moisture`/
   `wind.dir`/`wind.mag` exposed. (Implemented above.)
@@ -403,12 +403,12 @@ func (s *State) CellAt(pos core.Vec2) CellState
   `when` into an `expr.Program`; `Rules.Eval` evaluates it.
 - **Cross-module °C re-baseline (FLAGGED follow-up, not blocking this SPEC).** The `temperature`
   operand is now **°C** (was normalized [0,1]), so **every consumer's §6 thresholds must be re-baselined
-  to °C at their own activation**: flora suitability/growth, decay `accel` (`docs/materials.md` Dm3),
+  to °C at their own activation**: flora suitability/growth, decay `accel` (`docs/plans/materials.md` Dm3),
   fauna `apparent_temp` (F40). `moisture` is unchanged ([0,1]). Owner: each consumer's `content/` +
   that module's activation phase + golden re-baseline (not this edit). Also: `content/climate.yaml`
   `when: temperature > X` thresholds become °C — re-based at the climate activation M-phase.
 - **Glossary coin (FLAGGED follow-up).** `wind.mag` is a **new operand coin** (CA2); `wind.dir`/
-  `wind.mag` need a `docs/glossary.md` entry (fauna already uses both). Owner: glossary maintenance —
+  `wind.mag` need a `docs/core/glossary.md` entry (fauna already uses both). Owner: glossary maintenance —
   not a blocking OPEN, but a naming-registration follow-up.
 - **Climate-cell size vs navmap-cell size** (non-blocking): how many navmap cells per climate cell?
   Owned by `Config.GridCols/Rows` + `WorldMin/Max` + the world mapping; start coarse (RESOLVED #1) and

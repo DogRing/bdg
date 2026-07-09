@@ -2,7 +2,7 @@
 
 > Status: `DRAFT`
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
-> Scope = **WI-P2** (`docs/world-integration.md` §2). Builds on `SPEC-world-env.md` (WI-P1 navmap/climate).
+> Scope = **WI-P2** (`docs/plans/world-integration.md` §2). Builds on `SPEC-world-env.md` (WI-P1 navmap/climate).
 
 ## Scope
 
@@ -21,7 +21,7 @@ It depends on WI-P1: animals read the **navmap** (TerrainSampler) and **climate*
 core controller wiring; reproduction stays the legacy timer (W7).
 
 Numerics (scent cell, `scent_spread`, motion DT, fauna cadence) come from `content/world.yaml`
-(`docs/world-integration.md` §0-9); none hardcoded (D10).
+(`docs/plans/world-integration.md` §0-9); none hardcoded (D10).
 
 ---
 
@@ -260,7 +260,7 @@ re-baseline, carcass/Butcher) is the deliberate **P_fa3** re-baseline.
   classification in the sight query is **P_fa3** (fauna SPEC). WI-P2 does not inject agent stats into
   the fauna sight query.
 - **Serialization of `animals[]` / scent to Snapshot/Redis/SSE** → `platform/persist`/`platform/api`
-  + `docs/data-contracts.md` (WI-P4, W8). scent is derived (not serialized); animals[] is WI-P4.
+  + `docs/core/data-contracts.md` (WI-P4, W8). scent is derived (not serialized); animals[] is WI-P4.
 - **Parsing `content/objects.yaml fauna:` → `faunaRules`, the `ReadsAttrs` cross-check, the scent-cell
   floor check, and `content/world.yaml fauna/scent` keys + schema** → `platform/config` (WI-P0).
 - **`Mine` terrain-driven extraction** (resources R1) → WI-P3.
@@ -268,7 +268,7 @@ re-baseline, carcass/Butcher) is the deliberate **P_fa3** re-baseline.
 ---
 
 ## Open Questions
-> `docs/world-integration.md` W1-W9 RESOLVED (human 2026-06-27). Two **plumbing seams** surfaced
+> `docs/plans/world-integration.md` W1-W9 RESOLVED (human 2026-06-27). Two **plumbing seams** surfaced
 > writing this SPEC — neither a mechanism decision (no new behaviour), both small accessor/contract
 > shapes to settle before implementation:
 
@@ -292,7 +292,7 @@ re-baseline, carcass/Butcher) is the deliberate **P_fa3** re-baseline.
 
 ---
 
-## Combat, death & carcass apply (FC8/FC9/FC12 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
+## Combat, death & carcass apply (FC8/FC9/FC12 — phase 6b; rationale: `docs/plans/fauna.md` 클러스터 9)
 
 World-side of the combat loop (world = sole mutator + owns death, F3):
 - **Cross-animal damage (FC12):** `applyAnimalIntent` gains a targeted-damage path — an `Attack` intent
@@ -311,7 +311,7 @@ World-side of the combat loop (world = sole mutator + owns death, F3):
   of Feed for herbivores; flora is not depleted in P1. No food source in reach ⇒ no-op (hunger keeps rising).
 - **Regen (FC7):** slow Vital regen toward `VitalCap` applied by world in the animal commit (balance rate).
 
-## Cover-hiding apply (M3 — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+## Cover-hiding apply (M3 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 The world is the **sole writer of `Animal.HiddenUntil`** (fauna only reads it — combatTarget skip + crouch,
 fauna SPEC M3). It reuses the graze machinery verbatim (`applyAnimalGraze`/`nearForageFlora`/`kindEmitsFood`
@@ -349,7 +349,7 @@ fauna SPEC M3). It reuses the graze machinery verbatim (`applyAnimalGraze`/`near
   is never set, no deposit is skipped, and `Tick()` stays byte-identical — the fixture is the deliberate
   activation site (like the fauna/climate/flora levers).
 
-## Cover speed resistance (M4-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+## Cover speed resistance (M4-b — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 Moving through `cover` flora (forest/thicket) **slows an animal AND makes its speed vary** — a continuous
 drag, **no stumble/stop/fall**. World-side (world owns flora; parallels M3 and `depositFloraScent`); fauna
@@ -391,7 +391,7 @@ commits the animal's move, NOT a §6 speed change (fauna's speed is unchanged).
   byte-identical to today. The starter/arena fixtures (which DO place cover) are the activation site; their
   smoke/arena harnesses have no stored golden (determinism + behavioural asserts only), so no golden re-baseline.
 
-## Ambush concealment (M5-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+## Ambush concealment (M5-b — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 A predator standing in dense `cover` flora is **harder for prey to SEE** (not to smell) — it closes the
 distance before the prey bolts, so **ambush emerges** from cover + positioning (no per-species ambush FSM,
@@ -433,8 +433,8 @@ field, fauna reads it" seam); fauna only READS the per-animal concealment in its
   `fauna.Animal` controller can both exist; fauna-OFF neutrality guarantees no interference. Migration
   (legacy prey → a placed fauna species) is the deliberate P_fa3 re-baseline (flora `berry_bush`
   parity).
-- Reference paths: `docs/world-integration.md` (WI-P2, W5/W6/W7), `content/world.yaml` (scent/motion/
+- Reference paths: `docs/plans/world-integration.md` (WI-P2, W5/W6/W7), `content/world.yaml` (scent/motion/
   cadence), `backend/engine/fauna/SPEC.md` (the controller + Snapshot/Intent + apply contract),
   `backend/engine/space/scent/SPEC.md` (deposit/spread/commit/read), `SPEC-world-env.md` (WI-P1
   navmap/climate), `SPEC-tick.md` (the four-phase loop + conflict model this extends),
-  `backend/engine/space/spatial/SPEC.md` (shared id space), `docs/data-contracts.md` (animals[]/scent).
+  `backend/engine/space/spatial/SPEC.md` (shared id space), `docs/core/data-contracts.md` (animals[]/scent).

@@ -62,7 +62,7 @@ type ClimateView struct {
 }
 
 // TerrainSize is the nested {cols,rows} shape the GET /api/terrain contract
-// expects — the flat-top hex offset (col,row) grid dimensions (docs/hex-grid.md;
+// expects — the flat-top hex offset (col,row) grid dimensions (docs/plans/hex-grid.md;
 // frontend/src/hooks/useWorld.ts loadTerrain; frontend/SPEC.md TerrainGrid).
 type TerrainSize struct {
 	Cols int `json:"cols"`

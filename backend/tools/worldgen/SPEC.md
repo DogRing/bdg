@@ -3,16 +3,16 @@
 > Status: `DRAFT`
 > Leaf level: composition / `config`-class IO-init (architecture §3; world-gen.md WG7 — **engine 아님**)
 > Owner agent: `<filled by implementer>`
-> Scope = **WI-P4 input** (`docs/world-integration.md` §2 / `docs/world-gen.md` / W1/W9).
+> Scope = **WI-P4 input** (`docs/plans/world-integration.md` §2 / `docs/plans/world-gen.md` / W1/W9).
 
 ## Purpose
 
-The **author-time generator** + the **run-time fixture loader** for the world (`docs/world-gen.md`).
+The **author-time generator** + the **run-time fixture loader** for the world (`docs/plans/world-gen.md`).
 Two roles over ONE shared `Fixture` format (`content/schema/fixture.schema.json`, W9 — the unified
 world-gen-OR-scenario shape):
 1. **Generate (author-time):** `seed → Fixture` via the deterministic WG1-a pipeline
    (elevation → slope → flow-accumulation hydrology → moisture → base material → resource
-   distribution → entity seeding, `docs/world-gen.md §1`). Run by a separate tool/cmd; writes a
+   distribution → entity seeding, `docs/plans/world-gen.md §1`). Run by a separate tool/cmd; writes a
    fixture file. **Runtime generation = 0** (D12) — the engine only LOADS.
 2. **Load (run-time):** `Fixture → env states → world.InstallEnv/InstallFauna + Spawn/PlaceObject`.
    Parses + validates the fixture, builds `navmap`/`climate`/`flora`/`decay` states (+ the animal set
@@ -99,10 +99,10 @@ func Parse(blob []byte) (Fixture, error)
 func Encode(fx Fixture) ([]byte, error)
 
 // ── Generate (AUTHOR-TIME; seeded, deterministic — WG1-a) ────────────────────────
-// Generate runs the water-centric procedural pipeline (docs/world-gen.md §1) on a seeded RNG and
+// Generate runs the water-centric procedural pipeline (docs/plans/world-gen.md §1) on a seeded RNG and
 // returns a Fixture: elevation(noise) → slope → flow-accumulation rivers/lakes/sea → moisture →
 // base material (§6/threshold) → resource distribution (affinity, ore_node) → cave entrance/interior
-// placement (mountain/bare_rock elevation threshold, docs/shelter.md Q-C2) → flora/fauna/agent
+// placement (mountain/bare_rock elevation threshold, docs/plans/shelter.md Q-C2) → flora/fauna/agent
 // seeding (suitability + Value/threat lever). PURE function of (cfg, seed): same seed ⇒ byte-
 // identical Fixture (D12; runtime generation 0 — this is author-time only). The pipeline COEFFICIENTS
 // (noise octaves, sea level, river threshold, erosion, ore density) are GenConfig data (world-gen.md §2).
@@ -165,7 +165,7 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
 ```
 
 > `terrainAt(fx.Terrain)` maps a continuous `Vec2` → the layout cell's terrain id (D11 index read; the
-> grid is navmap-resolution over bounds). For **flat-top hex** (`docs/hex-grid.md`) it snaps the point to
+> grid is navmap-resolution over bounds). For **flat-top hex** (`docs/plans/hex-grid.md`) it snaps the point to
 > the containing hex, then hex→offset(col,row) to index `Cells`. This sampler is the shared navmap↔climate
 > bridge (signature unchanged), so a hex layout keeps "grids agree at t=0". Absent `Terrain` ⇒ a constant default terrain (soil) ⇒ no
 > climate transitions / no terrain-driven Mine (env-terrain-neutral).
@@ -221,7 +221,7 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
 
 ## Out of Scope
 - **The WG1-a algorithm COEFFICIENTS** (noise octaves, sea level, river/erosion thresholds, ore/flora/
-  fauna seeding rates) → `docs/world-gen.md §2` + a generation config (data, D10). This SPEC fixes the
+  fauna seeding rates) → `docs/plans/world-gen.md §2` + a generation config (data, D10). This SPEC fixes the
   pipeline INTERFACE + determinism; the tuned numbers are author-time data.
 - **The compiled `Rules` + Configs** (`navmap.Config`/`climate.Config`/`climate.Rules`/`flora.Rules`/
   `fauna.Rules`/`decay.Rules`/`TerrainTypes`/`WorldEnv`) → `platform/config` (WI-P0,
@@ -233,11 +233,11 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
 - **Snapshot serialization / resume** → `platform/persist` (`SPEC-world.md`, WI-P4 output). Load is the
   t=0 builder; persist is the t>0 round-trip.
 - **The live-emergence Value/threat SEEDING policy** (what Values to seed so social emergence isn't
-  underseeded) → `docs/world-gen.md §6` + memory `live-emergence-underseeded`. The fixture CARRIES
+  underseeded) → `docs/plans/world-gen.md §6` + memory `live-emergence-underseeded`. The fixture CARRIES
   `agents[].values`; choosing them is generation/scenario authoring.
 
 ## Open Questions
-> `docs/world-integration.md` W1-W9 + `docs/world-gen.md` WG1-7 RESOLVED. Plumbing seams:
+> `docs/plans/world-integration.md` W1-W9 + `docs/plans/world-gen.md` WG1-7 RESOLVED. Plumbing seams:
 - **Animal base-stat source (fauna content seam) — ✅RESOLVED (a), 2026-06-28: per-species `GenSpec` sample (agent parity).** `fauna.Animal.Stats` is an open base-attribute
   vector; the fixture carries only species+pos. Options: **(a)** sample animal stats from a per-species
   `GenSpec` (like agents) with the seeded rng; **(b)** fixed per-species base stats in `content/
@@ -251,7 +251,7 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
 
 ## Notes
 - One `Fixture` format for generation AND scenarios (W9) is what makes "world-gen can come after the
-  mechanisms" true (`docs/world-gen.md §0-6`): until the generator is built, hand-authored fixtures (or
+  mechanisms" true (`docs/plans/world-gen.md §0-6`): until the generator is built, hand-authored fixtures (or
   Go scenarios) drive runs; the generator just becomes another `Fixture` source later.
 - `Generate` is **author-time** (a separate cmd writes the fixture file); `Load` is **run-time** (main
   reads it). The engine binary imports only `Load` (+ the `Fixture` type); the generator cmd uses
@@ -259,8 +259,8 @@ func Load(fx Fixture, reg *config.Registries, w *world.World, rng *rng.RNG) erro
 - The loader is the single place the env module constructors are wired from a layout — keeping the
   "positions/layout are the source of truth, the engine builds indices from them" rule (navmap/climate
   from `terrainAt`, scent/spatial rebuilt from positions, D11/D12).
-- Reference paths: `docs/world-gen.md` (WG1-a pipeline + §2 coefficients), `docs/world-integration.md`
+- Reference paths: `docs/plans/world-gen.md` (WG1-a pipeline + §2 coefficients), `docs/plans/world-integration.md`
   (W1/W9, WI-P4), `content/schema/fixture.schema.json` (the format), `backend/platform/config/SPEC-world.md`
   (the Rules/Configs Load consumes), `backend/engine/world/SPEC-world-env.md` + `SPEC-world-fauna.md`
   (InstallEnv/InstallFauna), `backend/engine/space/navmap/SPEC.md` + `backend/engine/env/climate/SPEC.md`
-  (the `New(terrainAt)` constructors), `docs/data-contracts.md §10` (the persist round-trip).
+  (the `New(terrainAt)` constructors), `docs/core/data-contracts.md §10` (the persist round-trip).

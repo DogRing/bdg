@@ -172,7 +172,7 @@ func (t ToM) RecordFraud(other core.AgentID, claimedValue, actualEffect float64,
   No global rand, no `time.Now()`.
 - **Contract**: `content/balance.yaml` (`gossip.alpha`, `gossip.min_trust`,
   `self_calibration.beta`, `generation.initial_belief_noise`) supplies the rates, injected by
-  the caller. The gossip formula is fixed in `docs/glossary.md` §Social.
+  the caller. The gossip formula is fixed in `docs/core/glossary.md` §Social.
 
 ## Owned Data
 

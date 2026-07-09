@@ -15,4 +15,4 @@
 | `planner` | HTN + GOAP, forward-sim, budget, gate 적용, **tag 파생 cost**; `recipe_mediated` 행위에 recipe 바인딩 | core, actions, gates, needs, values, (navmap/pathfind cost) | L4 |
 
 규칙: `values → tom` 단방향(tom은 values 모름). 미래 `fauna`는 이 스택을 **안** 돌리고 일부만
-재사용(축소 루프, `docs/fauna.md`). 상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/architecture.md`.
+재사용(축소 루프, `docs/plans/fauna.md`). 상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/core/architecture.md`.

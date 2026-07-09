@@ -32,3 +32,8 @@ secrets/
 # large generated blobs (reviewer reads small goldens; large ones excluded)
 /testdata/large/
 *.snapshot.bin
+
+# retired docs (superseded handoffs / resolved audits) — isolated from AI context
+docs/archive/
+
+AGENTS.md

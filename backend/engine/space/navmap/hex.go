@@ -2,7 +2,7 @@ package navmap
 
 import "math"
 
-// Flat-top hexagonal grid geometry (docs/hex-grid.md, phase H2). Pure functions over axial (q,r) hex
+// Flat-top hexagonal grid geometry (docs/plans/hex-grid.md, phase H2). Pure functions over axial (q,r) hex
 // coordinates, an offset(col,row) rectangular layout, and continuous world points measured relative to
 // a grid origin. navmap OWNS the hex convention: H3 wires CellOf/CellCenter/Neighbors onto these
 // helpers; pathfind + the frontend consume it and never redefine it. Orientation is FLAT-TOP.

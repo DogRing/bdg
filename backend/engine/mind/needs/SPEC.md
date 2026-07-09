@@ -65,7 +65,7 @@ const (
 // Referent, Curve, Gain, Setpoint default) come from content/needs.yaml; rate fields (Rate,
 // Threshold) come from content/balance.yaml's needs:<id> block for consumable needs.
 type Def struct {
-    ID        NeedID            // canonical Dimension id (docs/glossary.md)
+    ID        NeedID            // canonical Dimension id (docs/core/glossary.md)
     Kind      Kind              // consumable | conditional
     Rate      float64           // satisfaction lost per tick (= per game-minute), D9.
                                 // From balance.yaml needs:<id>.decay_per_tick. 0 for conditional.

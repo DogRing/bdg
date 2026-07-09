@@ -206,7 +206,7 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	if fx.Terrain != nil && len(fx.Terrain.Elevation) > 0 {
 		w.SetTerrainElevation(fx.Terrain.Elevation) // render-only relief (3D hex height)
 	}
-	// SH1 shelter: objects tagged `blocks_wind` become wind-shadow casters (docs/shelter.md).
+	// SH1 shelter: objects tagged `blocks_wind` become wind-shadow casters (docs/plans/shelter.md).
 	// No such objects ⇒ no blockers ⇒ InstallShelter skipped ⇒ shelter stays OFF (byte-identical).
 	blockers := buildWindBlockers(fx.Objects, cfg.WindBlockerKinds, nav)
 	coverers := buildCoverers(fx.Objects, cfg.CovererKinds, nav)
@@ -401,7 +401,7 @@ func sortedObjects(in []ObjectPlacement) []ObjectPlacement {
 	return out
 }
 
-// SH1 shelter defaults (docs/shelter.md). SH1 casts a uniform-strength wind shadow per blocker;
+// SH1 shelter defaults (docs/plans/shelter.md). SH1 casts a uniform-strength wind shadow per blocker;
 // per-kind height/opacity from tag data is a follow-up, and moving these into balance.yaml is the
 // eventual tuning home. Kept as constants so the OFF path (no `blocks_wind` objects) needs no data.
 const (

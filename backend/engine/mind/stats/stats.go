@@ -66,7 +66,7 @@ var kindNames = map[string]Kind{
 // Def is one immutable stat definition (mirrors a content/stats.yaml entry, after
 // platform/config has validated that file against content/schema/stats.schema.json).
 type Def struct {
-	ID      core.StatID // canonical identifier (docs/glossary.md §StatID)
+	ID      core.StatID // canonical identifier (docs/core/glossary.md §StatID)
 	Label   string      // human-readable name; UI-only, IGNORED by engine logic (see Notes).
 	Kind    Kind        // capability | disposition
 	Min     float64     // inclusive lower bound (range[0])

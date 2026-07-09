@@ -2,7 +2,7 @@
 #
 # Cross-cutting scalars read by many modules: tag magnitudes (D4), the additive cost-term
 # library, and the dynamics rates (β self-calibration, α gossip, λ mood, …) named in
-# docs/glossary.md §Dynamics.
+# docs/core/glossary.md §Dynamics.
 #
 # ⚠ These are INITIAL, UNTUNED placeholders. design.md §4 / testing.md §5 make balance an
 #   auto-tuning target (grid / CMA-ES against emergence metrics) — do not treat as final.
@@ -36,7 +36,7 @@ perception:
 # ── Need rates (AUTHORITATIVE source for engine/needs; data-driven, D9 / D10) ────
 # Per-need (per glossary Dimension) decay + setpoint. The engine/needs loader reads THIS
 # block (bytes injected by platform/config — engine/needs never opens a file, D10). Keys are
-# canonical Dimension ids (docs/glossary.md); platform/config cross-checks them against
+# canonical Dimension ids (docs/core/glossary.md); platform/config cross-checks them against
 # content/needs.yaml.
 #   decay_per_tick          — satisfaction lost per tick (= per game-minute). D9: this is the
 #                             ONLY authored demand input; demand = rate × predicted-time is
@@ -55,7 +55,7 @@ needs:
 # ── Value arbitration weights (read by engine/values; data-driven, D10) ──────────
 # Per-Dimension tunable weight used by Priority(d) = Salience(d) × weight(d). engine/values
 # reads THIS block (bytes injected by platform/config — engine/values never opens a file,
-# D10) via Load(). Keys are canonical Dimension ids (docs/glossary.md); platform/config
+# D10) via Load(). Keys are canonical Dimension ids (docs/core/glossary.md); platform/config
 # cross-checks them against content/needs.yaml (every value weight key names a known
 # ── Agent generation (sampled with the injected seeded RNG, D12) ────────────────
 generation:
@@ -231,7 +231,7 @@ trade:
   claim_inflate_max: 0.90         # claim ceiling: a fully-dishonest agent (perceived Honesty=0) inflates to this
 
 # ── Resource regrowth (game-minutes) ────────────────────────────────────────────
-# ⚠ FLORA MIGRATION (docs/flora.md 1e, objects.yaml header): a FLORA species' "regen" is its
+# ⚠ FLORA MIGRATION (docs/plans/flora.md 1e, objects.yaml header): a FLORA species' "regen" is its
 #   yield table refilling via Growth, LOCAL to the object (D9) — NOT a timer here. These timer
 #   entries are LEGACY for the non-flora object_kinds (berry_bush, prey) and stay through the
 #   flora-OFF phases. At flora activation (P_f4), `berry_bush` → `berry_shrub` (flora) and

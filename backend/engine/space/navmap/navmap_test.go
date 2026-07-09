@@ -1,5 +1,5 @@
 // Package navmap_test covers AC1–AC7, snapshot isolation, and shared test fixtures.
-// Hex (docs/hex-grid.md): cells are flat-top axial (q,r). Geometry-dependent tests derive cells via
+// Hex (docs/plans/hex-grid.md): cells are flat-top axial (q,r). Geometry-dependent tests derive cells via
 // CellOf(position)+Neighbors instead of hand-computed square coords; adjacent-cell geometric length is
 // √3·CellSize (the 6 hex neighbours are equidistant — the square √2-diagonal case is gone).
 package navmap_test

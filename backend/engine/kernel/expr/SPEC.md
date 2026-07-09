@@ -4,7 +4,7 @@
 > Leaf level: `L0`  ·  Owner agent: `<filled by implementer>`
 
 ## Purpose
-The **single shared §6 `Formula` evaluator** (`docs/design.md §6` line 89–90, binding): a pure,
+The **single shared §6 `Formula` evaluator** (`docs/core/design.md §6` line 89–90, binding): a pure,
 deterministic evaluator over a compiled, immutable **AST** `Program` against an abstract `Context`
 the caller supplies — arithmetic `+ - * /` → numeric, comparison `> < >= <= == !=` → boolean,
 logical `& | !` → boolean, plus boolean predicate calls (`has`/`isOwner`/`paid`). It is the *one*
@@ -233,7 +233,7 @@ type StatSet interface {
   `cmpOp` — short-circuit but side-effect-free `and`/`or`/`not`, the six comparison ops, leaf truth)
   so the later swap is golden-neutral. **This SPEC does NOT migrate gates** — it must not touch the
   P3 gates golden (`testdata/golden/p3_gates.json`) or `gates.schema.json` (schema_version 3). The
-  unification is a separate, deliberate later phase (`docs/expr.md §2 Pxb`).
+  unification is a separate, deliberate later phase (`docs/plans/expr.md §2 Pxb`).
 
 ## Acceptance Criteria (testable)
 - [ ] **Arithmetic → numeric (#5/#7)** — `Parse("STR*0.5 + AGI*0.3", KindNum, …)` then `EvalNumber`
@@ -290,18 +290,18 @@ type StatSet interface {
 - **Domain clamping** (`[0,1]` for moisture/suitability, stat bounds) → the caller (climate/flora
   already clamp). expr emits raw numbers under the fixed div-0/NaN policy.
 - **gates MIGRATION** (lifting `GateExpr`/`Op`/leaf-eval onto expr, re-baselining
-  `p3_gates.json` + `gates.schema.json`) → a deliberate **later phase** (`docs/expr.md §2 Pxb`).
+  `p3_gates.json` + `gates.schema.json`) → a deliberate **later phase** (`docs/plans/expr.md §2 Pxb`).
   This SPEC ships expr standalone with a byte-identity *check* only; it does not touch P3 gates.
 - **Wiring climate/flora's `Program` compilation into `platform/config`** → `platform/config` +
-  the climate/flora SPECs (`docs/expr.md §2 Pxc`). expr provides `Parse`; the wiring is config's.
+  the climate/flora SPECs (`docs/plans/expr.md §2 Pxc`). expr provides `Parse`; the wiring is config's.
 - **New predicate IMPLEMENTATIONS** (`has`/`isOwner`/`paid` over a real inventory/ownership view,
   any economy/portal predicate) → the caller's `Context.Pred` adapter + its `knownPreds` extension
-  (`docs/expr.md §2 Pxd`). expr ships the table shape + `BasePreds()`; it implements no predicate.
+  (`docs/plans/expr.md §2 Pxd`). expr ships the table shape + `BasePreds()`; it implements no predicate.
 - **The `Context` ADAPTERS** themselves (gates `AgentSnapshot`, climate `CellState`, flora
   `SiteInput`+`Plant`, economy portal view) → each consumer module. expr only DECLARES `Context`.
 
 ## Open Questions
-> `docs/expr.md §1` is ALL RESOLVED (7/7 adopted-as-`rec`); this SPEC writes from those resolutions
+> `docs/plans/expr.md §1` is ALL RESOLVED (7/7 adopted-as-`rec`); this SPEC writes from those resolutions
 > and re-decides nothing. The items below are NEW seams surfaced while writing the SPEC — none
 > re-opens a resolved §1 item, none blocks Pxa (the core), and each is flagged to its later phase.
 
@@ -311,7 +311,7 @@ type StatSet interface {
   against knownStats, undefined ⇒ LOAD failure); else lowercase-initial ⇒ Attr (caller namespace,
   unvalidated). Dotted/colon token ⇒ always Attr. Backed by content/stats.yaml (all stat IDs
   PascalCase) + climate/flora operands (all lowercase/dotted). Convention now enforced + documented
-  above; mirror it in `docs/glossary.md` (stat IDs uppercase-initial, attrs lowercase/dotted).
+  above; mirror it in `docs/core/glossary.md` (stat IDs uppercase-initial, attrs lowercase/dotted).
   (Rejected: all-bare=Stat — breaks bare `moisture`; knownStats-first — undefined stat silently
   becomes a 0-valued Attr, defeats the load-failure AC.)
 - **OQ-B `RESOLVED: isOwner is arity 0` (bare predicate).** `BasePreds() = {has:1, isOwner:0, paid:1}`;
@@ -349,18 +349,18 @@ type StatSet interface {
 - The `Context` (b)+(c) split (typed `Stat`/`Attr`/`Pred` methods, declared by expr, implemented by
   each caller as an adapter) is what lets `Parse` do real static type checking: a single
   `Lookup(string)` would lose the predicate argument (`has(itemID)`) and the operand kind
-  (num vs bool), defeating the compile-time check #5 needs (`docs/expr.md §1 #1`).
+  (num vs bool), defeating the compile-time check #5 needs (`docs/plans/expr.md §1 #1`).
 - Why an AST (#2) over a closure or bytecode VM: the AST gives `platform/config` load-time identifier
   validation (D10), `Reads`/golden introspection, and natural gates-tree compatibility (#4); a
   closure would lose introspection, a bytecode VM is over-engineering for an L0 leaf
-  (`docs/expr.md §1 #2`).
+  (`docs/plans/expr.md §1 #2`).
 - The fixed div-0→0 / no-NaN policy (#6) is what keeps the determinism path total and branch-free —
   there is no error/panic branch inside a deterministic tick (D12). Domain meaning (clamp to [0,1])
   stays with the caller, which already owns it (climate/flora clamp; gates/cost have their own
   bounds).
-- Reference paths: `docs/design.md §6` (line 89 evaluator home + line 90 eval model/Context, both
-  binding), `docs/expr.md` (the §1 resolutions this SPEC implements + the §2 phases),
-  `docs/glossary.md` (`Formula`/`GateExpr` — "one shared evaluator (engine/kernel/expr, L0)"),
-  `docs/architecture.md` (expr = L0, `core`-only, build stage 1),
+- Reference paths: `docs/core/design.md §6` (line 89 evaluator home + line 90 eval model/Context, both
+  binding), `docs/plans/expr.md` (the §1 resolutions this SPEC implements + the §2 phases),
+  `docs/core/glossary.md` (`Formula`/`GateExpr` — "one shared evaluator (engine/kernel/expr, L0)"),
+  `docs/core/architecture.md` (expr = L0, `core`-only, build stage 1),
   `backend/engine/env/climate/SPEC.md` + `backend/engine/env/flora/SPEC.md` (the two consumers that already
   assume `expr.Program` compiled from content + evaluated against an `expr.Context`).

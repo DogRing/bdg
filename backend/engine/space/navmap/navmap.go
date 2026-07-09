@@ -1,5 +1,5 @@
 // Package navmap implements the navigation cost field: a FLAT-TOP HEXAGONAL (axial q,r) grid-indexed
-// traversal-cost model over continuous space (D11, docs/hex-grid.md). It is an *index*, not the world —
+// traversal-cost model over continuous space (D11, docs/plans/hex-grid.md). It is an *index*, not the world —
 // agent positions stay float; this module only quantises *cost*, exactly as spatial quantises
 // *proximity*. Hex geometry lives in hex.go; navmap is the single hex-convention authority (Neighbors,
 // CellCenter, sort) that pathfind + the frontend consume and never re-derive.

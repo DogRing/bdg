@@ -1,6 +1,6 @@
 # SPEC — `frontend/src/gl`
 
-> Status: `DRAFT` (plan: `docs/hex-grid.md` H-frontend-3d). Parent: [`frontend/SPEC.md`](../../SPEC.md).
+> Status: `DRAFT` (plan: `docs/plans/hex-grid.md` H-frontend-3d). Parent: [`frontend/SPEC.md`](../../SPEC.md).
 > Sibling of the pure-2D [`src/render`](../render/SPEC.md); the two are **alternative views** of the
 > same reduced world data, chosen by a runtime toggle in `App` (default `2d`).
 
@@ -88,5 +88,5 @@ export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; e
 
 - Flora coverage, transition FX (spawn/death/attack/grow), ambient (day-night tint / rain / wind),
   camera-follow, animal sprite billboards (pose × heading), agent cluster colours/labels — the 2D
-  renderer still carries these; the 3D view ports them in later `docs/hex-grid.md` phases.
+  renderer still carries these; the 3D view ports them in later `docs/plans/hex-grid.md` phases.
 - Culling for very large grids (current build uploads all cells; starter grids are small).

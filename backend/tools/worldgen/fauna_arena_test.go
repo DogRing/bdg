@@ -10,7 +10,7 @@ import (
 )
 
 // TestPredationArenaBalance runs the forced-encounter arena and REPORTS hunt-success% (the ~15% target,
-// docs/fauna.md 클러스터 10). Hunt-success ≈ kills / engage-starts, where an engage-start is a predator's
+// docs/plans/fauna.md 클러스터 10). Hunt-success ≈ kills / engage-starts, where an engage-start is a predator's
 // EngagedWith transitioning empty→set (observable from the exported Animal field, no engine change). Also
 // reports M3 hide activity + prey survival. Run: `go test ./tools/worldgen -run PredationArena -v`.
 func TestPredationArenaBalance(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// H2 property/oracle tests for the flat-top hex primitive (docs/hex-grid.md). These gate H3: the
+// H2 property/oracle tests for the flat-top hex primitive (docs/plans/hex-grid.md). These gate H3: the
 // primitive must be rock-solid BEFORE navmap/pathfind depend on it (cube rounding is the classic
 // hex bug source).
 

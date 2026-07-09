@@ -2,8 +2,8 @@
 
 > Status: `DRAFT`
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
-> Scope = **WI-P4** (`docs/world-integration.md` §2) — the serialization/stream half. Contract:
-> `docs/data-contracts.md §1/§2/§4/§6/§10`.
+> Scope = **WI-P4** (`docs/plans/world-integration.md` §2) — the serialization/stream half. Contract:
+> `docs/core/data-contracts.md §1/§2/§4/§6/§10`.
 
 ## Scope
 
@@ -103,12 +103,12 @@ WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining,
   the composition layer + `backend/tools/worldgen` + `platform/config` fixture loader (W9). persist is
   OUTPUT only. The contract: the loader builds the env state, the world installs it, persist captures it.
 - **Navmap/terrain serialization** (base layout + `TerrainOverrides` + wear) → already
-  `docs/data-contracts.md §6` + the navmap blob; this sub-spec only references it (climate transitions
+  `docs/core/data-contracts.md §6` + the navmap blob; this sub-spec only references it (climate transitions
   ride that channel, not a duplicate climate-terrain field).
 - **Content compile / Rules building** → `platform/config` (`SPEC-world.md`, WI-P0).
 
 ## Open Questions
-> `docs/world-integration.md` W1-W9 RESOLVED. Remaining are wiring shapes, not mechanism choices:
+> `docs/plans/world-integration.md` W1-W9 RESOLVED. Remaining are wiring shapes, not mechanism choices:
 - **`world.WorldState` env-field additions (engine seam, WI-P4 prerequisite) — ✅RESOLVED (b), 2026-06-28: the world exposes a `RenderView()` (live-key/WorldFrame projection) + full state for the blob; the god-view filter lives in ONE place (world), persist just writes.** persist serializes
   whatever `world.WorldState` exposes; the world must add `Flora`/`Animals`/`Climate` to its
   serializable state + a render-view accessor (the live-key/WorldFrame projection). Options: **(a)**
@@ -129,7 +129,7 @@ WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining,
   never stored (D9, decay-`state` parity).
 - The scent grid + spatial hash + flora shade are all derived (rebuilt from positions on resume) — a
   consistent "positions are the source of truth, indices are rebuilt" rule across the world.
-- Reference paths: `docs/data-contracts.md §1/§2/§4/§6/§10` (the contract), `SPEC.md` (Snapshot/Encode/
+- Reference paths: `docs/core/data-contracts.md §1/§2/§4/§6/§10` (the contract), `SPEC.md` (Snapshot/Encode/
   Decode/Capture/Restore + Redis keyspace), `backend/engine/world/SPEC-world-env.md` +
   `SPEC-world-fauna.md` (the env state owners), `backend/platform/api/SPEC.md` (SSE stream),
-  `docs/world-integration.md` (WI-P4, W8/W9).
+  `docs/plans/world-integration.md` (WI-P4, W8/W9).

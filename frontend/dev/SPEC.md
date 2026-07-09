@@ -1,6 +1,6 @@
 # SPEC — `frontend/dev`
 
-> Status: `APPROVED` (plan: `docs/frontend-plan.md`, Q1/Q7 RESOLVED 2026-07-02)
+> Status: `APPROVED` (plan: `docs/plans/frontend.md`, Q1/Q7 RESOLVED 2026-07-02)
 > Dev-only tooling — never bundled into `dist/`, never imported by `src/`. Node ≥ 20, **zero npm
 > dependencies** (std `node:http`, `node:zlib`, `node:fs`). Parent: [`frontend/SPEC.md`](../SPEC.md).
 
@@ -9,7 +9,7 @@
 Two standalone scripts that unblock frontend development while backend WI-P4 (`WorldFrame`
 emission) does not exist yet:
 1. **`mock-server.mjs`** (Q7) — a contract-parity fake backend: serves the REST initial-load
-   endpoints and an SSE stream whose events **byte-match the shapes in `docs/data-contracts.md §4`**
+   endpoints and an SSE stream whose events **byte-match the shapes in `docs/core/data-contracts.md §4`**
    (field names, casing, nesting — the whole point is that the real backend can replace it with
    zero frontend changes). Supersedes the drifted prototype `frontend/mock-server.js`
    (`world.Agents` casing, `/mock-api/*` paths — deleted on landing).

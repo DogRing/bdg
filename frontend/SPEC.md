@@ -1,6 +1,6 @@
 # SPEC — `frontend`
 
-> Status: `APPROVED` (ecosystem render phase; plan: `docs/frontend-plan.md`, Q1–Q8 RESOLVED 2026-07-02)
+> Status: `APPROVED` (ecosystem render phase; plan: `docs/plans/frontend.md`, Q1–Q8 RESOLVED 2026-07-02)
 > Leaf level: `L10` (depends only on the HTTP boundary of `platform/api` — SSE + REST endpoints)
 > Language: **TypeScript + React 19** (Vite). The viewer is a component tree, not vanilla DOM.
 > Children (referenced, not restated): [`src/render/SPEC.md`](src/render/SPEC.md) ·
@@ -76,7 +76,7 @@ prevFrameAtMs` so the render layer can interpolate between frames at any streami
 ### REST endpoints (initial load)
 - `GET /api/snapshot` — full world blob on page load (`loadSnapshot` in `useWorld.ts`): tick,
   agents (`{id,pos,goal,action,mood}`), placed objects (`{id,kind,pos}`).
-- `GET /api/terrain` — **initial terrain grid** (plan Q5 · hex `docs/hex-grid.md`; *pending backend
+- `GET /api/terrain` — **initial terrain grid** (plan Q5 · hex `docs/plans/hex-grid.md`; *pending backend
   SPEC delta on `platform/api`*): `{cell_size, orientation:'flat', size:{cols,rows}, terrain:[…],
   wear?:[…]}` — an **offset (col,row) rectangular array** (`i = row·cols + col`) of flat-top hex cells;
   fetched once at connect, kept current by SSE `terrain_delta`. Until the endpoint exists, `terrain`
@@ -203,7 +203,7 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 - **Terrain**: `GET /api/terrain` + `terrain_delta` → offscreen raster of **flat-top hex** cells in
   data-driven flat colours (river/grass/forest = `water/plain/forest` TerrainIDs), wear trails overlay.
   Offset(col,row) rectangular array; the frontend mirrors navmap's hex convention from the payload
-  (`docs/hex-grid.md`). The old hardcoded decorative map is gone.
+  (`docs/plans/hex-grid.md`). The old hardcoded decorative map is gone.
 - **Ambient**: day-night tint, temperature vignette, rain, wind arrow from `ClimateState`.
 - **Scent field**: NOT streamed (derived, data-contracts §10) — no render.
 
@@ -265,7 +265,7 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 - **Scent / cost-field / navmap debug overlays** (not streamed; needs dedicated endpoints).
 - **Social graph panel**; **player controls / writes**; **mobile layout**; **auth/CORS** (gateway).
 - **Backend work**: `WorldFrame` emission (WI-P4) and the `GET /api/terrain` server route —
-  tracked in `docs/frontend-plan.md` (Q5 pending backend SPEC delta on `platform/api`).
+  tracked in `docs/plans/frontend.md` (Q5 pending backend SPEC delta on `platform/api`).
 
 ## Build & Dev
 
@@ -287,7 +287,7 @@ npm run build                      # static bundle → frontend/dist/
 - **Motion is client-side presentation only.** Interpolation, poses, and FX never feed back into
   state or imply simulation semantics; the sim's truth is the streamed frames (D12 stays intact).
 - **Cluster colour hashing**: `hash(holder_id) % PALETTE_SIZE`; unclustered = neutral grey.
-- Reference: `backend/platform/api/SPEC.md` (endpoints), `docs/data-contracts.md §2/§4/§10`,
+- Reference: `backend/platform/api/SPEC.md` (endpoints), `docs/core/data-contracts.md §2/§4/§10`,
   `backend/engine/fauna/SPEC.md` (heading/action/species are open content),
   `backend/engine/env/flora/SPEC.md` (stage/width), `backend/engine/env/climate/SPEC.md`,
-  `docs/frontend-plan.md` (phases FE-P1…P5 + resolved decisions Q1–Q8).
+  `docs/plans/frontend.md` (phases FE-P1…P5 + resolved decisions Q1–Q8).

@@ -58,7 +58,7 @@ type FloraRenderView struct {
 // TerrainRenderView is the full render terrain grid — base layout + climate
 // overrides (via TerrainAt, which is override-aware) + wear (data-contracts §2
 // sim:{run}:terrain / §API /api/terrain). Flat-top hex projected to an offset
-// (col,row) rectangular array; index i = row*Cols + col (docs/hex-grid.md).
+// (col,row) rectangular array; index i = row*Cols + col (docs/plans/hex-grid.md).
 type TerrainRenderView struct {
 	CellSize    float64
 	Cols, Rows  int

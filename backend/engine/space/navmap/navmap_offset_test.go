@@ -7,7 +7,7 @@ import (
 	"github.com/dogring/bdg/engine/space/navmap"
 )
 
-// The offset(col,row) ↔ axial layout API navmap exposes for the render/wire (docs/hex-grid.md Q5).
+// The offset(col,row) ↔ axial layout API navmap exposes for the render/wire (docs/plans/hex-grid.md Q5).
 
 func TestOffsetLayoutAPI(t *testing.T) {
 	t.Parallel()
@@ -40,7 +40,7 @@ func TestOffsetLayoutAPI(t *testing.T) {
 
 // TestPureOffsetHelpersMatchInstance asserts the Config-level pure helpers (used by authoring tools like
 // worldgen BEFORE a NavMap exists) agree with the instance methods — one flat-top odd-q convention
-// (docs/hex-grid.md; navmap is the hex authority).
+// (docs/plans/hex-grid.md; navmap is the hex authority).
 func TestPureOffsetHelpersMatchInstance(t *testing.T) {
 	t.Parallel()
 	m := newMapAllPlain() // 100×100, CellSize 10

@@ -10,7 +10,7 @@ import (
 	"github.com/dogring/bdg/engine/space/scent"
 )
 
-// navTopo adapts navmap's hex geometry to exposure.Topology (docs/shelter.md SH1). exposure is a pure
+// navTopo adapts navmap's hex geometry to exposure.Topology (docs/plans/shelter.md SH1). exposure is a pure
 // leaf that knows no geometry, so this adapter owns the alignment: it reorders navmap's canonical
 // Neighbors into exposure.SectorOf's six wind-direction bins, so Neighbors(c)[s] is the downwind
 // neighbor for wind sector s. The lattice is uniform, so the sector→neighbor permutation is
@@ -48,7 +48,7 @@ func (t *navTopo) InBounds(c exposure.Cell) bool {
 
 // InstallShelter enables the exposure layer: SH1 local wind = global wind × ε_wind(cell) from the
 // `blocks_wind` blockers over a 6-sector cache, and SH3 overhead cover ε_cover(cell) from the `covers`
-// coverers (docs/shelter.md, SPEC-world-shelter.md). Without this call the world is shelter-OFF (ε ≡ 1,
+// coverers (docs/plans/shelter.md, SPEC-world-shelter.md). Without this call the world is shelter-OFF (ε ≡ 1,
 // local wind == global wind, sensed temp/moisture unchanged, byte-identical). nil coverers ⇒ SH3 OFF
 // only (wind still applies). Cave interiors are SH2 and not wired here. Requires an installed navmap.
 func (w *World) InstallShelter(cfg exposure.Config, blockers []exposure.Blocker, coverers []exposure.Coverer) {

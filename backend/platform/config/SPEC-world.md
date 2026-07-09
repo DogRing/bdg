@@ -2,7 +2,7 @@
 
 > Status: `DRAFT`
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
-> Scope = **WI-P0** (`docs/world-integration.md` §2). Feeds `world.InstallEnv`/`InstallFauna`
+> Scope = **WI-P0** (`docs/plans/world-integration.md` §2). Feeds `world.InstallEnv`/`InstallFauna`
 > (`backend/engine/world/SPEC-world-env.md` + `SPEC-world-fauna.md`).
 
 ## Scope
@@ -49,7 +49,7 @@ current `content/` keeps loading unchanged.
 
 > The SCHEMAS (shapes) are in place. What remains is the **tuned DATA at each subsystem's activation**
 > (the final `fauna:` species values, the `climate.yaml` °C `when:` thresholds re-based to actual °C —
-> the G4 re-baseline in `docs/activation-gate.md`) + the loader CODE itself (this module's implementation).
+> the G4 re-baseline in `docs/plans/activation-gate.md`) + the loader CODE itself (this module's implementation).
 
 ## Build outputs (new `Registries` fields + accessors)
 
@@ -153,7 +153,7 @@ load error that builds NO partial registry (SPEC.md invariant):
 
 - **Building the live `navmap.NavMap`/`climate.State`/initial `flora.State`+`decay.State` from a
   terrain layout, and CALLING `world.InstallEnv`/`InstallFauna`** → the fixture/world-gen loader +
-  the composition layer (W9, WI-P4; `docs/world-gen.md`). WI-P0 produces Configs + Rules + the
+  the composition layer (W9, WI-P4; `docs/plans/world-gen.md`). WI-P0 produces Configs + Rules + the
   terrain type table only.
 - **Authoring the tuned DATA** — the `fauna:` species blocks, the `climate.yaml` °C thresholds +
   annual/wind constants, the `terrain.yaml` catalog values → each subsystem's activation phase
@@ -167,7 +167,7 @@ load error that builds NO partial registry (SPEC.md invariant):
 
 ## Open Questions
 
-> `docs/world-integration.md` W1-W9 RESOLVED. These are config/engine **plumbing seams** surfaced
+> `docs/plans/world-integration.md` W1-W9 RESOLVED. These are config/engine **plumbing seams** surfaced
 > writing this sub-spec — interface shapes to settle before implementation, not mechanism choices:
 
 - **Rules-constructor seam — RESOLVED (a), 2026-06-28.** Each env module now exposes a config-facing
@@ -186,7 +186,7 @@ load error that builds NO partial registry (SPEC.md invariant):
   cost/passable/§5 attrs, referenced by navmap/climate/flora/resources/world-gen). Implementation reads
   the §5 attribute preset vector from it for the `SiteInput.TerrainAttrs` seam (`SPEC-world-env.md` G13).
 
-## Fauna combat content (FC1/FC4/FC9 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
+## Fauna combat content (FC1/FC4/FC9 — phase 6b; rationale: `docs/plans/fauna.md` 클러스터 9)
 
 Load-pipeline deltas for the combat/carcass round:
 - Parse the new per-species `fauna:` combat/feeding §6 programs into `fauna.Rules` — `attack_power` / `hit` /
@@ -215,7 +215,7 @@ Load-pipeline deltas for the combat/carcass round:
 - **Optional-file neutrality is the WI-P0 safety lever**: until the world/climate/terrain files +
   flora/fauna blocks are authored AND a fixture installs the state, env is OFF and every existing
   golden holds — matching the engine-side `InstallEnv`/`InstallFauna` opt-in (SPEC-world-env/fauna).
-- Reference paths: `docs/world-integration.md` (WI-P0, W1-W9), `content/world.yaml` +
+- Reference paths: `docs/plans/world-integration.md` (WI-P0, W1-W9), `content/world.yaml` +
   `content/schema/world.schema.json`, `SPEC.md` (the base loader pipeline + ConfigHash + accessors),
   `backend/engine/world/SPEC-world-env.md` + `SPEC-world-fauna.md` (the InstallEnv/InstallFauna
   consumers), `backend/engine/env/{climate,flora,decay}/SPEC.md` + `backend/engine/fauna/SPEC.md`

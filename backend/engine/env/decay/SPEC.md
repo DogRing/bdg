@@ -1,6 +1,6 @@
 # SPEC — `engine/env/decay`
 
-> Status: `READY` (Dm1–Dm5 RESOLVED as (a) — `docs/materials.md §1`; no open holes)
+> Status: `READY` (Dm1–Dm5 RESOLVED as (a) — `docs/plans/materials.md §1`; no open holes)
 > Leaf level: `L1`  ·  Owner agent: `<filled by implementer>`
 
 ## Purpose
@@ -16,7 +16,7 @@ state it reads (those are values `world` injects), the storage-structure model, 
 sampling, or the object mutation itself (that is `engine/world`, the sole object mutator). No IO, no
 wall-clock, no global rand: every output is a function of `(prev, inputs, elapsedTicks, Rules, rng)`
 (D12). Mirrors `engine/env/flora`'s "pure read → return delta → world applies" shape exactly. Concept &
-rationale: `docs/design.md §5/§9` + `docs/materials.md` (Q1–Q5 binding; §0/eng locked; Dm1–Dm5 RESOLVED).
+rationale: `docs/core/design.md §5/§9` + `docs/plans/materials.md` (Q1–Q5 binding; §0/eng locked; Dm1–Dm5 RESOLVED).
 
 ## Public Interface
 ```go
@@ -88,7 +88,7 @@ type State struct{ /* opaque; see Owned Data. Holds the Lot set in ObjectID orde
 func New(lots []Lot) *State
 
 // WithLot returns a NEW State with `lot` inserted into the sorted Lot set — the RUNTIME lot-injection
-// path (FC9, docs/fauna.md 클러스터 9): a predator kill / any animal death spawns a fresh `carcass`
+// path (FC9, docs/plans/fauna.md 클러스터 9): a predator kill / any animal death spawns a fresh `carcass`
 // perishable lot MID-RUN, which the next Step then decays like any other lot (fresh→rotting→bones→gone,
 // its states supplying the predator Feed value + Butcher transforms). Pure: prev is unchanged; the
 // returned State keeps the ObjectID-sorted invariant (D12). Panics on duplicate ObjectID (world owns id
@@ -361,7 +361,7 @@ func (r *Rules) Accel(kind KindID, in EnvInput) float64
   `engine/mind/actions` (P_m3) + `engine/mind/values`/`engine/mind/planner`.
 
 ## Open Questions
-> None. `docs/materials.md §1` Q1–Q5 and the SPEC-surfaced mechanism choices **Dm1–Dm5 are all
+> None. `docs/plans/materials.md §1` Q1–Q5 and the SPEC-surfaced mechanism choices **Dm1–Dm5 are all
 > `RESOLVED: (a)`** (human-confirmed). This SPEC is finalized to those resolutions and re-decides
 > nothing. (P_m3 Craft + P_m4 extraction are separate phases with their own SPECs — not this module.)
 
@@ -378,9 +378,9 @@ func (r *Rules) Accel(kind KindID, in EnvInput) float64
 - Tuning + behavior live in `content/objects.yaml` `decay:` (D10). Adding a perishable, changing a
   spoilage curve, or adding a transform product is a content change, never a code change — the §6 DSL +
   the ordered-states data are the extension seam (D2/D3: salting/cold-storage/preservation must emerge).
-- Reference paths: `docs/materials.md` (Q1–Q5 + Dm1–Dm5 all RESOLVED), `docs/design.md §5/§9`,
+- Reference paths: `docs/plans/materials.md` (Q1–Q5 + Dm1–Dm5 all RESOLVED), `docs/core/design.md §5/§9`,
   `backend/engine/env/flora/SPEC.md` (the structural template), `backend/engine/env/climate/SPEC.md` (the env
   output shape decay consumes as a value), `backend/engine/kernel/expr/SPEC.md` (the §6 evaluator decay owns +
-  references, Dm3(a)), `docs/data-contracts.md §1/§8` (the lot inventory shape + the periodic-full +
-  delta serialization), `docs/glossary.md` (`Moisture`/`Temperature`/`Effect`/`Tag`/`decay`/`accel`).
+  references, Dm3(a)), `docs/core/data-contracts.md §1/§8` (the lot inventory shape + the periodic-full +
+  delta serialization), `docs/core/glossary.md` (`Moisture`/`Temperature`/`Effect`/`Tag`/`decay`/`accel`).
 ```

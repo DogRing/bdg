@@ -1,4 +1,4 @@
-// Package exposure is the SH1 shelter/exposure field (docs/shelter.md, SPEC.md):
+// Package exposure is the SH1 shelter/exposure field (docs/plans/shelter.md, SPEC.md):
 // a pure, deterministic transform from `blocks_wind` blockers + a wind sector to a
 // per-hex-cell exposure factor epsilon in [0,1]. It is purely combinatorial over the
 // hex graph (a Topology adapter supplies neighbors + bounds; no positions, no geometry)

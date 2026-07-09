@@ -2,13 +2,13 @@
 
 > Status: `DRAFT`
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
-> Scope = **WI-P1** (`docs/world-integration.md` §2). Sibling: `SPEC-world-fauna.md` (WI-P2 — animals + scent).
+> Scope = **WI-P1** (`docs/plans/world-integration.md` §2). Sibling: `SPEC-world-fauna.md` (WI-P2 — animals + scent).
 
 ## Scope
 
 This sub-spec wires the **pure env transforms** (`engine/env/{climate,flora,decay}`) and the
 **terrain cost field** (`engine/space/navmap`) into the world's deterministic tick loop, as an
-**env sub-phase appended to Phase 4 (apply)** (`docs/world-integration.md` W4 — apply 후 직렬
+**env sub-phase appended to Phase 4 (apply)** (`docs/plans/world-integration.md` W4 — apply 후 직렬
 env-phase). The world stays the **sole mutator** (D12): each env module returns next-state +
 deltas; the world applies them serially in fixed module + sorted-cell/ObjectID order. It owns the
 **climate→navmap `SetTerrain` bridge** (RESOLVED #3/#6 — climate emits `[]Transition`, world maps
@@ -21,7 +21,7 @@ projection (`WorldSnapshot.ShadeOccluders`).
 and emits no animal intents; it is the env-state foundation WI-P2 builds on (fauna samples the
 navmap + climate this installs).
 
-All numeric geometry/cadence comes from `content/world.yaml` (`docs/world-integration.md` §0-9);
+All numeric geometry/cadence comes from `content/world.yaml` (`docs/plans/world-integration.md` §0-9);
 the world hardcodes none (D10).
 
 ---
@@ -36,11 +36,11 @@ behaves byte-identically to today — every existing scenario/golden holds (this
 ### New owned state (added to `World`, all nil/empty when env OFF)
 - `nav *navmap.NavMap` — the terrain cost field (terrain layout + base cost + footprints + wear +
   dynamic terrain). The **terrain authority** for env + (WI-P2) fauna `TerrainSampler` + flora
-  `SiteInput.Terrain`. Built from the fixture terrain layout (world-gen / scenario), `docs/world-gen.md`.
+  `SiteInput.Terrain`. Built from the fixture terrain layout (world-gen / scenario), `docs/plans/world-gen.md`.
 - `climateState *climate.State` + `climateRules *climate.Rules` — coarse climate grid + rain + wind.
 - `floraState *flora.State` + `floraRules *flora.Rules` — the live plant set.
 - `decayState` + decay rules — the perishable-LOT set (`engine/env/decay`; shape per
-  `docs/data-contracts.md §8` + `backend/engine/env/decay/SPEC.md`).
+  `docs/core/data-contracts.md §8` + `backend/engine/env/decay/SPEC.md`).
 - `envCfg EnvConfig` — the world.yaml-derived geometry + cadence (below).
 - The world's `objects[]` set now ALSO holds flora plants as object records (RESOLVED flora 1i:
   flora joins `objects[]`; the `flora.State` carries the morphology, the object record carries
@@ -135,7 +135,7 @@ Phase 4-ENV (NEW, env installed only):
 ## climate → navmap bridge (world-owned `GridCell` → `[]navmap.Cell` mapping, W2)
 
 climate owns a **coarse SQUARE** grid; navmap is **fine flat-top HEX** (one climate cell covers many
-hex cells; `docs/hex-grid.md` surgical scope keeps climate square). climate emits a transition per
+hex cells; `docs/plans/hex-grid.md` surgical scope keeps climate square). climate emits a transition per
 coarse cell; the world expands it to the navmap HEX cells whose CENTRE falls in that coarse cell's
 continuous region and calls `navmap.SetTerrain` (climate never imports navmap, RESOLVED #6):
 
@@ -264,13 +264,13 @@ behavior (perception flora-off neutrality AC). Result sorted by ascending `Objec
   `EnvConfig`/`navmap`/`climate.State`/the compiled `Rules`/the initial flora+decay state, and the
   `content/schema/world.schema.json`** → `platform/config` (WI-P0). The world receives them built.
 - **The terrain LAYOUT + attribute presets** (`terrainAt`, the §5 attribute vector per terrain type)
-  → `content/terrain.yaml` + world-gen fixture (`docs/world-gen.md`); the world only SAMPLES them via
+  → `content/terrain.yaml` + world-gen fixture (`docs/plans/world-gen.md`); the world only SAMPLES them via
   navmap. The exact `TerrainAttrs` accessor is a navmap/terrain content seam (Open Questions).
 - **°C threshold re-baseline** of flora suitability / decay accel / climate.yaml `when:` to actual °C
-  → each module's activation phase (climate SPEC FLAG; `docs/world-integration.md §3`). WI-P1 wires
+  → each module's activation phase (climate SPEC FLAG; `docs/plans/world-integration.md §3`). WI-P1 wires
   the operands; the threshold values are tuned at activation.
 - **Serialization of climate/flora/decay/terrain state to Snapshot/Redis/SSE** → `platform/persist`
-  + `platform/api` + `docs/data-contracts.md` extension (WI-P4, W8). WI-P1 only holds the live state.
+  + `platform/api` + `docs/core/data-contracts.md` extension (WI-P4, W8). WI-P1 only holds the live state.
 - **Agent pathfinding over navmap cost** (navmap currently serves env terrain + WI-P2 fauna
   TerrainSampler + flora SiteInput; agent MoveTo still uses distance/`arrival_epsilon`) → a separate
   future wiring, not WI-P1.
@@ -280,7 +280,7 @@ behavior (perception flora-off neutrality AC). Result sorted by ascending `Objec
 
 ## Open Questions
 
-> `docs/world-integration.md` W1-W9 are RESOLVED (human 2026-06-27; numerics in `content/world.yaml`).
+> `docs/plans/world-integration.md` W1-W9 are RESOLVED (human 2026-06-27; numerics in `content/world.yaml`).
 > This SPEC writes from those resolutions and invents no mechanism. Remaining seams are
 > content/config plumbing, not blocking decisions:
 
@@ -308,8 +308,8 @@ behavior (perception flora-off neutrality AC). Result sorted by ascending `Objec
   (their SPEC Notes say so explicitly); this sub-phase is the single place that template is driven.
 - `envFork` keys on a channel tag so adding the WI-P2 `"fauna"`/scent draws never perturbs the
   climate/flora/decay streams (and vice-versa) — the per-tick env RNG stays partitioned by concern.
-- Reference paths: `docs/world-integration.md` (WI-P1, W1-W9 resolutions), `content/world.yaml`
+- Reference paths: `docs/plans/world-integration.md` (WI-P1, W1-W9 resolutions), `content/world.yaml`
   (geometry/cadence), `backend/engine/env/{climate,flora,decay}/SPEC.md` (the pure transforms),
   `backend/engine/space/navmap/SPEC.md` (`SetTerrain`/`CellOf`/`TerrainAt`), `SPEC-tick.md` (the
   four-phase loop this extends), `backend/engine/mind/perception/SPEC.md` (`ShadeOccluder`),
-  `docs/data-contracts.md §6/§8` (decay + terrain delta shapes), `SPEC-world-fauna.md` (WI-P2).
+  `docs/core/data-contracts.md §6/§8` (decay + terrain delta shapes), `SPEC-world-fauna.md` (WI-P2).

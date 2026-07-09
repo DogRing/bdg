@@ -2,7 +2,7 @@
 
 > Status: `DRAFT`
 > Leaf level: `L8` (platform — depends only on engine public interfaces; architecture §3/§5 stage 8)  ·  Owner agent: `<filled by implementer>`
-> Sub-spec: [`SPEC-world.md`](SPEC-world.md) — **WI-P4** env-state serialization (flora/animals/climate snapshot + Redis render keys + `WorldFrame` SSE projection; `docs/data-contracts.md §10`).
+> Sub-spec: [`SPEC-world.md`](SPEC-world.md) — **WI-P4** env-state serialization (flora/animals/climate snapshot + Redis render keys + `WorldFrame` SSE projection; `docs/core/data-contracts.md §10`).
 
 ## Purpose
 

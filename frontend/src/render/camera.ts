@@ -2,7 +2,7 @@ import type { AgentPos, RenderConfig } from '../types'
 import { buildTransform, toWorld } from './transform'
 import { displayPos, type Interpolable } from './animator'
 
-// Interactive top-view camera (docs/frontend-plan.md Q6): anchored to the world
+// Interactive top-view camera (docs/plans/frontend.md Q6): anchored to the world
 // bounds at load, then wheel zoom (cursor-anchored), drag pan, click-to-follow.
 // All reducers are pure (cam, input) → new cam; the component owns the instance.
 

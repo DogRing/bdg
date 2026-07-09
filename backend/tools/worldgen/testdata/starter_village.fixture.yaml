@@ -19,7 +19,7 @@
 #   EAST WOODS (SE of the pasture, the deer's flee-refuge), a RIPARIAN gallery lining the river, plus
 #   berry_shrub THICKETS by the rabbit fields — all `cover`-tagged so prey can break line-of-sight (M3).
 #
-# What each scenario needs (docs/scenarios-world.md): FA1 graze (deer+grass+hunger), FA2 hunt (wolf+scent),
+# What each scenario needs (docs/plans/scenarios-world.md): FA1 graze (deer+grass+hunger), FA2 hunt (wolf+scent),
 # FA3 wary/flee bands, FA8 per-species terrain cost (river/mountain), env weather (climate.yaml).
 
 schema_version: 1
@@ -32,7 +32,7 @@ bounds:
   max: [192.0, 192.0]
 
 # ── Terrain layout (navmap base layer + climate t=0) — FLAT-TOP HEX offset(col,row) grid, 12×11 ──
-# i = row*cols + col (docs/hex-grid.md). CellSize=12 (circumradius) ⇒ navmap.OffsetDims = 12×11 over the
+# i = row*cols + col (docs/plans/hex-grid.md). CellSize=12 (circumradius) ⇒ navmap.OffsetDims = 12×11 over the
 # 192² bounds. The river is a CONNECTED hex chain (col 6, rows 0→8) flowing N→sea delta; sand banks
 # flank it (cols 5/7). NE mountains (cols 8-9, rows 0-2). Beach (row 8) → sea (rows 9-10). odd columns
 # sit a half-row lower (odd-q); the river is straight down an even column so it reads as river-straight

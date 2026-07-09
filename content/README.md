@@ -4,10 +4,10 @@ Everything here is **data, not code**. `platform/config` loads these files at st
 validates each against `content/schema/*.json`, and populates the engine registries
 (`stats`, `needs`, `actions`, `gates`, plus the object/item catalog). Adding or changing a
 stat / need / action / gate / object is a **data diff + a passing schema** — the engine is
-content-agnostic and never changes (invariant **D10**, `docs/design.md` §2).
+content-agnostic and never changes (invariant **D10**, `docs/core/design.md` §2).
 
-> Authoritative vocabulary: `docs/glossary.md`. Invariants D1–D12: `CLAUDE.md`.
-> Cross-module shapes: `docs/data-contracts.md`. This README explains only the content layer.
+> Authoritative vocabulary: `docs/core/glossary.md`. Invariants D1–D12: `CLAUDE.md`.
+> Cross-module shapes: `docs/core/data-contracts.md`. This README explains only the content layer.
 
 ## Files
 
@@ -18,10 +18,10 @@ content-agnostic and never changes (invariant **D10**, `docs/design.md` §2).
 | `objects.yaml` | object_kinds + item_kinds | D9 (objects carry only their **supply** Effect) |
 | `actions.yaml` | atomic action catalog | D3 (atomic only; no trees), D4 (cost/gates from tags) |
 | `gates.yaml` | gate registry (boolean **predicate trees**) | D4 (tag-matched), D8 (decisions read `ToM[self]`) |
-| `balance.yaml` | global scalars **+ per-need rate block (`needs:`)** | tuning target (untuned defaults; `docs/testing.md` §5) |
+| `balance.yaml` | global scalars **+ per-need rate block (`needs:`)** | tuning target (untuned defaults; `docs/core/testing.md` §5) |
 | `schema/` | JSON Schema (2020-12) | the loader rejects any file that fails its schema |
 
-Every file carries `schema_version` (`docs/data-contracts.md` §0). Bump it **and** the matching
+Every file carries `schema_version` (`docs/core/data-contracts.md` §0). Bump it **and** the matching
 schema's `const` together on any incompatible change. (`gates.yaml`/`gates.schema.json` are at
 `schema_version: 2` after the predicate-tree change; the others at `1`.)
 
@@ -38,7 +38,7 @@ A need / value **Dimension** is defined in two places (merged by `engine/mind/ne
   (rate 0, event-driven) are **not** listed in this block.
 
 Keeping rates in `balance.yaml` puts every tunable scalar in the single auto-tuning file
-(`docs/testing.md` §5); the catalog stays in `needs.yaml`. `platform/config` cross-checks that
+(`docs/core/testing.md` §5); the catalog stays in `needs.yaml`. `platform/config` cross-checks that
 every consumable dimension has a matching `balance.yaml needs:<id>` entry and vice-versa.
 
 ## Load & validate flow (platform/config)
@@ -51,7 +51,7 @@ every consumable dimension has a matching `balance.yaml needs:<id>` entry and vi
    `balance.yaml needs:<id>` key names a **consumable** dimension in `needs.yaml` (and every
    consumable dimension has a rate entry); every `tag_level`/`cost_terms` family referenced by
    `actions.yaml`'s tag cost composition exists in `balance.yaml`.
-4. Build registries; compute a `config_hash` (`docs/data-contracts.md` §3) for replay.
+4. Build registries; compute a `config_hash` (`docs/core/data-contracts.md` §3) for replay.
 
 Schemas use an **identifier pattern**, not a hardcoded stat enum, so adding a stat needs no
 schema edit — step 3 catches typos by cross-checking against `stats.yaml`.

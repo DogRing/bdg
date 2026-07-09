@@ -7,7 +7,7 @@
 # Two registries (loaded by platform/config; engine/world places instances per run):
 #   object_kinds — in-world sources/structures (a bush, a spring, a shelter). They yield
 #                  items and/or supply a need in-place. Positions & counts are NOT here —
-#                  placement is per-run world-gen / scenario fixtures (docs/testing.md).
+#                  placement is per-run world-gen / scenario fixtures (docs/core/testing.md).
 #   item_kinds   — carryable things held in Body.Inventory. The `supply` on the consumed
 #                  item is the Effect that Eat/Drink delivers (so those actions stay generic).
 #
@@ -62,7 +62,7 @@
 # ⚠ PREREQUISITE (Xm6): `depleted_terrain` (e.g. bare_rock) must exist in content/terrain.yaml + the
 #   navmap `types` table (world+navmap M3) before the SetTerrain reroute golden — P_m4 scheduling.
 #
-# ── FLORA (engine/flora; docs/flora.md, design.md §5/§7) ─────────────────────────
+# ── FLORA (engine/flora; docs/plans/flora.md, design.md §5/§7) ─────────────────────────
 # A flora species is an object_kind carrying a `flora:` block: the §6 formulas + thresholds
 # that drive growth, suitability, propagation, shade, and death (object-mortality). flora
 # objects are PLANTS (trees/bushes/grass) on continuous coords (D11) — NOT terrain, NOT a
@@ -237,7 +237,7 @@ object_kinds:
       death_threshold: 0.18
       death_hysteresis: 2           # flowers are short-lived / fragile
 
-  # ── FAUNA species (engine/fauna; docs/fauna.md F1–F46) — DORMANT until fauna activation ──
+  # ── FAUNA species (engine/fauna; docs/plans/fauna.md F1–F46) — DORMANT until fauna activation ──
   # An animal SPECIES = an object_kind carrying a `fauna:` block: the reduced-reactive controller's
   # per-species §6 table (candidate actions + per-action utility, drives, apparent_temp, speed, senses,
   # diet, per-species terrain cost). Behaviour EMERGES from §6 utility-max + drives + scent (D2/D3 — NO

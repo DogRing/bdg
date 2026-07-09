@@ -13,7 +13,7 @@ You are the **verifier**. You confirm a module's implementation conforms to its 
 ## Checklist (all must pass for PASS)
 1. **Interface match**: public signatures = SPEC Public Interface (names, types). Nothing extra exposed.
 2. **Acceptance criteria**: each SPEC Acceptance Criterion has a corresponding test, and it passes.
-3. **Determinism**: `docs/testing.md` §1 — injected seed, no map-iteration, fixed ID order. Same seed twice = byte-identical. Resume invariant holds.
+3. **Determinism**: `docs/core/testing.md` §1 — injected seed, no map-iteration, fixed ID order. Same seed twice = byte-identical. Resume invariant holds.
 4. **Golden**: if the module has goldens, they match. If updated, flag whether the diff was human-approved.
 5. **Invariants**: no violation of D1–D12 (`CLAUDE.md`) — especially single-value reputation storage, individual skills, role-as-type, future-need fields on objects, per-action bespoke gates.
 6. **Contracts**: conforms to data-contracts schemas (serialization, events, keys).

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/terrain.schema.json",
   "title": "content/terrain.yaml — terrain TYPE catalog (base materials + cost/passable/§5 attributes, D4/D10)",
-  "description": "The single owner of the terrain TYPE vocabulary (docs/design.md §5: 바탕재료 sand/soil/river/mountain/sea + 속성 벡터). Each entry is a `navmap.TerrainType` (base_cost / passable / required_tags) PLUS the §5 attribute preset (grain_size/moisture/temperature/depth/slope/salinity) that feeds the `terrain.<attr>` §6 operands (flora suitability, traversal gates, climate transitions). It is a TYPE table, NOT a layout — the per-run terrain LAYOUT (which cell is which type) is the world-gen / scenario fixture (docs/world-gen.md). platform/config compiles this into the navmap `types` table + the world's TerrainID→attrs join; EVERY terrain id referenced elsewhere (climate transitions from/to, objects.yaml source.depleted_terrain, resource affinity) MUST exist here (load-time validated, D10). Values are UNTUNED placeholders (adjustable later).",
+  "description": "The single owner of the terrain TYPE vocabulary (docs/core/design.md §5: 바탕재료 sand/soil/river/mountain/sea + 속성 벡터). Each entry is a `navmap.TerrainType` (base_cost / passable / required_tags) PLUS the §5 attribute preset (grain_size/moisture/temperature/depth/slope/salinity) that feeds the `terrain.<attr>` §6 operands (flora suitability, traversal gates, climate transitions). It is a TYPE table, NOT a layout — the per-run terrain LAYOUT (which cell is which type) is the world-gen / scenario fixture (docs/plans/world-gen.md). platform/config compiles this into the navmap `types` table + the world's TerrainID→attrs join; EVERY terrain id referenced elsewhere (climate transitions from/to, objects.yaml source.depleted_terrain, resource affinity) MUST exist here (load-time validated, D10). Values are UNTUNED placeholders (adjustable later).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "terrains"],
@@ -41,7 +41,7 @@
         },
         "attrs": {
           "type": "object",
-          "description": "The §5 attribute preset vector (docs/design.md §5). Feeds the `terrain.<attr>` §6 operands (flora suitability, traversal gates like `terrain.depth`↔Swim, climate transition conditions). A preset = base-material defaults; per-run overrides (e.g. climate raising `moisture`) are dynamic state, NOT here. All keys optional (absent ⇒ 0/neutral).",
+          "description": "The §5 attribute preset vector (docs/core/design.md §5). Feeds the `terrain.<attr>` §6 operands (flora suitability, traversal gates like `terrain.depth`↔Swim, climate transition conditions). A preset = base-material defaults; per-run overrides (e.g. climate raising `moisture`) are dynamic state, NOT here. All keys optional (absent ⇒ 0/neutral).",
           "additionalProperties": false,
           "properties": {
             "grain_size":  { "type": "number", "description": "fine↔coarse (sand fine, gravel coarse). [0,1] convention." },

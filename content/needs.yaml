@@ -1,7 +1,7 @@
 # content/needs.yaml — need / value dimension CATALOG (data-driven, D9 / D10)
 #
 # platform/config loads this into the engine/needs registry. A Value is
-# {Dimension, Ref, Posture, Setpoint} (docs/glossary.md); the Dimensions it may
+# {Dimension, Ref, Posture, Setpoint} (docs/core/glossary.md); the Dimensions it may
 # target are defined here. Adding a dimension is a data change, no code.
 #
 # This file is the CATALOG only (which dimensions exist + posture/setpoint/salience).

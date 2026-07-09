@@ -1,6 +1,6 @@
 package world
 
-// FA scenario coverage map (docs/scenarios-world.md, Phase 10):
+// FA scenario coverage map (docs/plans/scenarios-world.md, Phase 10):
 //   FA1 graze loop        → TestGrazingReducesHungerAtForageFlora (fauna_combat_scenarios_test.go)
 //   FA2 scent+FOV hunt    → TestFA2PredatorHuntChaseResolves (scenario_fa2_test.go)
 //   FA3 wary↔flee band    → TestFA3WaryFleeBands (below)
@@ -10,9 +10,9 @@ package world
 //                           so thermal saturates at 1 for any temperature ≥ 1°C and can never
 //                           express "cold night → thermal stress ↑". Needs a human decision on
 //                           apparent_temp semantics (°C for render vs normalized stress) — see
-//                           the Phase 10 report / docs/fauna.md F40.
+//                           the Phase 10 report / docs/plans/fauna.md F40.
 //   FA6 hidden respawn    → TestRespawnTopsUpToTarget (respawn_test.go)
-//   FA7 herd/flocking     → DEFERRED (docs/scenarios-world.md)
+//   FA7 herd/flocking     → DEFERRED (docs/plans/scenarios-world.md)
 //   FA8 per-species terrain → TestWorldTerrainSamplerSemantics (fauna_test.go) + the ecosim
 //                           containment assertions (engine/ecosim)
 

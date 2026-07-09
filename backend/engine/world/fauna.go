@@ -92,7 +92,7 @@ func (w *World) buildFaunaEnvSamples() map[core.ObjectID]fauna.EnvSample {
 		if w.climateState != nil {
 			cell := w.climateState.CellAt(a.Pos)
 			// SH3: overhead cover buffers sensed temperature toward the day's mean + sheds rain
-			// moisture (docs/shelter.md). Shelter-OFF / uncovered cell ⇒ raw climate values.
+			// moisture (docs/plans/shelter.md). Shelter-OFF / uncovered cell ⇒ raw climate values.
 			sample.Temperature, sample.Moisture = w.localTempMoistureAt(a.Pos, cell.Temperature, cell.Moisture, dailyMean, raining)
 		}
 		env[id] = sample

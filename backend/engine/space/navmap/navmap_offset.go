@@ -6,7 +6,7 @@ import (
 	"github.com/dogring/bdg/engine/kernel/core"
 )
 
-// Offset (col,row) layout ↔ axial — the rectangular grid the render/wire use (docs/hex-grid.md Q5).
+// Offset (col,row) layout ↔ axial — the rectangular grid the render/wire use (docs/plans/hex-grid.md Q5).
 // navmap is the hex authority: worldgen (fixture layout), world (render view + terrain_delta), and
 // persist/api all go through THESE methods instead of re-deriving the flat-top odd-q convention.
 // The layout is row-major (index i = row*Cols + col); offset(0,0) is the (MinX,MinY) corner (axial 0,0).

@@ -1,6 +1,6 @@
 # SPEC — `frontend/src/assets`
 
-> Status: `APPROVED` (plan: `docs/frontend-plan.md`, Q1/Q2/Q5 RESOLVED 2026-07-02)
+> Status: `APPROVED` (plan: `docs/plans/frontend.md`, Q1/Q2/Q5 RESOLVED 2026-07-02)
 > Layer: frontend leaf — no imports besides `src/types.ts`. Parent: [`frontend/SPEC.md`](../../SPEC.md).
 
 ## Purpose

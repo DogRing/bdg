@@ -865,7 +865,7 @@ func (a *Agent) ApplyOutcome(outcome ActionOutcome, rng *rng.RNG, cfg Config, re
 > §FunctionSpec`; this core file declares the field `Config.Functions []FunctionSpec` and lists the
 > type signature, but its semantics (the goal→Function table lookup) belong to politics.
 
-This module adds **no** vocabulary outside `docs/glossary.md` (Resentment, FailStreak, Stamina,
+This module adds **no** vocabulary outside `docs/core/glossary.md` (Resentment, FailStreak, Stamina,
 Adrenaline, Mood, Urgency, Vindictiveness, Referent, Safety, Function, Reliance, Influence are all
 glossary terms).
 

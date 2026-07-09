@@ -2,7 +2,7 @@
 
 > Status: `DRAFT`
 > Leaf level: `L4` (flat, beside `agent`)  ·  Owner agent: `<filled by implementer>`
-> Scope: **P_fa1** (`docs/fauna.md §2`). Sub-SPEC: `backend/engine/space/scent/SPEC.md` (the scent grid).
+> Scope: **P_fa1** (`docs/plans/fauna.md §2`). Sub-SPEC: `backend/engine/space/scent/SPEC.md` (the scent grid).
 
 ## Purpose
 The **reduced-reactive animal controller**: a pure, deterministic per-tick **horizon-1 utility
@@ -18,9 +18,9 @@ scent bulk-pass cadence (those are `engine/world`'s, F41), the navmap/climate st
 as values / via a declared sampler), or the object/animal mutation itself (`engine/world` is the sole
 mutator, D12 apply phase). No IO, no wall-clock, no global rand: every output is a function of
 `(snapshot, Rules, rng)` (D12). Mirrors `engine/env/flora`'s and `engine/env/decay`'s "pure read →
-return delta/intent → world applies" shape exactly. Concept & rationale: `docs/design.md §5`
+return delta/intent → world applies" shape exactly. Concept & rationale: `docs/core/design.md §5`
 (continuous coords / dynamic terrain) + `§6` (the shared §6 evaluator) + `§7` (object-mortality) +
-`docs/fauna.md` (§0 locked, §1 F1–F46 ALL RESOLVED — binding; do NOT re-decide).
+`docs/plans/fauna.md` (§0 locked, §1 F1–F46 ALL RESOLVED — binding; do NOT re-decide).
 
 ## Public Interface
 ```go
@@ -335,7 +335,7 @@ func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passa
 
 ## Owned Data
 - The **`Animal` entity type** + the live animal set is held by `engine/world` (one per run, snapshot-
-  serialized — `docs/data-contracts.md §6`, P_fa5); `fauna.Step` reads a `Snapshot` and never mutates it.
+  serialized — `docs/core/data-contracts.md §6`, P_fa5); `fauna.Step` reads a `Snapshot` and never mutates it.
 - The **scent field** (`engine/space/scent.Grid`) is a **shared world index** (promoted out of fauna, ①;
   `engine/space`, spatial/navmap kin) — **world-owned**, fed by world from `scent:<channel>`-tagged emitters
   (flora/fauna/decay), `world` DRIVES deposit/spread/commit (P_fa2); **fauna only READS it** + defines the
@@ -487,20 +487,20 @@ func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passa
   → `content` + `engine/mind/actions` (P_fa3, F28/F43). This SPEC consumes them via the shared registry.
 - **Climate operand SOURCE + `apparent_temp` activation** (climate-OFF in P1 → neutral `EnvSample`;
   wind-driven long-range scent + upwind homing) → `engine/env/climate` + `engine/world` (P_fa4,
-  `docs/climate.md §1c` CA1–CA3; operand names/units MUST match across docs).
-- **Population maintenance (NOT breeding) — RESOLVED 2026-06-28 (W11, `docs/world-integration.md`)**: there is
+  `docs/plans/climate.md §1c` CA1–CA3; operand names/units MUST match across docs).
+- **Population maintenance (NOT breeding) — RESOLVED 2026-06-28 (W11, `docs/plans/world-integration.md`)**: there is
   **no parent→child birth**. The world keeps a per-species population target and, when below it, respawns ONE
   animal on a seeded cadence at a **HIDDEN wild location** — outside every agent's `sight_radius` AND in
   undeveloped terrain (no building footprint / settlement, passable wild). No parent, no inheritance (stats =
   species `GenSpec`). Generalizes the legacy `balance.regen.prey_respawn`. → `engine/world` respawn placement
   (small wiring). The `repro_readiness` drive + a drive-gated birth mechanism (P_fa4) are **dropped**; the drive
   id may remain a latent/unused content option.
-- **Serialization / SSE of `animals[]`** → `platform/persist` + `docs/data-contracts.md §6` (P_fa5).
-- **`docs/glossary.md` sync** of the coined terms → a separate glossary step.
+- **Serialization / SSE of `animals[]`** → `platform/persist` + `docs/core/data-contracts.md §6` (P_fa5).
+- **`docs/core/glossary.md` sync** of the coined terms → a separate glossary step.
 - The shared §6 `expr` evaluator **implementation** → `engine/kernel/expr` (L0); fauna only USES it.
 
 ## Open Questions
-> `docs/fauna.md` §1 (F1–F46) is **ALL RESOLVED** (human-confirmed 2026-06-26 / 2026-06-27). This SPEC
+> `docs/plans/fauna.md` §1 (F1–F46) is **ALL RESOLVED** (human-confirmed 2026-06-26 / 2026-06-27). This SPEC
 > writes from those resolutions and **invents no mechanism**. The four plumbing/naming seams the prior
 > draft surfaced are now RESOLVED and folded in (2026-06-27): **`is_current` kept** (R5/F45) →
 > `AttrOperands`; **`TerrainSampler` = {FootprintBlocked, TerrainAt, BaseCost} + per-species `Rules.TerrainCost`** (W10b 2026-06-28 — 수영/등산 cost map, fish-on-land impassable; R2/F35); **stats =
@@ -508,7 +508,7 @@ func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passa
 > §6, P_fa3** (R4/F46). The **F45 adaptive per-animal cadence** (R1) is integrated above. **None remaining
 > — no new mechanism seam.**
 
-## Combat & Predation (FC1–FC13 — phase 6b; rationale: `docs/fauna.md` 클러스터 9)
+## Combat & Predation (FC1–FC13 — phase 6b; rationale: `docs/plans/fauna.md` 클러스터 9)
 
 Refines the F7 "Hunt→death" abstraction into an explicit **engage → exchange → kill → feed** loop. This
 section is the **fauna-module interface delta only** (behaviour/why → 클러스터 9):
@@ -540,7 +540,7 @@ section is the **fauna-module interface delta only** (behaviour/why → 클러�
   has reached a `scent:food` flora, crops it — the world reduces hunger by the species' `Graze` §6
   (`Rules.Graze`, parallels `Rules.Feed`). Absent `Graze`/`Tags` ⇒ outcome-neutral.
 
-## Cover-hiding (M3 — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+## Cover-hiding (M3 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 Prey survive by **hiding**, not by out-running: a fleeing herbivore that reaches `cover`-tagged flora may
 break the predator's detection for a while. **`HiddenUntil` has a SINGLE writer — `engine/world`** (it
@@ -575,7 +575,7 @@ world-side); **fauna only READS `Animal.HiddenUntil`** here. This is the fauna-m
   `combatTarget`/steer behave exactly as before; existing goldens byte-identical (the M3 OFF-neutral lever,
   parallel to the FC/Graze levers). NO new `AttrOperands()` entry, NO new `Snapshot`/`Intent` field.
 
-## Cover speed resistance (M4-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+## Cover speed resistance (M4-b — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 Moving through `cover` flora slows an animal and makes its speed VARY (a continuous drag, no stumble/fall).
 The mechanic is **entirely world-side** (world owns flora; scales the committed move by a cover resistance —
@@ -587,7 +587,7 @@ affinity, exposed as a `Rules` accessor world reads in apply (mirrors `TerrainCo
   unaffected → OFF-neutral). Parsed by `platform/config` like `terrain_cost`; compiled into the per-species
   record. Pure, read-only. NO new `Snapshot`/`Intent`/`AttrOperands` surface, NO change to `Speed`/`Step`.
 
-## Ambush concealment (M5-b — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+## Ambush concealment (M5-b — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 A predator concealed in `cover` flora is SEEN by prey only at reduced range → it closes the distance before
 the prey flees → **ambush emerges** (no per-species ambush FSM, D2/D3). The concealment value is
@@ -602,7 +602,7 @@ the prey flees → **ambush emerges** (no per-species ambush FSM, D2/D3). The co
   unchanged. Only the sight→Flee channel narrows; the scent→Wary channel is untouched (smell ignores cover).
   Deterministic, no RNG (D12).
 
-## Turn-rate inertia (M6 — fauna-realism; rationale: `docs/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
+## Turn-rate inertia (M6 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 An animal cannot instantly reverse heading: each tick the desired steering heading is **clamped to within
 `±turn_rate×DT`** of its current `Heading`. Asymmetric per-species `turn_rate` gives the juke/overshoot
@@ -661,9 +661,9 @@ existing `Speed`/`HideChance` §6 accessor pattern and the existing `angularDiff
 - Tuning + behaviour live in `content/objects.yaml` `fauna:` §6 (D10); cadence N/cooldown in
   `content/balance.yaml`. Adding a species, drive, predator/prey relation, or steer/utility is a content +
   §6 change, never code (D2/D3 — herds/husbandry/food-chains must emerge).
-- Reference paths: `docs/fauna.md` (binding F1–F46), `docs/design.md §5/§6/§7`,
+- Reference paths: `docs/plans/fauna.md` (binding F1–F46), `docs/core/design.md §5/§6/§7`,
   `backend/engine/env/flora/SPEC.md` + `backend/engine/env/decay/SPEC.md` (the pure-Step template),
   `backend/engine/kernel/expr/SPEC.md` (§6 evaluator + `Attr`/`Stat` classification), `backend/engine/
   mind/actions/SPEC.md` (shared candidate registry), `backend/engine/space/spatial/SPEC.md`
-  (`NearbyEntities` sight query), `docs/architecture.md §2/§4/§5` (fauna = L4, stage 6, import set),
-  `docs/scenarios-world.md` (W1 — the water/swim hazard analog), `docs/glossary.md` (the coined terms).
+  (`NearbyEntities` sight query), `docs/core/architecture.md §2/§4/§5` (fauna = L4, stage 6, import set),
+  `docs/plans/scenarios-world.md` (W1 — the water/swim hazard analog), `docs/core/glossary.md` (the coined terms).

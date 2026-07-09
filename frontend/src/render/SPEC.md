@@ -1,6 +1,6 @@
 # SPEC — `frontend/src/render`
 
-> Status: `APPROVED` (plan: `docs/frontend-plan.md`, Q2/Q3/Q4/Q5/Q6/Q8 RESOLVED 2026-07-02)
+> Status: `APPROVED` (plan: `docs/plans/frontend.md`, Q2/Q3/Q4/Q5/Q6/Q8 RESOLVED 2026-07-02)
 > Layer: pure render — imports `src/types.ts` + [`src/assets`](../assets/SPEC.md) only. No hooks,
 > no DOM state, no network. Parent: [`frontend/SPEC.md`](../../SPEC.md).
 > Split of the former `src/utils/canvasRenderer.ts` (522 lines > ~400 rule); that file is deleted.
@@ -144,7 +144,7 @@ pose *entering* `attack` → attack, flora `stage` increase → grow; pruned whe
   side. No backend event needed.
 - **grow** (500 ms): the plant scales from old-stage to new-stage size (ease-out).
 
-### Terrain (Q5 · hex — `docs/hex-grid.md`)
+### Terrain (Q5 · hex — `docs/plans/hex-grid.md`)
 `TerrainGrid = { cellSize, cols, rows, terrain: TerrainID-index[], wear?: Float32Array,
 orientation:'flat' }` from `GET /api/terrain`, kept current by `terrain_delta`. Cells are **flat-top
 hexagons**: `terrain[]` is an **offset (col,row) rectangular array** (`i = row·cols + col`), and cell
@@ -227,5 +227,5 @@ As specified in the parent SPEC §Ecosystem rendering: day-night tint from
 - Reducer changes (fx queue, interpolation fields, terrain merge) → parent
   [`frontend/SPEC.md`](../../SPEC.md) (§State) — implemented in `hooks/useWorld.ts`.
 - Backend `GET /api/terrain` + `WorldFrame` emission → `backend/platform/api` (pending SPEC delta,
-  `docs/frontend-plan.md` Q5) — this layer consumes the already-reduced `TerrainGrid`.
+  `docs/plans/frontend.md` Q5) — this layer consumes the already-reduced `TerrainGrid`.
 - Scent/navmap-cost debug overlays, minimap, screenshot/export.

@@ -1,5 +1,5 @@
 # predation_arena.fixture.yaml — a SMALL forced-encounter arena for measuring predator-prey balance
-# (M3 cover-hiding + M4-a river refuge). NOT the demo world — a measurement bed (docs/fauna.md 클러스터 10,
+# (M3 cover-hiding + M4-a river refuge). NOT the demo world — a measurement bed (docs/plans/fauna.md 클러스터 10,
 # balance step). Loaded by the fauna_arena balance harness (backend/tools/worldgen/fauna_balance_test.go).
 #
 # LAYOUT (FLAT-TOP HEX offset grid, 7×6 @ CellSize=12 over 96×96; navmap.OffsetDims): all soil except a

@@ -2,7 +2,7 @@ import type { TerrainGrid } from '../types'
 import { TERRAIN_STYLE, TERRAIN_DEFAULT, WEAR_TRAIL_COLOR } from '../assets/manifest'
 import { wx, wy, type Transform } from './transform'
 
-// Terrain renders via an offscreen raster of FLAT-TOP HEX cells (Q5 · docs/hex-grid.md).
+// Terrain renders via an offscreen raster of FLAT-TOP HEX cells (Q5 · docs/plans/hex-grid.md).
 // Each offset(col,row) cell is filled as a hexagon at its world centre — offset→axial→
 // pixel from cellSize (= hex circumradius), MIRRORING navmap's convention (navmap is the
 // authority; the frontend never hardcodes it, it reads `orientation` from the payload).

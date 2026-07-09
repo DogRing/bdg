@@ -58,7 +58,7 @@ Activation checklist (P6 — all met):
   VoteAction & reliance trigger).
 - [x] `content/balance.yaml politics.role_convergence_threshold` is present (Config source in
   `SPEC.md` §Public Interface).
-- [x] Scenario G fixture + golden recorded (`docs/testing.md §4`; AC below).
+- [x] Scenario G fixture + golden recorded (`docs/core/testing.md §4`; AC below).
 
 ---
 

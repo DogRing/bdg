@@ -156,7 +156,7 @@ type World struct {
 	coverKinds    map[core.Tag]bool
 	nextAnimalSeq int64
 
-	// SH1 shelter/exposure (docs/shelter.md): nil cache ⇒ OFF (ε ≡ 1, local wind == global wind,
+	// SH1 shelter/exposure (docs/plans/shelter.md): nil cache ⇒ OFF (ε ≡ 1, local wind == global wind,
 	// byte-identical). Installed via InstallShelter; blockers are static per run in SH1.
 	exposureCache    *exposure.Cache
 	exposureBlockers []exposure.Blocker

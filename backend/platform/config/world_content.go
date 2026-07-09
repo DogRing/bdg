@@ -111,7 +111,7 @@ func buildWorldEnv(wd worldDoc) (*world.EnvConfig, *navmap.Config, error) {
 	}
 	// navmap_cell_size (hex terrain/path/render fidelity) is DECOUPLED from spatial_hash_cell
 	// (square perception grid) — post-hex-migration they are independent indices over the same
-	// continuous space (docs/hex-grid.md, docs/shelter.md Q-M1). No sync constraint between them.
+	// continuous space (docs/plans/hex-grid.md, docs/plans/shelter.md Q-M1). No sync constraint between them.
 	floor := wd.Motion.MaxSpeed * float64(wd.Cadence.ScentSpread)
 	if wd.Grids.ScentCellSize < floor {
 		return nil, nil, fmt.Errorf("config: scent_cell_size %.6g < max_speed %.6g * scent_spread %d", wd.Grids.ScentCellSize, wd.Motion.MaxSpeed, wd.Cadence.ScentSpread)

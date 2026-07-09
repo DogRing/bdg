@@ -166,8 +166,8 @@ func (c Clock) TicksForMinutes(m core.GameMinutes) core.Tick
 - **Calendar granularity (season/year)** — `RESOLVED (2026-06-27): DaysPerSeason=30, SeasonsPerYear=4
   ⇒ DaysPerYear=120` (1 game-year = 120 game-days). Lives in `content/balance.yaml world.*` (D10) with a
   matching `balance.schema.json` addition. Added for climate CA1 (annual temperature cycle): the
-  `DayOfYear`/`DaysPerYear`/`YearFraction` accessors + `Calendar.DayOfYear` field above. (`docs/climate.md
-  §1c`, `docs/fauna.md` F45/F40.)
+  `DayOfYear`/`DaysPerYear`/`YearFraction` accessors + `Calendar.DayOfYear` field above. (`docs/plans/climate.md
+  §1c`, `docs/plans/fauna.md` F45/F40.)
 
 > Resolved: `core.GameMinutes` (and the `Tick` ownership question) — `engine/kernel/core` now declares
 > both `Tick` and `GameMinutes`; the ratio is worldtime-owned (`Config.TickMinutes`). No longer a

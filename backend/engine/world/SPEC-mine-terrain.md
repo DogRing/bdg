@@ -2,8 +2,8 @@
 
 > Status: `DRAFT`
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
-> Scope = **WI-P3** (`docs/world-integration.md` §2 / `docs/resources.md` R1). EXTENDS the existing
-> `ore_node` Mine path (materials P_m4: `backend/engine/mind/actions/SPEC.md` + `docs/data-contracts.md §9`).
+> Scope = **WI-P3** (`docs/plans/world-integration.md` §2 / `docs/plans/resources.md` R1). EXTENDS the existing
+> `ore_node` Mine path (materials P_m4: `backend/engine/mind/actions/SPEC.md` + `docs/core/data-contracts.md §9`).
 
 ## Scope
 
@@ -83,7 +83,7 @@ emit Mined{ ... terrain path: no ore_node id, no remaining/depleted } (data-cont
 
 ## Out of Scope
 - **The `ore_node` finite-node path** (yield/`remaining`/`SetTerrain` on depletion) — existing P_m4
-  (`docs/data-contracts.md §9`, `backend/engine/mind/actions/SPEC.md`); this sub-spec only ADDS the
+  (`docs/core/data-contracts.md §9`, `backend/engine/mind/actions/SPEC.md`); this sub-spec only ADDS the
   terrain-cell branch + references the node path.
 - **The `Mine` `ActionDef`** (tags, `tool:digging`, target kind) → `engine/mind/actions` +
   `content/actions.yaml` (unchanged; the terrain path is an apply-time resolution, not a new action).
@@ -97,7 +97,7 @@ emit Mined{ ... terrain path: no ore_node id, no remaining/depleted } (data-cont
 - **Smelting / tool chains from the mined materials** → `content/recipes.yaml` (resources R6).
 
 ## Open Questions
-> `docs/resources.md` R1 + `docs/world-integration.md` W1-W9 RESOLVED. Two plumbing seams:
+> `docs/plans/resources.md` R1 + `docs/plans/world-integration.md` W1-W9 RESOLVED. Two plumbing seams:
 - **Planner binding for the terrain path (planner/actions seam) — ✅RESOLVED (a), 2026-06-28: world apply falls back to actor cell; planner offers Mine where the terrain has `extract`.** The node path binds an `ore_node`
   target; the terrain path extracts at the actor's standing cell (no object target). For the planner to
   select Mine to satisfy `has_materials` WHERE no node exists (stone anywhere), Mine must be selectable
@@ -117,8 +117,8 @@ emit Mined{ ... terrain path: no ore_node id, no remaining/depleted } (data-cont
   not a separate mechanism — tier emerges from recipe-input availability (resources §0-8, D2/D3).
 - Terrain-driven Mine + the §6 yield is the same shape as flora `Yield` and the node `harvest.yields`
   (Xm5 reuse) — one seeded-roll yield mechanism across flora/ground/node, keeping goldens legible.
-- Reference paths: `docs/resources.md` R1/R7 (the resolution), `docs/materials.md` P_m4/Xm1-6 (the node
+- Reference paths: `docs/plans/resources.md` R1/R7 (the resolution), `docs/plans/materials.md` P_m4/Xm1-6 (the node
   path), `content/terrain.yaml` + `content/schema/terrain.schema.json` (the `extract` table),
-  `docs/data-contracts.md §9` (node `remaining`/`SetTerrain`) + §4 (`Mined` event),
+  `docs/core/data-contracts.md §9` (node `remaining`/`SetTerrain`) + §4 (`Mined` event),
   `backend/engine/mind/actions/SPEC.md` (`Mine` def), `backend/engine/space/navmap/SPEC.md`
   (`TerrainAt`/`CellOf`), `SPEC-tick.md` (per-agent fork + combined apply order).

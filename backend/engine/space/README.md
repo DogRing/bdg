@@ -10,4 +10,4 @@
 | `pathfind` | navmap 스냅샷 위 결정성 A*/Theta* → 경유점 경로 + 총비용 (순수 질의, navmap 불변) | core, navmap | L2 |
 
 규칙: `navmap → pathfind`는 단방향, pathfind는 navmap을 변경하지 않음. mutator는 `world`.
-상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/architecture.md`.
+상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/core/architecture.md`.

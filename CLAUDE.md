@@ -2,20 +2,20 @@
 
 Medieval village simulator. A **deterministic agent-based simulation runs in a Go backend**.
 Live state in **Redis**, periodic backup to **Postgres**, graphics later via **SSE → frontend**.
-**No LLM at runtime** (deterministic tick; this is a simulation-design rule, not a statement about dev tooling). LLM is allowed only **author-time** for content generation (`design.md §8`): the sim emits content-gap events, an offline throttled worker generates + schema-validates + appends to content/DB, and the next run reads it deterministically.
+**No LLM at runtime** (deterministic tick; this is a simulation-design rule, not a statement about dev tooling). LLM is allowed only **author-time** for content generation (`docs/core/design.md §8`): the sim emits content-gap events, an offline throttled worker generates + schema-validates + appends to content/DB, and the next run reads it deterministically.
 
-> `docs/PRD.md` and `docs/design.md` are **human-authored input** (Korean). Read them, but the
+> `docs/core/PRD.md` and `docs/core/design.md` are **human-authored input** (Korean). Read them, but the
 > authoritative, agent-facing rules — including the invariants below — live in **this file (English)**.
 
 ## Read before starting
-- `docs/PRD.md` — what we build (requirements; Korean input doc)
-- `docs/design.md` — why (concept model + rationale; Korean input doc). Invariants are mirrored below.
-- `docs/glossary.md` — **single source of vocabulary. Every identifier uses these names.**
-- `docs/architecture.md` — module dependency DAG + leaf-first build order
-- `docs/data-contracts.md` — serialization / Redis / Postgres / event schemas (cross-module)
-- `docs/testing.md` — determinism, golden snapshots, scenario fixtures
-- `docs/templates/SPEC.template.md` — the SPEC format
-- `docs/claude-spec-system.md` — the spec-first / layered-module methodology
+- `docs/core/PRD.md` — what we build (requirements; Korean input doc)
+- `docs/core/design.md` — why (concept model + rationale; Korean input doc). Invariants are mirrored below.
+- `docs/core/glossary.md` — **single source of vocabulary. Every identifier uses these names.**
+- `docs/core/architecture.md` — module dependency DAG + leaf-first build order
+- `docs/core/data-contracts.md` — serialization / Redis / Postgres / event schemas (cross-module)
+- `docs/core/testing.md` — determinism, golden snapshots, scenario fixtures
+- `docs/process/templates/SPEC.template.md` — the SPEC format
+- `docs/process/spec-system.md` — the spec-first / layered-module methodology
 
 ## SPEC-first workflow (essentials)
 1. Never read large files whole. **Intent lives in per-folder `SPEC.md`.**
@@ -23,30 +23,30 @@ Live state in **Redis**, periodic backup to **Postgres**, graphics later via **S
 3. Code conforms to the latest SPEC. On mismatch, **fix the SPEC first**.
 4. Parent SPECs stay abstract; children are **referenced by path** (never copy-pasted).
 5. If a file would exceed **~400 lines, split it** into sub-modules, each with its own SPEC.
-6. Implement **leaf modules first** (the order in `docs/architecture.md`).
+6. Implement **leaf modules first** (the order in `docs/core/architecture.md`).
 7. Standard flow: decompose (architect) → implement leaf (implementer) → verify (reviewer) → `NEEDS_FIX` loop.
 8. The main session sees **only top-level SPECs and summaries.** Detailed work is delegated to subagents.
 
 ## Subsystem plans & the Open-Question gate (the control surface)
-Cross-cutting subsystems (map/nav, climate, lifecycle, economy, …) each get a **Tier-2 plan** at `docs/<subsystem>.md` (template: `docs/map-plan.md`), sitting between `design.md` (concept) and the module `SPEC.md`s (interface). Every plan carries **Decisions locked** + **Open questions** + **Phases**. The gate is **mechanical, not "ask if unsure"**:
+Cross-cutting subsystems (map/nav, climate, lifecycle, economy, …) each get a **Tier-2 plan** at `docs/plans/<subsystem>.md` (template: `docs/plans/map.md`), sitting between `docs/core/design.md` (concept) and the module `SPEC.md`s (interface). Every plan carries **Decisions locked** + **Open questions** + **Phases**. The gate is **mechanical, not "ask if unsure"**:
 1. **Enumerate, don't decide.** spec-architect's *first* deliverable for a subsystem/phase is to **populate that plan's Open questions** — list every mechanism choice (algorithm, update cadence, data/schema shape, granularity) with options + a recommendation — and **return without writing the SPEC**. (Agents reliably *enumerate* decisions; they do not reliably *notice they are unsure* mid-build — so we make enumeration the deliverable.)
 2. **Resolve = human only.** Each Open question is `OPEN` or `RESOLVED: <answer>`. Only the human flips it.
 3. **Hard stop before build.** spec-architect (SPEC) and implementer (code) **MUST refuse** to start a phase while any Open question tagged to it is `OPEN`; they return the OPEN list to the main session instead of guessing. **Inventing a mechanism is a defect, not initiative.**
 4. The main session surfaces OPEN lists to the human (AskUserQuestion) and re-dispatches only once they are RESOLVED.
 
 ## Invariants — "do NOT fix these even if they look like bugs"
-These are intentional. To change one, edit `docs/design.md` first and get human approval.
+These are intentional. To change one, edit `docs/core/design.md` first and get human approval.
 - **D1** — Value is the end; objects are means. Goals are abstract values; an object is a path, not a goal.
 - **D2** — Do not hardcode meta-systems/institutions. Crime, politics, factions, roles emerge from base mechanics.
 - **D3** — Define only atomic actions and methods; plans/trees are assembled by the planner, never hand-drawn.
 - **D4** — Cost and gates are **derived from action Tags**, not bespoke per-action functions.
 - **D5** — Keep "what is wanted" (value/goal) and "how to get it" (planning) in separate modules.
 - **D6** — **Never store reputation as a single value.** Reputation = the distribution of per-observer `ToM[C]`; the mean is derived.
-- **D7** — **No individual skills.** Competence = composition of base attributes via per-action **data formulas** (`design.md §6` expression DSL), recomputed each time — never a stored skill nor a per-action Go function. The stat set is open content (D10); a new stat `kind` is a deliberate schema+engine extension. Base attributes are **mutable** — a stat trains up when actions that *use* it run (general conditioning; which stat an action trains is tag/§6-derived, rate in `balance.yaml`, capped by the stat `range`) and drifts with age (§7). This is **not** a per-activity skill: competence is always composition of the *current* base attributes, so 'expert' roles **emerge** (D2) rather than being skill-tracked.
+- **D7** — **No individual skills.** Competence = composition of base attributes via per-action **data formulas** (`docs/core/design.md §6` expression DSL), recomputed each time — never a stored skill nor a per-action Go function. The stat set is open content (D10); a new stat `kind` is a deliberate schema+engine extension. Base attributes are **mutable** — a stat trains up when actions that *use* it run (general conditioning; which stat an action trains is tag/§6-derived, rate in `balance.yaml`, capped by the stat `range`) and drifts with age (§7). This is **not** a per-activity skill: competence is always composition of the *current* base attributes, so 'expert' roles **emerge** (D2) rather than being skill-tracked.
 - **D8** — Self-perception = `ToM[self]`, calibrated by action (per-stat). Underestimation is self-sealing; do not "correct" it away.
 - **D9** — **No "future need" field on objects.** Provisioning = need-rate × predicted time, forward-simulated by the planner. Objects only carry their satisfaction Effect (supply).
 - **D10** — Stats, actions, and gates are added as **`content/` data + schema**, not code.
-- **D11** — Free 2D coordinates + spatial hash (freedom + locality). The world is not tiled. Grids are **indices, not the world**: agent positions are always continuous `float`; the spatial hash (proximity) and the navigation cost field (`engine/navmap`, pathfinding) are auxiliary indices that *compute over* continuous space. Snapping agents to cells, or driving agent logic by tile iteration, is still forbidden. See `docs/design.md §5` + `docs/map-plan.md`.
+- **D11** — Free 2D coordinates + spatial hash (freedom + locality). The world is not tiled. Grids are **indices, not the world**: agent positions are always continuous `float`; the spatial hash (proximity) and the navigation cost field (`engine/navmap`, pathfinding) are auxiliary indices that *compute over* continuous space. Snapping agents to cells, or driving agent logic by tile iteration, is still forbidden. See `docs/core/design.md §5` + `docs/plans/map.md`.
 - **D12** — Determinism: injected seeded RNG; no map-iteration for logic; fixed agent-ID apply order.
 
 ## Determinism rules (NFR-1; violating these makes regression tests meaningless)
@@ -56,8 +56,8 @@ These are intentional. To change one, edit `docs/design.md` first and get human 
 - Conflicts (same resource grabbed at once) resolve by the relevant stat; ties break by ID.
 
 ## Code rules
-- Language: Go. Every module ships **tests**; where applicable, a **golden snapshot** (`docs/testing.md`).
-- Use the canonical identifiers from `docs/glossary.md` (no naming drift).
+- Language: Go. Every module ships **tests**; where applicable, a **golden snapshot** (`docs/core/testing.md`).
+- Use the canonical identifiers from `docs/core/glossary.md` (no naming drift).
 - Pure simulation lives in `backend/engine/` (no IO); IO/infra in `backend/platform/`.
 - A module's only cross-module contract is its SPEC **Public Interface**. Do not read a sibling's *implementation*.
 

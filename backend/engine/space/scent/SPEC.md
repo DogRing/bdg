@@ -22,8 +22,8 @@ and the O(1) own-cell **`IntensityAt`** probe (the parent's F45 predator-scent w
 intensity exceeds a parent threshold). It does **not** own *when* deposit/spread/commit run (cadence =
 `engine/world`, F33/F41), the decision that consumes a `Reading` (parent consumer), the wind VALUE
 (injected by world from climate, neutral in P1), or any object/entity mutation. No IO, no wall-clock,
-**no RNG** (spread is a fixed-order stencil, D12). Concept: `docs/fauna.md §1.1` + F20–F24/F32–F34/F44/F45,
-`docs/resources.md`/`docs/flora.md`/`docs/materials.md` (emitter sources via `scent:<channel>` tags).
+**no RNG** (spread is a fixed-order stencil, D12). Concept: `docs/plans/fauna.md §1.1` + F20–F24/F32–F34/F44/F45,
+`docs/plans/resources.md`/`docs/plans/flora.md`/`docs/plans/materials.md` (emitter sources via `scent:<channel>` tags).
 
 ## Public Interface
 ```go
@@ -43,7 +43,7 @@ const (
     ChanCarrion                 // carcass/rot scent (scavenger/predator homing → Feed, FC10); tag scent:carrion
     NumChannels  = iota         // count (array width) — now 4
 )
-// FC10 (docs/fauna.md 클러스터 9): ChanCarrion added for the combat/carcass round. Reading (below) gains a
+// FC10 (docs/plans/fauna.md 클러스터 9): ChanCarrion added for the combat/carcass round. Reading (below) gains a
 // Carrion ChannelReading and Sense maps it; the world's tag-driven deposit routes scent:carrion here with
 // ZERO further engine change (that is why classification is tag-driven). Appended AFTER ChanPredator so the
 // existing 3 channels keep their index (no golden churn on food/prey/predator).
@@ -140,7 +140,7 @@ type ChannelReading struct {
   interact only through Deposit/Spread/Commit/Read/IntensityAt. `Reading` is a fresh value the caller keeps freely.
 - `cellSize` fixed at `New` (injected, `cellSize ∝ smell radius`, F32) — never mutated.
 - World-owned (one per run); DERIVED state — rebuilt from emitter positions on resume (like the spatial
-  hash), so NOT separately serialized (`docs/data-contracts.md`; positions are the source of truth).
+  hash), so NOT separately serialized (`docs/core/data-contracts.md`; positions are the source of truth).
 
 ## Invariants
 - **D11 — index, not the world** — auxiliary index over continuous space; `Deposit`/`Read`/`IntensityAt`
@@ -208,7 +208,7 @@ type ChannelReading struct {
 - **Serialization** — derived state (rebuilt from emitter positions on resume), not separately serialized.
 
 ## Open Questions
-> None new. The field is determined by `docs/fauna.md §1.1` + F20–F24/F32–F34/F44/F45, **F21 REVISED to
+> None new. The field is determined by `docs/plans/fauna.md §1.1` + F20–F24/F32–F34/F44/F45, **F21 REVISED to
 > scalar intensity** (human-confirmed 2026-06-27), and the §0/① promotion to `engine/space` + ② `scent:<channel>`
 > emitter tags (shared with `perception.Smell`). The `cellSize`/`Ns`/falloff/wind-weight values are
 > balance/climate data owned elsewhere — Out of Scope, not open choices. No mechanism invented.
@@ -226,6 +226,6 @@ type ChannelReading struct {
 - Double-buffer = F33 next-tick latency made explicit (read never sees a mid-tick partial deposit).
 - `IntensityAt` is the cheapest probe (one cell) so the F45 per-tick wake over EVERY animal stays O(N).
 - Cell key = comparable `struct{cx,cy int}` (spatial parity); iterate via a sorted slice (D12).
-- Reference paths: `docs/fauna.md §1.1` + F20–F24/F32–F34/F44/F45/F21(revised), `backend/engine/fauna/SPEC.md`
-  (consumer), `backend/engine/space/spatial/SPEC.md` (cell-key/determinism patterns), `docs/climate.md §1c`
-  (`Wind` contract), `backend/engine/mind/perception/SPEC.md` (`Smell` coexistence), `docs/glossary.md`.
+- Reference paths: `docs/plans/fauna.md §1.1` + F20–F24/F32–F34/F44/F45/F21(revised), `backend/engine/fauna/SPEC.md`
+  (consumer), `backend/engine/space/spatial/SPEC.md` (cell-key/determinism patterns), `docs/plans/climate.md §1c`
+  (`Wind` contract), `backend/engine/mind/perception/SPEC.md` (`Smell` coexistence), `docs/core/glossary.md`.

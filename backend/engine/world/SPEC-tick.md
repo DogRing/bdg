@@ -42,7 +42,7 @@ Phase 2 — PLAN (parallel-safe, read-only):
     The design below is the intended future agent-side planner-LOD; it is **not wired today**. The
     execute-only (no-replan) fast path does not exist, so every agent runs the FULL plan every tick
     regardless of `cfg.PlanInterval`. The `PlanInterval` config is reserved for this future work
-    (the analogous cadence LOD already ships for fauna — see `docs/fauna.md` F45 DORMANT/ACTIVE +
+    (the analogous cadence LOD already ships for fauna — see `docs/plans/fauna.md` F45 DORMANT/ACTIVE +
     `engine/fauna/cheap.go`). ⚠ **Determinism note for the future implementer:** a real no-replan
     path that skips the planner's RNG draws would DIVERGE the RNG stream from the full-plan path —
     "same fork regardless of slicing" only holds while both paths run full deliberation, so

@@ -60,7 +60,7 @@ type Effect map[core.Dimension]float64
 // Mirrors a content/actions.yaml entry after platform/config has validated it against
 // content/schema/actions.schema.json. All fields are read-only after Load.
 type ActionDef struct {
-    ID       ActionID    // canonical identifier (docs/glossary.md)
+    ID       ActionID    // canonical identifier (docs/core/glossary.md)
     Tags     []core.Tag  // drives gate visibility (engine/mind/gates) + planner cost (D4). NEVER a
                          // per-action gate list or cost number — both are tag-derived elsewhere.
                          // A NON-recipe action's tool need is a `tool:<family>` tag here (Mine); a
@@ -278,7 +278,7 @@ func (reg *Registry) Tags() []core.Tag
 ## Open Questions
 
 > Materials Cm1–Cm7 + Xm1–Xm6 are all `RESOLVED` and the recipe model is FINAL/LOCKED
-> (`docs/materials.md §0/§1`); this SPEC writes from them and re-decides nothing. No remaining OPEN for
+> (`docs/plans/materials.md §0/§1`); this SPEC writes from them and re-decides nothing. No remaining OPEN for
 > P_m3. (`Hunt`'s prey target note is retained below; it is a recorded fact, not an open decision.)
 
 - **`Hunt`'s "animal" target** (unchanged, recorded): prey is an `objects.yaml` object_kind today, so

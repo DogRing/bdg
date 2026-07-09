@@ -1,6 +1,6 @@
 # content/climate.yaml — climate DATA: dynamic-terrain transitions + climate tuning (CA1-3)
 #
-# The single owner of climate DATA (docs/climate.md RESOLVED #4 + §1c CA1-3). Two blocks:
+# The single owner of climate DATA (docs/plans/climate.md RESOLVED #4 + §1c CA1-3). Two blocks:
 #   transitions — the from-type × condition-§6 → to-type dynamic-terrain rules (D4/D10), compiled into
 #                 engine/env/climate.Rules. ORDER is significant: for a given `from`, the FIRST rule
 #                 whose `when` §6 boolean is true wins (deterministic, D12). An EMPTY array = climate-off

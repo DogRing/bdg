@@ -1,7 +1,7 @@
 # AGENTS.md — Codex working guide for `bdg`
 
 > Codex reads this before any task. It is the durable rule set; per-task detail lives in
-> `docs/codex-prompts.md`. Review standards: `docs/code_review.md`. (Claude Code uses `CLAUDE.md`;
+> `docs/archive/codex-prompts.md`. Review standards: `docs/process/code-review.md`. (Claude Code uses `CLAUDE.md`;
 > this file mirrors its rules for Codex — both point at the SAME authoritative docs below.)
 
 ## What this project is
@@ -19,8 +19,8 @@ by a §6 expression DSL — behavior is authored as data, not hardcoded in Go.
    decls). Guessing an upstream signature is the #1 integration bug.
 3. On a code↔SPEC mismatch, **fix the SPEC first**, then the code.
 4. If a file would exceed ~400 lines, split it into sub-files.
-5. Read, in this order, before editing: this file → `docs/architecture.md` (module DAG + leaf-first
-   build order + import sets) → `docs/glossary.md` (every identifier uses these names) → the target
+5. Read, in this order, before editing: this file → `docs/core/architecture.md` (module DAG + leaf-first
+   build order + import sets) → `docs/core/glossary.md` (every identifier uses these names) → the target
    `SPEC.md` → the Public Interface of each dependency SPEC.
 
 ## Build, test & verify (always — this is how you confirm your work)
@@ -55,14 +55,14 @@ to make it pass** (fix the code, or fix the SPEC then the code).
 - **Forbidden-import guard = parse imports, not text.** When a test asserts "no forbidden import", parse
   the file's imports with `go/parser` and check the import paths — do NOT substring-scan raw source
   (comments mention package names and would false-positive). See `engine/env/climate` for the pattern.
-- Other invariants (D1–D9) are in `docs/design.md` / `CLAUDE.md`; the ones above are the ones you will
+- Other invariants (D1–D9) are in `docs/core/design.md` / `CLAUDE.md`; the ones above are the ones you will
   break by accident. Do not "fix" an intentional invariant that looks like a bug.
 
 ## The Open-Question gate (STOP, do not invent)
 Each `SPEC.md` has an **Open Questions** section. If a question **tagged to the phase you are building
 is `OPEN`**, you **STOP and report the OPEN list** — you do **not** pick an option and you do **not**
 invent a mechanism. *Inventing a mechanism is a defect, not initiative.* The activation-phase decisions
-are already **accepted** in `docs/activation-gate.md` (treat those as resolved); if you hit a *different*
+are already **accepted** in `docs/plans/activation-gate.md` (treat those as resolved); if you hit a *different*
 open question, surface it instead of guessing.
 
 ## Current state (do NOT rebuild these)
@@ -74,16 +74,16 @@ open question, surface it instead of guessing.
 - ⚠️ A temporary **frontend mock** lives in `engine/world/tick.go` ("MOCK ENV FOR FRONTEND TESTING",
   hardcoded `deer_1`/`wolf_1`) + `events.go` `TypeWorldFrame` + some `frontend/src` files. Leave it
   until the WI-P4 phase, which replaces it with the real `WorldFrame`.
-- Remaining work = phases 3–9 in `docs/codex-prompts.md`.
+- Remaining work = phases 3–9 in `docs/archive/codex-prompts.md`.
 
 ## Authoritative docs (read the relevant ones per task)
-- `docs/architecture.md` — module DAG, leaf-first build order, import sets.
-- `docs/glossary.md` — canonical identifier names.
+- `docs/core/architecture.md` — module DAG, leaf-first build order, import sets.
+- `docs/core/glossary.md` — canonical identifier names.
 - The target module's `SPEC.md` (+ its sub-SPECs, e.g. `engine/world/SPEC-world-env.md`).
-- `docs/activation-gate.md` — the accepted activation decisions (G1–G17).
-- `docs/codex-prompts.md` — the per-phase implement + review prompts (start here for a task).
-- `docs/code_review.md` — the review checklist (for review tasks).
-- `HANDOFF.md` — the general handoff brief (read order, integration pitfalls).
+- `docs/plans/activation-gate.md` — the accepted activation decisions (G1–G17).
+- `docs/archive/codex-prompts.md` — the per-phase implement + review prompts (start here for a task).
+- `docs/process/code-review.md` — the review checklist (for review tasks).
+- `docs/archive/HANDOFF.md` — the general handoff brief (ARCHIVED) (read order, integration pitfalls).
 
 ## Reporting — end EVERY task with the block below (this rule is auto-applied; the human never repeats it)
 This file is read before every task, so you MUST finish each task by emitting the matching block
@@ -123,7 +123,7 @@ VERIFY:
   - go build ./...              : PASS | FAIL
   - go test ./<pkg>/ -count=2   : PASS | FAIL (<N> tests)
   - go vet / gofmt -l           : CLEAN | <issues>
-CHECKS (per docs/code_review.md): interface:? determinism:? AC:? integration:? gate:? build:?   (each PASS|FAIL)
+CHECKS (per docs/process/code-review.md): interface:? determinism:? AC:? integration:? gate:? build:?   (each PASS|FAIL)
 INTEGRATION_CONTRACT: <consumer SPECs checked + do signatures match?> | n/a
 FINDINGS:            (list only if NEEDS_FIX; else "none")
   - <file:line> — <violated SPEC clause / AC / invariant> — <minimal fix>

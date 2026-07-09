@@ -1,8 +1,8 @@
 # SPEC — `engine/env/exposure`
 
-> Status: `READY` (SH1 — Q-W1..Q-W7 + SH1 SPEC-design RESOLVED in `docs/shelter.md`; shadow ε formula pinned below)
+> Status: `READY` (SH1 — Q-W1..Q-W7 + SH1 SPEC-design RESOLVED in `docs/plans/shelter.md`; shadow ε formula pinned below)
 > Leaf level: `L1`  ·  Owner agent: `<filled by implementer>`
-> Scope = **SH1** (`docs/shelter.md`): exposure field + local-wind attenuation.
+> Scope = **SH1** (`docs/plans/shelter.md`): exposure field + local-wind attenuation.
 
 ## Purpose
 
@@ -20,7 +20,7 @@ cells are passed in by `engine/world` from content tags and portal/interior stat
 not import `navmap`, `climate`, `scent`, `fauna`, or `world`; world adapts those modules into this
 pure leaf.
 
-Concept authority: `docs/shelter.md`. Q-W1..Q-W7 are RESOLVED there.
+Concept authority: `docs/plans/shelter.md`. Q-W1..Q-W7 are RESOLVED there.
 
 ## Public Interface
 
@@ -42,7 +42,7 @@ type Wind struct {
 }
 
 // Sector is the quantized wind direction. SH1 uses 6 sectors to match the flat-top hex neighbor
-// fan and cache one epsilon field per sector (docs/shelter.md Q-W4).
+// fan and cache one epsilon field per sector (docs/plans/shelter.md Q-W4).
 type Sector uint8
 
 const NumSectors = 6
@@ -234,5 +234,5 @@ independent of which blocker is processed first (multiplicative ⇒ order-free, 
 
 ## Open Questions
 
-None for SH1. `docs/shelter.md` resolves Q-W1..Q-W7. Balance coefficients are data tuning, not
+None for SH1. `docs/plans/shelter.md` resolves Q-W1..Q-W7. Balance coefficients are data tuning, not
 mechanism questions.

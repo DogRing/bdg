@@ -79,7 +79,7 @@ actions:
     duration: 1                        # per-step base; arrival-based completion (see MoveTo)
     interruptible: true
 
-  # ── Fauna behaviour (engine/fauna; docs/fauna.md F26/F28/F43) ─────────────────
+  # ── Fauna behaviour (engine/fauna; docs/plans/fauna.md F26/F28/F43) ─────────────────
   # SHARED atomic actions the reduced-reactive ANIMAL controller scores by §6 utility — NOT the GOAP
   # planner (F1/F26: horizon-1 max over per-(species×action) utility, no behaviour tree, D3). They live
   # in the SHARED registry (D3 single action vocabulary), so adding them is a deliberate IDs()/Producers

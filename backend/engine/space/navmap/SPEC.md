@@ -12,7 +12,7 @@ transitions** from `world`. It is an **index, not the world** (D11): agent posit
 `float`; this module only quantizes *cost*, exactly as `spatial` quantizes *proximity* — the hex is an
 index-cell shape, NOT a tiling of the world. **navmap is the single hex-convention authority**
 (orientation, neighbor set/order, pixel↔hex mapping, `CellSize`↔hex-size, D12 sort); `pathfind` and the
-frontend CONSUME it (`Neighbors`/`CellCenter` + the wire), never re-derive it (`docs/hex-grid.md`).
+frontend CONSUME it (`Neighbors`/`CellCenter` + the wire), never re-derive it (`docs/plans/hex-grid.md`).
 
 ## Public Interface
 ```go
@@ -82,7 +82,7 @@ func (m *NavMap) CellCenter(c Cell) core.Vec2
 
 // InBounds reports whether cell c's centre falls within the configured world bounds
 // ([MinX,MaxX)×[MinY,MaxY)). Pure read; used by callers that walk the hex graph outside navmap
-// (e.g. the world→exposure Topology adapter, docs/shelter.md SH1). Index read, no agent snap (D11).
+// (e.g. the world→exposure Topology adapter, docs/plans/shelter.md SH1). Index read, no agent snap (D11).
 func (m *NavMap) InBounds(c Cell) bool
 
 // MinCostFactor returns a guaranteed lower bound on a cell's effective cost per unit geometric length
@@ -132,7 +132,7 @@ func (m *NavMap) StampFootprint(cells []Cell, passable bool) // building place/r
 // live in engine/env/climate; navmap is a passive writer here. Passing an unknown
 // TerrainID panics (the content terrain catalog is load-time validated against the
 // climate transition table so an unknown id is a configuration bug — D10,
-// docs/architecture.md §7).
+// docs/core/architecture.md §7).
 func (m *NavMap) SetTerrain(cells []Cell, t TerrainID)
 
 // ── Snapshot (frozen read for the plan phase + serialization) ─────────────────────
@@ -155,7 +155,7 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
 ## Owned Data
 - **Terrain base-cost layer** — seeded once from `terrainAt` + `types` at `New`, then **mutated only
   by `SetTerrain`** (apply phase, world-owned). It is no longer immutable after `New`: climate
-  transitions rewrite per-cell `TerrainID` (RESOLVED #7, `docs/climate.md` §1). The base layout from
+  transitions rewrite per-cell `TerrainID` (RESOLVED #7, `docs/plans/climate.md` §1). The base layout from
   `New` is the baseline; `TerrainOverrides()` exposes the sparse delta away from it.
 - **Footprint layer** — building-blocked cells + door portals; mutated only by `StampFootprint`.
   Independent of the terrain layer (a footprint-blocked cell stays impassable across a `SetTerrain`).
@@ -172,7 +172,7 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
   world tiling.
 - **D12** — No `map` iteration drives results: `Decay`, `ActiveWear`, `TerrainOverrides`, and any
   cell enumeration iterate a **canonical sorted** order — **R-major then Q** (the hex replacement for
-  the old "Y-major then X", `docs/hex-grid.md` Q6). `SetTerrain` applies its cell slice in the
+  the old "Y-major then X", `docs/plans/hex-grid.md` Q6). `SetTerrain` applies its cell slice in the
   world-supplied sorted order; float/last-write order is fixed.
 - `StepCost` is symmetric only up to terrain; it returns `+Inf` (not an error) for impassable so
   `pathfind` prunes uniformly.
@@ -209,33 +209,33 @@ type TerrainCell struct{ Cell Cell; Terrain TerrainID }
 ## Out of Scope
 - Path search itself → `engine/space/pathfind`.
 - *When* to deposit/decay, *who* traverses, and *which cells transition + at what cadence* →
-  `engine/world` tick (`docs/map-plan.md §world`); the transition *decision* (climate state → cell
+  `engine/world` tick (`docs/plans/map.md §world`); the transition *decision* (climate state → cell
   list) → `engine/env/climate` (`backend/engine/env/climate/SPEC.md`). navmap only executes the write.
 - Climate state (Moisture/Temperature), the rain model, and the from-type×condition→to-type
-  transition table → `engine/env/climate` + `content/climate.yaml` (`docs/climate.md`).
+  transition table → `engine/env/climate` + `content/climate.yaml` (`docs/plans/climate.md`).
 - Terrain **layout** generation and the terrain type **catalog** parsing → `platform/config` + `content/terrain.yaml` (this module receives `terrainAt`/`types` already built).
-- Serialization wire format → `platform/persist` + `docs/data-contracts.md §6` (this module exposes `ActiveWear()` + `TerrainOverrides()` as the sparse sources).
+- Serialization wire format → `platform/persist` + `docs/core/data-contracts.md §6` (this module exposes `ActiveWear()` + `TerrainOverrides()` as the sparse sources).
 
 ## Open Questions
 - **Cell size** — `CellSize` is the hex **circumradius**, = the old value for now, **tuned later** once
-  cells are visible (`docs/hex-grid.md` Q3); note a hex at circumradius `R` covers ~2.6× a square cell of
+  cells are visible (`docs/plans/hex-grid.md` Q3); note a hex at circumradius `R` covers ~2.6× a square cell of
   edge `R`, so the grid is coarser until retuned.
 - **Connectivity** — RESOLVED: **6-neighbor** flat-top hex (`Neighbors`); `StepCost` geometric length is
   the uniform centre-to-centre distance (the old square √2-diagonal case is gone).
 - **Climate grid ↔ navmap cell mapping** (non-blocking): climate stays a *coarse SQUARE* grid; the
   square-climate-cell → hex-navmap-cells enumeration for the `SetTerrain` slice is owned by
-  `world`/`climate` (`docs/hex-grid.md` §H6), not this module. navmap stays hex-cell-granular.
+  `world`/`climate` (`docs/plans/hex-grid.md` §H6), not this module. navmap stays hex-cell-granular.
 
 ## Notes
 - The wear model is the ant-trail / desire-path mechanic: `Deposit` on traversal, `Decay` each tick,
   `cost = base × f(wear)`. The "road = TTL object" intuition is realized as this decaying sparse field
-  (`docs/design.md §5`), **not** a separate object system — pathfinding reads it inline.
+  (`docs/core/design.md §5`), **not** a separate object system — pathfinding reads it inline.
 - Keep `wear` sparse so persist/stream cost scales with *active trail length*, not world area.
 - `SetTerrain` mirrors `StampFootprint` deliberately: both are world-owned, serial, sorted-cell
   apply-phase writers over a cell slice. Terrain is now *dynamic* (carries climate-driven transitions,
-  `docs/design.md §5`); `TerrainOverrides()` makes it stream as a sparse delta like `wear`, not as a
-  one-time static layout (`docs/data-contracts.md §6`, RESOLVED #11).
-- **Hex migration** (`docs/hex-grid.md`): cells are flat-top axial `(q,r)`; navmap is the hex-convention
+  `docs/core/design.md §5`); `TerrainOverrides()` makes it stream as a sparse delta like `wear`, not as a
+  one-time static layout (`docs/core/data-contracts.md §6`, RESOLVED #11).
+- **Hex migration** (`docs/plans/hex-grid.md`): cells are flat-top axial `(q,r)`; navmap is the hex-convention
   authority. Engine/pathfind logic speaks **axial only** (`Cell{Q,R}`, `Neighbors`, `CellCenter`); the
   offset(col,row) rectangular layout is the render/wire projection, and its offset↔axial conversion is
   owned HERE too (`Orientation`/`OffsetDims`/`OffsetToCell`/`CellToOffset` + the pure `OffsetDimsOf`/

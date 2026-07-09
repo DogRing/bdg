@@ -10,4 +10,4 @@
 | `expr` | 공유 **§6 `Formula` 평가기** — 산술/비교/논리 + 술어, 컴파일된 불변 `Program`을 추상 `Context`에 평가. `gates`/`climate`/`flora`/`decay`/`actions`/`economy`가 공유(glossary "one shared evaluator"). `core`만 의존(→ L1 leaf가 DAG 깨짐 없이 재사용) | core | L0 |
 | `worldtime` | tick ↔ game-minute 변환(12× 스케일) | core | L1 |
 
-규칙: 여기 모듈은 IO·wall-clock·전역 상태 없음. 상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/architecture.md`.
+규칙: 여기 모듈은 IO·wall-clock·전역 상태 없음. 상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/core/architecture.md`.

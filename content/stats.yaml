@@ -5,13 +5,13 @@
 # this file against content/schema/stats.schema.json and cross-checks every
 # StatID referenced by actions.yaml / gates.yaml against the ids defined here.
 #
-# Canonical StatIDs and their meaning: docs/glossary.md (single source of vocabulary).
+# Canonical StatIDs and their meaning: docs/core/glossary.md (single source of vocabulary).
 # Global tuning constants (beta, alpha, lambda, ...) live in content/balance.yaml.
 
 schema_version: 1
 
 # Per-entry fields:
-#   id      — canonical StatID (docs/glossary.md). The identifier pattern is the only
+#   id      — canonical StatID (docs/core/glossary.md). The identifier pattern is the only
 #             structural check; referential integrity is the loader's job (D10).
 #   label   — human-readable display name for UI / why-trace ONLY (optional; defaults to id).
 #             NOT read by engine/platform logic today — cosmetic, non-load-bearing metadata.

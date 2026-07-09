@@ -97,7 +97,7 @@ export interface ClimateState {
 }
 
 // One terrain render delta (climate transition / emergent trail wear). cell = the
-// flat-top hex OFFSET index i = row·cols + col (data-contracts §4/§6, docs/hex-grid.md).
+// flat-top hex OFFSET index i = row·cols + col (data-contracts §4/§6, docs/plans/hex-grid.md).
 export interface TerrainDelta {
   cell: number                  // offset index i=row·cols+col into the grid
   terrain?: string              // new terrain type id (on a climate transition)

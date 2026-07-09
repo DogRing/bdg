@@ -14,7 +14,7 @@
 
 schema_version: 1
 seed: 20260707
-cell_size: 5.0   # finer terrain/path/render hexes (docs/shelter.md Q-M1); 500/5 ⇒ 68×59 hexes. Perception (spatial_hash_cell=12) unchanged.
+cell_size: 5.0   # finer terrain/path/render hexes (docs/plans/shelter.md Q-M1); 500/5 ⇒ 68×59 hexes. Perception (spatial_hash_cell=12) unchanged.
 
 bounds:
   min: [0.0, 0.0]

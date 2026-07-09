@@ -36,7 +36,7 @@ function mulberry32(seed) {
 let seed = SEED // re-rolled by POST /api/regen (parity with the backend's new-seed rebuild)
 let rng = mulberry32(seed)
 
-// ── world (FLAT-TOP HEX offset grid, mirrors backend navmap; docs/hex-grid.md) ──
+// ── world (FLAT-TOP HEX offset grid, mirrors backend navmap; docs/plans/hex-grid.md) ──
 const CELL = 8, WORLD = 512 // 512² world; CELL = hex circumradius
 const SQRT3 = Math.sqrt(3)
 // navmap-mirroring hex helpers (engine hex.go) so the mock's grid == what the frontend expects.

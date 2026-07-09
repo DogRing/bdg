@@ -13,7 +13,7 @@ consumes `engine/space/spatial` for proximity (D11: the spatial hash is the *onl
 data) and a passed-in `WorldSnapshot` for per-entity tags/opacity (architecture §4: perception
 "operates on a passed-in world view"; it never imports `engine/world`). It computes sense
 **modeling** only — falloff math, **binary opaque occlusion, and continuous flora-shade attenuation
-of line-of-sight** (the "dark forest" emergent effect, `docs/flora.md` 1d / `docs/design.md §5`) —
+of line-of-sight** (the "dark forest" emergent effect, `docs/plans/flora.md` 1d / `docs/core/design.md §5`) —
 and does **not** decide what the observer does with a percept (that is `engine/agent`).
 
 ## Public Interface
@@ -286,7 +286,7 @@ hear(e) = observer.Distance(e.Pos) ≤ HearingRadius   -- no LoS, no shade; soun
 - [ ] **No persistent state:** calling `Hearing` with a non-empty slice then with an empty slice
   returns empty (no events remembered); two `Sensor` instances built from identical inputs produce
   identical results for the same query (stateless determinism).
-- [ ] **Golden snapshot (docs/testing.md):** a fixed scenario exercising all modalities (one
+- [ ] **Golden snapshot (docs/core/testing.md):** a fixed scenario exercising all modalities (one
   opaque-occluded sight target, one shade-occluded sight target, two scent sources at different
   distances, two sound events one in/one out of range) produces a stable, sorted golden snapshot
   across runs/processes. First established **shade-off** (neutral), then re-baselined on activation.
@@ -318,7 +318,7 @@ hear(e) = observer.Distance(e.Pos) ≤ HearingRadius   -- no LoS, no shade; soun
 
 - **Naming drift (resolved here, flag if it recurs):** the architect brief named the index type
   `spatial.Index` and the candidate query `EntitiesInRadius`. The frozen `engine/space/spatial/SPEC.md`
-  and `docs/glossary.md §World & time` canonicalize the type as **`SpatialHash`** (constructed via
+  and `docs/core/glossary.md §World & time` canonicalize the type as **`SpatialHash`** (constructed via
   `spatial.New`) with `NearbyEntities`. This SPEC uses the **glossary/sibling-contract** names —
   `*spatial.SpatialHash` for `NewSensor`, and `WorldSnapshot.EntitiesInRadius`/`ShadeOccluders` as
   the *world's* read-only adapters (which internally call `NearbyEntities`). No glossary identifier

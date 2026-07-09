@@ -12,7 +12,7 @@ import (
 
 // ── fixtures ──────────────────────────────────────────────────────────────────
 //
-// Hex (docs/hex-grid.md): cells are flat-top axial. Walls are built by WORLD REGION (stamp every cell
+// Hex (docs/plans/hex-grid.md): cells are flat-top axial. Walls are built by WORLD REGION (stamp every cell
 // whose centre falls in a rectangle) instead of square "columns" — geometry-robust. A single hex column
 // (e.g. x≈60 ⇒ axial q=4) fully separates left (q≤3) from right (q≥5): to cross q=3→q=5 you must enter
 // q=4 (no direct neighbour). Adjacent-cell step cost is √3·CellSize, so hex path cost carries a modest

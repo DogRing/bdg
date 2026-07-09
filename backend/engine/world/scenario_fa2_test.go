@@ -12,7 +12,7 @@ import (
 
 // ── FA2 — predator hunt via scent + FOV; the chase reads as drama, not a stalemate ──
 //
-// docs/scenarios-world.md FA2 + docs/fauna.md 클러스터10 (M1/M2/M6). Regression coverage for the
+// docs/plans/scenarios-world.md FA2 + docs/plans/fauna.md 클러스터10 (M1/M2/M6). Regression coverage for the
 // Phase 10 fix: the wolf `Attack` §6 utility now carries an `is_current` stickiness term (F30/R5)
 // so that once a predator wins the Attack/Hunt tie at melee range it does not flicker back to Hunt
 // every other tick (which starved damage exchanges and produced the reported "perpetual parallel
@@ -104,7 +104,7 @@ func fa2Rules(t *testing.T) *fauna.Rules {
 			Drives: []fauna.DriveRule{{ID: "hunger", Rate: 0.00001}, {ID: "fatigue", Rate: 0.00001}},
 			// M1/M2: the wolf out-sprints a fleeing deer (0.9) only in a fresh burst; fatigue (accrued
 			// while Hunt is effort:high) drags it back to parity within ~40 ticks — "predator tires
-			// first" (docs/fauna.md 클러스터10), not a raw-speed advantage.
+			// first" (docs/plans/fauna.md 클러스터10), not a raw-speed advantage.
 			Speed:       testNumProgram(t, "1.3 - fatigue * 1.0"),
 			AttackPower: testNumProgram(t, "0.35"),
 			Hit:         testNumProgram(t, "1"),

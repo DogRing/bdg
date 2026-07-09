@@ -1,5 +1,5 @@
 // Package navmap_test — AC4 (decay golden), AC8–AC11, and resolved accessor tests.
-// Shares fixtures from navmap_test.go (same package). Hex (docs/hex-grid.md): cells are flat-top
+// Shares fixtures from navmap_test.go (same package). Hex (docs/plans/hex-grid.md): cells are flat-top
 // axial (q,r); cells are chosen in-bounds (centre within bounds) and, where terrain matters, by the
 // column x-band. adjLen (√3·CellSize) is the adjacent-hex geometric length.
 package navmap_test

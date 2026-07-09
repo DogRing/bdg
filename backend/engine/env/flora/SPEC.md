@@ -12,8 +12,8 @@ perception consumes. It owns *how plants grow, spread, and die* — it does **no
 (cadence), the navmap/climate state it reads (those are values `world` injects), the line-of-sight
 math the shade feeds (that is `engine/mind/perception`), or the object mutation itself (that is
 `engine/world`, the sole object mutator). No IO, no wall-clock, no global rand: every output is a
-function of `(state, inputs, Rules, rng)` (D12). Concept & rationale: `docs/design.md §5` (초목 =
-flora object, not terrain) + `§7` (object-mortality) + `docs/flora.md` (all §1 resolutions are
+function of `(state, inputs, Rules, rng)` (D12). Concept & rationale: `docs/core/design.md §5` (초목 =
+flora object, not terrain) + `§7` (object-mortality) + `docs/plans/flora.md` (all §1 resolutions are
 binding — adopted-as-`rec`; do NOT re-decide).
 
 ## Public Interface
@@ -320,7 +320,7 @@ type YieldItem struct {
 - **Outcome-neutral until activated** — the introduction phases ship with empty `Rules` / flora-off
   so `Step` emits **no** spawns/deaths and neither `Length` nor `Width` changes, and `ShadeOf`
   returns zero-radius shade so perception LoS is unaffected; existing world/perception goldens hold.
-  Activation is a deliberate later phase with its own re-baseline (RESOLVED 1g staging; `docs/flora.md`
+  Activation is a deliberate later phase with its own re-baseline (RESOLVED 1g staging; `docs/plans/flora.md`
   §2, mirroring climate M-staging).
 - **Read-only inputs** — `Step` never mutates `prev`, `inputs`, `Rules`, or `idAlloc`'s state beyond
   calling it; `ShadeOf`/`Suitability`/`LengthRate`/`WidthRate`/`Stage`/`Yield` never mutate
@@ -392,7 +392,7 @@ type YieldItem struct {
   ObjectID minting, sampling `navmap.TerrainAt` / terrain attrs / climate `Moisture`/`Temperature`
   at each plant `Pos` to build `SiteInput`, the spatial query that fills `NeighborCount`, and
   APPLYING `StepDeltas` (adding `Spawned`/removing `Died`/updating `Grown` Length+Width in
-  `objects[]` + spatial) → `engine/world` (`docs/flora.md` §0/§1,
+  `objects[]` + spatial) → `engine/world` (`docs/plans/flora.md` §0/§1,
   `backend/engine/world/SPEC-tick.md`). Flora is a pure transform; world owns cadence + the
   navmap/climate sampling + the object mutation.
 - The **LoS occlusion math** that consumes `Shade` (per-segment multiplicative attenuation, the
@@ -409,10 +409,10 @@ type YieldItem struct {
   formulas (suitability, length-rate, width-rate, shade(width), yield) into `Rules`, and
   cross-checking species/item ids → `platform/config` (`content/schema/objects.schema.json`).
 - Serialization wire format / Redis / SSE streaming of the flora field → `platform/persist` +
-  `docs/data-contracts.md §6` (this module exposes `Plants()` as the periodic-full source +
+  `docs/core/data-contracts.md §6` (this module exposes `Plants()` as the periodic-full source +
   `StepDeltas` as the spawn/grow/die delta source).
 - Initial flora **placement** (live procedural + scenario fixtures) → `engine/world` world-gen /
-  `docs/testing.md` fixtures (RESOLVED 1j: placement = world-gen, not content).
+  `docs/core/testing.md` fixtures (RESOLVED 1j: placement = world-gen, not content).
 - Density competition (RESOLVED 1c — parked, frontier seam: shade→neighbor-suitability feedback),
   explicit succession (RESOLVED 1c — emergent only), day/night shade coupling (RESOLVED 1d — parked),
   owner-gated flora behavior (RESOLVED 1f — economy phase).
@@ -420,7 +420,7 @@ type YieldItem struct {
   *uses* it (via compiled `Rules`).
 
 ## Open Questions
-> §1 of `docs/flora.md` is ALL RESOLVED — these are NEW cross-subsystem decision points surfaced
+> §1 of `docs/plans/flora.md` is ALL RESOLVED — these are NEW cross-subsystem decision points surfaced
 > while writing the SPEC (per the human's request). Each needs a human decision BEFORE implementation
 > of the dependent phase; none re-opens a resolved §1 item.
 
@@ -503,7 +503,7 @@ type YieldItem struct {
 - The `Dexterity` read in `Yield` is the one capability-stat coupling; world passes the actor's stat
   value in. flora is otherwise stat-agnostic (it does not hold `Stats`). Stat *training* belongs to
   the stats/lifecycle owner — see Out of Scope + Open Questions.
-- Reference paths: `docs/flora.md` (binding resolutions + §1 two-axis refinement),
-  `docs/design.md §5/§6/§7`, `docs/data-contracts.md §6` (periodic full + sparse deltas),
-  `docs/glossary.md` (the coined `suitability`/`Length`/`Width`/`shade`/`Fell`/`Plant`/`Dexterity`
+- Reference paths: `docs/plans/flora.md` (binding resolutions + §1 two-axis refinement),
+  `docs/core/design.md §5/§6/§7`, `docs/core/data-contracts.md §6` (periodic full + sparse deltas),
+  `docs/core/glossary.md` (the coined `suitability`/`Length`/`Width`/`shade`/`Fell`/`Plant`/`Dexterity`
   are registered there; `Length`/`Width` replace the old single `Growth` axis this refinement).

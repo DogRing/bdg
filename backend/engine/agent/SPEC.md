@@ -752,7 +752,7 @@ func (a *Agent) ApplyOutcome(outcome ActionOutcome, rng *rng.RNG, cfg Config, re
 ```
 
 > `tom.*`, `planner.*`, `perception.*`, `gates.*` types are the contracts those SPECs expose. This
-> module composes them; it adds **no** vocabulary outside `docs/glossary.md` (Resentment, FailStreak,
+> module composes them; it adds **no** vocabulary outside `docs/core/glossary.md` (Resentment, FailStreak,
 > Stamina, Adrenaline, Mood, Urgency, Vindictiveness, Referent, Safety, Function, Reliance,
 > Influence are all glossary terms).
 

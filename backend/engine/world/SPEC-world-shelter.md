@@ -1,8 +1,8 @@
 # SPEC — `engine/world` · Shelter & Cave Orchestration
 
-> Status: `SH1 SHIPPED` · `SH3 SHIPPED` · `SH2 DESIGN-AHEAD` (SPEC-design RESOLVED in `docs/shelter.md`)
+> Status: `SH1 SHIPPED` · `SH3 SHIPPED` · `SH2 DESIGN-AHEAD` (SPEC-design RESOLVED in `docs/plans/shelter.md`)
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
-> Scope = **SH1–SH2** (`docs/shelter.md`): exposure local-wind injection (SH1, build now); cave
+> Scope = **SH1–SH2** (`docs/plans/shelter.md`): exposure local-wind injection (SH1, build now); cave
 > portals + interior active-space state (SH2, design-ahead — see the marked section).
 
 ## Scope
@@ -88,7 +88,7 @@ field  := exposureCache.Field(sector, blockers, interiorExposureCells())
 local  := field.LocalWind(exposureCellAt(pos), exposure.Wind{Dir: global.Dir, Mag: global.Mag})
 ```
 
-Consumers — **SH1 = per-position attenuation only** (`docs/shelter.md` SH1 SPEC-design (i); RESOLVED):
+Consumers — **SH1 = per-position attenuation only** (`docs/plans/shelter.md` SH1 SPEC-design (i); RESOLVED):
 
 - `fauna.EnvSample.Wind = localWindAt(animal.Pos)` instead of raw climate wind — **the single SH1
   behavioural change**. `localWindAt(p)` = `field.LocalWind(exposureCellAt(p), globalWind)`.
@@ -103,7 +103,7 @@ Consumers — **SH1 = per-position attenuation only** (`docs/shelter.md` SH1 SPE
 
 A SEPARATE, direction-independent `exposure.CoverField` (built once at `InstallShelter` from the
 `covers` coverers; `nil` ⇒ SH3 OFF) attenuates the climate values an animal SENSES — read-time only,
-climate state untouched (`docs/shelter.md` Q-S2). Per animal, alongside `EnvSample.Wind`:
+climate state untouched (`docs/plans/shelter.md` Q-S2). Per animal, alongside `EnvSample.Wind`:
 
 ```
 dailyMean := climateState.DailyMeanTemperature()   // the diurnal midline (rain excluded)
@@ -235,7 +235,7 @@ kind names.
   golden is deferred until blockers become dynamic.
 - [x] **No hardcoded kind names** — no `if kind == "wall"` / `"house"` logic; blockers come from the
   `blocks_wind` tag (`config.buildWindBlockerKinds` → `worldgen.buildWindBlockers`). *(SH1 uses a uniform
-  per-blocker height/opacity; per-kind strength from tag data is a documented follow-up — `docs/shelter.md` (iv).)*
+  per-blocker height/opacity; per-kind strength from tag data is a documented follow-up — `docs/plans/shelter.md` (iv).)*
 
 ### SH3 (rain + temperature — SHIPPED 2026-07-09)
 - [x] **Shelter-OFF / uncovered neutrality** — no `covers` coverers (or an uncovered cell) ⇒
@@ -249,7 +249,7 @@ kind names.
 - [x] **Overhead geometry** — cover is footprint-local & isotropic (a separate `CoverField`, no wind
   sector / leeward spread), distinct from the SH1 directional shadow. *(`exposure.TestBuildCoverFootprintLocal`.)*
 - [x] **No hardcoded kind names** — coverers come from the `covers` tag (`config.buildCovererKinds` →
-  `worldgen.buildCoverers`). *(Uniform SH3 coverage; per-kind strength is a follow-up — `docs/shelter.md` SH3 block.)*
+  `worldgen.buildCoverers`). *(Uniform SH3 coverage; per-kind strength is a follow-up — `docs/plans/shelter.md` SH3 block.)*
 - [x] **Wind-chill for free** — no separate exterior wind-chill mechanism; `apparent_temp` reads the
   SH1-attenuated `EnvSample.Wind`, so a covered/leeward animal already feels warmer.
 
@@ -273,7 +273,7 @@ kind names.
 
 ## Open Questions
 
-**None for SH1.** `docs/shelter.md` resolves Q-C1..Q-C5, Q-W1..Q-W7, and the SH1 SPEC-design details
+**None for SH1.** `docs/plans/shelter.md` resolves Q-C1..Q-C5, Q-W1..Q-W7, and the SH1 SPEC-design details
 (scent = per-position; shadow ε formula; SH1/SH2 split). SH1 is build-ready.
 
 SH2 remains design-ahead; before it is scheduled it needs SPEC fan-out for worldgen interior-region

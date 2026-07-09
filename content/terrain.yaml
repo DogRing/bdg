@@ -1,10 +1,10 @@
 # content/terrain.yaml — terrain TYPE catalog (base materials + §5 attributes)
 #
-# The terrain TYPE vocabulary (docs/design.md §5): 바탕재료 sand/soil/river/mountain/sea + the §5
+# The terrain TYPE vocabulary (docs/core/design.md §5): 바탕재료 sand/soil/river/mountain/sea + the §5
 # attribute preset vector. Each entry = a navmap.TerrainType (base_cost / passable / required_tags)
 # PLUS the attrs that feed the `terrain.<attr>` §6 operands (flora suitability, traversal gates,
 # climate transitions). This is a TYPE table, NOT a layout — which cell is which type is the
-# world-gen / scenario FIXTURE (docs/world-gen.md). Every terrain id referenced elsewhere
+# world-gen / scenario FIXTURE (docs/plans/world-gen.md). Every terrain id referenced elsewhere
 # (climate transitions, objects.yaml source.depleted_terrain, resource affinity) MUST appear here.
 #
 # ⚠ UNTUNED placeholders (adjustable later; balance auto-tuning may sweep base_cost). Attribute

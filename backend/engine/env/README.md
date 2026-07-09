@@ -11,4 +11,4 @@
 | `decay` | 부패 구동: `(부패 lot 집합 + per-lot env + decay Rules, elapsedTicks, rng) → (age/전이/변환/소멸 델타)`. 연속 `decayAge` accumulator, §6 `accel`(decay 소유), owner-agnostic lot. **Dm1–Dm5 RESOLVED — READY(expr 이후)** | core, rng, expr | L1 |
 
 규칙: 셋 다 `world`/`navmap`/`worldtime`/`gates`/서로 import 금지 — 델타만 반환. flora의 pure-Step
-형태를 decay가 그대로 미러. 상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/architecture.md`.
+형태를 decay가 그대로 미러. 상세는 각 `<m>/SPEC.md`, 전체 DAG는 `docs/core/architecture.md`.

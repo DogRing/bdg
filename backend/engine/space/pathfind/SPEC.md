@@ -61,8 +61,8 @@ type Caps struct{ Tags map[core.Tag]bool }
 
 ## Out of Scope
 - Wear deposit/decay → `engine/space/navmap` (mutation) + `engine/world` (when).
-- Following the path / advancing position → `engine/agent` execution + `engine/world` movement (`docs/map-plan.md §agent/§world`).
-- Caching path results across ticks (perf) → caller (`agent`); see `docs/map-plan.md §perf`.
+- Following the path / advancing position → `engine/agent` execution + `engine/world` movement (`docs/plans/map.md §agent/§world`).
+- Caching path results across ticks (perf) → caller (`agent`); see `docs/plans/map.md §perf`.
 
 ## Open Questions
 - **Algorithm**: A* + post-hoc string-pulling vs **Theta*** (any-angle during search). Theta* gives
@@ -74,7 +74,7 @@ type Caps struct{ Tags map[core.Tag]bool }
 - This is the leaf that turns the abstract "MoveTo" into a real route. `agent.bindTarget` uses
   `EstimateCost` to pick the *cheapest-to-reach* resource (not Euclidean-nearest); `agent.execute`
   consumes `Path` waypoints as the locomotion target sequence; `world` deposits wear along the cells
-  the path actually crossed. See `docs/map-plan.md`.
-- **Hex** (`docs/hex-grid.md`): the search runs over flat-top hex cells; pathfind consumes
+  the path actually crossed. See `docs/plans/map.md`.
+- **Hex** (`docs/plans/hex-grid.md`): the search runs over flat-top hex cells; pathfind consumes
   `navmap.Neighbors`/`CellCenter` and defines no hex geometry of its own (navmap is the authority).
   String-pull / `lineClear` sample the segment via `CellOf`, so they stay orientation-agnostic.

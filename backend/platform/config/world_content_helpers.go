@@ -131,14 +131,14 @@ func buildCoverKinds(doc objectsDoc) map[core.Tag]bool {
 	return out
 }
 
-// buildWindBlockerKinds collects object kinds tagged `blocks_wind` (docs/shelter.md SH1). worldgen
+// buildWindBlockerKinds collects object kinds tagged `blocks_wind` (docs/plans/shelter.md SH1). worldgen
 // turns each placed instance of such a kind into an exposure.Blocker (wind-shadow caster). No
 // tagged kinds ⇒ nil ⇒ shelter stays OFF (ε ≡ 1, byte-identical). Mirrors buildCoverKinds.
 func buildWindBlockerKinds(doc objectsDoc) map[core.Tag]bool {
 	return buildTaggedKinds(doc, "blocks_wind")
 }
 
-// buildCovererKinds collects object kinds tagged `covers` (docs/shelter.md SH3). worldgen turns each
+// buildCovererKinds collects object kinds tagged `covers` (docs/plans/shelter.md SH3). worldgen turns each
 // placed instance into an exposure.Coverer (overhead-cover caster). No tagged kinds ⇒ nil ⇒ SH3 OFF
 // (ε_cover ≡ 1, byte-identical). Mirrors buildWindBlockerKinds.
 func buildCovererKinds(doc objectsDoc) map[core.Tag]bool {

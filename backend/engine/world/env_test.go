@@ -103,7 +103,7 @@ func TestClimateCellToNavCellsSortedAndExact(t *testing.T) {
 	// Independently derive the expected set (NOT via the fine-sampling under test): every hex whose
 	// CENTRE ∈ coarse cell {1,0}'s continuous region, enumerated exhaustively over navmap's offset grid
 	// and sorted in the D12 hex order (R-major then Q). This guards that fine-sampling discovers exactly
-	// the same hexes as full offset enumeration — no misses, no strays (docs/hex-grid.md).
+	// the same hexes as full offset enumeration — no misses, no strays (docs/plans/hex-grid.md).
 	cellW := (cfg.Max.X - cfg.Min.X) / float64(cfg.ClimateGridCols)
 	cellH := (cfg.Max.Y - cfg.Min.Y) / float64(cfg.ClimateGridRows)
 	x0 := cfg.Min.X + float64(gc.X)*cellW

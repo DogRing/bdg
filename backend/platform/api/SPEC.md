@@ -10,7 +10,7 @@ The simulation's **read-only HTTP boundary**: liveness/readiness probes, the SSE
 **god-view inspection endpoints** (`/api/god/*` — divergence, reputation, relations, why; see the
 [godview SPEC](godview/SPEC.md)). It is the only place the engine's live state is exposed over
 HTTP. It performs **all HTTP IO**; it owns no simulation state and never advances the tick loop
-(D12 single-writer rule — `docs/deployment.md` §1: readers scale freely, only the `sim` writer
+(D12 single-writer rule — `docs/ops/deployment.md` §1: readers scale freely, only the `sim` writer
 mutates). It enforces the **god-view boundary (D8)**: `real_stats` and every `/api/god/*` response
 reach a client only when both startup `GodMode` and a per-request `?god=true` are set.
 
@@ -147,7 +147,7 @@ func (s *Server) Handler() http.Handler
 | `GET /readyz` | Readiness — `rds.Ping(ctx)`. | `200` on success · `503` + `{"error":"redis unavailable"}` on PING failure or timeout |
 | `GET /sse` | Tails `keyer.Events()` via `XRead` BLOCK with last-id tracking; flushes each event. | `200` · `text/event-stream`; body is a sequence of `data: <JSON>\n\n` frames |
 | `GET /api/snapshot` | `rds.Get(keyer.SnapshotKey())` (the god-view blob; caller does access control). | `200` + snapshot JSON · `404` + `{"error":"snapshot not found"}` when key absent |
-| `GET /api/terrain` | `rds.Get(keyer.Terrain())` — forwards the stored `sim:{run}:terrain` bytes **verbatim** (WI-P4, data-contracts §2; `persist.TerrainView` is written already shaped as this response: `{cell_size, orientation:'flat', size:{cols,rows}, terrain[cols*rows], wear?[cols*rows]}` — flat-top hex offset(col,row) array, the frontend `TerrainGrid` contract, `docs/hex-grid.md` / `docs/frontend-plan.md` Q5). Registered on the writer server (`New`) only, **not** on the SSE-only server (`NewSSE`). | `200` + terrain JSON · `404` + `{"error":"terrain not found"}` when the key is absent/empty (env/navmap OFF) |
+| `GET /api/terrain` | `rds.Get(keyer.Terrain())` — forwards the stored `sim:{run}:terrain` bytes **verbatim** (WI-P4, data-contracts §2; `persist.TerrainView` is written already shaped as this response: `{cell_size, orientation:'flat', size:{cols,rows}, terrain[cols*rows], wear?[cols*rows]}` — flat-top hex offset(col,row) array, the frontend `TerrainGrid` contract, `docs/plans/hex-grid.md` / `docs/plans/frontend.md` Q5). Registered on the writer server (`New`) only, **not** on the SSE-only server (`NewSSE`). | `200` + terrain JSON · `404` + `{"error":"terrain not found"}` when the key is absent/empty (env/navmap OFF) |
 | `GET /api/agents/{id}` | `rds.HGetAll(keyer.Agent(id))` → `AgentView`; `?god=true` AND `GodMode` ⇒ also merge `real_stats` from the snapshot blob. | `200` + agent JSON · `404` + `{"error":"agent not found"}` when hash empty |
 | `POST /api/restart` | Invokes `cfg.Restart()` (a non-blocking signal to the sim writer; the writer rebuilds the world from its fixture/scenario with the original seed — deterministic reset of all agent/fauna/flora/terrain state, tick back to 0). Registered on `New` only, **not** `NewSSE`. No store access, no body. | `202` + `{"status":"restarting"}` · `503` + `{"error":"restart unavailable"}` when `cfg.Restart` is nil |
 | `POST /api/regen` | Invokes `cfg.Regen(seed)` (a non-blocking signal; the writer rebuilds the world from its fixture with a NEW seed — random terrain/placements re-rolled, tick back to 0). Optional `?seed=<int64>` pins the seed for reproducibility; absent/0 ⇒ the writer draws one. Registered on `New` only, **not** `NewSSE`. No store access, no body. | `202` + `{"status":"regenerating"}` · `400` + `{"error":"invalid seed"}` on an unparsable `seed` · `503` + `{"error":"regen unavailable"}` when `cfg.Regen` is nil (scenario mode / SSE-only) |
@@ -166,7 +166,7 @@ func (s *Server) Handler() http.Handler
 ### `GET /sse` — wire detail
 - Response headers set **before** the first write: `Content-Type: text/event-stream`,
   `Cache-Control: no-cache`, `X-Accel-Buffering: no`, `Connection: keep-alive`
-  (`docs/deployment.md` §4 — disables gateway/nginx buffering).
+  (`docs/ops/deployment.md` §4 — disables gateway/nginx buffering).
 - Asserts the `ResponseWriter` is an `http.Flusher`; if not, `500` (cannot stream).
 - Loop: `XRead(ctx, keyer.Events(), lastID, block)` → for each entry, write
   `data: <fields["payload"]>\n\n`, advance `lastID` to the entry ID, then `Flush()` **per event**.
@@ -224,7 +224,7 @@ The `data:` value is the `core.Event` JSON exactly as `platform/events` wrote it
   api does not own or dial either connection. Tests use in-memory fakes satisfying both interfaces.
 - **Contract** — `data-contracts.md` §2 (keyspace: `sim:{run}:events` STREAM, `sim:{run}:agent:{id}`
   hash, `sim:{run}:snapshot` STRING), §3 (Postgres `events` table — the `/why` source), §4
-  (event/SSE shape + the `real_stats` SSE policy); `docs/deployment.md` §3/§4 (SSE headers + no
+  (event/SSE shape + the `real_stats` SSE policy); `docs/ops/deployment.md` §3/§4 (SSE headers + no
   buffering), §5 (probe semantics). The `/api/god/*` endpoints depend additionally on a `TomDigest`
   on the snapshot blob and a `competing_candidates` field on `GoalSelected` — both flagged as
   prerequisite contract changes in the godview SPEC Open Questions.

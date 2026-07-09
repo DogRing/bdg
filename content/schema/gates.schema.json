@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dogring/bdg/content/schema/gates.schema.json",
   "title": "content/gates.yaml — tag-matched gate registry, predicate-tree form (D4/D10)",
-  "description": "Data-driven gate registry loaded by platform/config into the engine/gates Registry. A gate is a PRECONDITION on actions, selected BY TAG (D4) — never per-action code. Gates are EVALUATED AT PLANNING TIME by the planner against a read-only agent snapshot (ToM[self] stats, per D8), and are NEVER stored on objects, values, or goals (D5: the gate lives on the action side, not the goal/object side). Each gate is a recursive boolean predicate EXPRESSION ('expr'): a leaf compares a stat against a value ({stat,op,value}, reading ToM[self]), a live body scalar ({body,op,value}, NEW v3), or tests action-tag membership ({tag}); composite nodes combine children with {and:[…]}, {or:[…]}, or {not:expr}. A gate's expr evaluating false hides the action from the agent; the action is visible iff EVERY matching gate's expr is true (hard AND across matching gates). Adding a stat / tag / gate is a DATA edit, not a code or schema edit (D10). Identifiers and StatIDs must match docs/glossary.md; platform/config cross-checks every referenced StatID against content/stats.yaml. schema_version 3 adds the body-scalar leaf and optional cost_rule (data-contracts §0 incompatible-change bump).",
+  "description": "Data-driven gate registry loaded by platform/config into the engine/gates Registry. A gate is a PRECONDITION on actions, selected BY TAG (D4) — never per-action code. Gates are EVALUATED AT PLANNING TIME by the planner against a read-only agent snapshot (ToM[self] stats, per D8), and are NEVER stored on objects, values, or goals (D5: the gate lives on the action side, not the goal/object side). Each gate is a recursive boolean predicate EXPRESSION ('expr'): a leaf compares a stat against a value ({stat,op,value}, reading ToM[self]), a live body scalar ({body,op,value}, NEW v3), or tests action-tag membership ({tag}); composite nodes combine children with {and:[…]}, {or:[…]}, or {not:expr}. A gate's expr evaluating false hides the action from the agent; the action is visible iff EVERY matching gate's expr is true (hard AND across matching gates). Adding a stat / tag / gate is a DATA edit, not a code or schema edit (D10). Identifiers and StatIDs must match docs/core/glossary.md; platform/config cross-checks every referenced StatID against content/stats.yaml. schema_version 3 adds the body-scalar leaf and optional cost_rule (data-contracts §0 incompatible-change bump).",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "gates"],
@@ -21,7 +21,7 @@
   "$defs": {
     "identifier": {
       "type": "string",
-      "description": "Canonical GateID (docs/glossary.md identifier pattern). Must start with a letter.",
+      "description": "Canonical GateID (docs/core/glossary.md identifier pattern). Must start with a letter.",
       "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
     },
     "tag": {

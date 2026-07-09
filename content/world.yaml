@@ -1,7 +1,7 @@
 # content/world.yaml — World setup parameters (geometry · grids · motion · sizes · senses · render)
 #
 # The SINGLE tunable surface for world SHAPE/SIZE/SPEED values, externalized so they can be
-# adjusted without touching code or hunting through balance.yaml (docs/world-integration.md W1-W9).
+# adjusted without touching code or hunting through balance.yaml (docs/plans/world-integration.md W1-W9).
 #
 # ⚠ INITIAL, UNTUNED placeholders (recommended defaults, 2026-06-27). Adjustable later; balance
 #   auto-tuning (design.md §4) may sweep them. Values are CONSTRAINED to each other — keep the
@@ -28,7 +28,7 @@ bounds:
 
 # ── Grids (W2) — auxiliary index cell sizes over the same continuous space ────────────
 grids:
-  navmap_cell_size: 5.0          # terrain/path/render hex resolution — DECOUPLED from perception (docs/shelter.md Q-M1,
+  navmap_cell_size: 5.0          # terrain/path/render hex resolution — DECOUPLED from perception (docs/plans/shelter.md Q-M1,
                                  #   2026-07-08): independent of balance.yaml world.spatial_hash_cell (=12, perception radius).
                                  #   500×500 live world ⇒ 68×59 hexes. Lower = finer terrain (cost: path nodes + terrain payload).
   climate_grid_cols: 16          # coarse climate grid; 512/16 = 32-unit climate cells

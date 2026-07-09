@@ -148,7 +148,7 @@ func (b BalanceDoc) ClockConfig() worldtime.Config
 - `engine/kernel/worldtime` — `worldtime.Config` type (ClockConfig accessor return).
 - `engine/kernel/core` / `engine/mind/tom` — `core.Tag` / `core.Dimension` / `tom.Rates` used when assembling the accessor structs.
 - **Contracts**: `content/schema/{stats,needs,actions,gates,balance,objects}.schema.json` (structural shapes);
-  `docs/data-contracts.md` §3 (`config_hash`, `backup_every_ticks`, `run_id`).
+  `docs/core/data-contracts.md` §3 (`config_hash`, `backup_every_ticks`, `run_id`).
 - Standard library only: `os`, `crypto/sha256`, `encoding/json`, `io/fs`, `path/filepath`, `sort`, plus the
   YAML decoder already vendored (`gopkg.in/yaml.v3`). **No third-party JSON-schema library needed for P1**
   (lightweight struct-unmarshal + required-field check; a full validator can replace it without changing
