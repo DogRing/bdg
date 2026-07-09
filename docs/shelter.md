@@ -75,6 +75,19 @@ is `OPEN` (CLAUDE.md gate).
 >     from tag data, terrain-sourced blockers, and moving the coefficients into `balance.yaml` are follow-ups**,
 >     not SH1. (Content authoring — adding a `blocks_wind` kind to `content/objects.yaml` — is a data change
 >     owned by the human, deliberately not made by this build.)
+> - **SH3 RESOLVED 2026-07-09 (human, AskUserQuestion — see the SH3 question block for options/rationale):**
+>   **Q-S1 = (a)** separate **overhead `ε_cover`** field (isotropic, footprint-local; caves force to 0) —
+>   distinct from SH1's directional `ε_wind`. **Q-S2 = (a)** read-time attenuation of the sensed
+>   Temperature/Moisture; **climate STATE untouched** (§0). **Q-S3 = (b)** *(user overrode the rec.)*
+>   exterior cover **also buffers Temperature** toward a baseline by coverage, not wind-chill-only.
+>   **Q-S4 = (a)** new object-kind tag **`covers`** → `ε_cover` casters, uniform SH3 strength (worldgen
+>   constant; per-kind = follow-up, same shape SH1 shipped). **Q-S5 = (a)** buffering baseline = climate's
+>   **daily-MEAN** temperature (climate exposes its base/daily-delta for a §0-safe read). **Q-S6 = (b)**
+>   *(user overrode the rec.)* moisture attenuation is **gated on the global Raining flag** — cover reduces
+>   felt moisture only while raining. Semantics: `ε_cover∈[0,1]` (1=open, 0=covered);
+>   `felt_temp = lerp(actual, dailyMean, 1−ε_cover)`; `felt_moisture = raining ? actual×ε_cover : actual`.
+>   Consumers = fauna `EnvSample.{Temperature,Moisture}` at read-time (mirror SH1 `localWindAt`); agents
+>   out of scope. **Not built yet** — this is the design gate; SPEC + implementation are the next step.
 
 ### Cave (feature 2)
 - **Q-C1 — Cave interior model.**
@@ -145,6 +158,72 @@ is `OPEN` (CLAUDE.md gate).
   - (b) Inside climate (couples wind+blockers into climate — violates §0 "climate untouched").
   - (c) Inside navmap (navmap gains wind dependency — unwanted coupling).
   - `OPEN`
+
+### Rain + temperature — SH3 (feature 3 extension; scope opened by Q-W5=(c))
+> Enumerated 2026-07-09 (SH1 shipped; this is the SH3 phase's Open-Question deliverable — options + rec
+> only, NO mechanism chosen). Grounding facts: climate emits per-cell `Moisture∈[0,1]` + `Temperature°C`
+> and a **global** `RainProcess` (world-wide Raining flag; while raining Moisture accumulates and
+> Temperature drops by `TempRainDrop`). fauna already senses `EnvSample.{Temperature,Moisture}`; the
+> `thermal` drive is a **§6 `apparent_temp` content formula** over `temperature/moisture/wind`, so
+> **wind-chill relief under shelter already flows for free from SH1** (attenuated wind → warmer apparent_temp).
+> SH3 therefore only has to add shelter's effect on the **direct** temp/moisture forcing.
+
+- **Q-S1 — Rain/temperature shelter GEOMETRY.** Rain falls from above, so a roof/canopy/cave protects the
+  cell it covers (footprint-local, isotropic) — unlike SH1's *directional leeward* wind-shadow.
+  - (a) **Separate overhead-coverage field `ε_cover`** from a new `covers`/`overhead` tag: a covered cell
+    is sheltered, neighbours are not; no wind-sector dependence (one field, not six). Distinct from `ε_wind`.
+    Caves force both to 0. **rec.**
+  - (b) Reuse the directional `ε_wind` shadow for rain too — wrong physics (rain isn't leeward).
+  - (c) Wind-driven-rain hybrid — overhead coverage modulated by wind angle (slanted rain reaches under
+    eaves). Most realistic, most complex; couples the two fields.
+  - `RESOLVED: (a) separate overhead ε_cover field (isotropic, footprint-local; caves force to 0).`
+- **Q-S2 — Where shelter acts: read-time value vs climate accumulation.**
+  - (a) **Read-time attenuation of the VALUES a consumer senses** (mirror SH1 wind): world reduces the
+    Temperature/Moisture an animal reads at its position; **climate STATE untouched** (§0 "climate untouched").
+    Cheap, deterministic, "felt" wetness/warmth. **rec.**
+  - (b) Modify climate's per-cell accumulation so sheltered *ground* actually stays dry / thermally stable —
+    couples climate→shelter, changes climate goldens, bigger blast radius. **Rejected-leaning** (§0).
+  - `RESOLVED: (a) read-time value attenuation of sensed Temperature/Moisture; climate STATE untouched.`
+- **Q-S3 — Does EXTERIOR shelter get a temperature mechanic, or is SH1 wind-chill relief enough?**
+  - (a) **No separate exterior temp mechanic** — exterior shelter = rain/wetness relief + (free) wind-chill
+    relief via SH1; direct Temperature buffering is a **cave-only** thing (SH2 Q-C4 stable temp). Minimal, clean. **rec.**
+  - (b) Exterior overhead cover also **buffers Temperature toward a stable baseline** by coverage factor
+    (damps diurnal swing + rain-drop) — richer, but needs a baseline definition + mutes climate's daily signal.
+  - (c) Middle ground — cover suppresses only the **rain-chill (`TempRainDrop`)** component while raining, no
+    diurnal buffering. "Stay out of the cold rain" without flattening the day/night cycle.
+  - `RESOLVED: (b) exterior overhead cover ALSO buffers Temperature toward a stable baseline by coverage.`
+    ⇒ **opens Q-S5 (what baseline?) + Q-S6 (moisture attenuation shape).**
+- **Q-S4 — Coverage source + strength schema (mirrors `blocks_wind`).**
+  - (a) **New object-kind tag `covers` (or `overhead`)** → `ε_cover` casters, uniform SH3 strength from a
+    worldgen constant; per-kind coverage strength from tag data is a follow-up (same pattern SH1 shipped). **rec.**
+  - (b) Per-kind coverage strength/height from tag data now (fuller schema up front).
+  - (c) Reuse the SAME `blocks_wind` tag for both wind + overhead (a wall both blocks wind AND covers) —
+    simplest content, but conflates a vertical wall (no roof) with a roof (overhead). Physically wrong for walls.
+  - `RESOLVED: (a) new `covers` tag + uniform SH3 strength (worldgen constant); per-kind strength = follow-up.`
+> Consumers (not a question): fauna `EnvSample.{Temperature,Moisture}` at read-time, exactly like SH1's
+> `localWindAt` — recommended fauna-only for SH3. `mind/needs` has no thermal need today, so agent thermal
+> comfort is out of SH3 scope (agents already have a separate `TakeShelter` action, unrelated to this field).
+
+#### Follow-on questions opened by Q-S3=(b) (temperature buffering)
+> Semantics fixed by the resolutions above: `ε_cover ∈ [0,1]`, 1 = open sky, 0 = fully covered.
+> `felt_temp = lerp(actual, baseline, 1−ε_cover)` (covered → baseline); `felt_moisture` per Q-S6.
+- **Q-S5 — What is the temperature buffering baseline?** (covered cell's felt temp trends to this)
+  - (a) **Climate's daily-MEAN temperature** — damps the diurnal swing toward the day's average (annual +
+    seasonal cycle preserved); physical "thermal mass". Needs climate to expose its base/daily-delta so SH3
+    can read the mean (a read, not a state mutation — §0-safe). **rec.**
+  - (b) A fixed content constant `CoverStableTemperature` (milder cousin of caves' stable temp), from
+    balance/content. Zero climate change, but a hot-season covered spot feels like the constant year-round.
+  - (c) The annual-mid temperature (climate's yearly baseline) — a constant from climate config; ignores
+    season entirely, flattest.
+  - `RESOLVED: (a) baseline = climate daily-MEAN temperature; climate exposes its base/daily-delta for a §0-safe read.`
+- **Q-S6 — Moisture attenuation shape under cover.**
+  - (a) **Multiplicative always**: `felt_moisture = actual × ε_cover` (covered = drier microclimate, even on
+    dry days). Simplest, mirrors SH1 wind exactly. **rec.**
+  - (b) **Gate on the global Raining flag**: cover reduces moisture only WHILE raining (keeps rain off);
+    dry-day ground moisture unchanged. More physical (a roof doesn't dry soil on a sunny day).
+  - (c) Reduce toward the pre-rain baseline moisture (subtract rain-accumulated excess) — most physical,
+    needs a per-cell baseline-moisture reference.
+  - `RESOLVED: (b) moisture attenuation GATED on the global Raining flag — cover reduces felt moisture only while raining.`
 
 ### Map resolution (from feature 1 — actionable follow-up, NOT part of shelter build but decided here)
 - **Q-M1 — Terrain/nav grid resolution vs perception radius.** Today `config/world_content.go:110`
