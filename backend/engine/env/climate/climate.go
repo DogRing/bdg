@@ -137,6 +137,10 @@ type State struct {
 	rain  RainProcess
 	wind  Wind
 	cfg   Config
+	// dailyMeanTemp is the world-uniform temperature the diurnal swing oscillates around this step:
+	// annualT + (TempNightLow+TempDayPeak)/2, EXCLUDING the daily delta and the rain drop. It is the
+	// §0-safe read the shelter layer buffers a covered cell's felt temperature toward (SH3 Q-S5).
+	dailyMeanTemp float64
 }
 
 // ── Construction ─────────────────────────────────────────────────────────────
@@ -179,6 +183,8 @@ func New(cfg Config, terrainAt func(core.Vec2) navTerrainID) *State {
 		rain:  RainProcess{}, // fresh dry state: PRain=0, Raining=false, HoursSinceRain=0
 		wind:  Wind{Dir: cfg.WindPrevailingDir, Mag: cfg.WindMagMean},
 		cfg:   cfg,
+		// Pre-forcing best guess before the first Step; InitTemperature ≈ AnnualMid by config convention.
+		dailyMeanTemp: cfg.InitTemperature,
 	}
 }
 
@@ -217,7 +223,7 @@ func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind) *S
 			}
 		}
 	}
-	return &State{cells: grid, rain: rain, wind: wind, cfg: cfg}
+	return &State{cells: grid, rain: rain, wind: wind, cfg: cfg, dailyMeanTemp: base.dailyMeanTemp}
 }
 
 // ── Snapshot / read API ───────────────────────────────────────────────────────
@@ -243,6 +249,11 @@ func (s *State) Rain() RainProcess { return s.rain }
 // Wind exposes the current world-uniform Wind for snapshot/resume + as the source of §6 operands
 // "wind.dir"/"wind.mag" that world adapts into consumer Contexts (fauna F33/F40). Read-only copy.
 func (s *State) Wind() Wind { return s.wind }
+
+// DailyMeanTemperature is the world-uniform temperature the diurnal swing oscillates around this
+// step (annualT + the daily delta's average; rain excluded). The shelter layer buffers a covered
+// cell's felt temperature toward it (SH3 Q-S5). A pure read — no state mutation, §0-safe.
+func (s *State) DailyMeanTemperature() float64 { return s.dailyMeanTemp }
 
 // CellAt maps a continuous position to its coarse climate cell's CellState (CA3 read path).
 // world calls it to sample an animal's local climate into the fauna animal Context.

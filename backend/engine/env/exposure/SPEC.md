@@ -129,6 +129,28 @@ type Cache struct{ /* opaque */ }
 func NewCache(cfg Config, topo Topology) *Cache
 func (c *Cache) Invalidate()
 func (c *Cache) Field(sector Sector, blockers []Blocker, interiors []Interior) *Field
+
+// ── Overhead cover (SH3) ─────────────────────────────────────────────────────
+// Rain falls from above, so overhead cover is a SEPARATE, direction-independent field: a Coverer
+// lowers ε_cover only on the cells it directly overlies (isotropic, footprint-local — no wind sector,
+// no leeward propagation, so no Topology and no per-sector cache). Distinct from the wind Field.
+
+// Coverer is one overhead-cover caster derived from a `covers` tag (Q-S4).
+type Coverer struct {
+    ID        core.ObjectID
+    Footprint []Cell
+    Coverage  float64 // clamped [0,1]; 0 = no cover, 1 = full overhead cover (ε_cover → MinEpsilon)
+}
+
+// CoverField is an immutable overhead-exposure snapshot (sparse; covered-free cells read ε_cover 1).
+type CoverField struct{ /* opaque */ }
+
+// BuildCover computes ε_cover from coverers: a covered cell's ε_cover = ∏(1 − Coverage) over the
+// coverers overlying it (order-free; sorted for D12), clamped to MinEpsilon. Coverers only for SH3;
+// caves (SH2) will force ε_cover 0 via interiors.
+func BuildCover(cfg Config, coverers []Coverer) *CoverField
+func (f *CoverField) Epsilon(c Cell) float64      // 1 for any covered-free cell / nil field
+func (f *CoverField) Active() []CellExposure       // sparse covered cells, D12-sorted
 ```
 
 ## Shadow Model (SH1) — the exact ε computation

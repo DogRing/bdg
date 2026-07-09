@@ -57,6 +57,42 @@ func forcing(absHour int64) climate.Forcing {
 	}
 }
 
+// ── DailyMeanTemperature (SH3 Q-S5): the diurnal midline, independent of hour ─
+
+func TestDailyMeanTemperatureExcludesDiurnal(t *testing.T) {
+	cfg := testCfg()
+	cfg.RainProbPerHour = 0 // keep it dry so no rain drop confounds the check
+	r := rng.New(7)
+
+	// dailyMid = (TempNightLow + TempDayPeak)/2 = (-3 + 5)/2 = 1.
+	dailyMid := (cfg.TempNightLow + cfg.TempDayPeak) / 2
+
+	// SAME YearFraction (same season), DIFFERENT HourOfDay — the mean must not move with the hour.
+	const yf = 0.3
+	fMorning := climate.Forcing{AbsHour: 0, HourOfDay: 0, YearFraction: yf}
+	fNoon := climate.Forcing{AbsHour: 1, HourOfDay: 12, YearFraction: yf}
+	sMorning := climate.New(cfg, fixedTerrainAt("g"))
+	sMorning, _ = climate.Step(sMorning, fMorning, emptyRules(), r)
+	sNoon := climate.New(cfg, fixedTerrainAt("g"))
+	sNoon, _ = climate.Step(sNoon, fNoon, emptyRules(), r)
+
+	annualT := cfg.AnnualMid + cfg.AnnualAmp*math.Sin(2*math.Pi*yf+cfg.AnnualPhase)
+	want := annualT + dailyMid
+
+	if got := sMorning.DailyMeanTemperature(); math.Abs(got-want) > 1e-9 {
+		t.Errorf("DailyMeanTemperature = %v, want annualT+dailyMid = %v", got, want)
+	}
+	// The mean must NOT depend on HourOfDay (that is the whole point — it is the diurnal midline).
+	if a, b := sMorning.DailyMeanTemperature(), sNoon.DailyMeanTemperature(); math.Abs(a-b) > 1e-9 {
+		t.Errorf("DailyMeanTemperature varied with HourOfDay: %v (h=0) vs %v (h=12)", a, b)
+	}
+	// It should sit between the actual noon and pre-dawn temperatures (the swing brackets its mean).
+	noonT := sNoon.CellAt(core.Vec2{X: 50, Y: 50}).Temperature
+	if noonT <= sNoon.DailyMeanTemperature() {
+		t.Errorf("noon actual %v should exceed the daily mean %v", noonT, sNoon.DailyMeanTemperature())
+	}
+}
+
 // ── AC: Rain accumulates and fires ───────────────────────────────────────────
 
 func TestRainAccumulatesAndFires(t *testing.T) {

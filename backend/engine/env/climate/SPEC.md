@@ -228,6 +228,12 @@ func (s *State) Rain() RainProcess
 // apparent_temp). Read-only copy.
 func (s *State) Wind() Wind
 
+// DailyMeanTemperature is the world-uniform temperature the diurnal swing oscillates around this step
+// (annualT + the daily delta's average, rain excluded). The shelter layer buffers a covered cell's
+// felt temperature toward it (SH3 Q-S5). A pure read (no state mutation) — derived, NOT serialized;
+// recomputed each Step and re-seeded to InitTemperature on New/Restore until the next Step.
+func (s *State) DailyMeanTemperature() float64
+
 // CellAt maps a CONTINUOUS position to its coarse climate cell and returns that cell's CellState (CA3
 // read path). world calls it to sample an animal's LOCAL climate (temperature °C / moisture) into the
 // fauna animal Context (F27/F40) alongside Wind(). pos is clamped to [WorldMin,WorldMax]; the mapping

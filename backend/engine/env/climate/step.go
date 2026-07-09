@@ -107,6 +107,10 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 		rainDrop = cfg.TempRainDrop
 	}
 	temperature := annualT + daily - rainDrop
+	// Daily-mean (the midline the diurnal swing oscillates around): annualT + the daily delta's
+	// average (= (TempNightLow+TempDayPeak)/2, since dailyDelta's cos term averages to 0 over a day),
+	// EXCLUDING rain. SH3 shelter buffers a covered cell's felt temperature toward this (Q-S5).
+	next.dailyMeanTemp = annualT + (cfg.TempNightLow+cfg.TempDayPeak)/2
 
 	// Moisture is clamped to [0, 1]. Evaporation: EvapBaseRate + EvapTempScale·max(0,T) per dry hour.
 	// The temperature-scale term is floored at 0 (CA3): a sub-zero cell never adds moisture via evap.

@@ -188,6 +188,73 @@ func Build(cfg Config, topo Topology, sector Sector, blockers []Blocker, interio
 	return &Field{eps: eps}
 }
 
+// Coverer is one OVERHEAD-cover caster derived from a `covers` tag (SH3). Unlike a wind Blocker it
+// casts no directional shadow: rain falls from above, so a roof/canopy lowers exposure only on the
+// cells it directly overlies (isotropic, footprint-local — no wind sector, no leeward propagation).
+type Coverer struct {
+	ID        core.ObjectID
+	Footprint []Cell
+	Coverage  float64 // clamped [0,1]; 0 = no cover, 1 = full overhead cover (ε_cover → 0)
+}
+
+// CoverField is an immutable overhead-exposure snapshot: sparse ε_cover for covered cells; any cell
+// with no stored value reads as ε_cover 1 (open sky). Direction-independent — one field, not six.
+// It is the SH3 analogue of Field: world reads ε_cover to attenuate the sensed temperature/moisture.
+type CoverField struct {
+	eps map[Cell]float64
+}
+
+// BuildCover computes ε_cover from coverers. A covered cell's ε_cover = ∏(1 − Coverage) over the
+// coverers overlying it (order-free; sorted iteration is a D12 belt-and-suspenders), clamped to
+// MinEpsilon. Caves (SH2) will force ε_cover 0 via interiors; SH3 passes coverers only.
+func BuildCover(cfg Config, coverers []Coverer) *CoverField {
+	raw := map[Cell]float64{} // touched cells only; untouched read as 1
+	for _, cv := range sortedCoverers(coverers) {
+		cover := clamp(cv.Coverage, 0, 1)
+		if cover <= 0 {
+			continue
+		}
+		for _, c := range sortedCells(cv.Footprint) {
+			cur, ok := raw[c]
+			if !ok {
+				cur = 1
+			}
+			raw[c] = cur * (1 - cover)
+		}
+	}
+	eps := make(map[Cell]float64, len(raw))
+	for c, v := range raw {
+		if e := clamp(v, cfg.MinEpsilon, 1); e != 1 {
+			eps[c] = e
+		}
+	}
+	return &CoverField{eps: eps}
+}
+
+// Epsilon returns the overhead-exposure factor for c (1 for any covered-free cell / nil field).
+func (f *CoverField) Epsilon(c Cell) float64 {
+	if f == nil || f.eps == nil {
+		return 1
+	}
+	if v, ok := f.eps[c]; ok {
+		return v
+	}
+	return 1
+}
+
+// Active returns the sparse covered cells (ε_cover != 1), D12-sorted by (Q, R).
+func (f *CoverField) Active() []CellExposure {
+	if f == nil || len(f.eps) == 0 {
+		return nil
+	}
+	out := make([]CellExposure, 0, len(f.eps))
+	for c, e := range f.eps {
+		out = append(out, CellExposure{Cell: c, Epsilon: e})
+	}
+	sort.Slice(out, func(i, j int) bool { return lessCell(out[i].Cell, out[j].Cell) })
+	return out
+}
+
 // Cache stores up to NumSectors sector fields. world owns invalidation when blockers/interiors change.
 type Cache struct {
 	cfg   Config
@@ -250,6 +317,12 @@ func sortedBlockers(in []Blocker) []Blocker {
 
 func sortedInteriors(in []Interior) []Interior {
 	out := append([]Interior(nil), in...)
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func sortedCoverers(in []Coverer) []Coverer {
+	out := append([]Coverer(nil), in...)
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }

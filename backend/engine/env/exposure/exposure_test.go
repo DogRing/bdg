@@ -38,12 +38,12 @@ func TestSectorOf(t *testing.T) {
 		want Sector
 	}{
 		{0, 0},
-		{math.Pi / 6, 0},        // 30° → bin 0 [0,60)
-		{math.Pi / 3, 1},        // 60° → bin 1
-		{math.Pi, 3},            // 180° → bin 3
-		{5 * math.Pi / 3, 5},    // 300° → bin 5
-		{2*math.Pi - 1e-9, 5},   // just below 360° stays in bin 5
-		{-math.Pi / 6, 5},       // -30° wraps to 330° → bin 5
+		{math.Pi / 6, 0},         // 30° → bin 0 [0,60)
+		{math.Pi / 3, 1},         // 60° → bin 1
+		{math.Pi, 3},             // 180° → bin 3
+		{5 * math.Pi / 3, 5},     // 300° → bin 5
+		{2*math.Pi - 1e-9, 5},    // just below 360° stays in bin 5
+		{-math.Pi / 6, 5},        // -30° wraps to 330° → bin 5
 		{2*math.Pi + math.Pi, 3}, // wraps to 180° → bin 3
 	}
 	for _, c := range cases {
@@ -208,6 +208,59 @@ func TestCacheReuseAndInvalidate(t *testing.T) {
 	}
 	if e := f4.Epsilon(Cell{3, 2}); e != 1 {
 		t.Errorf("post-invalidate Epsilon(3,2) = %v, want 1 (no blockers)", e)
+	}
+}
+
+// ── Overhead cover field (SH3) ───────────────────────────────────────────────
+
+func TestBuildCoverEmptyNeutral(t *testing.T) {
+	f := BuildCover(Config{MinEpsilon: 0}, nil)
+	if e := f.Epsilon(Cell{2, 2}); e != 1 {
+		t.Errorf("no coverers: Epsilon = %v, want 1 (open sky)", e)
+	}
+	if a := f.Active(); a != nil {
+		t.Errorf("no coverers: Active = %v, want nil", a)
+	}
+}
+
+// A coverer lowers ε_cover only on its OWN footprint cells (isotropic, no directional/neighbor spread).
+func TestBuildCoverFootprintLocal(t *testing.T) {
+	f := BuildCover(Config{MinEpsilon: 0}, []Coverer{
+		{ID: "roof", Footprint: []Cell{{2, 2}, {2, 3}}, Coverage: 0.75},
+	})
+	if e := f.Epsilon(Cell{2, 2}); !approx(e, 0.25) {
+		t.Errorf("covered cell ε_cover = %v, want 0.25", e)
+	}
+	if e := f.Epsilon(Cell{2, 3}); !approx(e, 0.25) {
+		t.Errorf("covered cell ε_cover = %v, want 0.25", e)
+	}
+	// A neighbour of the footprint is NOT covered — no leeward/isotropic spread.
+	if e := f.Epsilon(Cell{3, 2}); e != 1 {
+		t.Errorf("neighbour ε_cover = %v, want 1 (footprint-local only)", e)
+	}
+}
+
+// Overlapping coverers stack multiplicatively and the result is independent of input order (D12).
+func TestBuildCoverMultiplicativeOrderIndependent(t *testing.T) {
+	a := Coverer{ID: "a", Footprint: []Cell{{1, 1}}, Coverage: 0.5}
+	b := Coverer{ID: "b", Footprint: []Cell{{1, 1}}, Coverage: 0.6}
+	f1 := BuildCover(Config{MinEpsilon: 0}, []Coverer{a, b})
+	f2 := BuildCover(Config{MinEpsilon: 0}, []Coverer{b, a})
+	want := (1 - 0.5) * (1 - 0.6) // 0.2
+	if e := f1.Epsilon(Cell{1, 1}); !approx(e, want) {
+		t.Errorf("stacked ε_cover = %v, want %v", e, want)
+	}
+	if e2 := f2.Epsilon(Cell{1, 1}); !approx(e2, f1.Epsilon(Cell{1, 1})) {
+		t.Errorf("order-dependent: %v vs %v", e2, f1.Epsilon(Cell{1, 1}))
+	}
+}
+
+func TestBuildCoverMinEpsilonClamp(t *testing.T) {
+	f := BuildCover(Config{MinEpsilon: 0.3}, []Coverer{
+		{ID: "full", Footprint: []Cell{{0, 0}}, Coverage: 1},
+	})
+	if e := f.Epsilon(Cell{0, 0}); !approx(e, 0.3) {
+		t.Errorf("full cover clamped ε_cover = %v, want MinEpsilon 0.3", e)
 	}
 }
 
