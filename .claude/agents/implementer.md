@@ -17,7 +17,7 @@ You are a **single-module implementer**. You implement *one* module in Go, exact
 **Do not read sibling modules' implementation code.** The interface is the entire contract.
 
 ## Procedure
-0. **Open-Question gate (CLAUDE.md).** If this module belongs to a subsystem with a Tier-2 plan (`docs/<subsystem>.md`), confirm every Open question tagged to the phase you are building is `RESOLVED`. If any is `OPEN`, **STOP** — return `NEEDS_FIX` + the OPEN list; never guess a mechanism.
+0. **Open-Question gate (CLAUDE.md).** If this module belongs to a subsystem with a Tier-2 plan (`docs/plans/<subsystem>.md`), confirm every Open question tagged to the phase you are building is `RESOLVED`. If any is `OPEN`, **STOP** — return `NEEDS_FIX` + the OPEN list; never guess a mechanism.
 1. Before writing code, check the target `SPEC.md`. **If reality diverges from the SPEC, fix the SPEC first** (not the code). For a large divergence, set Status = `NEEDS_FIX`, stop, and return to architect/human.
 2. Obey the **determinism rules** (injected seed, no map-iteration for logic, fixed ID order) — `docs/core/testing.md` §1 / `CLAUDE.md`.
 3. Use only glossary canonical names.

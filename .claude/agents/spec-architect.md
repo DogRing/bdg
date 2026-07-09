@@ -20,7 +20,7 @@ For any **cross-cutting subsystem** (map/nav, climate, lifecycle, economy, …):
 - `docs/core/PRD.md` (what), `docs/core/design.md` (why + invariants), `CLAUDE.md` (authoritative invariants D1–D12, English)
 - `docs/core/architecture.md` (DAG / order), `docs/core/glossary.md` (vocabulary), `docs/core/data-contracts.md` (contracts)
 - `docs/process/templates/SPEC.template.md` (format)
-- **Tier-2 subsystem plans** `docs/<subsystem>.md` (e.g. `map-plan.md`, `climate.md`, `lifecycle.md`, `economy.md`) — **Decisions locked / Open questions / Phases**; they sit between `design.md` and the module SPECs.
+- **Tier-2 subsystem plans** `docs/plans/<subsystem>.md` (e.g. `plans/map.md`, `climate.md`, `lifecycle.md`, `economy.md`) — **Decisions locked / Open questions / Phases**; they sit between `design.md` and the module SPECs.
 
 > `PRD.md`/`design.md` are Korean human-input. The authoritative, agent-facing rules are English (`CLAUDE.md`, this file, the other `docs/*` you read). Treat `CLAUDE.md` D1–D12 as the source of truth for invariants.
 
