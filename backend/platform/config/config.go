@@ -48,17 +48,18 @@ type LoadOutput struct {
 	PerceptionConfig perception.PerceptionConfig
 	Balance          Balance // parsed balance.yaml, exposed as typed fields
 
-	WorldEnv       *world.EnvConfig
-	ClimateCfg     *climate.Config
-	ClimateRules   *climate.Rules
-	NavCfg         *navmap.Config
-	TerrainTypes   map[navmap.TerrainID]navmap.TerrainType
-	FloraRules     *flora.Rules
-	FaunaRules     *fauna.Rules
-	DecayRules     *decay.Rules
-	ScentEmitters  map[core.Tag][]core.Tag
-	CoverKinds     map[core.Tag]bool
-	RespawnTargets map[core.Tag]int
+	WorldEnv         *world.EnvConfig
+	ClimateCfg       *climate.Config
+	ClimateRules     *climate.Rules
+	NavCfg           *navmap.Config
+	TerrainTypes     map[navmap.TerrainID]navmap.TerrainType
+	FloraRules       *flora.Rules
+	FaunaRules       *fauna.Rules
+	DecayRules       *decay.Rules
+	ScentEmitters    map[core.Tag][]core.Tag
+	CoverKinds       map[core.Tag]bool
+	WindBlockerKinds map[core.Tag]bool
+	RespawnTargets   map[core.Tag]int
 
 	// configHash is the SHA-256 of the canonical content fingerprint.
 	configHash string
@@ -422,6 +423,7 @@ func Load(contentDir string) (*LoadOutput, error) {
 		DecayRules:       worldRegs.DecayRules,
 		ScentEmitters:    worldRegs.ScentEmitters,
 		CoverKinds:       worldRegs.CoverKinds,
+		WindBlockerKinds: worldRegs.WindBlockerKinds,
 		RespawnTargets:   worldRegs.RespawnTargets,
 		configHash:       hash,
 	}, nil

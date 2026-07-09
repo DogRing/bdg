@@ -67,6 +67,14 @@ is `OPEN` (CLAUDE.md gate).
 >     blocker combination (order-independent ⇒ the D12 sort is belt-and-suspenders, not load-bearing).
 >   - **(iii) SH1 builds the exposure leaf + wind injection only.** SH2 (portals/interiors/enter-exit) stays
 >     design-ahead in `world/SPEC-world-shelter.md`, not this build; SH1 calls `Build` with `interiors=nil`.
+>   - **(iv) blocker derivation (SHIPPED 2026-07-08).** `blocks_wind` is an **object-kind tag** (Q-W2 = a):
+>     `config.buildWindBlockerKinds` collects tagged kinds (mirrors `CoverKinds`); `worldgen.buildWindBlockers`
+>     turns each placed instance into one `exposure.Blocker` (footprint = the object's navmap cell, sorted-ID
+>     order) and calls `w.InstallShelter`. **No tagged kinds ⇒ no blockers ⇒ shelter OFF (byte-identical).**
+>     SH1 uses a **uniform per-blocker height/opacity** (worldgen `shelter*` constants); **per-kind strength
+>     from tag data, terrain-sourced blockers, and moving the coefficients into `balance.yaml` are follow-ups**,
+>     not SH1. (Content authoring — adding a `blocks_wind` kind to `content/objects.yaml` — is a data change
+>     owned by the human, deliberately not made by this build.)
 
 ### Cave (feature 2)
 - **Q-C1 — Cave interior model.**

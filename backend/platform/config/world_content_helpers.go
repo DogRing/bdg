@@ -131,6 +131,25 @@ func buildCoverKinds(doc objectsDoc) map[core.Tag]bool {
 	return out
 }
 
+// buildWindBlockerKinds collects object kinds tagged `blocks_wind` (docs/shelter.md SH1). worldgen
+// turns each placed instance of such a kind into an exposure.Blocker (wind-shadow caster). No
+// tagged kinds ⇒ nil ⇒ shelter stays OFF (ε ≡ 1, byte-identical). Mirrors buildCoverKinds.
+func buildWindBlockerKinds(doc objectsDoc) map[core.Tag]bool {
+	out := make(map[core.Tag]bool)
+	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
+		for _, tag := range obj.Tags {
+			if tag == "blocks_wind" {
+				out[core.Tag(obj.ID)] = true
+				break
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func addScentEmitterTags(emitters map[core.Tag][]core.Tag, kind core.Tag, tags []string) {
 	seen := make(map[core.Tag]bool)
 	for _, tagText := range tags {

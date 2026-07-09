@@ -12,17 +12,18 @@ import (
 )
 
 type worldContent struct {
-	WorldEnv       *world.EnvConfig
-	ClimateCfg     *climate.Config
-	ClimateRules   *climate.Rules
-	NavCfg         *navmap.Config
-	TerrainTypes   map[navmap.TerrainID]navmap.TerrainType
-	FloraRules     *flora.Rules
-	FaunaRules     *fauna.Rules
-	DecayRules     *decay.Rules
-	ScentEmitters  map[core.Tag][]core.Tag
-	CoverKinds     map[core.Tag]bool
-	RespawnTargets map[core.Tag]int
+	WorldEnv         *world.EnvConfig
+	ClimateCfg       *climate.Config
+	ClimateRules     *climate.Rules
+	NavCfg           *navmap.Config
+	TerrainTypes     map[navmap.TerrainID]navmap.TerrainType
+	FloraRules       *flora.Rules
+	FaunaRules       *fauna.Rules
+	DecayRules       *decay.Rules
+	ScentEmitters    map[core.Tag][]core.Tag
+	CoverKinds       map[core.Tag]bool
+	WindBlockerKinds map[core.Tag]bool
+	RespawnTargets   map[core.Tag]int
 }
 
 type worldDoc struct {

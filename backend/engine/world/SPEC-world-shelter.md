@@ -1,6 +1,6 @@
 # SPEC — `engine/world` · Shelter & Cave Orchestration
 
-> Status: `SH1 READY` · `SH2 DESIGN-AHEAD` (SH1 SPEC-design RESOLVED in `docs/shelter.md`)
+> Status: `SH1 SHIPPED` · `SH2 DESIGN-AHEAD` (SH1 SPEC-design RESOLVED in `docs/shelter.md`)
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
 > Scope = **SH1–SH2** (`docs/shelter.md`): exposure local-wind injection (SH1, build now); cave
 > portals + interior active-space state (SH2, design-ahead — see the marked section).
@@ -195,17 +195,22 @@ kind names.
 ## Acceptance Criteria
 
 ### SH1 (build now)
-- [ ] **Shelter-OFF neutrality** — without `InstallShelter`, `localWindAt` equals climate wind
-  everywhere and existing env/fauna/scent goldens are **byte-identical**.
-- [ ] **Local wind injection** — with one `blocks_wind` blocker and fixed wind, an animal downwind
+- [x] **Shelter-OFF neutrality** — without `InstallShelter`, `localWindAt` equals climate wind
+  everywhere and existing env/fauna/scent goldens are **byte-identical**. *(`world.TestLocalWindOffNeutral`;
+  full suite byte-identical.)*
+- [x] **Local wind injection** — with one `blocks_wind` blocker and fixed wind, an animal downwind
   gets reduced `EnvSample.Wind.Mag` (and thus a weaker `scent.Read` gradient); upwind gets the raw
   magnitude. `scent.Spread` is verified to still receive the world-uniform wind (unchanged).
-- [ ] **Cache invalidation** — adding/removing a blocker in the apply/env phase invalidates the cache;
-  the next read uses the new epsilon field. No plan-phase mutation occurs.
-- [ ] **D12 golden (SH1)** — a fixed sequence of blocker changes + wind-sector rotations reproduces a
-  byte-identical exposure snapshot across two runs; blocker input order does not affect the result.
-- [ ] **No hardcoded kind names** — no `if kind == "wall"` / `"house"` logic; blockers come from the
-  `blocks_wind` tag + validated height/opacity data.
+  *(`world.TestLocalWindInjectionDownwind`; `scent.Spread` uses `scentWind()` = global, untouched.)*
+- [~] **Cache invalidation** — exercised at the leaf (`exposure` Cache/`Invalidate` tests). SH1 sets
+  blockers once at `InstallShelter` and never mutates them per-tick, so the world apply-phase
+  invalidation path is not yet triggered; it is wired when SH2/live blocker edits land.
+- [~] **D12 golden (SH1)** — leaf-level determinism is covered (`exposure` order-independence +
+  per-sector reproducibility) and the OFF golden is byte-identical; a *world-level* blocker-sequence
+  golden is deferred until blockers become dynamic.
+- [x] **No hardcoded kind names** — no `if kind == "wall"` / `"house"` logic; blockers come from the
+  `blocks_wind` tag (`config.buildWindBlockerKinds` → `worldgen.buildWindBlockers`). *(SH1 uses a uniform
+  per-blocker height/opacity; per-kind strength from tag data is a documented follow-up — `docs/shelter.md` (iv).)*
 
 ### SH2 (design-ahead — do NOT implement in the SH1 build)
 - [ ] **Enter/exit portal** — entering moves an actor exterior→interior coordinate, updates spatial

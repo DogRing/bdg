@@ -7,6 +7,7 @@ import (
 	"github.com/dogring/bdg/engine/agent"
 	"github.com/dogring/bdg/engine/env/climate"
 	"github.com/dogring/bdg/engine/env/decay"
+	"github.com/dogring/bdg/engine/env/exposure"
 	"github.com/dogring/bdg/engine/env/flora"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
@@ -205,6 +206,11 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	if fx.Terrain != nil && len(fx.Terrain.Elevation) > 0 {
 		w.SetTerrainElevation(fx.Terrain.Elevation) // render-only relief (3D hex height)
 	}
+	// SH1 shelter: objects tagged `blocks_wind` become wind-shadow casters (docs/shelter.md).
+	// No such objects ⇒ no blockers ⇒ InstallShelter skipped ⇒ shelter stays OFF (byte-identical).
+	if blockers := buildWindBlockers(fx.Objects, cfg.WindBlockerKinds, nav); len(blockers) > 0 {
+		w.InstallShelter(shelterConfig(), blockers)
+	}
 
 	animals, err := buildAnimals(fx, cfg)
 	if err != nil {
@@ -390,6 +396,48 @@ func actionsID(id string) actions.ActionID {
 func sortedObjects(in []ObjectPlacement) []ObjectPlacement {
 	out := append([]ObjectPlacement(nil), in...)
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// SH1 shelter defaults (docs/shelter.md). SH1 casts a uniform-strength wind shadow per blocker;
+// per-kind height/opacity from tag data is a follow-up, and moving these into balance.yaml is the
+// eventual tuning home. Kept as constants so the OFF path (no `blocks_wind` objects) needs no data.
+const (
+	shelterShadowCellsPerHeight = 1.0
+	shelterShadowFalloff        = 0.5
+	shelterMinEpsilon           = 0.0
+	shelterBlockerHeight        = 3.0
+	shelterBlockerOpacity       = 1.0
+)
+
+func shelterConfig() exposure.Config {
+	return exposure.Config{
+		ShadowCellsPerHeight: shelterShadowCellsPerHeight,
+		ShadowFalloff:        shelterShadowFalloff,
+		MinEpsilon:           shelterMinEpsilon,
+	}
+}
+
+// buildWindBlockers turns each placed object whose kind is tagged `blocks_wind` into one exposure
+// wind-shadow caster, its footprint the single navmap cell under the object's position. Iterated in
+// sorted-ID order (D12). No tagged kinds or no navmap ⇒ nil ⇒ caller keeps shelter OFF.
+func buildWindBlockers(objects []ObjectPlacement, kinds map[core.Tag]bool, nav *navmap.NavMap) []exposure.Blocker {
+	if len(kinds) == 0 || nav == nil {
+		return nil
+	}
+	var out []exposure.Blocker
+	for _, obj := range sortedObjects(objects) {
+		if !kinds[obj.Kind] {
+			continue
+		}
+		c := nav.CellOf(obj.Pos.Core())
+		out = append(out, exposure.Blocker{
+			ID:        obj.ID,
+			Footprint: []exposure.Cell{{Q: c.Q, R: c.R}},
+			Height:    shelterBlockerHeight,
+			Opacity:   shelterBlockerOpacity,
+		})
+	}
 	return out
 }
 

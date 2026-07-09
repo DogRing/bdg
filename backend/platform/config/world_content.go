@@ -71,6 +71,7 @@ func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *a
 		}
 		out.ScentEmitters = buildScentEmitters(objects)
 		out.CoverKinds = buildCoverKinds(objects)
+		out.WindBlockerKinds = buildWindBlockerKinds(objects)
 		out.RespawnTargets = buildRespawnTargets(objects)
 		ids := collectObjectIDs(objects)
 		terrainIDs := terrainIDSet(out.TerrainTypes)
