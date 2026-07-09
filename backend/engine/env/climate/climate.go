@@ -260,19 +260,20 @@ func (s *State) DailyMeanTemperature() float64 { return s.dailyMeanTemp }
 // pos is clamped to [WorldMin,WorldMax]; the mapping uses the same Config geometry New uses.
 // Read-only (D11 — an index read over continuous space, never a snap of the agent's Pos).
 func (s *State) CellAt(pos core.Vec2) CellState {
-	cfg := &s.cfg
+	col, row := s.cellIndex(pos)
+	return s.cells[row][col]
+}
 
-	// Clamp pos to [WorldMin, WorldMax].
+// cellIndex maps a continuous position (clamped to [WorldMin,WorldMax]) to its coarse grid
+// (col,row), using the same geometry New uses. Shared by CellAt / BaselineMoistureAt (D11).
+func (s *State) cellIndex(pos core.Vec2) (col, row int) {
+	cfg := &s.cfg
 	x := math.Max(cfg.WorldMin.X, math.Min(pos.X, cfg.WorldMax.X))
 	y := math.Max(cfg.WorldMin.Y, math.Min(pos.Y, cfg.WorldMax.Y))
-
-	// Map to grid indices (same formula New uses for cell centers).
 	w := cfg.WorldMax.X - cfg.WorldMin.X
 	h := cfg.WorldMax.Y - cfg.WorldMin.Y
-	col := int((x - cfg.WorldMin.X) / w * float64(cfg.GridCols))
-	row := int((y - cfg.WorldMin.Y) / h * float64(cfg.GridRows))
-
-	// Clamp to valid index range (handles edge case where pos == WorldMax exactly).
+	col = int((x - cfg.WorldMin.X) / w * float64(cfg.GridCols))
+	row = int((y - cfg.WorldMin.Y) / h * float64(cfg.GridRows))
 	if col < 0 {
 		col = 0
 	} else if col >= cfg.GridCols {
@@ -283,6 +284,31 @@ func (s *State) CellAt(pos core.Vec2) CellState {
 	} else if row >= cfg.GridRows {
 		row = cfg.GridRows - 1
 	}
+	return col, row
+}
 
-	return s.cells[row][col]
+// BaselineMoistureAt is the cell's RESTING moisture — its seeded initial value (InitMoistureAt if set,
+// else the uniform InitMoisture), recomputed from Config (a pure read; not the drifting live moisture).
+// The shelter layer buffers a covered cell's felt moisture toward it so a sheltered spot's wetness
+// changes little in either direction (SH3 Q-S6). Mirrors DailyMeanTemperature; §0-safe.
+func (s *State) BaselineMoistureAt(pos core.Vec2) float64 {
+	cfg := &s.cfg
+	if cfg.InitMoistureAt == nil {
+		return cfg.InitMoisture
+	}
+	col, row := s.cellIndex(pos)
+	cellW := (cfg.WorldMax.X - cfg.WorldMin.X) / float64(cfg.GridCols)
+	cellH := (cfg.WorldMax.Y - cfg.WorldMin.Y) / float64(cfg.GridRows)
+	center := core.Vec2{
+		X: cfg.WorldMin.X + (float64(col)+cellCenterOffset)*cellW,
+		Y: cfg.WorldMin.Y + (float64(row)+cellCenterOffset)*cellH,
+	}
+	m := cfg.InitMoistureAt(center)
+	if m < moistureMin {
+		m = moistureMin
+	}
+	if m > moistureMax {
+		m = moistureMax
+	}
+	return m
 }

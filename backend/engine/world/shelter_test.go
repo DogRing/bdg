@@ -62,15 +62,16 @@ func TestLocalWindInjectionDownwind(t *testing.T) {
 	}
 }
 
-// SH3: overhead cover buffers sensed temperature toward the day's mean, and sheds moisture ONLY while
-// raining. Shelter-OFF and uncovered cells return the raw climate values.
+// SH3: overhead cover buffers sensed temperature toward the day's mean AND moisture toward the cell's
+// resting value — so felt moisture changes little in EITHER direction (wet actual pulled down toward
+// baseline, dry actual pulled up). Shelter-OFF and uncovered cells return the raw climate values.
 func TestLocalTempMoistureCover(t *testing.T) {
-	const dailyMean, actualTemp, actualMoist = 10.0, 30.0, 0.8
+	const dailyMean, actualTemp = 10.0, 30.0
 
-	// OFF: no InstallShelter → raw values regardless of rain.
+	// OFF: no InstallShelter → raw values.
 	off := &World{nav: shelterNavMap()}
-	if tmp, m := off.localTempMoistureAt(core.Vec2{X: 20, Y: 20}, actualTemp, actualMoist, dailyMean, true); tmp != actualTemp || m != actualMoist {
-		t.Errorf("OFF localTempMoistureAt = (%v,%v), want raw (%v,%v)", tmp, m, actualTemp, actualMoist)
+	if tmp, m := off.localTempMoistureAt(core.Vec2{X: 20, Y: 20}, actualTemp, 0.8, dailyMean, 0.3); tmp != actualTemp || m != 0.8 {
+		t.Errorf("OFF localTempMoistureAt = (%v,%v), want raw (%v,%v)", tmp, m, actualTemp, 0.8)
 	}
 
 	nav := shelterNavMap()
@@ -83,18 +84,20 @@ func TestLocalTempMoistureCover(t *testing.T) {
 		{ID: "roof", Footprint: []exposure.Cell{{Q: coverCell.Q, R: coverCell.R}}, Coverage: 0.75},
 	})
 	const eps = 0.25
+	lerp := func(actual, baseline float64) float64 { return actual + (baseline-actual)*(1-eps) }
 
-	// Covered, RAINING: temp buffers toward the mean; moisture sheds by ε_cover.
-	wantTemp := actualTemp + (dailyMean-actualTemp)*(1-eps) // 30 + (10−30)*0.75 = 15
-	if tmp, m := w.localTempMoistureAt(covered, actualTemp, actualMoist, dailyMean, true); math.Abs(tmp-wantTemp) > 1e-9 || math.Abs(m-actualMoist*eps) > 1e-9 {
-		t.Errorf("covered+rain = (%v,%v), want (%v,%v)", tmp, m, wantTemp, actualMoist*eps)
+	// Covered: temperature buffers toward the mean.
+	wantTemp := lerp(actualTemp, dailyMean) // 30 + (10−30)*0.75 = 15
+	// Moisture, WET actual above the resting baseline → pulled DOWN toward baseline (rises less).
+	if tmp, m := w.localTempMoistureAt(covered, actualTemp, 0.9, dailyMean, 0.3); math.Abs(tmp-wantTemp) > 1e-9 || math.Abs(m-lerp(0.9, 0.3)) > 1e-9 {
+		t.Errorf("covered (wet) = (%v,%v), want (%v,%v)", tmp, m, wantTemp, lerp(0.9, 0.3))
 	}
-	// Covered, NOT raining: temp still buffers, but moisture is untouched (Q-S6 gate on Raining).
-	if tmp, m := w.localTempMoistureAt(covered, actualTemp, actualMoist, dailyMean, false); math.Abs(tmp-wantTemp) > 1e-9 || m != actualMoist {
-		t.Errorf("covered+dry = (%v,%v), want (%v, raw %v)", tmp, m, wantTemp, actualMoist)
+	// Moisture, DRY actual below the resting baseline → pulled UP toward baseline (falls less).
+	if _, m := w.localTempMoistureAt(covered, actualTemp, 0.1, dailyMean, 0.6); math.Abs(m-lerp(0.1, 0.6)) > 1e-9 {
+		t.Errorf("covered (dry) moisture = %v, want %v", m, lerp(0.1, 0.6))
 	}
-	// Uncovered cell: raw values even while raining.
-	if tmp, m := w.localTempMoistureAt(uncovered, actualTemp, actualMoist, dailyMean, true); tmp != actualTemp || m != actualMoist {
-		t.Errorf("uncovered = (%v,%v), want raw (%v,%v)", tmp, m, actualTemp, actualMoist)
+	// Uncovered cell: raw values.
+	if tmp, m := w.localTempMoistureAt(uncovered, actualTemp, 0.9, dailyMean, 0.3); tmp != actualTemp || m != 0.9 {
+		t.Errorf("uncovered = (%v,%v), want raw (%v,%v)", tmp, m, actualTemp, 0.9)
 	}
 }

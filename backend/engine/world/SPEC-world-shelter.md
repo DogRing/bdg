@@ -106,18 +106,19 @@ A SEPARATE, direction-independent `exposure.CoverField` (built once at `InstallS
 climate state untouched (`docs/plans/shelter.md` Q-S2). Per animal, alongside `EnvSample.Wind`:
 
 ```
-dailyMean := climateState.DailyMeanTemperature()   // the diurnal midline (rain excluded)
-raining   := climateState.Rain().Raining
+dailyMean := climateState.DailyMeanTemperature()       // the diurnal midline (rain excluded)
+restMoist := climateState.BaselineMoistureAt(pos)      // the cell's resting moisture (seeded initial)
 cell      := climateState.CellAt(pos)
 ε         := coverField.Epsilon(exposureCellAt(pos))   // 1 = open sky, 0 = fully covered
 feltTemp     = lerp(cell.Temperature, dailyMean, 1−ε)   // covered → buffers toward the day's mean (Q-S3/Q-S5)
-feltMoisture = raining ? cell.Moisture × ε : cell.Moisture   // sheds rain only WHILE raining (Q-S6)
+feltMoisture = lerp(cell.Moisture, restMoist, 1−ε)      // covered → buffers toward resting; changes little either way (Q-S6)
 EnvSample.{Temperature,Moisture} = feltTemp, feltMoisture
 ```
 
-- `localTempMoistureAt(p, cellTemp, cellMoisture, dailyMean, raining)` is the single SH3 injection
-  point (in `buildFaunaEnvSamples`). Wind-chill relief needs no separate mechanism — the §6
-  `apparent_temp` program reads the already-attenuated `EnvSample.Wind` (SH1), so it flows for free.
+- `localTempMoistureAt(p, cellTemp, cellMoisture, dailyMean, baselineMoisture)` is the single SH3 injection
+  point (in `buildFaunaEnvSamples`, which fetches `BaselineMoistureAt` only when cover is installed).
+  Wind-chill relief needs no separate mechanism — the §6 `apparent_temp` program reads the
+  already-attenuated `EnvSample.Wind` (SH1), so it flows for free.
 - Shelter-OFF, an uncovered cell (`ε ≥ 1`), or climate-off returns the **raw** climate values — the
   env/fauna goldens stay byte-identical. Agents (`mind/needs`) have no thermal need, so they are out of
   SH3 scope; only fauna consumes the sheltered temp/moisture.
@@ -244,8 +245,10 @@ kind names.
 - [x] **Temperature buffering** — a covered cell buffers felt temperature toward the day's mean:
   `feltTemp = lerp(actual, dailyMean, 1−ε_cover)` (Q-S3/Q-S5). *(`TestLocalTempMoistureCover`;
   `climate.TestDailyMeanTemperatureExcludesDiurnal` proves the mean is the hour-independent midline.)*
-- [x] **Rain-gated moisture** — covered cells shed felt moisture (`× ε_cover`) **only while raining**;
-  dry-day moisture is untouched (Q-S6). *(`TestLocalTempMoistureCover` rain vs dry cases.)*
+- [x] **Moisture buffering (both directions)** — covered cells buffer felt moisture toward the cell's
+  resting value: `feltMoisture = lerp(actual, restingMoisture, 1−ε_cover)`, so wet actual is pulled down
+  and dry actual pulled up (Q-S6 revised — a moisture-stable microclimate). *(`TestLocalTempMoistureCover`
+  wet + dry cases; `climate.TestBaselineMoisture` proves the resting baseline is stable across steps.)*
 - [x] **Overhead geometry** — cover is footprint-local & isotropic (a separate `CoverField`, no wind
   sector / leeward spread), distinct from the SH1 directional shadow. *(`exposure.TestBuildCoverFootprintLocal`.)*
 - [x] **No hardcoded kind names** — coverers come from the `covers` tag (`config.buildCovererKinds` →

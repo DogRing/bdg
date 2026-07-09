@@ -65,10 +65,12 @@ func (w *World) InstallShelter(cfg exposure.Config, blockers []exposure.Blocker,
 }
 
 // localTempMoistureAt applies SH3 overhead cover to the climate values an animal SENSES at p (Q-S2
-// read-time; climate state untouched). Covered cells buffer felt temperature toward the day's mean
-// (Q-S3/Q-S5) and, WHILE RAINING, shed felt moisture (Q-S6). Shelter-OFF (or an uncovered cell) returns
-// the raw climate values unchanged. `ε_cover∈[0,1]`: 1 = open sky, 0 = fully covered.
-func (w *World) localTempMoistureAt(p core.Vec2, cellTemp, cellMoisture, dailyMean float64, raining bool) (float64, float64) {
+// read-time; climate state untouched). A covered cell buffers BOTH felt temperature toward the day's
+// mean (Q-S3/Q-S5) and felt moisture toward the cell's resting moisture (Q-S6) — so under cover the
+// sensed wetness changes little in either direction (rises less in rain, falls less when drying).
+// Shelter-OFF (or an uncovered cell, ε ≥ 1) returns the raw climate values. `ε_cover∈[0,1]`: 1 = open
+// sky, 0 = fully covered; buffering strength is (1−ε_cover).
+func (w *World) localTempMoistureAt(p core.Vec2, cellTemp, cellMoisture, dailyMean, baselineMoisture float64) (float64, float64) {
 	if w.exposureCover == nil || w.nav == nil {
 		return cellTemp, cellMoisture
 	}
@@ -77,11 +79,8 @@ func (w *World) localTempMoistureAt(p core.Vec2, cellTemp, cellMoisture, dailyMe
 	if eps >= 1 {
 		return cellTemp, cellMoisture
 	}
-	feltTemp := cellTemp + (dailyMean-cellTemp)*(1-eps) // lerp(actual, dailyMean, 1−ε_cover)
-	feltMoisture := cellMoisture
-	if raining {
-		feltMoisture = cellMoisture * eps
-	}
+	feltTemp := cellTemp + (dailyMean-cellTemp)*(1-eps)                    // lerp(actual, dailyMean, 1−ε_cover)
+	feltMoisture := cellMoisture + (baselineMoisture-cellMoisture)*(1-eps) // lerp(actual, baseline, 1−ε_cover)
 	return feltTemp, feltMoisture
 }
 

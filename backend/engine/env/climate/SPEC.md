@@ -240,6 +240,12 @@ func (s *State) DailyMeanTemperature() float64
 // uses the same Config geometry New uses. Read-only. (D11 — an index read over continuous space, never
 // a snap of the animal's Pos.)
 func (s *State) CellAt(pos core.Vec2) CellState
+
+// BaselineMoistureAt is a cell's RESTING moisture — its seeded initial value (InitMoistureAt if set,
+// else the uniform InitMoisture), recomputed from Config (NOT the drifting live moisture). The shelter
+// layer buffers a covered cell's felt moisture toward it so a sheltered spot's wetness changes little
+// in either direction (SH3 Q-S6). A pure read (mirrors DailyMeanTemperature); §0-safe, not serialized.
+func (s *State) BaselineMoistureAt(pos core.Vec2) float64
 ```
 
 ## Dependencies

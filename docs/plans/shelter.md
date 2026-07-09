@@ -84,10 +84,16 @@ start a phase while any Open question tagged to it is `OPEN` (CLAUDE.md gate).
   constant; per-kind strength = follow-up, same shape SH1 shipped).
 - **Q-S5 = (a)** buffering baseline = climate's **daily-MEAN** temperature (climate exposes base/daily-delta
   for a §0-safe read — a read, not a state mutation).
-- **Q-S6 = (b)** *(user overrode the rec)* moisture attenuation **gated on the global Raining flag** — cover
-  reduces felt moisture only while raining (a roof doesn't dry soil on a sunny day).
+- **Q-S6 = (b) → REVISED 2026-07-09 to "buffer toward resting moisture, both directions".** The original
+  (b) *(gate on Raining, multiply)* left dry-day moisture unattenuated. The user refined the intent: *"cover
+  위치의 습기의 변화량 자체가 적었으면 — 비가 오면 적게 올라가고, 비가 안 와도 적게 내려가고"* (a covered spot is a
+  moisture-STABLE microclimate: wetness changes little in EITHER direction). ⇒ moisture now buffers toward
+  the cell's **resting moisture** (its seeded `InitMoistureAt`/`InitMoisture`) with the SAME lerp shape as
+  temperature — no Raining gate. `climate.BaselineMoistureAt(pos)` exposes the resting value (§0-safe read,
+  mirrors `DailyMeanTemperature`). Rain pushes actual up → felt pulled back toward baseline (rises less);
+  drying pushes actual down → felt pulled up toward baseline (falls less).
 - **Semantics (binding):** `ε_cover∈[0,1]` (1=open, 0=covered); `felt_temp = lerp(actual, dailyMean, 1−ε_cover)`;
-  `felt_moisture = raining ? actual×ε_cover : actual`. Consumers = fauna `EnvSample.{Temperature,Moisture}`
+  `felt_moisture = lerp(actual, restingMoisture, 1−ε_cover)`. Consumers = fauna `EnvSample.{Temperature,Moisture}`
   at read-time (mirror SH1 `localWindAt`); **agents out of SH3 scope** (`mind/needs` has no thermal need;
   the agent `TakeShelter` action is unrelated to this field). Wind-chill relief under shelter is free via
   SH1 (attenuated wind → warmer `apparent_temp`).
@@ -119,9 +125,11 @@ Sub-tasks likely need their own SPECs (≤400-line rule). Design-ahead notes liv
 ### SH3 — Extend exposure to rain + temperature (Q-W5 = c) — ✅ SHIPPED 2026-07-09
 Built BEFORE SH2 (direct ε-machinery extension, lower risk). Overhead `ε_cover` (Q-S1) from the `covers` tag
 (Q-S4), read-time only (Q-S2): covered cells buffer felt temperature toward the climate daily-mean
-(Q-S3/Q-S5) and shed felt moisture only while raining (Q-S6).
-> Shipped: `exposure.BuildCover`/`CoverField` + `climate.DailyMeanTemperature()` + `world.localTempMoistureAt`
-> + `config.buildCovererKinds` → `worldgen.buildCoverers`. OFF-neutral (no `covers` content ⇒ byte-identical).
+(Q-S3/Q-S5) AND felt moisture toward the cell's resting moisture (Q-S6 revised) — a moisture-stable
+microclimate whose sensed wetness changes little in either direction.
+> Shipped: `exposure.BuildCover`/`CoverField` + `climate.DailyMeanTemperature()` + `climate.BaselineMoistureAt()`
+> + `world.localTempMoistureAt` + `config.buildCovererKinds` → `worldgen.buildCoverers`. OFF-neutral (no
+> `covers` content ⇒ byte-identical).
 > Follow-ups: per-kind coverage strength · terrain-sourced coverers · coefficients → `balance.yaml`.
 > Cave interiors (Q-C4 full ε=0 shelter) will reuse `ε_cover` via SH2 interiors.
 

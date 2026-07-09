@@ -93,6 +93,43 @@ func TestDailyMeanTemperatureExcludesDiurnal(t *testing.T) {
 	}
 }
 
+// BaselineMoistureAt (SH3 Q-S6) returns the cell's RESTING moisture (seeded initial), clamped, and
+// independent of the live moisture that drifts as the sim steps.
+func TestBaselineMoisture(t *testing.T) {
+	// Uniform InitMoisture (no per-cell field) ⇒ baseline is that value everywhere.
+	cfg := testCfg()
+	s := climate.New(cfg, fixedTerrainAt("g"))
+	if got := s.BaselineMoistureAt(core.Vec2{X: 50, Y: 50}); got != cfg.InitMoisture {
+		t.Errorf("uniform baseline = %v, want InitMoisture %v", got, cfg.InitMoisture)
+	}
+
+	// Per-cell InitMoistureAt (sampled at the cell CENTER): west cell 0.2, east cell 1.5 → clamps to 1.
+	cfg2 := testCfg()
+	cfg2.InitMoistureAt = func(p core.Vec2) float64 {
+		if p.X < 50 {
+			return 0.2
+		}
+		return 1.5
+	}
+	s2 := climate.New(cfg2, fixedTerrainAt("g"))
+	if got := s2.BaselineMoistureAt(core.Vec2{X: 10, Y: 10}); got != 0.2 {
+		t.Errorf("west baseline = %v, want 0.2", got)
+	}
+	if got := s2.BaselineMoistureAt(core.Vec2{X: 90, Y: 90}); got != 1.0 {
+		t.Errorf("east baseline = %v, want clamped 1.0", got)
+	}
+
+	// The baseline is the RESTING value — stepping the sim (which drifts live moisture) does not move it.
+	r := rng.New(1)
+	s3 := s2
+	for i := 0; i < 5; i++ {
+		s3, _ = climate.Step(s3, forcing(int64(i)), emptyRules(), r)
+	}
+	if got := s3.BaselineMoistureAt(core.Vec2{X: 10, Y: 10}); got != 0.2 {
+		t.Errorf("baseline after 5 steps = %v, want still 0.2 (resting, not live)", got)
+	}
+}
+
 // ── AC: Rain accumulates and fires ───────────────────────────────────────────
 
 func TestRainAccumulatesAndFires(t *testing.T) {
