@@ -55,6 +55,26 @@ one file is bloat (the pre-diet 73K `fauna.md` failure mode).
   the gate is OPEN; once the human resolves it, compress the plan to the resolution and move the debate
   to `docs/decisions/`.
 
+## Request intake — from a vague ask to code
+A feature request ("animals should accelerate", "make shelter elevation smarter") is **routed, not coded**:
+1. **Route.** Find the owning Tier-2 plan (`docs/plans/<subsystem>.md`); read its resolutions + phase
+   status, then the owning module `SPEC.md`. If the request is ambiguous about WHICH mechanism it touches
+   (e.g. "elevation" could be worldgen, a build gate, or cave placement), that ambiguity is itself the
+   first question for the human.
+2. **Classify** the change:
+   - *Covered* — the SPEC already specifies the behaviour → implement (direct edit or implementer),
+     keeping SPEC/tests in sync.
+   - *Contract change* — the SPEC's public contract moves → update the SPEC first, then the code, in the
+     same working set.
+   - *New mechanism* — a state field / formula shape / cadence / schema key the plan never resolved, or
+     explicitly deferred → **Open-Question event**: enumerate options + a recommendation in the plan,
+     surface via AskUserQuestion, and wait. No code until the human flips it to RESOLVED.
+3. **Land.** Plan resolution (What) → SPEC (How) → implement → review; move the deliberation to
+   `docs/decisions/` (Why); re-baseline goldens only as an intentional, named step.
+
+Direct edits by the main session are allowed at every step — the invariant is **alignment**: docs are
+updated with or before the code, never after the fact, and never skipped.
+
 ## Escalation
 - To touch an invariant (D1–D12), stop, fix `docs/core/design.md` first, then get human approval.
 - New modules or contract changes update `docs/core/architecture.md` / `docs/core/data-contracts.md` first.
