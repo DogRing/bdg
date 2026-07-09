@@ -1,6 +1,6 @@
 # SPEC — `engine/world` · Shelter & Cave Orchestration
 
-> Status: `SH1 SHIPPED` · `SH2 DESIGN-AHEAD` (SH1 SPEC-design RESOLVED in `docs/shelter.md`)
+> Status: `SH1 SHIPPED` · `SH3 SHIPPED` · `SH2 DESIGN-AHEAD` (SPEC-design RESOLVED in `docs/shelter.md`)
 > Sub-spec of: `SPEC.md`  ·  Owner agent: `<filled by implementer>`
 > Scope = **SH1–SH2** (`docs/shelter.md`): exposure local-wind injection (SH1, build now); cave
 > portals + interior active-space state (SH2, design-ahead — see the marked section).
@@ -236,6 +236,22 @@ kind names.
 - [x] **No hardcoded kind names** — no `if kind == "wall"` / `"house"` logic; blockers come from the
   `blocks_wind` tag (`config.buildWindBlockerKinds` → `worldgen.buildWindBlockers`). *(SH1 uses a uniform
   per-blocker height/opacity; per-kind strength from tag data is a documented follow-up — `docs/shelter.md` (iv).)*
+
+### SH3 (rain + temperature — SHIPPED 2026-07-09)
+- [x] **Shelter-OFF / uncovered neutrality** — no `covers` coverers (or an uncovered cell) ⇒
+  `localTempMoistureAt` returns the raw climate temp/moisture; env/fauna goldens **byte-identical**.
+  *(`world.TestLocalTempMoistureCover` OFF + uncovered cases; full suite byte-identical at 1172.)*
+- [x] **Temperature buffering** — a covered cell buffers felt temperature toward the day's mean:
+  `feltTemp = lerp(actual, dailyMean, 1−ε_cover)` (Q-S3/Q-S5). *(`TestLocalTempMoistureCover`;
+  `climate.TestDailyMeanTemperatureExcludesDiurnal` proves the mean is the hour-independent midline.)*
+- [x] **Rain-gated moisture** — covered cells shed felt moisture (`× ε_cover`) **only while raining**;
+  dry-day moisture is untouched (Q-S6). *(`TestLocalTempMoistureCover` rain vs dry cases.)*
+- [x] **Overhead geometry** — cover is footprint-local & isotropic (a separate `CoverField`, no wind
+  sector / leeward spread), distinct from the SH1 directional shadow. *(`exposure.TestBuildCoverFootprintLocal`.)*
+- [x] **No hardcoded kind names** — coverers come from the `covers` tag (`config.buildCovererKinds` →
+  `worldgen.buildCoverers`). *(Uniform SH3 coverage; per-kind strength is a follow-up — `docs/shelter.md` SH3 block.)*
+- [x] **Wind-chill for free** — no separate exterior wind-chill mechanism; `apparent_temp` reads the
+  SH1-attenuated `EnvSample.Wind`, so a covered/leeward animal already feels warmer.
 
 ### SH2 (design-ahead — do NOT implement in the SH1 build)
 - [ ] **Enter/exit portal** — entering moves an actor exterior→interior coordinate, updates spatial

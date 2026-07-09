@@ -239,11 +239,13 @@ is `OPEN` (CLAUDE.md gate).
 
 ## 2. Phases (each independently shippable; tests + determinism golden per phase)
 
-### SH1 — Exposure field leaf + local wind injection (wind only)
+### SH1 — Exposure field leaf + local wind injection (wind only) — ✅ SHIPPED
 New leaf `engine/env/exposure` (Q-W7): per-navmap-cell ε from `blocks_wind` blockers (Q-W2) with directional
 shadow (Q-W3), sector-cached (Q-W4). World multiplies `climate.Wind() × ε(cell)` and injects the result as
 the **local** `scent.Wind` (already consumed) and into fauna Context. **No cave yet.** Golden: ε-field for a
 fixture with one wall + fixed wind.
+> **Shipped:** `exposure` leaf (`Build`/`Field`/`Cache`) + `world.localWindAt` + `config.buildWindBlockerKinds`
+> → `worldgen.buildWindBlockers` → `InstallShelter`. OFF-neutral (no `blocks_wind` content ⇒ byte-identical).
 
 ### SH2 — Cave = portal to a generated interior sub-space (Q-C1 = b)
 worldgen places cave **entrances** (Q-C2) as `shelters`-tagged portals on mountain/bare_rock. Entering (a
@@ -254,9 +256,17 @@ New plumbing this phase introduces: (1) interior-region generator (seeded, deter
 enter/exit transition + which-space-is-active state, (3) frontend render-space swap, (4) which env layers run
 inside vs are forced to interior defaults. Sub-tasks likely need their own SPECs (≤400-line rule).
 
-### SH3 — Extend exposure to rain + temperature (only if Q-W5 = b/c)
-Sheltered cells / interiors reduce rain accumulation and buffer temperature toward a shelter-stable value;
-wire to climate rain read + fauna thermal (F40). Converges cave (Q-C4) and wind-shadow onto one ε.
+### SH3 — Extend exposure to rain + temperature (Q-W5 = c) — ✅ SHIPPED 2026-07-09
+Built BEFORE SH2 (direct extension of the ε machinery, lower risk). A SEPARATE **overhead `ε_cover`** field
+(Q-S1=a; isotropic, footprint-local) from a `covers` tag (Q-S4=a). Read-time only, climate untouched
+(Q-S2=a): a covered cell buffers felt temperature toward the climate **daily-mean** (Q-S3=b/Q-S5=a,
+`climate.DailyMeanTemperature()`) and sheds felt moisture **only while raining** (Q-S6=b). Wind-chill relief
+is free — `apparent_temp` (F40) reads the SH1-attenuated `EnvSample.Wind`. Consumers: fauna
+`EnvSample.{Temperature,Moisture}` via `world.localTempMoistureAt`.
+> **Shipped:** `exposure.BuildCover`/`CoverField` + `climate.DailyMeanTemperature()` + `world.localTempMoistureAt`
+> + `config.buildCovererKinds` → `worldgen.buildCoverers`. OFF-neutral (no `covers` content ⇒ byte-identical).
+> **Follow-ups:** per-kind coverage strength, terrain-sourced coverers, coefficients → `balance.yaml`.
+> Cave interiors (Q-C4 full ε=0 shelter) will reuse `ε_cover` via SH2 interiors.
 
 ### SH4 — Serialization + frontend
 Persist cave entrances + occupancy; stream exposure as periodic-full + sparse deltas (like `wear`). Frontend:
