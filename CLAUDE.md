@@ -27,6 +27,12 @@ Live state in **Redis**, periodic backup to **Postgres**, graphics later via **S
 7. Standard flow: decompose (architect) → implement leaf (implementer) → verify (reviewer) → `NEEDS_FIX` loop.
 8. The main session sees **only top-level SPECs and summaries.** Detailed work is delegated to subagents.
 
+## Documentation Triad — where words live (full rules: `docs/process/spec-system.md`)
+- **What** (decisions, resolved gates, phase status) → the subsystem plan in `docs/plans/` — a decision record, not a mechanism dump.
+- **How** (mechanisms, schemas, signatures, params) → the owning module's `SPEC.md`.
+- **Why** (option deliberations, rejected alternatives, audits) → **git history only**, never a living file; when retiring such text, commit it first and leave a `커밋 <hash>` pointer next to the surviving resolution.
+- **Past rationale?** Don't grep the docs for it — it is deliberately not in the tree. Search git instead: `git log --grep`/`-S`, `git show <hash>:<path>`; the hash pointers in the plans are the entry points.
+
 ## Subsystem plans & the Open-Question gate (the control surface)
 Cross-cutting subsystems (map/nav, climate, lifecycle, economy, …) each get a **Tier-2 plan** at `docs/plans/<subsystem>.md` (template: `docs/plans/map.md`), sitting between `docs/core/design.md` (concept) and the module `SPEC.md`s (interface). Every plan carries **Decisions locked** + **Open questions** + **Phases**. The gate is **mechanical, not "ask if unsure"**:
 1. **Enumerate, don't decide.** spec-architect's *first* deliverable for a subsystem/phase is to **populate that plan's Open questions** — list every mechanism choice (algorithm, update cadence, data/schema shape, granularity) with options + a recommendation — and **return without writing the SPEC**. (Agents reliably *enumerate* decisions; they do not reliably *notice they are unsure* mid-build — so we make enumeration the deliverable.)

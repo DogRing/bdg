@@ -32,6 +32,24 @@ decompose (architect)
 - Stats, actions, and gates are added as `content/` data + schema, not code.
 - Determinism and test rules: `docs/core/testing.md`.
 
+## The Documentation Triad — where words live
+Every piece of documentation has exactly one home. Writing it elsewhere is drift; keeping all three in
+one file is bloat (the pre-diet 73K `fauna.md` failure mode).
+
+| Layer | Content | Home |
+|---|---|---|
+| **What** | decisions, resolved gates, phase status, invariant guards | the subsystem plan (`docs/plans/<subsystem>.md`) — a **decision record**: resolutions + status + SPEC pointers, never mechanisms |
+| **How** | mechanisms, schemas, signatures, constraints, parameters, ACs | the owning module's `SPEC.md` (split at ~400 lines) |
+| **Why** | option deliberations, rejected alternatives, superseded designs, audits | **git history only** — never a living file |
+
+- **Retiring "Why" text:** land it in a commit first, then replace it with a one-line pointer
+  (`옵션 전문 = 커밋 <hash>`) next to the surviving resolution. The plan's resolution table stays authoritative.
+- **Recovering past rationale:** do NOT grep the docs for it — deliberations are deliberately absent from
+  the tree. Search git instead: `git log --grep=<topic>` / `git log -S<symbol> -- <path>` /
+  `git show <hash>:<path>`. Commits named in plan pointers (e.g. `bebc643`, `1f66cdc`) are the entry points.
+- **Writing a new plan/SPEC:** apply the triad from the start — enumerate options in the plan only while
+  the gate is OPEN; once the human resolves it, compress to the resolution and let the commit keep the debate.
+
 ## Escalation
 - To touch an invariant (D1–D12), stop, fix `docs/core/design.md` first, then get human approval.
 - New modules or contract changes update `docs/core/architecture.md` / `docs/core/data-contracts.md` first.
