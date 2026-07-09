@@ -75,8 +75,12 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 func (w *World) buildFaunaEnvSamples() map[core.ObjectID]fauna.EnvSample {
 	env := make(map[core.ObjectID]fauna.EnvSample, len(w.animalIDs))
 	var global climate.Wind
+	var dailyMean float64
+	var raining bool
 	if w.climateState != nil {
 		global = w.climateState.Wind()
+		dailyMean = w.climateState.DailyMeanTemperature()
+		raining = w.climateState.Rain().Raining
 	}
 	for _, id := range w.animalIDs {
 		a := w.animals[id]
@@ -87,8 +91,9 @@ func (w *World) buildFaunaEnvSamples() map[core.ObjectID]fauna.EnvSample {
 		sample := fauna.EnvSample{Wind: w.localWindAt(a.Pos, global)}
 		if w.climateState != nil {
 			cell := w.climateState.CellAt(a.Pos)
-			sample.Temperature = cell.Temperature
-			sample.Moisture = cell.Moisture
+			// SH3: overhead cover buffers sensed temperature toward the day's mean + sheds rain
+			// moisture (docs/shelter.md). Shelter-OFF / uncovered cell ⇒ raw climate values.
+			sample.Temperature, sample.Moisture = w.localTempMoistureAt(a.Pos, cell.Temperature, cell.Moisture, dailyMean, raining)
 		}
 		env[id] = sample
 	}

@@ -209,7 +209,7 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	// SH1 shelter: objects tagged `blocks_wind` become wind-shadow casters (docs/shelter.md).
 	// No such objects ⇒ no blockers ⇒ InstallShelter skipped ⇒ shelter stays OFF (byte-identical).
 	if blockers := buildWindBlockers(fx.Objects, cfg.WindBlockerKinds, nav); len(blockers) > 0 {
-		w.InstallShelter(shelterConfig(), blockers)
+		w.InstallShelter(shelterConfig(), blockers, nil)
 	}
 
 	animals, err := buildAnimals(fx, cfg)

@@ -70,9 +70,11 @@ type InteriorState struct {
     Occupants []core.ObjectID // sorted; SH2 unlimited capacity, so this is observability/state only
 }
 
-// InstallShelter installs SH1 exposure and optional SH2 interiors/portals. If not called, shelter is OFF:
-// exposure epsilon is 1 everywhere and all active spaces are exterior.
-func (w *World) InstallShelter(cfg ShelterConfig, blockers []exposure.Blocker, interiors []InteriorRegion)
+// InstallShelter installs the exposure layer: SH1 wind blockers + SH3 overhead coverers. If not called,
+// shelter is OFF: ε_wind ≡ ε_cover ≡ 1 (local wind == global; sensed temp/moisture raw). SH2
+// interiors/portals are design-ahead and NOT a parameter yet (they will extend this signature).
+// SHIPPED signature (SH1+SH3):
+func (w *World) InstallShelter(cfg exposure.Config, blockers []exposure.Blocker, coverers []exposure.Coverer)
 ```
 
 ## SH1 Tick Wiring
@@ -96,6 +98,29 @@ Consumers — **SH1 = per-position attenuation only** (`docs/shelter.md` SH1 SPE
   bulk diffusion pass. SH1 attenuates only what per-position consumers *sense*, not the diffusion
   kernel; per-cell scent diffusion (a wall blocking scent drift) is a deferred increment.
 - Climate-off or shelter-off uses `Wind{0,0}` / epsilon `1`, preserving existing behavior byte-for-byte.
+
+## SH3 Tick Wiring (rain + temperature — overhead cover)
+
+A SEPARATE, direction-independent `exposure.CoverField` (built once at `InstallShelter` from the
+`covers` coverers; `nil` ⇒ SH3 OFF) attenuates the climate values an animal SENSES — read-time only,
+climate state untouched (`docs/shelter.md` Q-S2). Per animal, alongside `EnvSample.Wind`:
+
+```
+dailyMean := climateState.DailyMeanTemperature()   // the diurnal midline (rain excluded)
+raining   := climateState.Rain().Raining
+cell      := climateState.CellAt(pos)
+ε         := coverField.Epsilon(exposureCellAt(pos))   // 1 = open sky, 0 = fully covered
+feltTemp     = lerp(cell.Temperature, dailyMean, 1−ε)   // covered → buffers toward the day's mean (Q-S3/Q-S5)
+feltMoisture = raining ? cell.Moisture × ε : cell.Moisture   // sheds rain only WHILE raining (Q-S6)
+EnvSample.{Temperature,Moisture} = feltTemp, feltMoisture
+```
+
+- `localTempMoistureAt(p, cellTemp, cellMoisture, dailyMean, raining)` is the single SH3 injection
+  point (in `buildFaunaEnvSamples`). Wind-chill relief needs no separate mechanism — the §6
+  `apparent_temp` program reads the already-attenuated `EnvSample.Wind` (SH1), so it flows for free.
+- Shelter-OFF, an uncovered cell (`ε ≥ 1`), or climate-off returns the **raw** climate values — the
+  env/fauna goldens stay byte-identical. Agents (`mind/needs`) have no thermal need, so they are out of
+  SH3 scope; only fauna consumes the sheltered temp/moisture.
 
 Cache invalidation:
 

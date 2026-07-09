@@ -160,6 +160,9 @@ type World struct {
 	// byte-identical). Installed via InstallShelter; blockers are static per run in SH1.
 	exposureCache    *exposure.Cache
 	exposureBlockers []exposure.Blocker
+	// SH3 overhead cover: nil field ⇒ OFF (ε_cover ≡ 1, sensed temp/moisture unchanged). Built once
+	// at InstallShelter from `covers`-tagged coverers; used by localTempMoistureAt.
+	exposureCover *exposure.CoverField
 
 	// pendingFloraFrame is the current tick's sparse flora spawn/grow render delta
 	// (WI-P4 WorldFrame.flora_delta) — built in runFloraEnv, cleared at the top of

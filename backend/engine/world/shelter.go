@@ -46,16 +46,43 @@ func (t *navTopo) InBounds(c exposure.Cell) bool {
 	return t.nav.InBounds(navmap.Cell{Q: c.Q, R: c.R})
 }
 
-// InstallShelter enables the SH1 exposure layer: local wind = global wind × ε(cell), with ε derived
-// from the given `blocks_wind` blockers over a 6-sector cache (docs/shelter.md, SPEC-world-shelter.md).
-// Without this call the world is shelter-OFF (ε ≡ 1, local wind == global wind, byte-identical).
-// Cave interiors are SH2 and not wired here. Requires an installed navmap.
-func (w *World) InstallShelter(cfg exposure.Config, blockers []exposure.Blocker) {
+// InstallShelter enables the exposure layer: SH1 local wind = global wind × ε_wind(cell) from the
+// `blocks_wind` blockers over a 6-sector cache, and SH3 overhead cover ε_cover(cell) from the `covers`
+// coverers (docs/shelter.md, SPEC-world-shelter.md). Without this call the world is shelter-OFF (ε ≡ 1,
+// local wind == global wind, sensed temp/moisture unchanged, byte-identical). nil coverers ⇒ SH3 OFF
+// only (wind still applies). Cave interiors are SH2 and not wired here. Requires an installed navmap.
+func (w *World) InstallShelter(cfg exposure.Config, blockers []exposure.Blocker, coverers []exposure.Coverer) {
 	if w.nav == nil {
 		return
 	}
 	w.exposureBlockers = blockers
 	w.exposureCache = exposure.NewCache(cfg, newNavTopo(w.nav))
+	if len(coverers) > 0 {
+		w.exposureCover = exposure.BuildCover(cfg, coverers)
+	} else {
+		w.exposureCover = nil
+	}
+}
+
+// localTempMoistureAt applies SH3 overhead cover to the climate values an animal SENSES at p (Q-S2
+// read-time; climate state untouched). Covered cells buffer felt temperature toward the day's mean
+// (Q-S3/Q-S5) and, WHILE RAINING, shed felt moisture (Q-S6). Shelter-OFF (or an uncovered cell) returns
+// the raw climate values unchanged. `ε_cover∈[0,1]`: 1 = open sky, 0 = fully covered.
+func (w *World) localTempMoistureAt(p core.Vec2, cellTemp, cellMoisture, dailyMean float64, raining bool) (float64, float64) {
+	if w.exposureCover == nil || w.nav == nil {
+		return cellTemp, cellMoisture
+	}
+	cell := w.nav.CellOf(p)
+	eps := w.exposureCover.Epsilon(exposure.Cell{Q: cell.Q, R: cell.R})
+	if eps >= 1 {
+		return cellTemp, cellMoisture
+	}
+	feltTemp := cellTemp + (dailyMean-cellTemp)*(1-eps) // lerp(actual, dailyMean, 1−ε_cover)
+	feltMoisture := cellMoisture
+	if raining {
+		feltMoisture = cellMoisture * eps
+	}
+	return feltTemp, feltMoisture
 }
 
 // localWindAt returns the world-uniform wind attenuated by the exposure field at p (SH1). It is the
