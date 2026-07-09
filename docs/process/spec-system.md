@@ -40,15 +40,20 @@ one file is bloat (the pre-diet 73K `fauna.md` failure mode).
 |---|---|---|
 | **What** | decisions, resolved gates, phase status, invariant guards | the subsystem plan (`docs/plans/<subsystem>.md`) — a **decision record**: resolutions + status + SPEC pointers, never mechanisms |
 | **How** | mechanisms, schemas, signatures, constraints, parameters, ACs | the owning module's `SPEC.md` (split at ~400 lines) |
-| **Why** | option deliberations, rejected alternatives, superseded designs, audits | **git history only** — never a living file |
+| **Why** | option deliberations, rejected alternatives, superseded designs, audits | **`docs/decisions/<subsystem>-gates.md`** — `.claudeignore`d (zero ambient tokens), read explicitly on demand |
 
-- **Retiring "Why" text:** land it in a commit first, then replace it with a one-line pointer
-  (`옵션 전문 = 커밋 <hash>`) next to the surviving resolution. The plan's resolution table stays authoritative.
-- **Recovering past rationale:** do NOT grep the docs for it — deliberations are deliberately absent from
-  the tree. Search git instead: `git log --grep=<topic>` / `git log -S<symbol> -- <path>` /
-  `git show <hash>:<path>`. Commits named in plan pointers (e.g. `bebc643`, `1f66cdc`) are the entry points.
+- **Retiring "Why" text:** cut the deliberation out of the plan into `docs/decisions/<subsystem>-gates.md`
+  (append if the file exists; give it a provenance header: source plan, resolution dates), and replace it
+  with a one-line pointer (`옵션 전문 = docs/decisions/<file>`) next to the surviving resolution. The
+  plan's resolution table stays authoritative — the decisions file is a frozen record, never re-edited
+  into a second source of truth.
+- **Recovering past rationale:** do NOT guess, do NOT re-litigate, and do NOT grep the living docs for
+  it — deliberations are deliberately absent from plans/SPECs. **Explicitly Read the pointed-to file in
+  `docs/decisions/`** (every diet pointer names one). Git history remains the fallback for anything
+  predating the folder (e.g. fauna F1–F24 at commit `bebc643`).
 - **Writing a new plan/SPEC:** apply the triad from the start — enumerate options in the plan only while
-  the gate is OPEN; once the human resolves it, compress to the resolution and let the commit keep the debate.
+  the gate is OPEN; once the human resolves it, compress the plan to the resolution and move the debate
+  to `docs/decisions/`.
 
 ## Escalation
 - To touch an invariant (D1–D12), stop, fix `docs/core/design.md` first, then get human approval.

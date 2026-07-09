@@ -30,8 +30,8 @@ Live state in **Redis**, periodic backup to **Postgres**, graphics later via **S
 ## Documentation Triad — where words live (full rules: `docs/process/spec-system.md`)
 - **What** (decisions, resolved gates, phase status) → the subsystem plan in `docs/plans/` — a decision record, not a mechanism dump.
 - **How** (mechanisms, schemas, signatures, params) → the owning module's `SPEC.md`.
-- **Why** (option deliberations, rejected alternatives, audits) → **git history only**, never a living file; when retiring such text, commit it first and leave a `커밋 <hash>` pointer next to the surviving resolution.
-- **Past rationale?** Don't grep the docs for it — it is deliberately not in the tree. Search git instead: `git log --grep`/`-S`, `git show <hash>:<path>`; the hash pointers in the plans are the entry points.
+- **Why** (option deliberations, rejected alternatives, audits) → **`docs/decisions/`** — cut it out of the living doc and file it there, leaving a `docs/decisions/<file>` pointer next to the surviving resolution. That folder is `.claudeignore`d: it costs no ambient tokens and is read only on demand.
+- **Past rationale?** Don't guess and don't re-litigate — explicitly Read the pointed-to file in `docs/decisions/` (the plans name it). Deliberations are deliberately absent from the living docs.
 
 ## Subsystem plans & the Open-Question gate (the control surface)
 Cross-cutting subsystems (map/nav, climate, lifecycle, economy, …) each get a **Tier-2 plan** at `docs/plans/<subsystem>.md` (template: `docs/plans/map.md`), sitting between `docs/core/design.md` (concept) and the module `SPEC.md`s (interface). Every plan carries **Decisions locked** + **Open questions** + **Phases**. The gate is **mechanical, not "ask if unsure"**:

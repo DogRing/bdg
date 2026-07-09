@@ -14,7 +14,7 @@ start a phase while any Open question tagged to it is `OPEN` (CLAUDE.md gate).
 > extreme case (ε=0 interior).
 
 > **Gate status: every question RESOLVED** (Q-C1..C5, Q-W1..W7, Q-S1..S6, Q-M1 — human 2026-07-08/09).
-> **This file = decision record + phase status.** Option deliberations = commit `1f66cdc` (pre-diet).
+> **This file = decision record + phase status.** Option deliberations = **`docs/decisions/shelter-gates.md`**.
 > **Implementation authority = the module SPECs:** `backend/engine/env/exposure/SPEC.md` (the ε leaf) ·
 > `backend/engine/world/SPEC-world-shelter.md` (injection/cave wiring) · `backend/tools/worldgen/SPEC.md`
 > (blocker/coverer/cave placement).
@@ -41,7 +41,7 @@ start a phase while any Open question tagged to it is `OPEN` (CLAUDE.md gate).
 
 ---
 
-## 1. Resolutions (human-confirmed; deliberation texts = commit `1f66cdc`)
+## 1. Resolutions (human-confirmed; deliberation texts = `docs/decisions/shelter-gates.md`)
 
 ### Cave (Q-C, 2026-07-08)
 - **Q-C1 = (b) linked continuous sub-space** *(user overrode the rec)*: cave interior is a **separately

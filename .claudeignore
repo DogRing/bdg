@@ -36,4 +36,7 @@ secrets/
 # retired docs (superseded handoffs / resolved audits) — isolated from AI context
 docs/archive/
 
+# decision deliberations (the Triad's "Why" layer) — read explicitly on demand, never ambient
+docs/decisions/
+
 AGENTS.md

@@ -8,7 +8,7 @@ Concept & rationale: `docs/core/design.md §5`(연속좌표·격자=인덱스·�
 이 문서 = **모듈을 잇는 *통합* 결정 표면** — module SPEC 아님. W1-W14는 **새 메커니즘이 아니라 배선 선택**(경계·격자·cadence·apply순서·직렬화).
 
 > **게이트 전부 완료: W1–W14 RESOLVED**(W1-9 2026-06-27 · W10-W14 + 작은 seam 2026-06-28; W10a만 DEFERRED).
-> **이 문서 = 확정값(결정 기록) + phase 상태.** 옵션 전문·기각 근거 원문 = 커밋 `1f66cdc`(pre-diet).
+> **이 문서 = 확정값(결정 기록) + phase 상태.** 옵션 전문·기각 근거 원문 = **`docs/decisions/world-integration-gates.md`**.
 > **배선의 구현 정본 = 각 phase의 SPEC**(§2 포인터). SPEC/구현이 §0·§1을 벗어나면 여기를 먼저 고치고 사람 승인.
 
 관련 모듈: `engine/world`(orchestrator·sole mutator), `engine/env/{climate,flora,decay}`(pure Step), `engine/fauna`(pure Step),
@@ -31,7 +31,7 @@ Concept & rationale: `docs/core/design.md §5`(연속좌표·격자=인덱스·�
 
 ---
 
-## 1. Resolutions (W1–W14 — 전부 사람 확정; 옵션 전문 = 커밋 `1f66cdc`)
+## 1. Resolutions (W1–W14 — 전부 사람 확정; 옵션 전문 = `docs/decisions/world-integration-gates.md`)
 
 ### W1–W9 (2026-06-27; 수치 → `content/world.yaml`)
 - **W1 — 월드 경계(WorldMin/Max) 출처 · RESOLVED: fixture가 권위.** world-gen/시나리오 fixture가 bounds를 싣고 world가 climate·navmap에 같은 값 주입(한 소스, D12 재현); headless 기본값만 balance. agent `Pos`는 여전히 경계 밖 연속 가능(경계 = *격자 범위*일 뿐, 클램프는 셀 조회에서만).

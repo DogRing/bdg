@@ -8,8 +8,8 @@ Concept & rationale: `docs/core/design.md §5`(연속좌표·동적지형), `§6
 `docs/plans/map.md`(navmap/직렬화/보조-색인 양식).
 
 > **게이트 전부 완료:** §0 잠금 + §1 F1~F46 + 클러스터 6~10 **전부 RESOLVED**(사람 확정 2026-06-26 ~ 2026-07-08).
-> **이 문서 = 확정값(결정 기록) + phase 로드맵.** 옵션 전문·판단 근거 원문은 pre-resolution 커밋 `bebc643`(F1~F24)
-> 및 pre-diet 커밋 `1f66cdc`(F25~F44 클러스터 1~6 상세, FC/M SPEC-design 전문) 참조.
+> **이 문서 = 확정값(결정 기록) + phase 로드맵.** 옵션 전문·판단 근거 = **`docs/decisions/fauna-gates.md`**
+> (F25~F44 클러스터 상세·FC/M SPEC-design 전문; F1~F24 pre-resolution 전문만 커밋 `bebc643`).
 > **확정 메커니즘의 구현 정본은 module SPEC:** `backend/engine/fauna/SPEC.md`(코어) ·
 > `backend/engine/space/scent/SPEC.md`(냄새 그리드) · `backend/engine/world/SPEC-world-fauna.md`(apply/사망/feed) ·
 > `backend/platform/config/SPEC-world.md`(`fauna:` content 컴파일).
@@ -127,7 +127,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 
 ### 클러스터 1~5 — F25~F42 옵션 상세 (이관·압축)
 > 클러스터 1(의사결정 코어 F25~F27) · 2(entity/스키마 F28~F31) · 3(냄새 그리드 F32~F34) · 4(산물/생애주기 F35~F40) ·
-> 5(통합/어휘 F41~F42)의 **옵션 전문·근거·⚠가드 원문 = 커밋 `1f66cdc`**. 위 표의 RESOLVED가 권위이며, 확정 메커니즘은
+> 5(통합/어휘 F41~F42)의 **옵션 전문·근거·⚠가드 원문 = `docs/decisions/fauna-gates.md`**. 위 표의 RESOLVED가 권위이며, 확정 메커니즘은
 > 전부 SPEC에 구현·반영됨: fauna `SPEC.md`(Public Interface 파이프라인 + Owned Data — utility·drive·steering·
 > `Animal` 필드·`fauna.Rules`), scent `SPEC.md`(그리드 shape/deposit/spread/read), `SPEC-world-fauna.md`(와이어링/apply),
 > config `SPEC-world.md`(`fauna:` 파싱·operand 교차검증). 불변식 가드 요약은 §3.
@@ -135,7 +135,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 ### 클러스터 6 — 2단계 포식자 반응(smell↔sight) + 방향성 시야 (F43~F44) — 사람 확정 (2026-06-26)
 
 > 사람 Phase-1 의도: "포식자 *냄새* 칸에 들면 WARY, 포식자가 *가까이* 오면(heading 기반 전방 시야) FLEE."
-> 옵션 전문 = 커밋 `1f66cdc`.
+> 옵션 전문 = `docs/decisions/fauna-gates.md`.
 
 - **F43 = (a) 단일 fear drive + 2입력 채널** (scent → Wary 밴드 / sight → Flee 밴드) + **신규 공유 `Wary` 행위**
   (feed 인터럽트·경계·천천히 edge away). 순서 `Flee > Wary > Graze` 는 §6 fear-band utility(연속값이 임계 넘는 것일
@@ -182,7 +182,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 
 > **기빌드 모듈 수정(2026-07-01 검증) — 전부 SPEC 반영 완료:** scent(`ChanCarrion`) · decay(런타임 lot 추가 API) ·
 > world(`SPEC-world-fauna.md` §Combat/death/carcass apply) · config(`SPEC-world.md` §Fauna combat content) ·
-> fauna(`SPEC.md` §Combat & Predation FC1~FC13). 검증 원문 = 커밋 `1f66cdc`.
+> fauna(`SPEC.md` §Combat & Predation FC1~FC13). 검증 원문 = `docs/decisions/fauna-gates.md`.
 
 ---
 
@@ -191,7 +191,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 > **속도·은신·지형**으로, predator는 **매복·스태미나·몰이**로 생존. 목표: 측정 가능한 **~15% 포식 성공률**로 함께
 > 튜닝(balance.yaml + `tools/tuner`). D2/D3/D4/D7/D10/D11/D12 가드 §3 준용(은신/지형/매복은 **창발**이어야 하며
 > per-species FSM/속도·비율 하드코딩 금지). 배경: `docs/plans/scenarios-world.md` FA1~FA3, memory `live-emergence-underseeded`.
-> **전부 RESOLVED.** 게이트 원문·유도 SPEC-design 전문 = 커밋 `1f66cdc`; **구현 정본 = 각 항목의 SPEC 섹션 포인터.**
+> **전부 RESOLVED.** 게이트 원문·유도 SPEC-design 전문 = `docs/decisions/fauna-gates.md`; **구현 정본 = 각 항목의 SPEC 섹션 포인터.**
 
 - **M1 — prey-경쟁 속도 baseline (커밋 3948b86):** 포식자 속도 상향 revert. §6 speed는 공통 baseline +
   Agility 파생(prey Agility↑ → 자연히 대등~우세). 개별 종 속도 하드코딩 없음(D4/D7).
@@ -274,7 +274,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   (§7) 미빌드** → F9(c) 타이머 respawn 유지(창발 번식 = P_fa4 잔여). ③ climate·expr·decay·scent = **빌드/출하 완료**
   (체감온도·바람 입력 계약은 실제 값으로 전환됨 — CA1~CA3 RESOLVED).
 - **게이트 이력:** 2차 게이트(§1.3 F25~F42)·3차 게이트(F43/F44)·클러스터 7~10 전부 사람 확정 완료(2026-06-26 ~
-  2026-07-08). 원문 = 커밋 `bebc643`(1차)·`1f66cdc`(이후 전부).
+  2026-07-08). 원문 = `docs/decisions/fauna-gates.md`(1차 F1~F24 전문만 커밋 `bebc643`).
 - **불변 플래그(아래는 위반이 아니라 가드레일):**
   - **D3:** Hunt/Graze/Flee/Wary/Attack/Feed/Butcher가 horizon-1 utility로 선택되는 한 OK — drive→utility는 **§6
     데이터**(D4)여야 하고 per-species behavior tree를 저작하면 위반. utility는 순수 점수, Wary↔Flee 는 fear-밴드
