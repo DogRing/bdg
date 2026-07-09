@@ -636,6 +636,29 @@ existing `Speed`/`HideChance` §6 accessor pattern and the existing `angularDiff
   lives in `steerFull` (full pipeline); `cheap.go` mostly holds `Heading`, so it is naturally inertial — apply
   the same clamp there only if a cheap-steer branch changes heading materially (verify at implementation).
 
+## Multi-predator flee steering (M7 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-08)
+
+With ≥2 predators simultaneously visible (both FOV and concealment gates passed), fleeing from only the
+nearest one runs the prey INTO the second predator of a pincer. The fix is **entirely fauna-side** (no
+world/config/content change): the flee direction aggregates **all** visible predators as a
+distance-weighted repulsion — real ungulates slip out sideways between two closing predators, and that
+lateral escape **emerges** from the vector sum (D2/D3, no cornering FSM).
+
+- **`sightQuery` accumulation:** for EACH predator passing the FOV/concealment gates, accumulate the
+  repulsion contribution `(a.Pos − ent.Pos)/dist²` in `nearby`-slice order (ObjectID-sorted by spatial ⇒
+  fixed-order float summation, D12) and count it. Nearest-predator tracking (`distPred`/`nearPredPos`) is
+  **unchanged** — fear scaling, the M3 flush radius, and hidden checks stay nearest-based. The query
+  returns an extra `fleeDir *core.Vec2`: `normalize(Σ)` iff `predCount ≥ 2 ∧ |Σ| > 0`, else `nil`
+  (a ~zero sum from a symmetric pincer falls back to the single-nearest path — deterministic).
+- **`baseSteerDir`:** the `flee:predator` / `wary:predator` branches return `*fleeDir` when non-nil, else
+  the legacy `normalize(Pos − nearPredPos)` single-target direction. Scent-flee fallback, `dist.predator`
+  consumers, and the DORMANT cheap path (no sight-flee) are untouched.
+- **Neutrality:** with at most one visible predator the aggregate never fires, so behaviour is
+  **byte-identical** to the pre-M7 single-target path (existing world/ecosim goldens hold). The
+  inverse-square exponent `p=2` is a fauna constant (hot loop; promote to balance only if tuning demands
+  it). Nearer predators dominate the sum, yet a second one bends the escape sideways. No new `Snapshot`
+  seam / operand / RNG / config.
+
 ## Notes
 - `Step` deliberately mirrors `flora.Step`/`decay.Step`: pure read → return per-entity delta/intent →
   `world` applies. Keeps `world` the single mutator (D12) and adds no cycle (F5/F41 — dependency-inverted
