@@ -341,9 +341,7 @@ func TestScenarioD_RomeoUrgencyBoostsConscienceBypass(t *testing.T) {
 	}
 
 	// Determinism (D12).
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Romeo urgency bypass test)")
-	}
+	assertWorldDigestsEqual(t, "Romeo urgency bypass test", worldA, worldB)
 }
 
 // ── Test 2: 로미오의 파벌 내 평판 낙하 (발각) ─────────────────────────────────
@@ -477,9 +475,7 @@ func TestScenarioD_LowAffinityMemberUnaffected(t *testing.T) {
 	}
 
 	// Determinism (D12).
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (low-affinity faction member test)")
-	}
+	assertWorldDigestsEqual(t, "low-affinity faction member test", worldA, worldB)
 }
 
 // ── Test 4: 전체 로미오 시나리오 결정론 ─────────────────────────────────────────
@@ -524,7 +520,5 @@ func TestScenarioD_FullScenarioDeterminism(t *testing.T) {
 		return fx.world
 	}
 
-	if dA, dB := worldDigest(run()), worldDigest(run()); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Romeo full scenario)")
-	}
+	assertScenarioDeterministic(t, "Romeo full scenario", run)
 }

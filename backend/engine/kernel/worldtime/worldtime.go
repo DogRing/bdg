@@ -128,6 +128,14 @@ func (c Clock) YearFraction(t core.Tick) float64 {
 	return float64(minutes%minutesPerYear) / float64(minutesPerYear)
 }
 
+// DayFraction returns the continuous position within the current day in [0,1): 0 at the day's
+// start (midnight reference), 0.5 at solar-noon. The diurnal twin of YearFraction — a smooth phase
+// for daylight/sleep cues (e.g. the fauna `daylight` operand = (1−cos(2π·DayFraction))/2). At the
+// default DayMinutes=1440 this equals MinuteOfDay/1440. Pure, deterministic.
+func (c Clock) DayFraction(t core.Tick) float64 {
+	return float64(c.MinuteOfDay(t)) / float64(c.cfg.DayMinutes)
+}
+
 // Calendar bundles all derived fields for a Tick (one struct, for logging / events / render).
 type Calendar struct {
 	Minute    core.GameMinutes // absolute game-minute count

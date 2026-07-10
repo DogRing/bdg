@@ -95,15 +95,7 @@ func TestScenarioH_HighIntelProvisionsForLongJourney(t *testing.T) {
 	}
 
 	// 2. Determinism: byte-identical state digests (D12).
-	digestA := worldDigest(worldA)
-	digestB := worldDigest(worldB)
-	if digestA != digestB {
-		t.Errorf("DETERMINISM FAILED at seed=%d ticks=%d", seed, 1)
-		t.Logf("Digest A:\n%s", digestA)
-		t.Logf("Digest B:\n%s", digestB)
-	} else {
-		t.Logf("SCENARIO H (high Intel) PASSED: seed=%d (deterministic)", seed)
-	}
+	assertWorldDigestsEqual(t, "Scenario H high Intel", worldA, worldB)
 }
 
 // ── Test: Low-Intel agent skips provisioning ────────────────────────────────────
@@ -157,15 +149,7 @@ func TestScenarioH_LowIntelSkipsProvisioning(t *testing.T) {
 	}
 
 	// 2. Determinism: byte-identical state digests (D12).
-	digestA := worldDigest(worldA)
-	digestB := worldDigest(worldB)
-	if digestA != digestB {
-		t.Errorf("DETERMINISM FAILED at seed=%d ticks=%d", seed, 1)
-		t.Logf("Digest A:\n%s", digestA)
-		t.Logf("Digest B:\n%s", digestB)
-	} else {
-		t.Logf("SCENARIO H (low Intel) PASSED: seed=%d (deterministic)", seed)
-	}
+	assertWorldDigestsEqual(t, "Scenario H low Intel", worldA, worldB)
 }
 
 // ── Extended run test: verify provisioning over many ticks ──────────────────────

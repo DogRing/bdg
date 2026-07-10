@@ -2,7 +2,23 @@
 
 > Status: `DRAFT`
 > Leaf level: `L4` (flat, beside `agent`)  ·  Owner agent: `<filled by implementer>`
-> Scope: **P_fa1** (`docs/plans/fauna.md §2`). Sub-SPEC: `backend/engine/space/scent/SPEC.md` (the scent grid).
+> Scope: **P_fa1 core** (`docs/plans/fauna.md §2`) — later fauna-side phase deltas live in the
+> sub-specs below. Module sub-SPEC: `backend/engine/space/scent/SPEC.md` (the scent grid).
+
+## Sub-specs (phase-delta decomposition)
+
+| File | Scope |
+|------|-------|
+| [`SPEC-combat.md`](SPEC-combat.md) | **FC1–FC13** Combat & Predation (phase 6b, 클러스터 9): `Attack`/`Feed` actions · engage→exchange→kill→feed loop · combat `Animal`/`Snapshot`/`Intent` fields · `CombatParams` · `target.threat`/`scent.carrion` operands · Feed/Graze feeding + diet-tag matching |
+| [`SPEC-cover.md`](SPEC-cover.md) | **M3 / M4-b / M5-b** cover mechanics (fauna-realism, 클러스터 10): cover-hiding (`HiddenUntil`, flush/crouch/bolt) · cover speed resistance (`CoverCost`) · ambush concealment (`Concealment` sight reduction) |
+| [`SPEC-steering.md`](SPEC-steering.md) | **M6 / M7** steering deltas (fauna-realism, 클러스터 10): turn-rate inertia (`TurnRate` heading clamp) · multi-predator aggregated flee direction |
+
+This file is the **entry point** — the **P_fa1 core contract** (types, the `Step` pipeline, the
+core `Rules` accessors, invariants, ACs). The sub-specs are **interface deltas over this core**,
+each with its own OFF-neutral lever; where a core struct carries later-phase fields, a pointer
+comment below names the owning sub-spec. Implementing/reviewing the P_fa1 core needs only this
+file; combat/cover/steering work reads this file **plus the owning sub-spec** (world-side apply
+counterparts: `backend/engine/world/SPEC-world-fauna.md`).
 
 ## Purpose
 The **reduced-reactive animal controller**: a pure, deterministic per-tick **horizon-1 utility
@@ -65,26 +81,27 @@ type Animal struct {
     Drives        map[DriveID]float64      // open drive vector ∈ [0,1] (F29(ii))
     Stamina       float64
     Vital         float64                  // single vital (F3); world owns death (object-mortality, §7)
-    VitalCap      float64                  // upper bound for regen after combat scars; 0 = full cap
     Heading       float64                  // steering direction (radians); FOV reference axis (F44)
     CurrentAction actions.ActionID         // last chosen action — §6 stickiness operand, NOT an FSM (F30/D3)
     ActiveUntil   core.Tick                // F45 wake cooldown horizon; 0 = none. world commits it.
-    EngagedWith         core.ObjectID      // combat partner; empty = free
-    NextExchangeTick    core.Tick          // next engaged exchange tick
-    EngageCooldownUntil core.Tick          // next allowed engage attempt
-    HiddenUntil         core.Tick          // hidden while >0 and >= current tick; 0 = visible. world is sole writer (M3)
-    Concealment         float64            // world-written transient cover concealment; fauna reads in sightQuery (M5-b)
+
+    // Later-phase state deltas — NOT part of the P_fa1 core contract:
+    //   + VitalCap, EngagedWith, NextExchangeTick, EngageCooldownUntil (combat, FC7/FC12) → SPEC-combat.md
+    //   + HiddenUntil, Concealment (cover state; world is the SINGLE writer, M3/M5-b)     → SPEC-cover.md
 }
 
 // EnvSample is the per-animal exogenous climate world samples at Animal.Pos and injects each tick.
-// fauna is a pure transform over VALUES — it does NOT import climate (flora's SiteInput rule). In P1
-// climate is OFF → all fields are the neutral value world injects → apparent_temp neutral → thermal
-// drive stays 0 + scent spread stays local (F10/F21/F33). Operand names match the climate/flora/decay
+// fauna is a pure transform over VALUES — it does NOT import climate (flora's SiteInput rule). When
+// climate is OFF all fields are the neutral value world injects → apparent_temp reads that neutral °C;
+// the thermal-NEUTRAL lever is now ThermalBand ≤ 0 (no comfort band ⇒ thermal 0), NOT the env alone —
+// with a band set, thermal = clamp01(|apparent_temp−ComfortTemp|/ThermalBand) even under a neutral env
+// (FA5). Scent spread stays local under OFF (F10/F21/F33). Operand names match the climate/flora/decay
 // Context vocabulary exactly (temperature, moisture, wind.dir, wind.mag).
 type EnvSample struct {
     Temperature float64    // operand `temperature`; neutral in P1
     Moisture    float64    // operand `moisture`; neutral in P1
     Wind        scent.Wind // {Dir radians, Mag} (operands `wind.dir`/`wind.mag`); zero in P1
+    Daylight    float64    // operand `daylight` ∈[0,1]: 1=solar-noon, 0=midnight (FM11); world injects it from the clock. Drives the Sleep action ((1−daylight) diurnal, daylight nocturnal — D2/D10 sign). 0 ⇒ perpetual-night neutral
 }
 
 // TerrainSampler is the read-only navmap view fauna DECLARES and world ADAPTS (dependency inversion —
@@ -114,6 +131,11 @@ type TerrainSampler interface {
 type Cadence struct {
     DormantPeriod int       // ≥ 1; the dormant re-arbitration period N
     WakeCooldown  core.Tick // ≥ 0; ticks an animal stays ACTIVE after a predator-scent wake
+    // SleepWakeScentThreshold (SS3/FM12): torpor wake gate. While an animal is SLEEPING (its
+    // CurrentAction's steer channel is TagSleep) the F45 predator-scent wake fires only when the
+    // predator intensity at its cell is ≥ this — a deep sleeper ignores a faint/distant predator.
+    // 0 ⇒ any scent wakes (identical to a non-sleeping animal).
+    SleepWakeScentThreshold float64
 }
 
 // Snapshot is the read-only world view the controller scores over (the read phase; parallel-safe — each
@@ -129,15 +151,36 @@ type Cadence struct {
 //   Tick    — the current tick (drives the F45 dormant gate + wake cooldown; no wall-clock, D12).
 //   Cadence — the F45 cadence parameters (balance).
 //   DT      — locomotion time-step magnitude for one tick (world/balance), used by steering (F35).
+//   HazardField — the SHARED STATIC hazard field as the fauna-declared HazardSampler interface (world
+//             adapts *engine/space/field.Field — dependency inversion, like TerrainSampler, so fauna
+//             imports no field/navmap; docs/plans/fauna.md §4 P_move1, FM2). world builds it ONCE
+//             (source cells = dangerous terrain by max(depth,slope), weight = danger) and injects it;
+//             steering adds e·Repulsion (e = species HazardAvoidance) to the chosen direction (below).
+//             Per-species differentiation is via `e`, so one shared field suffices in P_move1. nil ⇒
+//             NO hazard blend (the P_move1-off lever — byte-identical to pre-P_move1). Read-only.
 type Snapshot struct {
-    Animals []Animal
-    Scent   *scent.Grid
-    Spatial *spatial.SpatialHash
-    Terrain TerrainSampler
-    Env     map[core.ObjectID]EnvSample
-    Tick    core.Tick
-    Cadence Cadence
-    DT      float64
+    Animals     []Animal
+    Scent       *scent.Grid
+    Spatial     *spatial.SpatialHash
+    Terrain     TerrainSampler
+    Env         map[core.ObjectID]EnvSample
+    Tick        core.Tick
+    Cadence     Cadence
+    DT          float64
+    HazardField HazardSampler // shared static hazard field (P_move1); nil ⇒ off
+
+    // Later-phase delta fields — NOT part of the P_fa1 core contract:
+    //   + Combat CombatParams, ScentCellSize float64 (combat/cover/sleep balance params + the
+    //     scent-cell scale their range factors multiply, FC) → SPEC-combat.md
+}
+
+// HazardSampler is the read-only per-species static hazard POTENTIAL field fauna declares and world
+// adapts (dependency inversion, like TerrainSampler — fauna imports no engine/space/field or navmap).
+// Satisfied by *engine/space/field.Field. Repulsion(p) = the away-from-danger vector at p: UNIT away
+// direction × LOCAL DANGER INTENSITY (severity × proximity — deep water/cliff push harder than a
+// shallow bank); zero where safe/flat. A continuous cost, NOT a block: a strong drive/flight overcomes it.
+type HazardSampler interface {
+    Repulsion(p core.Vec2) core.Vec2
 }
 
 // Intent is the controller's per-animal output (ONE per animal, F1/F41). world APPLIES it in the
@@ -155,6 +198,10 @@ type Intent struct {
     Drives      map[DriveID]float64 // passive per-tick drive evolution (F25(c)); world commits it
     Stamina     float64             // proposed next stamina
     ActiveUntil core.Tick           // updated F45 wake-cooldown horizon; world commits it
+
+    // Later-phase delta fields — NOT part of the P_fa1 core contract:
+    //   + Vital, VitalCap, EngagedWith, NextExchangeTick, EngageCooldownUntil, Damage,
+    //     TargetVitalCapDamage (the combat proposals, FC) → SPEC-combat.md
 }
 
 // ── The pure transform world calls (mirrors flora.Step / decay.Step) ────────────────
@@ -163,10 +210,13 @@ type Intent struct {
 // function of (snap, rules, rng): it does NOT mutate snap (incl. snap.Animals, the scent grid, the
 // spatial index) and returns intents world applies. For each animal, in sorted ObjectID order:
 //   0. CADENCE / WAKE (F45): every tick do an O(1) snap.Scent.IntensityAt(ChanPredator, Pos) read. The
-//      animal is ACTIVE iff Rules.IsPredator(species) (predators are always ACTIVE) OR the predator bit
-//      is set (wake — also set ActiveUntil = Tick + Cadence.WakeCooldown) OR Tick ≤ ActiveUntil
-//      (cooldown still running). Otherwise it is DORMANT. A DORMANT animal additionally RE-ARBITRATES
-//      this tick iff (Tick + phase(ID)) % Cadence.DormantPeriod == 0.
+//      predator BIT is intensity > wakeThreshold, where wakeThreshold = Cadence.SleepWakeScentThreshold
+//      iff the animal is SLEEPING (its CurrentAction's steer channel is TagSleep — torpor, SS3/FM12),
+//      else 0 (any scent, as before). The animal is ACTIVE iff Rules.IsPredator(species) (predators are
+//      always ACTIVE) OR the predator bit is set (wake — also set ActiveUntil = Tick + Cadence.WakeCooldown)
+//      OR Tick ≤ ActiveUntil (cooldown still running). Otherwise DORMANT. A DORMANT animal additionally
+//      RE-ARBITRATES this tick iff (Tick + phase(ID)) % Cadence.DormantPeriod == 0. (A deep sleeper thus
+//      ignores a faint/distant predator but still re-arbitrates periodically — light stirring, not coma.)
 //   • ACTIVE, or DORMANT on a re-arbitration tick → run the FULL pipeline (1–4).
 //   • DORMANT off-boundary → CHEAP path: Action = CurrentAction; advance only the accumulator drives by
 //     rate + decay fear (no full sense, no sight query, no utility scoring); cheap steering = continue
@@ -174,11 +224,9 @@ type Intent struct {
 //   1. SENSE (F44 two-channel; scent-only-omni after F34↔F44): Scent.Read at Pos (omni neighbor/upwind,
 //      smell radius) → scent.{food,prey,predator} + dist.{food,prey} + per-channel coarse direction;
 //      spatial query within sight radius for predator ANIMALS whose relative bearing is within
-//      Heading ± fov_arc → sight.predator (1/0) + dist.predator (nearest). When ≥2 predators are
-//      simultaneously in FOV, an aggregated flee direction is also accumulated over ALL of them
-//      (M7): Σ (Pos − predᵢ)/distᵢ² in ObjectID order (D12), normalized — nearer predators dominate
-//      yet a second bends the escape sideways (pincer). ≤1 visible ⇒ no aggregate (single-target
-//      path unchanged, byte-identical); dist.predator stays the nearest (fear/flush unaffected).
+//      Heading ± fov_arc → sight.predator (1/0) + dist.predator (nearest). (≥2 predators simultaneously
+//      in FOV additionally accumulate an aggregated flee direction — M7, SPEC-steering.md; ≤1 visible
+//      is byte-identical to the single-target path, and dist.predator stays the nearest.)
 //   2. DRIVES (F25(c)): advance the drive vector — accumulators (hunger/fatigue/repro_readiness) by
 //      Rules rate constants (D9); fear SET-from-context from the predator scent/sight channels (the
 //      needs UpdateConditionalNeeds shape, replicated — fauna does not import needs); thermal SET from
@@ -191,8 +239,18 @@ type Intent struct {
 //      where terrain Cost = TerrainSampler.BaseCost × Rules.TerrainCost(species,terrain).mult — the
 //      per-species cost map, W10b: a swimmer is fast in water, a climber on mountains);
 //      direction = the resolved channel direction the chosen action seeks/avoids (Graze/Hunt→toward
-//      food/prey, Flee→away from predator [the aggregated repulsion of ALL visible predators when
-//      ≥2, else away from the single nearest — M7], Wary→slowly away, Rest→none); NextPos = Pos + dir·speed·DT
+//      food/prey, Flee→away from predator [away from the single nearest; ≥2 visible aggregate per M7 —
+//      SPEC-steering.md], Wary→slowly away, Rest/Sleep→none [TagNoLoco/
+//      TagSleep ⇒ NextPos == Pos; Sleep is the diurnal torpor, chosen when its (1−daylight) §6 utility
+//      wins at night, P_sleep1/FM11]), then a THIN
+//      always-on HAZARD-REPULSION blend (docs/plans/fauna.md §4 keystone "a-backbone + bounded blend",
+//      FM5, P_move1): dir += HazardAvoidance · HazardField.Repulsion(Pos) — ONE shared danger field,
+//      per-species differentiation via the scalar HazardAvoidance `e` (per-species fields deferred, §4 FM2).
+//      Repulsion already
+//      scales with local danger SEVERITY + proximity (deep water/cliff push harder & farther than a
+//      shallow bank) — a CONTINUOUS cost, not a block: a strong flee/drive out-pulls it and the animal
+//      crosses anyway (FM5). Only the blended ANGLE is used (atan2); HazardAvoidance (the per-species
+//      multiplier `e`) ≤ 0 or a nil field ⇒ no bend (byte-identical to pre-P_move1). NextPos = Pos + dir·speed·DT
 //      clamped by TerrainSampler (blocked iff FootprintBlocked OR !TerrainCost(species,terrain).passable —
 //      so water is traversable for a swimmer, impassable for a fish-on-land; D11); NextHeading turns toward dir.
 // rng is the injected per-tick fork world supplies (per-step fork(tick), F41). Arbitration, drive
@@ -201,12 +259,13 @@ type Intent struct {
 func Step(snap *Snapshot, rules *Rules, rng *rng.RNG) []Intent
 
 // AttrOperands returns the FIXED controller-resolved §6 Attr operand vocabulary (sorted, de-duplicated):
-// scent.{food,prey,predator}, dist.{food,prey,predator}, sight.predator, apparent_temp, temperature,
-// moisture, wind.dir, wind.mag, is_current. platform/config cross-checks each compiled program's
+// scent.{food,prey,predator}, dist.{food,prey,predator}, sight.predator, apparent_temp, daylight,
+// temperature, moisture, wind.dir, wind.mag, is_current. platform/config cross-checks each compiled program's
 // expr.ReadsAttrs() against this set ∪ the species' drive ids at load (flora operand-cross-check parity)
 // so a typo Attr (silently 0, expr policy) is a LOAD failure. Deterministic; excludes the Stat channel
 // (validated against the stats registry) and drive ids (from the species `fauna:` block).
-// (agent.disposition is P_fa3, F46 — NOT in the P_fa1 set; see Out of Scope.)
+// (agent.disposition is P_fa3, F46 — NOT in the P_fa1 set; see Out of Scope. Combat adds
+// `target.threat` + `scent.carrion` to the fixed set — FC2/FC10, SPEC-combat.md.)
 func AttrOperands() []core.Tag
 
 // ── Rules (the data-defined fauna table; flora.Rules parity, F26/F31) ────────────────
@@ -231,19 +290,35 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules
 type SpeciesRule struct {
     Utilities  map[actions.ActionID]*expr.Program // candidate set + per-action §6 utility (F26) → Candidates/Utility
     Drives     []DriveRule                        // drive vocabulary + params (F25(c)) → DriveUpdate
-    AppTemp    *expr.Program                      // §6 apparent_temp (F40) → AppTemp
+    AppTemp    *expr.Program                      // §6 apparent_temp (F40) — emits °C (render + operand), NOT the drive
+    ComfortTemp float64                           // °C midpoint of the thermal comfort band (FA5)
+    ThermalBand float64                           // °C half-width; thermal = clamp01(|apparent_temp−ComfortTemp|/ThermalBand); ≤0 ⇒ thermal neutral
+    HazardAvoidance float64                       // per-species hazard-repulsion multiplier `e` (P_move1/FM5); ≤0 ⇒ no bend
     Speed      *expr.Program                      // §6 locomotion speed (F35) → Speed
-    TurnRate   *expr.Program                      // §6 max turn rate radians/unit time (M6) → TurnRate
     Diet       []core.Tag                         // diet/target tags (F7)
     IsPredator bool                               // carries `threat:predator` (F8) → IsPredator
     SmellRadius, SightRadius, FovArc float64      // senses (F31/F44) → Senses
     TerrainCost map[core.Tag]float64              // per-species terrain affinity mult (W10b); absent terrain ⇒ 1.0 → TerrainCost
     Impassable  []core.Tag                        // terrain types this species CANNOT enter (e.g. fish→land) → TerrainCost passable=false
+    SteerChannel map[actions.ActionID]core.Tag    // action → steer-behavior tag (content-derived from the action's Tags, D4/D10); absent entry ⇒ continue along current Heading
+
+    // Later-phase delta fields — NOT part of the P_fa1 core contract:
+    //   + AttackPower, Hit, Feed, Graze (§6), Tags (diet-tag matching) — combat/feeding (FC4/FC8) → SPEC-combat.md
+    //   + HideChance (§6), CoverCost — cover (M3/M4-b)                                            → SPEC-cover.md
+    //   + TurnRate (§6 max turn rate) — steering inertia (M6)                                     → SPEC-steering.md
 }
+
+// Steer-behavior tags recognized by the STEER step (the SpeciesRule.SteerChannel values; content
+// places them on actions in content/actions.yaml, D10 — the steer channel is derived from action
+// Tags, never a per-action Go function, D4): TagSteerFood "seek:food" · TagSteerPrey "seek:prey" ·
+// TagFleePred "flee:predator" · TagWaryPred "wary:predator" · TagNoLoco "no:locomotion" ·
+// TagSleep "state:sleep" (torpor: NextPos == Pos + the SS3 wake threshold + SS2 deep fatigue
+// recovery). (+ TagAttack "combat:attack" / TagFeed "feed:carrion" — FC → SPEC-combat.md.)
 
 // DriveRule is one drive's compiled params (F25(c)/F43; the drive id is also its §6 Attr operand, F27).
 // An ACCUMULATOR drive uses Rate; a SET-from-context fear drive uses WaryLevel (scent.predator) /
-// FleeLevel (sight.predator) + Decay; a DERIVED drive (thermal from apparent_temp) uses none.
+// FleeLevel (sight.predator) + Decay; a DERIVED thermal drive uses none of these DriveRule fields —
+// it is SET each full tick from the species' SYMMETRIC comfort band (ComfortTemp/ThermalBand, FA5).
 type DriveRule struct {
     ID        DriveID
     Rate      float64 // accumulator per-tick rise (hunger/fatigue/repro_readiness); 0 for set/derived
@@ -265,29 +340,28 @@ func (r *Rules) Utility(sp SpeciesID, act actions.ActionID, ctx expr.Context) fl
 // DriveUpdate advances the whole drive vector ONE tick per F25(c) and returns the new vector (clamped
 // [0,1]): accumulators rise by per-species rate constants (D9, no future field); fear is SET-from-context
 // from the resolved predator channels via ctx (scent.predator → wary level, sight.predator → flee level
-// — the needs conditional-set shape, rate+level data, F25(c)/F43); thermal SET from AppTemp (OFF → 0 in
-// P1). Pure, no RNG, drive ids advanced in sorted order. It does NOT apply the action's drive Effect
+// — the needs conditional-set shape, rate+level data, F25(c)/F43); thermal SET from the symmetric
+// comfort band clamp01(|apparent_temp−ComfortTemp|/ThermalBand) — cold AND heat raise it, ThermalBand≤0
+// ⇒ 0 (FA5). Pure, no RNG, drive ids advanced in sorted order. It does NOT apply the action's drive Effect
 // (world's apply). (The dormant cheap path advances only the accumulators + fear decay.)
 func (r *Rules) DriveUpdate(sp SpeciesID, cur map[DriveID]float64, ctx expr.Context, dt float64) map[DriveID]float64
 
 // AppTemp evaluates the species' §6 apparent_temp Program over climate operands (temperature/moisture/
-// wind.mag) + the animal's own attrs (size/base stats), F40 — per-entity §6 ("winter" emerges from
-// sustained low apparent_temp, no season enum). P1 climate-OFF: neutral inputs ⇒ neutral apparent_temp
-// ⇒ thermal behaviour 0. Pure, no RNG.
+// wind.mag) + the animal's own attrs (size/base stats), F40 — per-entity §6, emitting felt °C (CA3).
+// This °C value is BOTH the render value (persist ClimateView.apparent_temp) AND the `apparent_temp`
+// operand; the `thermal` DRIVE is a SEPARATE derivation — DriveUpdate maps this °C through the species'
+// symmetric comfort band clamp01(|apparent_temp−ComfortTemp|/ThermalBand), so "winter/cold night" AND
+// "hot noon" both raise thermal, no season enum (FA5). Pure, no RNG.
 func (r *Rules) AppTemp(sp SpeciesID, ctx expr.Context) float64
 
 // Speed evaluates the species' §6 locomotion speed Program (base = §6(base stats); modulated by
 // drive terms — fear/fatigue AND **thermal** (body-temperature stress → slower locomotion; the
-// `thermal` drive is derived from `apparent_temp`, F40, so weather/wind alters movement ability once
-// climate is ON; P1 climate-OFF ⇒ thermal 0 ⇒ neutral) — plus terrain Cost, F35(a)+(c)+R2) → world
+// `thermal` drive is derived from `apparent_temp` via the comfort band, F40/FA5, so weather/wind alters
+// movement ability; ThermalBand ≤ 0 ⇒ thermal 0 ⇒ neutral) — plus terrain Cost, F35(a)+(c)+R2) → world
 // units per DT. Which drives a species' speed §6 reads is open content (D4/D10 — a §6 over the base
 // stats + any drive operand), never a fixed Go whitelist; the fear/fatigue/thermal set is the authored
 // content convention, not an engine constraint. Pure, no RNG.
 func (r *Rules) Speed(sp SpeciesID, ctx expr.Context) float64
-
-// TurnRate evaluates the species' §6 max turn RATE Program (radians per unit time; ×DT = per-tick
-// heading cap, M6). Returns 0 when absent/nil/negative, which means unlimited/off-neutral, not frozen.
-func (r *Rules) TurnRate(sp SpeciesID, ctx expr.Context) float64
 
 // IsPredator reports whether the species carries the `threat:predator` tag (F8) — used to classify
 // nearby spatial entities in the F44 sight query AND to keep predators always-ACTIVE (F45). Pure.
@@ -306,6 +380,11 @@ func (r *Rules) Senses(sp SpeciesID) (smellRadius, sightRadius, fovArc float64)
 // The controller's effective sample: blocked = TerrainSampler.FootprintBlocked(p) OR !passable;
 // cost = TerrainSampler.BaseCost(p) × mult — this is the species-specific "cost map" over the SHARED terrain.
 func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passable bool)
+
+// ── Later-phase Rules accessors (interface deltas; see the owning sub-spec) ──────────
+//   AttackPower / Hit / Feed / Graze / Diet — combat & feeding (FC4/FC8) → SPEC-combat.md
+//   HideChance / CoverCost                  — cover (M3/M4-b)            → SPEC-cover.md
+//   TurnRate                                — turn-rate inertia (M6)     → SPEC-steering.md
 ```
 
 ## Dependencies
@@ -498,6 +577,8 @@ func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passa
 - **Serialization / SSE of `animals[]`** → `platform/persist` + `docs/core/data-contracts.md §6` (P_fa5).
 - **`docs/core/glossary.md` sync** of the coined terms → a separate glossary step.
 - The shared §6 `expr` evaluator **implementation** → `engine/kernel/expr` (L0); fauna only USES it.
+- **Later fauna-side phase deltas** — combat & predation (FC), cover mechanics (M3/M4-b/M5-b), steering
+  refinements (M6/M7) → the sub-specs in the table at the top of this file.
 
 ## Open Questions
 > `docs/plans/fauna.md` §1 (F1–F46) is **ALL RESOLVED** (human-confirmed 2026-06-26 / 2026-06-27). This SPEC
@@ -506,158 +587,7 @@ func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passa
 > `AttrOperands`; **`TerrainSampler` = {FootprintBlocked, TerrainAt, BaseCost} + per-species `Rules.TerrainCost`** (W10b 2026-06-28 — 수영/등산 cost map, fish-on-land impassable; R2/F35); **stats =
 > inline `map[core.StatID]float64`** (R3/F29, no `stats` import); **agents-as-sight = `agent.disposition`
 > §6, P_fa3** (R4/F46). The **F45 adaptive per-animal cadence** (R1) is integrated above. **None remaining
-> — no new mechanism seam.**
-
-## Combat & Predation (FC1–FC13 — phase 6b; rationale: `docs/plans/fauna.md` 클러스터 9)
-
-Refines the F7 "Hunt→death" abstraction into an explicit **engage → exchange → kill → feed** loop. This
-section is the **fauna-module interface delta only** (behaviour/why → 클러스터 9):
-
-- **Actions (FC1):** two new SHARED `actions.yaml` entries scored by the SAME horizon-1 utility (D3, no
-  FSM): `Attack` (engage + damage exchange, cooldown-gated) and `Feed` (durative carcass consumption →
-  hunger↓). Approach stays the existing `TagSteerPrey` steer. Steer/utility tags parallel Graze/Flee/Wary.
-- **Animal state (FC7/FC12):** add to `Animal` — `EngagedWith core.ObjectID` (combat partner; "" = free),
-  `NextExchangeTick core.Tick`, `EngageCooldownUntil core.Tick`, `VitalCap float64` (≤1; each fight lowers
-  it a little ⇒ Vital regens only up to `VitalCap` = "no full recovery", FC7). All serialized (F17).
-- **Operands (FC2/FC10):** add to `AttrOperands()` — `target.threat` (candidate target's expected
-  retaliation/danger ⇒ predator↔predator emerges ONLY when hunger overrides cost, D2/D4) and `scent.carrion`
-  (new scent channel, scavenge homing). `platform/config` cross-checks these like every other operand.
-- **§6 formulas (FC4, content, D4/D7):** per-species `attack_power` + `hit` (stat compositions, e.g.
-  Strength / Agility-vs-Agility) — NO stored skill; recomputed from current base stats each exchange.
-- **Engage/exchange/disengage (FC3/FC5/FC6/FC13):** utility picks `Attack` when a `diet` target is in range;
-  a successful engage sets `EngagedWith` on BOTH animals; every `[10,20]`-tick exchange (seeded `envFork`)
-  proposes `attack_power×hit` damage to the target (prey never retaliates; predator↔predator both attack).
-  Engage-ATTEMPT cooldown `[50,100]` ticks. Disengage when predator stamina drops OR the target is beyond
-  `disengage_range` (~2·cellSize). Stamina DRAINS `CombatParams.StaminaDrainPerTick` while engaged and
-  recovers `StaminaRecoverPerTick` while free (balance), so a predator tires mid-hunt → disengages →
-  recovers → re-engages (burst pursuit): this is where scenario #8 ("predator stops when its stamina drops
-  first") emerges. While engaged, locomotion is suppressed (FC13). **Death (Vital≤0) + carcass creation are the
-  WORLD's** (SPEC-world-fauna; F3 "world owns death") — fauna only PROPOSES the damage intent + engage state.
-- **Feeding & diet (D10 tag-driven, F7).** A predator's `Diet` matches the TARGET's OWN content tags, NOT its
-  SpeciesID: `SpeciesRule.Tags` carries each kind's tags (config-populated from `objects.yaml`), and
-  `combatTarget` engages a candidate iff `diet ∩ target.Tags ≠ ∅` (e.g. wolf `diet:[game]` matches a deer
-  carrying the `game` tag). The herbivore side mirrors Feed: a `seek:food` (Graze) action, when the animal
-  has reached a `scent:food` flora, crops it — the world reduces hunger by the species' `Graze` §6
-  (`Rules.Graze`, parallels `Rules.Feed`). Absent `Graze`/`Tags` ⇒ outcome-neutral.
-
-## Cover-hiding (M3 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
-
-Prey survive by **hiding**, not by out-running: a fleeing herbivore that reaches `cover`-tagged flora may
-break the predator's detection for a while. **`HiddenUntil` has a SINGLE writer — `engine/world`** (it
-owns flora proximity, the per-species §6 eval, the seeded roll, and the scent deposit — all already
-world-side); **fauna only READS `Animal.HiddenUntil`** here. This is the fauna-module interface delta
-(behaviour/why → 클러스터 10); the entry roll + scent suppression are world's (SPEC-world-fauna M3).
-
-- **Animal state (M3-e):** add `Animal.HiddenUntil core.Tick` — the animal is HIDDEN while
-  `HiddenUntil >= snap.Tick` (0 = visible). Serialized alongside the FC combat fields (F17). fauna never
-  writes it (world sets it on entry / clears it on engage); `Step` treats it as read-only snapshot state.
-- **§6 hide chance (M3-b, D4/D7):** add `func (r *Rules) HideChance(sp SpeciesID, ctx expr.Context) float64`
-  — the species' §6 probability program (`fauna: hide_chance`, e.g. `0.5 + Agility*0.005`). Returns **0 when
-  absent** so a species with no `hide_chance` never hides (OFF-neutral; predators omit it). Parallels
-  `Rules.Graze`/`Feed`/`AttackPower`/`Hit` exactly. `ReadsAttrs()` ⊆ `AttrOperands()` ∪ drive ids and
-  `Reads()` ⊆ stats registry are cross-checked by `platform/config` like every other §6 (no new operand —
-  `Agility` rides the existing `Stat` channel). Evaluated WORLD-side in apply (world holds `Rules`).
-- **Detection exclusion (M3-c, combatTarget):** `combatTarget` SKIPS a candidate `other` with
-  `other.HiddenUntil >= snap.Tick` **UNLESS** `dist <= snap.Combat.HiddenFlushFactor * snap.ScentCellSize`
-  (the point-blank **flush** exception — a predator at the prey's feet still finds it). A hidden prey is
-  thus un-targetable at range; combined with the world-side `scent:prey` deposit suppression it is fully
-  "invisible" (sight+scent) until flushed or the timer expires.
-- **Crouch / bolt steering (M3-a/d):** in the STEER phase, if the acting animal is hidden
-  (`a.HiddenUntil >= snap.Tick`) it **crouches** — `NextPos == Pos` (holds still in cover, so it never
-  wanders out of cover on its own; heading unchanged), OVERRIDING the chosen action's steer — **UNLESS** a
-  predator is within the flush radius (`dist.predator <= HiddenFlushFactor * ScentCellSize`), in which case
-  it **bolts** (steers normally, i.e. resumes Flee). It does not clear `HiddenUntil` itself (world owns the
-  field); once flushed the predator's `combatTarget` flush exception + the world engage-clear take over.
-- **Params (balance):** `CombatParams` gains `HiddenFlushFactor float64` (× `ScentCellSize` → flush radius;
-  used by `combatTarget` + the bolt test), `HideDurationTicks int` and `HideCoverFactor float64` (× cell →
-  cover reach) — the latter two consumed WORLD-side (entry). All from `content/world.yaml cadence` (D10).
-- **Neutrality:** no species carries `hide_chance` ⇒ `HideChance`≡0 ⇒ `HiddenUntil` never set ⇒
-  `combatTarget`/steer behave exactly as before; existing goldens byte-identical (the M3 OFF-neutral lever,
-  parallel to the FC/Graze levers). NO new `AttrOperands()` entry, NO new `Snapshot`/`Intent` field.
-
-## Cover speed resistance (M4-b — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
-
-Moving through `cover` flora slows an animal and makes its speed VARY (a continuous drag, no stumble/fall).
-The mechanic is **entirely world-side** (world owns flora; scales the committed move by a cover resistance —
-SPEC-world-fauna M4-b); fauna's §6 `Speed` is UNCHANGED. The only fauna-module surface is the per-species
-affinity, exposed as a `Rules` accessor world reads in apply (mirrors `TerrainCost`/`Graze`/`HideChance`):
-
-- **`SpeciesRule.CoverCost float64`** + **`func (r *Rules) CoverCost(sp SpeciesID) float64`** — the species'
-  cover drag affinity (`content/objects.yaml fauna: cover_cost`, D10). Returns **0 when absent** (species
-  unaffected → OFF-neutral). Parsed by `platform/config` like `terrain_cost`; compiled into the per-species
-  record. Pure, read-only. NO new `Snapshot`/`Intent`/`AttrOperands` surface, NO change to `Speed`/`Step`.
-
-## Ambush concealment (M5-b — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
-
-A predator concealed in `cover` flora is SEEN by prey only at reduced range → it closes the distance before
-the prey flees → **ambush emerges** (no per-species ambush FSM, D2/D3). The concealment value is
-**world-computed** (world owns flora — SPEC-world-fauna M5-b) and carried on the `Animal` exactly like M3
-`HiddenUntil`; fauna only READS it, in the sight channel. §6 `Speed` unchanged; no new operand/Snapshot/Intent seam.
-
-- **`Animal.Concealment float64`** — world-written each tick (SINGLE WRITER = world), ≥0, `0` = fully
-  exposed. A derived transient (cover density × world `conceal_factor`); read-only to fauna.
-- **`sightQuery` change:** for each predator candidate, skip it when `dist > sightRadius / (1 +
-  other.Concealment)` — the twin of the M3 `combatTarget` `other.HiddenUntil` gate (a per-candidate field
-  read on `snap.Animals[idx]`, so NO new Snapshot seam). `Concealment=0` ⇒ effRadius = sightRadius ⇒
-  unchanged. Only the sight→Flee channel narrows; the scent→Wary channel is untouched (smell ignores cover).
-  Deterministic, no RNG (D12).
-
-## Turn-rate inertia (M6 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
-
-An animal cannot instantly reverse heading: each tick the desired steering heading is **clamped to within
-`±turn_rate×DT`** of its current `Heading`. Asymmetric per-species `turn_rate` gives the juke/overshoot
-dynamic — nimble prey out-turn a heavier predator, which cannot cut sharply and **overshoots** (it keeps going
-more-forward). This is **entirely fauna-side** (steering only; no world/state/serialization change), reuses the
-existing `Speed`/`HideChance` §6 accessor pattern and the existing `angularDiff` helper, and adds **no**
-`Snapshot`/`Intent`/operand/RNG. `Heading` is the only state, already present.
-
-- **`SpeciesRule.TurnRate *expr.Program`** + **`func (r *Rules) TurnRate(sp SpeciesID, ctx expr.Context) float64`**
-  — max turn RATE (radians per unit time, `×DT` gives per-tick cap), a §6 composition (D7 — e.g.
-  `base + Agility*k`, so agility emerges; parallels `Speed`). **Returns 0 when the program is nil/unauthored,
-  and `turn_rate ≤ 0` MUST mean "unlimited — do NOT clamp"** (a 0 here is the OFF-neutral sentinel, NOT a
-  frozen turn). `content/objects.yaml fauna: turn_rate` (D10), compiled by `platform/config` like `speed`/`hide_chance`.
-- **`steerFull` clamp (the one behavioural change):** after computing the desired heading
-  `desired := atan2(dir) + wander`, clamp it toward `a.Heading`:
-  ```
-  tr := rules.TurnRate(a.Species, ctx)
-  if tr > 0 {
-      maxTurn := tr * snap.DT
-      if d := angularDiff(desired, a.Heading); math.Abs(d) > maxTurn {
-          desired = a.Heading + math.Copysign(maxTurn, d)  // no normalize helper needed: cos/sin + angularDiff tolerate any angle
-      }
-  }
-  heading := desired   // then dir = {cos,sin}(heading); movement + nextHeading use the clamped heading
-  ```
-  Movement then proceeds along the **clamped** heading (so a predator that can't turn enough overshoots).
-- **Neutrality:** `turn_rate` unauthored (⇒ `TurnRate≡0`) or authored ≥ `π/DT` ⇒ clamp never binds ⇒
-  `heading == desired` ⇒ movement byte-identical to today. Deterministic, no RNG (D12). Content-only asymmetry
-  (D10): prey `turn_rate` high (juke), predators low (overshoot).
-- **Scope (M6-c):** heading-rate only; speed `accel` inertia is deferred. **Cheap/DORMANT path:** the clamp
-  lives in `steerFull` (full pipeline); `cheap.go` mostly holds `Heading`, so it is naturally inertial — apply
-  the same clamp there only if a cheap-steer branch changes heading materially (verify at implementation).
-
-## Multi-predator flee steering (M7 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-08)
-
-With ≥2 predators simultaneously visible (both FOV and concealment gates passed), fleeing from only the
-nearest one runs the prey INTO the second predator of a pincer. The fix is **entirely fauna-side** (no
-world/config/content change): the flee direction aggregates **all** visible predators as a
-distance-weighted repulsion — real ungulates slip out sideways between two closing predators, and that
-lateral escape **emerges** from the vector sum (D2/D3, no cornering FSM).
-
-- **`sightQuery` accumulation:** for EACH predator passing the FOV/concealment gates, accumulate the
-  repulsion contribution `(a.Pos − ent.Pos)/dist²` in `nearby`-slice order (ObjectID-sorted by spatial ⇒
-  fixed-order float summation, D12) and count it. Nearest-predator tracking (`distPred`/`nearPredPos`) is
-  **unchanged** — fear scaling, the M3 flush radius, and hidden checks stay nearest-based. The query
-  returns an extra `fleeDir *core.Vec2`: `normalize(Σ)` iff `predCount ≥ 2 ∧ |Σ| > 0`, else `nil`
-  (a ~zero sum from a symmetric pincer falls back to the single-nearest path — deterministic).
-- **`baseSteerDir`:** the `flee:predator` / `wary:predator` branches return `*fleeDir` when non-nil, else
-  the legacy `normalize(Pos − nearPredPos)` single-target direction. Scent-flee fallback, `dist.predator`
-  consumers, and the DORMANT cheap path (no sight-flee) are untouched.
-- **Neutrality:** with at most one visible predator the aggregate never fires, so behaviour is
-  **byte-identical** to the pre-M7 single-target path (existing world/ecosim goldens hold). The
-  inverse-square exponent `p=2` is a fauna constant (hot loop; promote to balance only if tuning demands
-  it). Nearer predators dominate the sum, yet a second one bends the escape sideways. No new `Snapshot`
-  seam / operand / RNG / config.
+> — no new mechanism seam.** (The later FC/M gates are likewise all RESOLVED — see each sub-spec's header.)
 
 ## Notes
 - `Step` deliberately mirrors `flora.Step`/`decay.Step`: pure read → return per-entity delta/intent →

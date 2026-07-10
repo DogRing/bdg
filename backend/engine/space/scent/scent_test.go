@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
+	"strconv"
 	"testing"
 
 	"github.com/dogring/bdg/engine/kernel/core"
@@ -578,28 +580,35 @@ func TestNewGuard(t *testing.T) {
 // ── AC: No forbidden imports (guard) ─────────────────────────────────────────
 
 func TestNoForbiddenImports(t *testing.T) {
-	src, err := os.ReadFile("scent.go")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "scent.go", nil, parser.ImportsOnly)
 	if err != nil {
-		t.Fatalf("cannot read scent.go: %v", err)
+		t.Fatalf("parse scent.go imports: %v", err)
 	}
-	content := string(src)
-	forbidden := []string{
-		"engine/kernel/rng",
-		"engine/env/climate",
-		"engine/world",
-		"engine/fauna",
-		"engine/mind/perception",
-		"engine/space/navmap",
-		"engine/space/spatial",
-		"engine/actions",
+	forbidden := map[string]bool{
+		"github.com/dogring/bdg/engine/kernel/rng":      true,
+		"github.com/dogring/bdg/engine/env/climate":     true,
+		"github.com/dogring/bdg/engine/world":           true,
+		"github.com/dogring/bdg/engine/fauna":           true,
+		"github.com/dogring/bdg/engine/mind/perception": true,
+		"github.com/dogring/bdg/engine/space/navmap":    true,
+		"github.com/dogring/bdg/engine/space/spatial":   true,
+		"github.com/dogring/bdg/engine/actions":         true,
 	}
-	for _, pkg := range forbidden {
-		if strings.Contains(content, pkg) {
-			t.Errorf("forbidden import found in scent.go: %q", pkg)
+	hasCore := false
+	for _, imp := range file.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			t.Fatalf("unquote import %s: %v", imp.Path.Value, err)
+		}
+		if _, bad := forbidden[path]; bad {
+			t.Errorf("forbidden import found in scent.go: %q", path)
+		}
+		if path == "github.com/dogring/bdg/engine/kernel/core" {
+			hasCore = true
 		}
 	}
-	// Must import core.
-	if !strings.Contains(content, "engine/kernel/core") {
+	if !hasCore {
 		t.Error("scent.go must import engine/kernel/core")
 	}
 }

@@ -97,13 +97,5 @@ func TestScenarioC_DeceptiveTrade(t *testing.T) {
 	t.Logf("GOLDEN C's ToM[A].Honesty: %.4f (unchanged, non-witness isolation)", res.cHonestyBefore)
 
 	// 3. Determinism: identical seed → byte-identical world state (D12).
-	digestA := worldDigest(worldA)
-	digestB := worldDigest(worldB)
-	if digestA != digestB {
-		t.Errorf("DETERMINISM FAILED at seed=%d ticks=%d", seed, ticks)
-		t.Logf("Digest A:\n%s", digestA)
-		t.Logf("Digest B:\n%s", digestB)
-	} else {
-		t.Logf("SCENARIO C PASSED: seed=%d ticks=%d (deterministic)", seed, ticks)
-	}
+	assertWorldDigestsEqual(t, "Scenario C", worldA, worldB)
 }

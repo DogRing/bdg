@@ -419,6 +419,67 @@ field, fauna reads it" seam); fauna only READS the per-animal concealment in its
 - **Neutrality:** `conceal_factor=0` and/or no `cover` flora ⇒ `Concealment≡0` ⇒ effRadius≡SightRadius ⇒
   sight byte-identical. Deterministic, no RNG (D12). No new Snapshot/Intent seam (mirrors M3 `HiddenUntil`).
 
+## Hazard field wiring (P_move1 continuous hazard avoidance; rationale: `docs/plans/fauna.md` §4 FM2/FM5, gate RESOLVED 2026-07-09 · `docs/decisions/fauna-gates.md`)
+
+Animals veer away from dangerous terrain (deep water / cliff) BEFORE dead-stopping at it — a **continuous
+cost, not a block** (a strong flee/drive out-pulls it and the animal crosses, FM5). World owns the terrain,
+so world builds **ONE shared static danger `field.Field`** and injects it via the fauna-declared
+`HazardSampler` interface (dependency inversion — fauna imports neither `space/field` nor `space/navmap`).
+Per-species differentiation is the scalar `e` (`hazard_avoidance`, §6), so one shared field suffices in
+P_move1; per-species fields (FM2's full 종별) are deferred (fish-inversion likewise, currently `e=0`).
+
+- **`cellDanger(nav, cell) → [0,1]`** (`engine/world/hazard.go`): impassable cell → `1.0` (drown/fall);
+  passable-but-rough → `clamp((BaseCost−1)/hazardCostSpread, 0, 1)` (river ford / mountain stays MILDLY
+  dangerous ⇒ crossable, preserving M4-a river-as-refuge); normal ground → ~0. `BaseCost`/`Passable` is
+  the **runtime proxy** for the intended §5 depth/slope danger — `w.terrainAttrs` (depth/slope) is not yet
+  fed at runtime, a disclosed latent gap; refining the source to true §5 attrs is a separate follow-up.
+- **`buildHazardField() → *field.Field`** (nil when no navmap or no dangerous terrain ⇒ blend OFF): enumerate
+  navmap cells over `[Min−pad, Max+pad]` at a sample step ≤ hex inradius (`√3/2·NavmapCellSize`, mirroring
+  the climate→navmap bridge), dedup via a `seen` set (dedup ONLY — never iterated for order, so it cannot
+  affect output; `field.Build` re-sorts sources by `(R,Q)`), collect cells with `danger ≥ hazardDangerFloor`
+  as `field.Source{Cell, Weight:danger}`, and `field.Build(w.nav, sources, hazardDecayPerUnit, w.nav.Passable)`.
+  Constants (`hazard.go`): `hazardDangerFloor 0.2`, `hazardCostSpread 6.0`, `hazardImpassable 1.0`,
+  `hazardDecayPerUnit 0.03` (reach = danger/decay; untuned balance).
+- **Lazy build + cache (`buildFaunaSnapshot`):** built once on first fauna snapshot and cached
+  (`w.hazardField`/`w.hazardFieldBuilt`) — static terrain ⇒ build once, rebuilt only on a terrain change.
+  **Typed-nil guard:** the concrete `*field.Field` is boxed into the `fauna.HazardSampler` interface ONLY
+  inside `if w.hazardField != nil` — a nil field yields `Snapshot.HazardField == nil` (a true nil interface),
+  never a non-nil interface wrapping a nil pointer, so hazard-OFF is byte-identical to pre-P_move1.
+- **Neutrality:** no dangerous terrain (all-passable, low-cost) ⇒ no sources ⇒ nil field ⇒ no bend; and every
+  species with `hazard_avoidance` unset/≤0 ⇒ fauna skips the blend regardless. Deterministic, no RNG (D12).
+
+## Diurnal sleep injection & torpor recovery (P_sleep1; rationale: `docs/plans/fauna.md` §4 FM11/FM11b/FM12 + SS1–SS3, gate RESOLVED 2026-07-10 · `docs/decisions/fauna-gates.md` cluster 11)
+
+Animals sleep at night and wake to a near predator (user 2026-07-10: "저녁에 자는 것 + 주변 이벤트에 기상"). The
+world owns the clock, so world injects a `daylight` cue; fauna makes Sleep a §6 action that wins at night
+(diurnal/nocturnal emerges from the `(1−daylight)`/`daylight` sign, D2/D10 — no per-species flag). Sleep is
+the shared `Sleep` action tagged `state:sleep` (→ fauna `TagSleep`: no-loco + high wake threshold); NO new
+`Animal` field (SS1: sleeping ⇔ `CurrentAction == Sleep`).
+
+- **Daylight injection (`buildFaunaEnvSamples`):** compute ONCE per tick (world-uniform)
+  `daylight = ½(1 − cos(2π · clock.DayFraction(tick)))` ∈ [0,1] — 1 at solar-noon, 0 at midnight; smooth —
+  and set it on every animal's `EnvSample.Daylight`. Clock-derived ⇒ deterministic (D12); no climate
+  dependency (a light cue, not weather — distinct from the FA5 diurnal temperature). `DayFraction` is the
+  new `worldtime.Clock` accessor (diurnal twin of `YearFraction`).
+- **Torpor deep fatigue recovery (`applyAnimalFatigue`, SS2):** a `state:sleep` action recovers fatigue at
+  `CombatParams.SleepFatigueRecoverPerTick` (> ordinary `FatigueRecoverPerTick`). The `state:sleep` case is
+  guarded on a POSITIVE rate AND checked BEFORE the `effort:*` cases (Sleep is also `effort:none`), so torpor
+  wins the deeper rate when set; if the rate is ≤0 it falls through to the `effort:none` case so a sleeper
+  still recovers at the ordinary rest rate (never LESS than a rester). Tag-driven via
+  `actionHasTag(action, fauna.TagSleep)` (D4) — no hardcoded action id.
+- **Wake (SS3/FM12) is fauna-side:** the `Cadence.SleepWakeScentThreshold` gate lives in `fauna.Step` Step 0
+  (a sleeper wakes only to predator scent ≥ threshold); world only injects the threshold from config. Once
+  awake, fear out-scores Sleep and the animal flees — emergent (D2), no wake FSM.
+- **Config/content (D10):** `content/world.yaml cadence.{sleep_wake_scent_threshold, sleep_fatigue_recover_per_tick}`
+  → `Cadence.SleepWakeScentThreshold` / `CombatParams.SleepFatigueRecoverPerTick` (+ `world.schema.json`).
+  The `Sleep` action gains the `state:sleep` tag (`content/actions.yaml`); per-species `Sleep` §6 utility on
+  the `fauna:` block (`content/objects.yaml`; placeholders — deer/rabbit/goat/bear diurnal, wolf shown
+  invertible to nocturnal). `daylight` is added to `fauna.AttrOperands()` (load-time §6 cross-check).
+- **Neutrality:** a species with no `Sleep` candidate never sleeps (unchanged); `sleep_wake_scent_threshold`
+  0 ⇒ a sleeper wakes to any scent (as before); `sleep_fatigue_recover_per_tick` ≤0 ⇒ the guarded torpor case
+  is skipped and a sleeper falls through to the ordinary `fatigue_recover_per_tick` (rest-equivalent, never
+  less). Deterministic, no RNG.
+
 ## Notes
 - **fauna.Step plans, world applies (F41).** The split — fauna emits intents in the plan phase, the
   world applies them in the SAME combined sorted stream as agents — is what keeps "world = sole

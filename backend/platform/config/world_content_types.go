@@ -44,30 +44,32 @@ type worldDoc struct {
 		MaxSpeed float64 `yaml:"max_speed"`
 	} `yaml:"motion"`
 	Cadence struct {
-		ClimateStep            int     `yaml:"climate_step"`
-		FloraStep              int     `yaml:"flora_step"`
-		DecayStep              int     `yaml:"decay_step"`
-		ScentSpread            int     `yaml:"scent_spread"`
-		FaunaDormantPeriod     int     `yaml:"fauna_dormant_period"`
-		FaunaWakeCooldown      int     `yaml:"fauna_wake_cooldown"`
-		ExchangeMinTicks       int     `yaml:"exchange_min_ticks"`
-		ExchangeMaxTicks       int     `yaml:"exchange_max_ticks"`
-		EngageCooldownMinTicks int     `yaml:"engage_cooldown_min_ticks"`
-		EngageCooldownMaxTicks int     `yaml:"engage_cooldown_max_ticks"`
-		DisengageRangeFactor   float64 `yaml:"disengage_range_factor"`
-		StaminaDropThreshold   float64 `yaml:"stamina_drop_threshold"`
-		StaminaDrainPerTick    float64 `yaml:"stamina_drain_per_tick"`
-		StaminaRecoverPerTick  float64 `yaml:"stamina_recover_per_tick"`
-		FatiguePursuitPerTick  float64 `yaml:"fatigue_pursuit_per_tick"`
-		FatigueRecoverPerTick  float64 `yaml:"fatigue_recover_per_tick"`
-		VitalRegenPerTick      float64 `yaml:"vital_regen_per_tick"`
-		VitalCapDamageFraction float64 `yaml:"vital_cap_damage_fraction"`
-		HideDuration           int     `yaml:"hide_duration"`
-		HiddenFlushFactor      float64 `yaml:"hidden_flush_factor"`
-		HideCoverFactor        float64 `yaml:"hide_cover_factor"`
-		CoverRadiusFactor      float64 `yaml:"cover_radius_factor"`
-		ConcealFactor          float64 `yaml:"conceal_factor"`
-		RespawnCadence         int     `yaml:"respawn_cadence"`
+		ClimateStep                int     `yaml:"climate_step"`
+		FloraStep                  int     `yaml:"flora_step"`
+		DecayStep                  int     `yaml:"decay_step"`
+		ScentSpread                int     `yaml:"scent_spread"`
+		FaunaDormantPeriod         int     `yaml:"fauna_dormant_period"`
+		FaunaWakeCooldown          int     `yaml:"fauna_wake_cooldown"`
+		SleepWakeScentThreshold    float64 `yaml:"sleep_wake_scent_threshold"` // SS3: torpor F45 wake gate (predator scent ≥ this to wake a sleeper)
+		ExchangeMinTicks           int     `yaml:"exchange_min_ticks"`
+		ExchangeMaxTicks           int     `yaml:"exchange_max_ticks"`
+		EngageCooldownMinTicks     int     `yaml:"engage_cooldown_min_ticks"`
+		EngageCooldownMaxTicks     int     `yaml:"engage_cooldown_max_ticks"`
+		DisengageRangeFactor       float64 `yaml:"disengage_range_factor"`
+		StaminaDropThreshold       float64 `yaml:"stamina_drop_threshold"`
+		StaminaDrainPerTick        float64 `yaml:"stamina_drain_per_tick"`
+		StaminaRecoverPerTick      float64 `yaml:"stamina_recover_per_tick"`
+		FatiguePursuitPerTick      float64 `yaml:"fatigue_pursuit_per_tick"`
+		FatigueRecoverPerTick      float64 `yaml:"fatigue_recover_per_tick"`
+		SleepFatigueRecoverPerTick float64 `yaml:"sleep_fatigue_recover_per_tick"` // SS2: deep-torpor fatigue recovery while sleeping
+		VitalRegenPerTick          float64 `yaml:"vital_regen_per_tick"`
+		VitalCapDamageFraction     float64 `yaml:"vital_cap_damage_fraction"`
+		HideDuration               int     `yaml:"hide_duration"`
+		HiddenFlushFactor          float64 `yaml:"hidden_flush_factor"`
+		HideCoverFactor            float64 `yaml:"hide_cover_factor"`
+		CoverRadiusFactor          float64 `yaml:"cover_radius_factor"`
+		ConcealFactor              float64 `yaml:"conceal_factor"`
+		RespawnCadence             int     `yaml:"respawn_cadence"`
 	} `yaml:"cadence"`
 }
 
@@ -155,18 +157,21 @@ type objectKindDoc struct {
 			WaryLevel float64 `yaml:"wary_level"`
 			FleeLevel float64 `yaml:"flee_level"`
 		} `yaml:"drives"`
-		ApparentTemp  any      `yaml:"apparent_temp"`
-		Speed         any      `yaml:"speed"`
-		TurnRate      any      `yaml:"turn_rate"`
-		AttackPower   any      `yaml:"attack_power"`
-		Hit           any      `yaml:"hit"`
-		Feed          any      `yaml:"feed"`
-		Graze         any      `yaml:"graze"`
-		HideChance    any      `yaml:"hide_chance"`
-		CoverCost     float64  `yaml:"cover_cost"`
-		RespawnTarget int      `yaml:"respawn_target"`
-		Diet          []string `yaml:"diet"`
-		Senses        struct {
+		ApparentTemp    any      `yaml:"apparent_temp"`
+		ComfortTemp     float64  `yaml:"comfort_temp"`
+		ThermalBand     float64  `yaml:"thermal_band"`
+		HazardAvoidance float64  `yaml:"hazard_avoidance"`
+		Speed           any      `yaml:"speed"`
+		TurnRate        any      `yaml:"turn_rate"`
+		AttackPower     any      `yaml:"attack_power"`
+		Hit             any      `yaml:"hit"`
+		Feed            any      `yaml:"feed"`
+		Graze           any      `yaml:"graze"`
+		HideChance      any      `yaml:"hide_chance"`
+		CoverCost       float64  `yaml:"cover_cost"`
+		RespawnTarget   int      `yaml:"respawn_target"`
+		Diet            []string `yaml:"diet"`
+		Senses          struct {
 			SmellRadius float64 `yaml:"smell_radius"`
 			SightRadius float64 `yaml:"sight_radius"`
 			FovArc      float64 `yaml:"fov_arc"`

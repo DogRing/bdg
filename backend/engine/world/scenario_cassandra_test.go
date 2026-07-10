@@ -195,9 +195,7 @@ func TestCassandra_HighIntelProvisions_LowIntelDoesnt(t *testing.T) {
 	}
 
 	// Determinism (D12).
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Cassandra intelligence gap test)")
-	}
+	assertWorldDigestsEqual(t, "Cassandra intelligence gap test", worldA, worldB)
 }
 
 // ── Test 2: Famine pushes Peasant to theft ────────────────────────────────────
@@ -252,9 +250,7 @@ func TestCassandra_FaminePushesToTheft(t *testing.T) {
 	}
 
 	// Determinism (D12).
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Cassandra famine theft test)")
-	}
+	assertWorldDigestsEqual(t, "Cassandra famine theft test", worldA, worldB)
 }
 
 // ── Test 3: Honest Peasant endures famine without stealing ───────────────────
@@ -295,9 +291,7 @@ func TestCassandra_HonestPeasant_StarvesDignified(t *testing.T) {
 	t.Logf("Honest Peasant: plan=%v satiety=%.4f (endures famine)", peasantA.Plan.Actions, peasantA.NeedIntensities["Satiety"])
 
 	// Determinism (D12).
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Cassandra honest Peasant test)")
-	}
+	assertWorldDigestsEqual(t, "Cassandra honest Peasant test", worldA, worldB)
 }
 
 // ── Test 4: Cassandra determinism across full run ─────────────────────────────
@@ -330,7 +324,5 @@ func TestCassandra_Determinism(t *testing.T) {
 		return fx.world
 	}
 
-	if dA, dB := worldDigest(run()), worldDigest(run()); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Cassandra full scenario)")
-	}
+	assertScenarioDeterministic(t, "Cassandra full scenario", run)
 }

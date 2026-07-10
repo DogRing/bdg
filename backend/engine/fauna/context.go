@@ -28,6 +28,7 @@ const (
 	attrMoisture      core.Tag = "moisture"
 	attrWindDir       core.Tag = "wind.dir"
 	attrWindMag       core.Tag = "wind.mag"
+	attrDaylight      core.Tag = "daylight"
 	attrIsCurrent     core.Tag = "is_current"
 )
 
@@ -119,6 +120,12 @@ func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 		return c.env.Wind.Dir, true
 	case attrWindMag:
 		return c.env.Wind.Mag, true
+
+	// Daylight (diurnal cue, FM11): 1 at solar-noon, 0 at midnight, smooth. World
+	// injects it from the worldtime clock (EnvSample.Daylight). Diurnal vs nocturnal
+	// species emerge from the §6 sign ((1−daylight) vs daylight), not a hardcoded flag.
+	case attrDaylight:
+		return c.env.Daylight, true
 
 	// is_current: 1.0 iff the candidate being evaluated == CurrentAction (F30/F45/R5).
 	case attrIsCurrent:

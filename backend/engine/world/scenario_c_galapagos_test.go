@@ -354,7 +354,5 @@ func TestScenarioC_GalapagosFullRunDeterminism(t *testing.T) {
 		return fx.world
 	}
 
-	if dA, dB := worldDigest(run()), worldDigest(run()); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Galapagos full run)")
-	}
+	assertScenarioDeterministic(t, "Galapagos full run", run)
 }

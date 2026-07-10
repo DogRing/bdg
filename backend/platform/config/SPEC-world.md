@@ -40,7 +40,11 @@ current `content/` keeps loading unchanged.
 **Schema work this phase requires — ALL DONE as of 2026-06 (verify, do NOT re-author):**
 1. ✅ `world.schema.json` — written (`content/schema/world.schema.json`).
 2. ✅ `objects.schema.json` **`fauna:` block** — AUTHORED (`$defs/fauna`): candidate `actions[]` +
-   per-action `utility` §6, `drives[]` (ids + rate/level params), `apparent_temp` §6, `speed` §6,
+   per-action `utility` §6, `drives[]` (ids + rate/level params), `apparent_temp` §6 (emits felt °C),
+   `comfort_temp`/`thermal_band` (°C scalars — the thermal drive = clamp01(|apparent_temp−comfort_temp|/
+   thermal_band), symmetric cold+heat, FA5; thermal_band ≤ 0 ⇒ thermal neutral),
+   `hazard_avoidance` (scalar ≥0 — the per-species hazard-repulsion multiplier `e`; steer adds
+   `e·HazardField.Repulsion(Pos)`, P_move1/FM5; ≤0 ⇒ no hazard bend), `speed` §6,
    `threat:`/`scent:` tags, diet, `senses{smell_radius,sight_radius,fov_arc}`, `terrain_cost`/`impassable`.
 3. ✅ `climate.schema.json` **CA1-3** — UPDATED: `initial_temperature` is °C (no clamp), `balance`
    carries `annual_mid`/`annual_amp`/`annual_phase` (CA1) + `wind_*` (CA2) + per-°C `evap_temp_scale`.
@@ -198,6 +202,12 @@ Load-pipeline deltas for the combat/carcass round:
 - Parse the scalar combat balance into `EnvConfig.FaunaCombat` (`fauna.CombatParams`), MIRRORING
   `FaunaCadence`: exchange & engage cooldown min/max, `disengage_range_factor`, `stamina_drop_threshold`,
   `vital_regen_per_tick`, `vital_cap_damage_fraction` (from `world.yaml`).
+- **Sleep/torpor (P_sleep1):** parse `cadence.sleep_wake_scent_threshold` → `Cadence.SleepWakeScentThreshold`
+  (SS3 torpor wake gate) and `cadence.sleep_fatigue_recover_per_tick` → `CombatParams.SleepFatigueRecoverPerTick`
+  (SS2 deep recovery), from `world.yaml` (+ `world.schema.json`). The steer-channel compiler recognizes the
+  `state:sleep` action tag → `fauna.TagSleep` (alongside `no:locomotion` etc.), so a species listing the
+  `Sleep` action gets the torpor steer. `daylight` joins `fauna.AttrOperands()`, so a `Sleep` §6 utility
+  reading it passes the load-time `ReadsAttrs ⊆ AttrOperands()∪drives` cross-check.
 - Parse the `carcass` item kind's `decay:` states (fresh→rotting→bones→gone; supply = predator Feed value;
   transform = Butcher materials) into `decay.Rules`, exactly like any other decaying item.
 - `ScentEmitters` already routes the carcass `scent:carrion` tag with **NO config change** (tag-driven).

@@ -196,6 +196,24 @@ thermal 거동 0, decay/flora 동형); climate 출하 시 활성(P_fa4, '겨울'
 > 정하므로 **F40 과 CA3 는 한 번에 사람이 결정**해야 한다(operand 명칭 `temperature`·`wind.mag` 의 단위가 두 문서에서 동일해야 함).
 > 바람 항이 apparent_temp 를 낮추는 "wind chill" = `apparent_temp = §6(temperature, wind.mag, size, …)` — 식은 fauna 소유, 값은 climate.
 
+**FA5 — thermal drive 를 apparent_temp 에서 어떻게 도출하는가 (RESOLVED 2026-07-09).**
+*문제:* climate 출하(CA3=°C) 후 `apparent_temp` §6 는 **°C** 를 방출하는데, 엔진은 thermal drive 를 `clamp01(apparent_temp)` 로
+질러버려(placeholder) **1°C 이상이면 항상 1로 포화 + 부호 반대**(추울수록 값↓ = stress↓) → FA5("추운 밤 → thermal↑")가 `scenario_fa_test.go`
+에서 `NOT ENCODABLE` 로 스킵됨. F25 원설계("thermal ← apparent_temp **편차** = §6, [0,1] 정규화")의 **편차/정규화 단계가 미구현**이던
+것이 노출된 것 — 버그가 아니라 미완성 설계(신규 메커니즘 게이트).
+*상위 옵션(사람 택1):* (A) **별도 도출 + apparent_temp 는 °C 렌더 유지**, (B) `apparent_temp` 자체를 [0,1] stress 로 재정의(CA3 뒤집음·
+climate 문서 파급), (C) 엔진 고정 comfort-band shape + 계수 데이터. **RESOLVED = (A)** — CA3 불변, 렌더 °C 보존, §0-3 per-entity §6 정합.
+*A 내부 세부(사람 택1):* (A1) 인라인 §6 `thermal_stress:"(comfort − apparent_temp)*k"` — 한랭만(clamp01 이 더위=0 바닥처리), 새 스키마
+필드 0, expr 불변(F27) / (A2) **종-블록 스칼라 `comfort_temp`(°C)+`thermal_band`(±폭) + 엔진 대칭 밴드**. **RESOLVED = (A2)** — 사람이
+**대칭(한랭+고온 양방향, 여름 열스트레스 포함)** 을 선택. expr 은 함수·단항마이너스 없음(F27 이 abs/max 빌트인 추가 금지)이라 대칭은
+인라인 §6 로 표현 불가 → 엔진 고정 shape 가 유일한 대칭 경로(옵션 C 성격을 A2 가 흡수). 결과 식:
+`thermal = clamp01(|apparent_temp − comfort_temp| / thermal_band)`, `thermal_band ≤ 0` = thermal-중립 레버(과거 "climate-OFF ⇒ 0"
+가정을 대체 — 밴드 없는 종은 env 와 무관하게 0). apparent_temp §6 는 **렌더(persist ClimateView.apparent_temp)+`apparent_temp`
+operand** 로 그대로, thermal 은 그 위의 **별도** 도출. 구현: `engine/fauna` `SpeciesRule.{ComfortTemp,ThermalBand}` + `thermalStress()` +
+`platform/config` 파싱 + `objects.schema.json` + content 6종(deer/wolf/rabbit/goat/bear/fish, **UNTUNED placeholder** — 밸런스는 P_fa4).
+회귀 = `TestThermalStressComfortBand`(대칭 밴드+액션 중재)·`TestFA5ClimateThermal`(climate→apparent_temp→thermal end-to-end,
+comfort=0·cold=1·hot=1). *잔여(FA5 밖):* thermal 지속초과→vital 손상, '겨울' die-off 창발은 P_fa4.
+
 ### 클러스터 5 — 통합 + 어휘
 
 **F41 — 컨트롤러↔world 틱 와이어링(결합 ID apply 순서 + scent bulk cadence) 구체 shape.** F16/F24 = 매 틱 interleave + 고정
@@ -367,3 +385,78 @@ next-tick 지연), 확산 = bulk; spawn/move/die 델타 = F17. **⚠ architectur
 
 **균형(공통):** M3~M7 착지 후 balance.yaml + `tools/tuner`로 **~15% 포식 성공률** 타겟 튜닝. 측정 시나리오: 토끼-늑대,
 사슴-늑대/곰(스모크 digest 확장 or scenario fixture). 종별 성공률·평균 추격시간·개체군 안정성 로그.
+
+### 클러스터 11 — 이동·nav 장(場) (FM · 2026-07-09 개시)
+
+정본 = `docs/plans/fauna.md §4`(게이트·phase). 여기엔 Why(옵션 심의·기각·P_move1 축소 근거)만 남긴다.
+
+**Keystone — 방향 해석 모델 (RESOLVED 2026-07-09).**
+*문제:* 동물 이동에 pathfinding 이 없다(F35: per-agent A* 없음; 로컬 스티어만). 사용자 관찰 "동물 방향은 거의 비슷하다 →
+공유 장(場)으로 진행하려 했다". *옵션(사람 택1):* (a) **§6 이산 utility-max(기존, 개체별) 유지 + 방향에 얇은 blend**,
+(b) 순수 potential-field 로 **행동 선택까지 교체**, (c) 순수 단일채널 추종. *RESOLVED = (a) "a-backbone + bounded blend"* —
+(b) 기각(F35 전면 재설계·지역최소/진동 위험), (c) 기각(도주 중 절벽 돌진). 이미 flee+wander 를 합산 중이라 hazard/포식자 반발을
+같은 §6-가중 합에 얹는 **확장**일 뿐. **오해 교정 기록:** 사용자가 "장을 공유하면 개체마다 목마름·행동 수치가 무시되지 않나"(옵션 a
+vs b)를 우려했으나 — 장이 공유돼도 **각 개체가 자기 위치에서 자기 drive 로 blend 계수를 가중**하므로 개체 차등은 보존된다(D1/D6/D8).
+장 공유 ≠ 획일 행동.
+
+**FM1/FM2 — 장 인벤토리 + 정적 hazard 장 (RESOLVED 2026-07-09, 종별; P_move1 은 축소 출하).**
+*문제:* hazard(절벽/급경사/물가)는 "절대 못 들어가는 벽"이 아니다 — 사용자: "더 큰 위험이 있으면 물에도 들어가고, 목마르면 물가로
+간다. 수치에 따라 왔다갔다." ⇒ **연속 위험도**(binary impassable 아님)가 요구. *옵션:* (a) navmap `StepCost`에 hazard 비용만(반발 약함),
+(b) **별도 정적 hazard 거리장**(hazard 셀에서 flood, gradient=명확한 away). *RESOLVED = (b), 그리고 종별*(deer/wolf/fish 가 서로 다른
+통과성 뷰 ⇒ N종=N장, 정적이라 1회). fish-inversion(물=집)이 종별을 요구한 대표 사례.
+- **⭐ P_move1 축소 (사람 지시 2026-07-09 "재사용 하되 나중을 위해 곱할 e 값을 종마다 정해놔. 연속 회피 먼저 진행하고 리뷰까지"):**
+  P_move1 은 "연속 회피"를 **먼저** 출하하기 위해 **단일 공유 hazard 장 1장 + 종별 스칼라 `e`(`hazard_avoidance`, §6)** 로 낸다.
+  근거: 개체·종 차등은 `e` 가중과 개별 위치/drive 로 보존되므로 연속 회피에는 공유 장으로 충분; 종별 N장(위 (b) 정본)은
+  **후행**(P_move1b/P_move3 통합)으로, fish-inversion 도 그때 per-species 장으로 처리(현재는 `hazard_avoidance:0.0` 임시 비활성 —
+  물이 육지 hazard 로 취급되지 않게). 이는 (b) 를 **뒤집는** 결정이 아니라 (b) 를 **목표로 두고 P_move1 을 그 부분집합으로** 낸 것.
+- **danger 소스 = navmap `BaseCost`/`Passable` 프록시(현행):** F35 원설계의 §5 depth/slope 를 쓰려 했으나 `w.terrainAttrs`(depth/slope)가
+  **런타임에 미배선**(latent gap — climate→navmap 브리지는 base_cost/passable 만 넘김)이라, impassable→1·rough→`(base_cost−1)/K`
+  로 근사. river-ford 는 mildly-dangerous 로 **crossable 유지**(M4-a river=prey refuge 보존). §5 attrs 배선은 별도 후행.
+- **빌더 위치(FM-build) = 신규 leaf `engine/space/field`** — navmap 은 순수 지형색인 유지. **의존성 역전:** fauna 는 `field`/`navmap`
+  을 import 하지 않고 `HazardSampler{ Repulsion(Vec2) Vec2 }` 인터페이스만 선언, world 가 concrete `*field.Field` 를 주입
+  (`TestNoForbiddenImports` 가 잠금). typed-nil 트랩(nil `*field.Field` 이 non-nil 인터페이스로 박싱)은 `if w.hazardField != nil`
+  가드로 차단 — hazard-off 는 진짜 nil 인터페이스 ⇒ byte-identical(회귀 `TestP_move1HazardOffNoDangerIsByteIdentical`).
+
+**FM5 — blend 계수 위치 (RESOLVED 2026-07-09).** 이동벡터 = 주 pull + Σ 상시반발, 각 항 가중. *옵션(계수):* (a) **§6/content**(D4/D10),
+(b) 엔진 상수. *RESOLVED = (a)* — 종별 `hazard_avoidance` 스칼라(P_move1; 후행 §6 Program 승격 여지). Repulsion 은 danger SEVERITY×근접에
+비례(deep water/cliff 가 얕은 둑보다 세고 멀리 민다)하되 **연속 cost, 벽 아님** — 강한 flee/drive 가 out-pull 하면 건넌다. 회귀 =
+`TestP_move1DeerVeersFromSea`(사슴이 e=3 일 때 e=0 대조군보다 바다에서 멀리 비껴가고 경계 안쪽 유지).
+
+**FM3/FM4/FM6~FM10 — 후행 phase (RESOLVED rec, 미착수).** 정본 옵션·rec 는 `docs/plans/fauna.md §4.1`. P_move2=thirst+물 유인장(FM4),
+P_move3=동적 포식자 도주 flood+캐시(FM3/FM6)+포식자 유인(FM7), P_move4=무리 alignment 창발(FM8, D2). realism 레버 deadband(FM9)·
+버스트-휴지(FM10)는 "위협/필요 없으면 대체로 안 움직임·체력 아끼려 계속 안 뛴다"의 직접 인코딩 — 해당 phase 착수 시 유도.
+
+#### 밤잠·기상 (FM11/FM11b/FM12 + SS1~SS3 · P_sleep1 · SHIPPED 2026-07-10)
+
+사용자 "저녁에 자는 것도 있나? 주변에 이벤트가 생기면 일어나게". *사실 확인:* 세계엔 낮/밤(worldtime `HourOfDay` → climate 일교차·렌더)
+있으나 **fauna §6엔 시간대 operand 부재** → 동물이 밤을 인지 못함(밤 효과=apparent_temp 저온뿐, 간접). `Rest`·`fatigue`는 있으나 시간대 미연결.
+"주변 이벤트 기상"은 F45 wake(포식자 냄새→ActiveUntil)로 **부분 존재**(dormant·포식자 한정).
+
+**FM11 — 시간대 operand 형태 (RESOLVED: (a) `daylight ∈[0,1]`).** 옵션: (a) daylight(정오1·자정0, HourOfDay 사인) — clamp01 친화·완만 여명/황혼;
+(b) hour_of_day(자정 wrap 불연속); (c) is_night 이진(하드 컷오프·엔진이 임계). rec/RESOLVED=(a). 주야는 content §6 부호((1−daylight) vs daylight)로
+창발(D2/D10, 하드코딩 flag 금지). world가 `daylight=½(1−cos(2π·DayFraction))`를 EnvSample에 주입(clock 파생·결정적, climate 무관 — 광량은 날씨 아님).
+
+**FM11b — 밤잠 구현 (RESOLVED: (b) 신규 Sleep torpor — rec (a)를 사람이 override).** 옵션: (a) 기존 Rest 재사용(밤에 utility 승리=창발, 신규 0, D3);
+(b) 신규 Sleep torpor(별도 액션+깊은 fatigue 회복+높은 기상 임계). rec=(a) 최소표면이나 **사람이 (b) 선택** — 얕은 rest가 아닌 "깊은 잠"(회복↑·임계↑)을
+원함. 이 override가 SS1~SS3 하위 게이트를 열었다. 단 Sleep은 D3 준수(FSM 아님) — 기존 공유 `Sleep` 액션(에이전트와 공유) 재사용, `state:sleep` 태그만 추가.
+
+**FM12 — 기상 트리거 범위 (RESOLVED: (a) F45 포식자 wake 재사용).** 옵션: (a) 기존 F45(최소 표면); (b) 확장(포식자∨굶주린 포식자의 prey∨동종 경보);
+(c) 총 각성도 ε. rec/RESOLVED=(a) 우선, (b) 후행. 깨면 fear가 Sleep을 이겨 도주=창발(D2, wake FSM 없음). torpor의 높은 임계는 SS3에서 정의.
+
+**SS1 — Sleep 상태 표현 (RESOLVED: (a) `CurrentAction=="Sleep"` 재사용).** 옵션: (a) 재사용(신규 직렬화 0; torpor=이진); (b) 신규 `Sleeping`/`SleepDepth`
+필드(계조 가능하나 신규 state+직렬화+복원). rec/RESOLVED=(a) — "자는 중"은 CurrentAction의 steer 채널이 `TagSleep`인지로 판독. 구현상 SteerChannel 재사용
+(별도 필드 불필요): `Sleep` 액션의 steer=`state:sleep`→`TagSleep`(no-loco처럼 정지). SS1=(a)라 SS3-b(depth 스케일)는 무의미화.
+
+**SS2 — 깊은 fatigue 회복 (RESOLVED: (a) balance param `SleepFatigueRecoverPerTick`).** 옵션: (a) param(CurrentAction==Sleep 시, 기존 FatigueRecoverPerTick
+동형); (b) 액션 tag×K 배수; (c) 자동(깊음 없음). rec/RESOLVED=(a). 구현: world `applyAnimalFatigue`가 `state:sleep` 케이스를 effort 케이스 **앞**에서 처리
+(Sleep은 effort:none도 겸하므로 순서로 깊은 rate 획득), 태그 구동(D4, 하드코딩 액션ID 없음).
+
+**SS3 — 기상 임계 (RESOLVED: (a) balance param `SleepWakeScentThreshold`).** 옵션: (a) param — 자는 중이면 F45가 predIntensity ≥ threshold일 때만 wake
+(현행: >0 아무 강도); (b) sleep depth 스케일(SS1-b 필요). rec/RESOLVED=(a). 구현: fauna `Step` Step0에서 sleeper면 wakeThreshold=`Cadence.SleepWakeScentThreshold`,
+아니면 0. 먼 포식자(약한 냄새) 무시, 근접(강한 냄새) 즉시 wake→도주. 깊은 잠도 dormant 주기 재중재는 지속(혼수 아닌 뒤척임).
+
+**구현 요약(SHIPPED 2026-07-10, D2/D3/D4/D10/D12 정합):** ① worldtime `DayFraction`(YearFraction 쌍) ② fauna `EnvSample.Daylight`+`daylight` operand+
+`AttrOperands` 등재 ③ `TagSleep`("state:sleep") steer=정지 + Step0 wake 임계 + `Cadence.SleepWakeScentThreshold`/`CombatParams.SleepFatigueRecoverPerTick`
+④ world daylight 주입 + `applyAnimalFatigue` torpor 케이스 ⑤ config 파싱·steer 인식 ⑥ content(`state:sleep` 태그, 5종 §6 Sleep, world.yaml 2 param·UNTUNED).
+회귀 = `TestSleepWakeThresholdGatesFaintScent`·`TestDaylightDrivesSleepSelectionAndStaysPut`(fauna)·`TestP_sleep1NightSleepRecoversFatigue`(world e2e).
+*후행:* fish 미적용(수중, deferred); FM12-b 기상 확장; FM9/FM10 deadband/버스트; §6 계수·balance 튜닝(P_fa4).

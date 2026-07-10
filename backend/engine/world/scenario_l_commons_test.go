@@ -253,13 +253,9 @@ func TestCommons_OrderInAbundance(t *testing.T) {
 	t.Logf("Phase 1 (Order): all %d agents chose Take_Portion — conscience gate held", len(agents))
 
 	// Determinism: two runs with same seed must produce identical world state.
-	{
-		w1, _ := run()
-		w2, _ := run()
-		if d1, d2 := worldDigest(w1), worldDigest(w2); d1 != d2 {
-			t.Error("DETERMINISM FAILED (order in abundance)")
-		}
-	}
+	w1, _ := run()
+	w2, _ := run()
+	assertWorldDigestsEqual(t, "order in abundance", w1, w2)
 }
 
 // -- Test 2: Single Defector -----------------------------------------------------

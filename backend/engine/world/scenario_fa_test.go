@@ -5,18 +5,19 @@ package world
 //   FA2 scent+FOV hunt    → TestFA2PredatorHuntChaseResolves (scenario_fa2_test.go)
 //   FA3 wary↔flee band    → TestFA3WaryFleeBands (below)
 //   FA4 downwind plume    → TestFA4DownwindScentPlume (below)
-//   FA5 day/night thermal → NOT ENCODABLE with current content semantics: the thermal drive is
-//                           clamp01(apparent_temp §6) and content apparent_temp programs emit °C,
-//                           so thermal saturates at 1 for any temperature ≥ 1°C and can never
-//                           express "cold night → thermal stress ↑". Needs a human decision on
-//                           apparent_temp semantics (°C for render vs normalized stress) — see
-//                           the Phase 10 report / docs/plans/fauna.md F40.
+//   FA5 day/night thermal → TestFA5ClimateThermal (below) + TestThermalStressComfortBand
+//                           (engine/fauna/thermal_test.go). RESOLVED: the thermal drive is a
+//                           SYMMETRIC comfort-band stress = clamp01(|apparent_temp − comfort_temp|
+//                           / thermal_band), so cold AND hot both raise it; apparent_temp stays °C
+//                           for render (CA3). Decision: docs/decisions/fauna-gates.md (FA5); F40.
 //   FA6 hidden respawn    → TestRespawnTopsUpToTarget (respawn_test.go)
 //   FA7 herd/flocking     → DEFERRED (docs/plans/scenarios-world.md)
 //   FA8 per-species terrain → TestWorldTerrainSamplerSemantics (fauna_test.go) + the ecosim
 //                           containment assertions (engine/ecosim)
 
 import (
+	"math"
+	"strings"
 	"testing"
 
 	"github.com/dogring/bdg/engine/env/climate"
@@ -25,6 +26,7 @@ import (
 	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/kernel/expr"
 	"github.com/dogring/bdg/engine/mind/actions"
+	"github.com/dogring/bdg/engine/space/navmap"
 	"github.com/dogring/bdg/engine/space/scent"
 )
 
@@ -215,4 +217,314 @@ func TestFA4DownwindScentPlume(t *testing.T) {
 		t.Fatalf("plume not deterministic across same-seed runs: (%.9f,%.9f) vs (%.9f,%.9f)", down1, up1, down2, up2)
 	}
 	t.Logf("downwind=%.5f upwind=%.5f (skew ratio %.1fx)", down1, up1, down1/max(up1, 1e-12))
+}
+
+// ── FA5 — climate thermal (cold night AND hot noon → thermal ↑) ─────────────────
+
+// fa5Climate builds a constant-temperature climate (no annual/daily swing, no
+// rain/wind) so the deer's apparent_temp is a pure function of the injected
+// midline °C — the test controls felt temperature directly and deterministically.
+func fa5Climate(midC float64) (*climate.State, *climate.Rules) {
+	cfg := climate.Config{
+		GridCols: 2, GridRows: 2,
+		WorldMin: core.Vec2{X: -200, Y: -200}, WorldMax: core.Vec2{X: 200, Y: 200},
+		InitMoisture: 0, InitTemperature: midC,
+		RainProbPerHour: 0, RainHardCapHours: 1000, RainDurMinHours: 1, RainDurMaxHours: 2,
+		MoistureRainRate: 0, EvapBaseRate: 0, EvapTempScale: 0,
+		AnnualMid: midC, AnnualAmp: 0, TempDayPeak: 0, TempNightLow: 0,
+		WindPrevailingDir: 0, WindMagMean: 0, WindMagNoise: 0,
+		WindDirDrift: 0, WindDirReversion: 1,
+	}
+	return climate.New(cfg, func(core.Vec2) core.Tag { return "plain" }), climate.NewRules(nil)
+}
+
+// TestFA5ClimateThermal is the FA5 production-path assertion (was NOT ENCODABLE
+// before comfort_temp/thermal_band, docs/decisions/fauna-gates.md): a real deer
+// under a constant climate feels thermal stress that RISES symmetrically as
+// apparent_temp leaves its comfort band — ~0 at comfort, saturating toward 1
+// under BOTH a cold night and a hot noon. apparent_temp stays °C (render); the
+// comfort band is what normalizes it into the [0,1] thermal drive. This proves
+// the climate → EnvSample.Temperature → apparent_temp → thermal wiring end-to-end.
+func TestFA5ClimateThermal(t *testing.T) {
+	const comfort, band = 12.0, 20.0
+	deerThermal := func(midC float64) float64 {
+		fx := newFixtureSeeded(t, 2500)
+		installFA2ActionRegistry(t, fx)
+		cfg := fa2Cfg() // DormantPeriod 1 → the deer fully re-arbitrates (sets thermal) every tick
+		climState, climRules := fa5Climate(midC)
+		fx.world.InstallEnv(cfg, testNavMap(), climState, climRules, flora.New(nil), flora.NewRules(nil), nil, nil)
+
+		rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+			"deer": {
+				Utilities:   map[actions.ActionID]*expr.Program{"MoveTo": testNumProgram(t, "0.1")},
+				Drives:      []fauna.DriveRule{{ID: "thermal"}},
+				AppTemp:     testNumProgram(t, "temperature"), // apparent_temp = felt °C (isolate the band)
+				ComfortTemp: comfort, ThermalBand: band,
+				Speed:       testNumProgram(t, "0"),
+				Tags:        []core.Tag{"game"},
+				SmellRadius: 5, SightRadius: 5, FovArc: 1,
+			},
+		})
+		deer := testAnimal("an:deer", "deer", core.Vec2{X: 0, Y: 0})
+		deer.Vital, deer.VitalCap = 1, 1
+		deer.CurrentAction = "MoveTo"
+		fx.world.InstallFauna(cfg, rules, fa2ScentEmitters(), nil, []fauna.Animal{deer})
+
+		for range 5 {
+			fx.world.Tick()
+		}
+		return fx.world.animals["an:deer"].Drives["thermal"]
+	}
+
+	comfortT := deerThermal(comfort) // |12−12|/20 = 0
+	coldT := deerThermal(-8)         // |−8−12|/20 = 1.0 (cold)
+	hotT := deerThermal(32)          // |32−12|/20 = 1.0 (heat — symmetric)
+	if comfortT > 1e-6 {
+		t.Errorf("at comfort (%.0f°C): thermal %.4f, want ~0", comfort, comfortT)
+	}
+	if coldT < 0.9 {
+		t.Errorf("cold climate (−8°C): thermal %.4f, want ≥0.9 (cold-night stress not encoded)", coldT)
+	}
+	if hotT < 0.9 {
+		t.Errorf("hot climate (32°C): thermal %.4f, want ≥0.9 (symmetric heat stress not encoded)", hotT)
+	}
+	t.Logf("thermal: comfort=%.3f cold=%.3f hot=%.3f", comfortT, coldT, hotT)
+}
+
+// ── P_move1 — hazard-field avoidance (deer veers from a sea edge) ────────────────
+
+// fa5SeaNavMap builds a navmap whose right side (x ≥ seaX) is IMPASSABLE sea and the
+// rest is plain — a hard drowning hazard the world's danger field seeds from.
+func fa5SeaNavMap(seaX float64) *navmap.NavMap {
+	cfg := navmap.Config{
+		CellSize: 5, MinX: -200, MinY: -200, MaxX: 200, MaxY: 200,
+		WearCostMin: 0.5, WearMax: 1,
+	}
+	types := map[navmap.TerrainID]navmap.TerrainType{
+		"plain": {BaseCost: 1, Passable: true},
+		"sea":   {BaseCost: 1, Passable: false},
+	}
+	return navmap.New(cfg, func(p core.Vec2) navmap.TerrainID {
+		if p.X >= seaX {
+			return "sea"
+		}
+		return "plain"
+	}, types)
+}
+
+// TestP_move1DeerVeersFromSea is the P_move1 production-path assertion (docs/plans/fauna.md §4): through
+// real World.Tick(), the world builds a hazard field from the terrain and a deer heading toward a sea
+// edge VEERS AWAY instead of pinning at it. Isolated by comparing a hazard-avoiding deer (e>0) against a
+// byte-identical control with e=0 (same seed ⇒ same wander draws) — the only difference is the blend.
+func TestP_move1DeerVeersFromSea(t *testing.T) {
+	const seaX = 60.0
+	// maxReach returns the deer's furthest-right X over N ticks (how close it got to the sea).
+	maxReach := func(e float64) float64 {
+		fx := newFixtureSeeded(t, 2600)
+		installFA2ActionRegistry(t, fx)
+		cfg := fa2Cfg()
+		climState, climRules := fa5Climate(10)
+		fx.world.InstallEnv(cfg, fa5SeaNavMap(seaX), climState, climRules, flora.New(nil), flora.NewRules(nil), nil, nil)
+
+		rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+			"deer": {
+				Utilities:       map[actions.ActionID]*expr.Program{"MoveTo": testNumProgram(t, "0.1")},
+				Drives:          []fauna.DriveRule{},
+				Speed:           testNumProgram(t, "1.5"),
+				HazardAvoidance: e,
+				Tags:            []core.Tag{"game"},
+				SmellRadius:     5, SightRadius: 5, FovArc: 1,
+				SteerChannel: map[actions.ActionID]core.Tag{}, // MoveTo ⇒ continue heading
+			},
+		})
+		deer := testAnimal("an:deer", "deer", core.Vec2{X: 45, Y: 0}) // 15 units left of the sea edge
+		deer.Heading = 0                                              // pointed straight at the sea
+		deer.Vital, deer.VitalCap = 1, 1
+		deer.CurrentAction = "MoveTo"
+		fx.world.InstallFauna(cfg, rules, fa2ScentEmitters(), nil, []fauna.Animal{deer})
+
+		maxX := deer.Pos.X
+		for range 40 {
+			fx.world.Tick()
+			if x := fx.world.animals["an:deer"].Pos.X; x > maxX {
+				maxX = x
+			}
+		}
+		return maxX
+	}
+
+	control := maxReach(0)   // no hazard blend: wanders toward the sea, pins at the edge
+	avoider := maxReach(3.0) // strong hazard avoidance: veers away before the edge
+	if !(avoider < control) {
+		t.Errorf("hazard-avoiding deer should stay farther from the sea than the control: avoider maxX=%.2f control maxX=%.2f", avoider, control)
+	}
+	if avoider >= seaX {
+		t.Errorf("hazard-avoiding deer reached the sea edge (x=%.2f ≥ %.1f) — it should veer away", avoider, seaX)
+	}
+	t.Logf("max reach toward sea (x=%.0f): control=%.2f avoider=%.2f", seaX, control, avoider)
+}
+
+// TestP_move1HazardOffNoDangerIsByteIdentical guards the typed-nil interface branch in
+// buildFaunaSnapshot: with NO dangerous terrain the world builds NO hazard field, so
+// Snapshot.HazardField must be a TRUE nil interface — not a non-nil interface wrapping a nil
+// *field.Field (which would make `snap.HazardField != nil` true and call Repulsion on a nil field).
+// A hazard-avoiding deer (e>0) on all-passable terrain must therefore move byte-identically to an
+// e=0 control — no panic, no bend — through real World.Tick().
+func TestP_move1HazardOffNoDangerIsByteIdentical(t *testing.T) {
+	const noSeaX = 10000.0 // sea edge outside bounds ⇒ all-plain ⇒ zero danger ⇒ nil hazard field
+	trajectory := func(e float64) []core.Vec2 {
+		fx := newFixtureSeeded(t, 2600)
+		installFA2ActionRegistry(t, fx)
+		cfg := fa2Cfg()
+		climState, climRules := fa5Climate(10)
+		fx.world.InstallEnv(cfg, fa5SeaNavMap(noSeaX), climState, climRules, flora.New(nil), flora.NewRules(nil), nil, nil)
+
+		rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+			"deer": {
+				Utilities:       map[actions.ActionID]*expr.Program{"MoveTo": testNumProgram(t, "0.1")},
+				Drives:          []fauna.DriveRule{},
+				Speed:           testNumProgram(t, "1.5"),
+				HazardAvoidance: e,
+				Tags:            []core.Tag{"game"},
+				SmellRadius:     5, SightRadius: 5, FovArc: 1,
+				SteerChannel: map[actions.ActionID]core.Tag{}, // MoveTo ⇒ continue heading
+			},
+		})
+		deer := testAnimal("an:deer", "deer", core.Vec2{X: 0, Y: 0})
+		deer.Heading = 0
+		deer.Vital, deer.VitalCap = 1, 1
+		deer.CurrentAction = "MoveTo"
+		fx.world.InstallFauna(cfg, rules, fa2ScentEmitters(), nil, []fauna.Animal{deer})
+
+		var path []core.Vec2
+		for range 20 {
+			fx.world.Tick()
+			path = append(path, fx.world.animals["an:deer"].Pos)
+		}
+		return path
+	}
+
+	control := trajectory(0)   // no hazard blend
+	avoider := trajectory(3.0) // e>0 but no dangerous terrain ⇒ nil field ⇒ must not diverge (would panic if typed-nil boxed)
+	for i := range control {
+		if control[i] != avoider[i] {
+			t.Fatalf("hazard-off (no dangerous terrain) must be byte-identical for any e: tick %d control=%v avoider=%v", i, control[i], avoider[i])
+		}
+	}
+}
+
+// installSleepActionRegistry gives the world a Sleep action tagged state:sleep (torpor) + MoveTo, so
+// the world's actionHasTag(Sleep, state:sleep) deep-fatigue-recovery path and the deer's candidate
+// set resolve (P_sleep1).
+func installSleepActionRegistry(t *testing.T, fx *testFixture) {
+	t.Helper()
+	reg, err := actions.Load(strings.NewReader(`schema_version: 1
+actions:
+  - id: Sleep
+    tags: [effort:none, state:sleep]
+    duration: 1
+    produces: [safe]
+  - id: MoveTo
+    tags: [effort:low]
+    duration: 1
+    produces: [at_target]
+`))
+	if err != nil {
+		t.Fatalf("actions.Load sleep registry: %v", err)
+	}
+	fx.world.actReg = reg
+	fx.actReg = reg
+	fx.svc.Actions = reg
+	fx.world.svc.Actions = reg
+}
+
+// TestP_sleep1NightSleepRecoversFatigue is the P_sleep1 production-path assertion: through real
+// World.Tick(), the world injects a clock-derived `daylight` into the fauna EnvSample; at a
+// near-midnight tick (daylight≈0) a diurnal deer's Sleep utility (1-daylight) wins, so the deer
+// SLEEPS (state:sleep) — stays put (torpor no-loco) AND recovers fatigue at the DEEP sleep rate
+// (SleepFatigueRecoverPerTick), proving the whole chain: clock→daylight operand→§6 selection→
+// torpor steer→world deep-recovery wiring.
+func TestP_sleep1NightSleepRecoversFatigue(t *testing.T) {
+	fx := newFixtureSeeded(t, 99)
+	installSleepActionRegistry(t, fx)
+	cfg := fa2Cfg()
+	cfg.FaunaCombat.SleepFatigueRecoverPerTick = 0.02 // deep torpor recovery
+	fx.world.InstallEnv(cfg, fa5SeaNavMap(10000), nil, nil, flora.New(nil), flora.NewRules(nil), nil, nil)
+
+	rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {
+			Utilities: map[actions.ActionID]*expr.Program{
+				"Sleep":  testNumProgram(t, "1 - daylight"),
+				"MoveTo": testNumProgram(t, "0.1"),
+			},
+			Drives:      []fauna.DriveRule{{ID: "fatigue", Rate: 0.001}}, // accumulator (rate>0 keeps it a real drive, not the thermal default branch)
+			Speed:       testNumProgram(t, "1.5"),
+			Tags:        []core.Tag{"game"},
+			SmellRadius: 5, SightRadius: 5, FovArc: 1,
+			SteerChannel: map[actions.ActionID]core.Tag{"Sleep": fauna.TagSleep},
+		},
+	})
+	deer := testAnimal("an:deer", "deer", core.Vec2{X: 0, Y: 0})
+	deer.Heading = 0
+	deer.Vital, deer.VitalCap = 1, 1
+	deer.CurrentAction = "MoveTo"
+	deer.Drives = map[fauna.DriveID]float64{"fatigue": 0.5}
+	fx.world.InstallFauna(cfg, rules, fa2ScentEmitters(), nil, []fauna.Animal{deer})
+
+	fx.world.Tick() // tick → near midnight ⇒ daylight ≈ 0 (deep night)
+
+	got := fx.world.animals["an:deer"]
+	if got.CurrentAction != "Sleep" {
+		t.Fatalf("night (daylight≈0): deer should Sleep, got CurrentAction=%q", got.CurrentAction)
+	}
+	if got.Pos != (core.Vec2{X: 0, Y: 0}) {
+		t.Errorf("sleeping deer (torpor no-loco) must stay put, Pos=%v", got.Pos)
+	}
+	// Deep recovery: DriveUpdate accrues rate·dt (0.001·1), then world sleep-recovery subtracts
+	// SleepFatigueRecoverPerTick (0.02): 0.5 + 0.001 − 0.02 = 0.481. The net DROP proves the deep
+	// torpor rate applied (a mis-wire would leave 0.501 = accrual only, or hit 0 = no drive).
+	if math.Abs(got.Drives["fatigue"]-0.481) > 1e-9 {
+		t.Errorf("sleep must recover fatigue by the deep rate 0.02: fatigue=%.6f, want 0.481", got.Drives["fatigue"])
+	}
+}
+
+// TestP_sleep1ZeroDeepRateFallsBackToRest locks the SS2 neutrality: with SleepFatigueRecoverPerTick=0
+// the guarded torpor case is skipped, so a sleeper falls through to the ordinary effort:none rest rate
+// (FatigueRecoverPerTick) — a sleeping animal never recovers LESS than a resting one.
+func TestP_sleep1ZeroDeepRateFallsBackToRest(t *testing.T) {
+	fx := newFixtureSeeded(t, 99)
+	installSleepActionRegistry(t, fx)
+	cfg := fa2Cfg()
+	cfg.FaunaCombat.SleepFatigueRecoverPerTick = 0 // deep rate UNSET ⇒ fall through to ordinary rest
+	cfg.FaunaCombat.FatigueRecoverPerTick = 0.01   // ordinary effort:none rest rate
+	fx.world.InstallEnv(cfg, fa5SeaNavMap(10000), nil, nil, flora.New(nil), flora.NewRules(nil), nil, nil)
+
+	rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
+		"deer": {
+			Utilities: map[actions.ActionID]*expr.Program{
+				"Sleep":  testNumProgram(t, "1 - daylight"),
+				"MoveTo": testNumProgram(t, "0.1"),
+			},
+			Drives:      []fauna.DriveRule{{ID: "fatigue", Rate: 0.001}},
+			Speed:       testNumProgram(t, "1.5"),
+			Tags:        []core.Tag{"game"},
+			SmellRadius: 5, SightRadius: 5, FovArc: 1,
+			SteerChannel: map[actions.ActionID]core.Tag{"Sleep": fauna.TagSleep},
+		},
+	})
+	deer := testAnimal("an:deer", "deer", core.Vec2{X: 0, Y: 0})
+	deer.CurrentAction = "MoveTo"
+	deer.Drives = map[fauna.DriveID]float64{"fatigue": 0.5}
+	fx.world.InstallFauna(cfg, rules, fa2ScentEmitters(), nil, []fauna.Animal{deer})
+
+	fx.world.Tick() // night: deer sleeps, but deep rate 0 ⇒ ordinary rest recovery applies
+
+	got := fx.world.animals["an:deer"]
+	if got.CurrentAction != "Sleep" {
+		t.Fatalf("night: deer should still Sleep, got %q", got.CurrentAction)
+	}
+	// 0.5 + accrual 0.001 − ordinary FatigueRecoverPerTick 0.01 = 0.491 (NOT 0.501 = no recovery).
+	if math.Abs(got.Drives["fatigue"]-0.491) > 1e-9 {
+		t.Errorf("zero deep rate must fall back to ordinary rest recovery (0.01): fatigue=%.6f, want 0.491", got.Drives["fatigue"])
+	}
 }

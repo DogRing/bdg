@@ -792,61 +792,7 @@ func TestLoadValidContent(t *testing.T) {
 		t.Errorf("ConfigHash not deterministic: %q vs %q", hash1, hash2)
 	}
 
-	// Verify balance fields.
-	if out.Balance.World.TickMinutes != 1 {
-		t.Errorf("TickMinutes = %d, want 1", out.Balance.World.TickMinutes)
-	}
-	if out.Balance.Mood.Lambda != 0.25 {
-		t.Errorf("Mood.Lambda = %f, want 0.25", out.Balance.Mood.Lambda)
-	}
-	if out.Balance.Adrenaline.Surge != 0.6 {
-		t.Errorf("Adrenaline.Surge = %f, want 0.6", out.Balance.Adrenaline.Surge)
-	}
-	if out.Balance.Threats.SafetyThreatThreshold != 0.30 {
-		t.Errorf("SafetyThreatThreshold = %f, want 0.30", out.Balance.Threats.SafetyThreatThreshold)
-	}
-
-	// Verify PlansnerConfig accessor.
-	_ = out.Balance.PlannerConfig()
-	if out.Balance.PlannerConfig().UrgencyThreshold != 0.65 {
-		t.Errorf("Planner UrgencyThreshold = %f, want 0.65", out.Balance.PlannerConfig().UrgencyThreshold)
-	}
-
-	// Verify WorldConfig accessor.
-	wc := out.Balance.WorldConfig()
-	if wc.SpatialHashCell != 8.0 {
-		t.Errorf("SpatialHashCell = %f, want 8.0", wc.SpatialHashCell)
-	}
-	if wc.OutcomeDifficultyBase != 50.0 {
-		t.Errorf("OutcomeDifficultyBase = %f, want 50.0", wc.OutcomeDifficultyBase)
-	}
-
-	// Verify ClockConfig accessor.
-	cc := out.Balance.ClockConfig()
-	if cc.TickMinutes != 1 {
-		t.Errorf("Clock TickMinutes = %d, want 1", cc.TickMinutes)
-	}
-	if cc.DayMinutes != 1440 {
-		t.Errorf("Clock DayMinutes = %d, want 1440", cc.DayMinutes)
-	}
-
-	// Verify AgentConfig accessor.
-	ac := out.Balance.AgentConfig(out.NeedsRegistry, out.StatsRegistry)
-	if ac.Lambda != 0.25 {
-		t.Errorf("Agent Lambda = %f, want 0.25", ac.Lambda)
-	}
-	if ac.AdrSurge != 0.6 {
-		t.Errorf("Agent AdrSurge = %f, want 0.6", ac.AdrSurge)
-	}
-	if ac.BondAffinityGain != 0.20 {
-		t.Errorf("BondAffinityGain = %f, want 0.20", ac.BondAffinityGain)
-	}
-	if len(ac.ThreatTags) != 2 || ac.ThreatTags[0] != "violent:high" {
-		t.Errorf("ThreatTags = %v, want [violent:high hostile]", ac.ThreatTags)
-	}
-	if ac.InfluenceWeight != 0.5 {
-		t.Errorf("InfluenceWeight = %f, want 0.5", ac.InfluenceWeight)
-	}
+	assertBalanceAccessors(t, out)
 }
 
 func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
@@ -1400,28 +1346,19 @@ func TestLoadWithRealContent(t *testing.T) {
 		t.Fatal("output is nil or missing StatsRegistry")
 	}
 
-	// Basic sanity checks.
-	if out.Balance.World.TickMinutes != 1 {
-		t.Errorf("shipped TickMinutes = %d, want 1", out.Balance.World.TickMinutes)
-	}
-	if out.Balance.Mood.Lambda != 0.25 {
-		t.Errorf("shipped Mood.Lambda = %f, want 0.25", out.Balance.Mood.Lambda)
-	}
-	if out.Balance.World.DayMinutes != 1440 {
-		t.Errorf("shipped DayMinutes = %d, want 1440", out.Balance.World.DayMinutes)
-	}
-
-	// Verify all stats loaded.
+	// Verify shipped content is structurally complete without pinning literal
+	// balance values that are owned by content.
 	statsIDs := out.StatsRegistry.IDs()
 	if len(statsIDs) == 0 {
 		t.Error("no stats loaded from shipped content")
 	}
-
-	// Try the accessor methods.
-	_ = out.Balance.AgentConfig(out.NeedsRegistry, out.StatsRegistry)
-	_ = out.Balance.PlannerConfig()
-	_ = out.Balance.WorldConfig()
-	_ = out.Balance.ClockConfig()
+	if len(out.NeedsRegistry.IDs()) == 0 {
+		t.Error("no needs loaded from shipped content")
+	}
+	if len(out.ActionsRegistry.IDs()) == 0 {
+		t.Error("no actions loaded from shipped content")
+	}
+	assertBalanceAccessors(t, out)
 }
 
 // findContentDir searches up the directory tree for a content/ directory.
@@ -1451,6 +1388,108 @@ func findContentDir(t *testing.T) string {
 		dir = parent
 	}
 	return ""
+}
+
+func assertBalanceAccessors(t *testing.T, out *LoadOutput) {
+	t.Helper()
+	if out == nil {
+		t.Fatal("LoadOutput is nil")
+	}
+	b := &out.Balance
+
+	wc := b.WorldConfig()
+	if wc.SpatialHashCell != b.World.SpatialHashCell {
+		t.Errorf("WorldConfig.SpatialHashCell = %v, want parsed balance value %v", wc.SpatialHashCell, b.World.SpatialHashCell)
+	}
+	if wc.OutcomeDifficultyBase != b.World.OutcomeDifficultyBase {
+		t.Errorf("WorldConfig.OutcomeDifficultyBase = %v, want parsed balance value %v", wc.OutcomeDifficultyBase, b.World.OutcomeDifficultyBase)
+	}
+	if wc.BackupEveryTicks != b.World.BackupEveryTicks {
+		t.Errorf("WorldConfig.BackupEveryTicks = %v, want parsed balance value %v", wc.BackupEveryTicks, b.World.BackupEveryTicks)
+	}
+
+	cc := b.ClockConfig()
+	if cc.TickMinutes != int64(b.World.TickMinutes) {
+		t.Errorf("ClockConfig.TickMinutes = %v, want parsed balance value %v", cc.TickMinutes, b.World.TickMinutes)
+	}
+	if cc.DayMinutes != int64(b.World.DayMinutes) {
+		t.Errorf("ClockConfig.DayMinutes = %v, want parsed balance value %v", cc.DayMinutes, b.World.DayMinutes)
+	}
+
+	pc := b.PlannerConfig()
+	if pc.UrgencyThreshold != b.Planner.UrgencyThreshold {
+		t.Errorf("PlannerConfig.UrgencyThreshold = %v, want parsed balance value %v", pc.UrgencyThreshold, b.Planner.UrgencyThreshold)
+	}
+	if pc.BaseHorizonTicks != b.Planner.BaseHorizonTicks {
+		t.Errorf("PlannerConfig.BaseHorizonTicks = %v, want parsed balance value %v", pc.BaseHorizonTicks, b.Planner.BaseHorizonTicks)
+	}
+	if pc.Budget.MaxDepth != b.Planner.Budget.MaxDepth ||
+		pc.Budget.MaxActions != b.Planner.Budget.MaxActions ||
+		pc.Budget.MaxNodes != b.Planner.Budget.MaxNodes {
+		t.Errorf("PlannerConfig.Budget = %+v, want parsed balance values %+v", pc.Budget, b.Planner.Budget)
+	}
+	for tag, want := range b.Planner.TagCosts {
+		if got := pc.TagCosts[core.Tag(tag)]; got != want {
+			t.Errorf("PlannerConfig.TagCosts[%q] = %v, want parsed balance value %v", tag, got, want)
+		}
+	}
+
+	ac := b.AgentConfig(out.NeedsRegistry, out.StatsRegistry)
+	if ac.Lambda != b.Mood.Lambda || ac.MoodDecay != b.Mood.Decay || ac.MoodBaseline != b.Mood.Baseline {
+		t.Errorf("AgentConfig mood fields = (%v,%v,%v), want parsed balance mood %+v",
+			ac.Lambda, ac.MoodDecay, ac.MoodBaseline, b.Mood)
+	}
+	if ac.AdrTriggerUrgency != b.Adrenaline.TriggerUrgency ||
+		ac.AdrSurge != b.Adrenaline.Surge ||
+		ac.AdrDecay != b.Adrenaline.Decay ||
+		ac.AdrMax != b.Adrenaline.Max ||
+		ac.CrashStaminaPenalty != b.Adrenaline.CrashStaminaPenalty {
+		t.Errorf("AgentConfig adrenaline fields do not match parsed balance adrenaline %+v", b.Adrenaline)
+	}
+	if ac.StaminaMax != b.Stamina.Max ||
+		ac.DrainPerEffort != b.Stamina.DrainPerEffort ||
+		ac.RegenRest != b.Stamina.RegenRest ||
+		ac.RegenSleep != b.Stamina.RegenSleep {
+		t.Errorf("AgentConfig stamina fields do not match parsed balance stamina %+v", b.Stamina)
+	}
+	if ac.RebindMinIntelligence != b.Intelligence.RebindThreshold {
+		t.Errorf("AgentConfig.RebindMinIntelligence = %v, want parsed balance value %v",
+			ac.RebindMinIntelligence, b.Intelligence.RebindThreshold)
+	}
+	if ac.ApathyFailStreak != b.Coping.ApathyFailStreak ||
+		ac.ApathyRecoverMood != b.Coping.ApathyRecoverMood ||
+		ac.ApathyBudgetPenalty != b.Coping.ApathyBudgetPenalty {
+		t.Errorf("AgentConfig coping fields do not match parsed balance coping %+v", b.Coping)
+	}
+	if ac.ClaimInflateMin != b.Trade.ClaimInflateMin || ac.ClaimInflateMax != b.Trade.ClaimInflateMax {
+		t.Errorf("AgentConfig trade fields = (%v,%v), want parsed balance trade %+v",
+			ac.ClaimInflateMin, ac.ClaimInflateMax, b.Trade)
+	}
+	if ac.BondAffinityGain != b.Social.BondAffinityGain || ac.MinCareThreshold != b.Social.MinCareThreshold {
+		t.Errorf("AgentConfig social fields do not match parsed balance social %+v", b.Social)
+	}
+	if ac.RelyCostThreshold != b.Politics.RelyCostThreshold ||
+		ac.RelyOnDelta != b.Politics.RelyOnDelta ||
+		ac.VoteRelyThreshold != b.Politics.VoteRelyThreshold ||
+		ac.UrgencyThreshold != b.Politics.VoteUrgencyThreshold ||
+		ac.VoteRelyOnDelta != b.Politics.VoteRelyOnDelta ||
+		ac.InfluenceWeight != b.Politics.InfluenceWeight {
+		t.Errorf("AgentConfig politics fields do not match parsed balance politics %+v", b.Politics)
+	}
+	if len(ac.ThreatTags) != len(b.Threats.HostileTags) {
+		t.Errorf("AgentConfig.ThreatTags len = %d, want parsed hostile tag len %d", len(ac.ThreatTags), len(b.Threats.HostileTags))
+	} else {
+		for i, want := range b.Threats.HostileTags {
+			if ac.ThreatTags[i] != core.Tag(want) {
+				t.Errorf("AgentConfig.ThreatTags[%d] = %q, want parsed hostile tag %q", i, ac.ThreatTags[i], want)
+			}
+		}
+	}
+	for tag, want := range b.TagLevels.Effort {
+		if got := ac.EffortLevels[core.Tag(tag)]; got != want {
+			t.Errorf("AgentConfig.EffortLevels[%q] = %v, want parsed balance value %v", tag, got, want)
+		}
+	}
 }
 
 // TestConfigHashChangesWithContent verifies that ConfigHash changes when
@@ -1528,7 +1567,8 @@ stats:
 	}
 }
 
-// TestBalanceAgentConfig verifies the AgentConfig accessor produces correct values.
+// TestBalanceAgentConfig verifies the balance accessors project parsed content
+// into engine configs without pinning the test to duplicated YAML literals.
 func TestBalanceAgentConfig(t *testing.T) {
 	contentFiles := map[string]string{
 		"stats.yaml":   validStatsYAML,
@@ -1551,55 +1591,5 @@ func TestBalanceAgentConfig(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	ac := out.Balance.AgentConfig(out.NeedsRegistry, out.StatsRegistry)
-
-	// Mood
-	if ac.Lambda != 0.25 {
-		t.Errorf("Lambda = %f, want 0.25", ac.Lambda)
-	}
-	if ac.MoodDecay != 0.02 {
-		t.Errorf("MoodDecay = %f, want 0.02", ac.MoodDecay)
-	}
-
-	// Adrenaline
-	if ac.AdrSurge != 0.6 {
-		t.Errorf("AdrSurge = %f, want 0.6", ac.AdrSurge)
-	}
-	if ac.CrashStaminaPenalty != 0.50 {
-		t.Errorf("CrashStaminaPenalty = %f, want 0.50", ac.CrashStaminaPenalty)
-	}
-
-	// Coping
-	if ac.ApathyFailStreak != 3 {
-		t.Errorf("ApathyFailStreak = %d, want 3", ac.ApathyFailStreak)
-	}
-	if ac.RebindMinIntelligence != 0.4 {
-		t.Errorf("RebindMinIntelligence = %f, want 0.4", ac.RebindMinIntelligence)
-	}
-
-	// Trade
-	if ac.ClaimInflateMin != 0.50 {
-		t.Errorf("ClaimInflateMin = %f, want 0.50", ac.ClaimInflateMin)
-	}
-	if ac.ClaimInflateMax != 0.90 {
-		t.Errorf("ClaimInflateMax = %f, want 0.90", ac.ClaimInflateMax)
-	}
-
-	// Social
-	if ac.BondAffinityGain != 0.20 {
-		t.Errorf("BondAffinityGain = %f, want 0.20", ac.BondAffinityGain)
-	}
-
-	// Politics
-	if ac.RelyCostThreshold != 1.2 {
-		t.Errorf("RelyCostThreshold = %f, want 1.2", ac.RelyCostThreshold)
-	}
-	if ac.InfluenceWeight != 0.5 {
-		t.Errorf("InfluenceWeight = %f, want 0.5", ac.InfluenceWeight)
-	}
-
-	// Threat tags
-	if len(ac.ThreatTags) != 2 {
-		t.Errorf("len(ThreatTags) = %d, want 2", len(ac.ThreatTags))
-	}
+	assertBalanceAccessors(t, out)
 }

@@ -996,6 +996,7 @@ func TestNoForbiddenImports(t *testing.T) {
 		"github.com/dogring/bdg/engine/agent":           "forbidden (agent)",
 		"github.com/dogring/bdg/engine/mind/planner":    "forbidden (planner)",
 		"github.com/dogring/bdg/engine/space/navmap":    "forbidden (navmap)",
+		"github.com/dogring/bdg/engine/space/field":     "forbidden (field — inject via HazardSampler interface, F35/D11)",
 		"github.com/dogring/bdg/engine/env/climate":     "forbidden (climate)",
 		"github.com/dogring/bdg/engine/mind/needs":      "forbidden (needs)",
 		"github.com/dogring/bdg/engine/mind/stats":      "forbidden (stats)",

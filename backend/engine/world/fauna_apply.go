@@ -168,6 +168,12 @@ func (w *World) applyAnimalFatigue(a *fauna.Animal, action actions.ActionID) {
 	switch {
 	case w.actionHasTag(action, tagEffortHigh):
 		delta = w.envCfg.FaunaCombat.FatiguePursuitPerTick
+	case w.envCfg.FaunaCombat.SleepFatigueRecoverPerTick > 0 && w.actionHasTag(action, fauna.TagSleep):
+		// Torpor (SS2/FM11b): sleeping recovers fatigue DEEPER than ordinary rest. Guarded on a
+		// POSITIVE rate (and checked before the effort cases so a state:sleep action, which is also
+		// effort:none, gets the deep rate) — an UNSET deep rate falls through to the effort:none case
+		// below so a sleeper still recovers at the ordinary rest rate, never LESS than a rester.
+		delta = -w.envCfg.FaunaCombat.SleepFatigueRecoverPerTick
 	case w.actionHasTag(action, tagEffortNone), w.actionHasTag(action, tagEffortLow):
 		delta = -w.envCfg.FaunaCombat.FatigueRecoverPerTick
 	}

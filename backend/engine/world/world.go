@@ -21,6 +21,7 @@ import (
 	"github.com/dogring/bdg/engine/mind/actions"
 	"github.com/dogring/bdg/engine/mind/perception"
 	"github.com/dogring/bdg/engine/mind/tom"
+	"github.com/dogring/bdg/engine/space/field"
 	"github.com/dogring/bdg/engine/space/navmap"
 	"github.com/dogring/bdg/engine/space/scent"
 	"github.com/dogring/bdg/engine/space/spatial"
@@ -142,6 +143,9 @@ type World struct {
 	decayState   *decay.State
 	decayRules   *decay.Rules
 	terrainElev  []float64 // optional per-cell relief (offset order) — render-only (SetTerrainElevation)
+
+	hazardField      *field.Field // shared STATIC fauna hazard potential field (P_move1/FM2); built once, lazily
+	hazardFieldBuilt bool         // guards the one-time lazy build (terrain is static in P_move1)
 
 	terrainAttrs     map[navmap.TerrainID]map[core.Tag]float64
 	decayLotPos      map[core.ObjectID]core.Vec2

@@ -318,9 +318,7 @@ func TestWhistleblower_SilenceVsGossip(t *testing.T) {
 	t.Logf("Courage bifurcation: Honesty=0.65+Str=0.10 → StayQuiet; " +
 		"Honesty=0.65+Str=0.50 → Gossip; Honesty=0.85+Str=0.10 → Gossip (conscience override)")
 
-	if dA, dB := worldDigest(worldA), worldDigest(worldA2); dA != dB {
-		t.Error("DETERMINISM FAILED (silence vs gossip)")
-	}
+	assertWorldDigestsEqual(t, "silence vs gossip", worldA, worldA2)
 }
 
 // -- Test 3: Gossip Propagation (1-hop and 2-hop) --------------------------------

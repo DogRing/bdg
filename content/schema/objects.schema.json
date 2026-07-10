@@ -236,6 +236,9 @@
           "items": { "$ref": "#/$defs/driveSpec" }
         },
         "apparent_temp": { "$ref": "#/$defs/formula" },
+        "comfort_temp": { "type": "number", "description": "°C midpoint of the thermal comfort band (FA5/F40); thermal = clamp01(|apparent_temp − comfort_temp| / thermal_band). Optional; with thermal_band ≤ 0 the thermal drive is neutral." },
+        "thermal_band": { "type": "number", "minimum": 0, "description": "°C half-width of the symmetric comfort band (FA5/F40); apparent_temp this far from comfort_temp (cold OR hot) saturates thermal to 1. 0/absent ⇒ thermal drive neutral." },
+        "hazard_avoidance": { "type": "number", "minimum": 0, "description": "Per-species hazard-repulsion multiplier `e` (P_move1/FM5, docs/plans/fauna.md §4): steering adds e·Repulsion(pos) from the world's danger field (deep water / steep terrain) to the chosen heading — a continuous cost a strong flee/drive overcomes. Higher = more skittish (rabbit); low = hardy (goat). 0/absent ⇒ no hazard bend." },
         "speed": { "$ref": "#/$defs/formula" },
         "turn_rate": { "$ref": "#/$defs/formula" },
         "attack_power": { "$ref": "#/$defs/scalarOrFormula" },

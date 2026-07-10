@@ -63,14 +63,5 @@ func TestScenarioA_HungryHunter(t *testing.T) {
 		initialSatiety, finalSatiety, initialSatiety-finalSatiety)
 
 	// 2. Determinism: identical seed → byte-identical state digest (D12).
-	digestA := worldDigest(worldA)
-	digestB := worldDigest(worldB)
-	if digestA != digestB {
-		t.Errorf("DETERMINISM FAILED at seed=%d ticks=%d", seed, ticks)
-		t.Logf("Digest A:\n%s", digestA)
-		t.Logf("Digest B:\n%s", digestB)
-	} else {
-		t.Logf("SCENARIO A PASSED: seed=%d ticks=%d (deterministic)", seed, ticks)
-		t.Logf("Golden digest:\n%s", digestA)
-	}
+	assertWorldDigestsEqual(t, "Scenario A", worldA, worldB)
 }

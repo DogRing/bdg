@@ -36,26 +36,29 @@ type DriveRule struct {
 // package defines the recognized tag constants below. Absent entry → continue
 // along current Heading.
 type SpeciesRule struct {
-	Utilities    map[actions.ActionID]*expr.Program // candidate set + per-action §6 utility (F26)
-	Drives       []DriveRule                        // drive vocabulary + params (F25(c))
-	AppTemp      *expr.Program                      // §6 apparent_temp (F40)
-	Speed        *expr.Program                      // §6 locomotion speed (F35)
-	TurnRate     *expr.Program                      // §6 max turn rate radians/unit time (M6)
-	AttackPower  *expr.Program                      // §6 damage magnitude composition (FC4)
-	Hit          *expr.Program                      // §6 hit multiplier/probability composition (FC4)
-	Feed         *expr.Program                      // §6 carcass feed value composition (FC8)
-	Graze        *expr.Program                      // §6 herbivore graze hunger-recovery factor (parallels Feed)
-	HideChance   *expr.Program                      // §6 cover-hide probability (M3)
-	CoverCost    float64                            // scalar cover-drag cost (M4-b)
-	Diet         []core.Tag                         // diet/target tags (F7)
-	Tags         []core.Tag                         // this kind's own content tags — what another animal's Diet matches against (D10)
-	IsPredator   bool                               // carries `threat:predator` (F8)
-	SmellRadius  float64                            // smell radius (F31/F44)
-	SightRadius  float64                            // sight radius (F44)
-	FovArc       float64                            // forward FOV half-angle (radians, F44)
-	TerrainCost  map[core.Tag]float64               // per-species terrain affinity mult (W10b)
-	Impassable   []core.Tag                         // terrain types this species cannot enter
-	SteerChannel map[actions.ActionID]core.Tag      // action → steer-behavior tag (D4/D10)
+	Utilities       map[actions.ActionID]*expr.Program // candidate set + per-action §6 utility (F26)
+	Drives          []DriveRule                        // drive vocabulary + params (F25(c))
+	AppTemp         *expr.Program                      // §6 apparent_temp (F40) — emits °C (render + operand)
+	ComfortTemp     float64                            // °C midpoint of the thermal comfort band (FA5)
+	ThermalBand     float64                            // °C half-width; thermal = clamp01(|apparent_temp−comfort|/band); ≤0 ⇒ thermal neutral (0)
+	HazardAvoidance float64                            // per-species hazard-repulsion multiplier `e` (P_move1/FM5); ≤0 ⇒ no bend
+	Speed           *expr.Program                      // §6 locomotion speed (F35)
+	TurnRate        *expr.Program                      // §6 max turn rate radians/unit time (M6)
+	AttackPower     *expr.Program                      // §6 damage magnitude composition (FC4)
+	Hit             *expr.Program                      // §6 hit multiplier/probability composition (FC4)
+	Feed            *expr.Program                      // §6 carcass feed value composition (FC8)
+	Graze           *expr.Program                      // §6 herbivore graze hunger-recovery factor (parallels Feed)
+	HideChance      *expr.Program                      // §6 cover-hide probability (M3)
+	CoverCost       float64                            // scalar cover-drag cost (M4-b)
+	Diet            []core.Tag                         // diet/target tags (F7)
+	Tags            []core.Tag                         // this kind's own content tags — what another animal's Diet matches against (D10)
+	IsPredator      bool                               // carries `threat:predator` (F8)
+	SmellRadius     float64                            // smell radius (F31/F44)
+	SightRadius     float64                            // sight radius (F44)
+	FovArc          float64                            // forward FOV half-angle (radians, F44)
+	TerrainCost     map[core.Tag]float64               // per-species terrain affinity mult (W10b)
+	Impassable      []core.Tag                         // terrain types this species cannot enter
+	SteerChannel    map[actions.ActionID]core.Tag      // action → steer-behavior tag (D4/D10)
 }
 
 // Steer-behavior tag constants recognized by the steer step (D4 — derived from
@@ -69,33 +72,37 @@ const (
 	TagNoLoco    core.Tag = "no:locomotion" // rest: NextPos == Pos
 	TagAttack    core.Tag = "combat:attack" // engage/exchange against a diet target
 	TagFeed      core.Tag = "feed:carrion"  // steer toward carrion scent / feed target
+	TagSleep     core.Tag = "state:sleep"   // torpor sleep: NextPos == Pos (like no-loco) + high F45 wake threshold (SS3) + deep fatigue recovery (SS2)
 )
 
 // ── internal compiled species table ───────────────────────────────────────────
 
 // speciesData is the immutable per-species compiled record stored in Rules.
 type speciesData struct {
-	candidates   []actions.ActionID // sorted (D12)
-	utilities    map[actions.ActionID]*expr.Program
-	drives       []DriveRule // in sorted DriveID order (D12)
-	appTemp      *expr.Program
-	speed        *expr.Program
-	turnRate     *expr.Program
-	attackPower  *expr.Program
-	hit          *expr.Program
-	feed         *expr.Program
-	graze        *expr.Program
-	hideChance   *expr.Program
-	coverCost    float64
-	diet         []core.Tag
-	tags         []core.Tag
-	isPredator   bool
-	smellRadius  float64
-	sightRadius  float64
-	fovArc       float64
-	terrainCost  map[core.Tag]float64
-	impassable   map[core.Tag]bool // O(1) lookup
-	steerChannel map[actions.ActionID]core.Tag
+	candidates      []actions.ActionID // sorted (D12)
+	utilities       map[actions.ActionID]*expr.Program
+	drives          []DriveRule // in sorted DriveID order (D12)
+	appTemp         *expr.Program
+	comfortTemp     float64
+	thermalBand     float64
+	hazardAvoidance float64
+	speed           *expr.Program
+	turnRate        *expr.Program
+	attackPower     *expr.Program
+	hit             *expr.Program
+	feed            *expr.Program
+	graze           *expr.Program
+	hideChance      *expr.Program
+	coverCost       float64
+	diet            []core.Tag
+	tags            []core.Tag
+	isPredator      bool
+	smellRadius     float64
+	sightRadius     float64
+	fovArc          float64
+	terrainCost     map[core.Tag]float64
+	impassable      map[core.Tag]bool // O(1) lookup
+	steerChannel    map[actions.ActionID]core.Tag
 }
 
 // ── Rules ─────────────────────────────────────────────────────────────────────
@@ -149,27 +156,30 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 		}
 
 		r.species[sp] = speciesData{
-			candidates:   cands,
-			utilities:    util,
-			drives:       drives,
-			appTemp:      sr.AppTemp,
-			speed:        sr.Speed,
-			turnRate:     sr.TurnRate,
-			attackPower:  sr.AttackPower,
-			hit:          sr.Hit,
-			feed:         sr.Feed,
-			graze:        sr.Graze,
-			hideChance:   sr.HideChance,
-			coverCost:    sr.CoverCost,
-			diet:         cloneTags(sr.Diet),
-			tags:         cloneTags(sr.Tags),
-			isPredator:   sr.IsPredator,
-			smellRadius:  sr.SmellRadius,
-			sightRadius:  sr.SightRadius,
-			fovArc:       sr.FovArc,
-			terrainCost:  tc,
-			impassable:   imp,
-			steerChannel: sc,
+			candidates:      cands,
+			utilities:       util,
+			drives:          drives,
+			appTemp:         sr.AppTemp,
+			comfortTemp:     sr.ComfortTemp,
+			thermalBand:     sr.ThermalBand,
+			hazardAvoidance: sr.HazardAvoidance,
+			speed:           sr.Speed,
+			turnRate:        sr.TurnRate,
+			attackPower:     sr.AttackPower,
+			hit:             sr.Hit,
+			feed:            sr.Feed,
+			graze:           sr.Graze,
+			hideChance:      sr.HideChance,
+			coverCost:       sr.CoverCost,
+			diet:            cloneTags(sr.Diet),
+			tags:            cloneTags(sr.Tags),
+			isPredator:      sr.IsPredator,
+			smellRadius:     sr.SmellRadius,
+			sightRadius:     sr.SightRadius,
+			fovArc:          sr.FovArc,
+			terrainCost:     tc,
+			impassable:      imp,
+			steerChannel:    sc,
 		}
 	}
 	return r
@@ -251,9 +261,10 @@ func (r *Rules) DriveUpdate(sp SpeciesID, cur map[DriveID]float64, ctx expr.Cont
 				v -= dr.Decay * dt
 			}
 		default:
-			// Thermal drive: SET from apparent_temp program result (F40).
-			// clamp01 applied below; neutral in P1 (appTemp ≈ 0).
-			v = appTemp
+			// Thermal drive: symmetric comfort-band stress from apparent_temp
+			// (F40/FA5). stress = |apparent_temp − comfort| / band; clamp01 below.
+			// Cold AND heat deviations raise it; band ≤ 0 ⇒ 0 (neutral).
+			v = thermalStress(appTemp, sd.comfortTemp, sd.thermalBand)
 		}
 		next[dr.ID] = clamp01(v)
 	}
@@ -287,6 +298,18 @@ func (r *Rules) cheapDriveAdvance(sp SpeciesID, cur map[DriveID]float64, dt floa
 		next[dr.ID] = clamp01(v)
 	}
 	return next
+}
+
+// hazardAvoidance returns the species' hazard-repulsion multiplier `e` (P_move1/FM5).
+// ≤ 0 ⇒ no blend. Zero for an unknown/nil species.
+func (r *Rules) hazardAvoidance(sp SpeciesID) float64 {
+	if r == nil {
+		return scalarZero
+	}
+	if sd, ok := r.species[sp]; ok {
+		return sd.hazardAvoidance
+	}
+	return scalarZero
 }
 
 // AppTemp evaluates the species' §6 apparent_temp Program over climate operands +
@@ -418,4 +441,18 @@ func clamp01(v float64) float64 {
 		return scalarOne
 	}
 	return v
+}
+
+// thermalStress maps an apparent temperature (°C) to a SYMMETRIC comfort-band
+// stress (FA5/F40): |appTemp − comfort| / band, un-clamped (the DriveUpdate
+// caller clamp01s it into the [0,1] thermal drive). Cold AND heat deviations
+// both raise stress, so "cold night → thermal↑" and "hot noon → thermal↑" are
+// both encodable; apparent_temp itself stays °C for render (CA3). A band ≤ 0
+// means "no comfort band authored" ⇒ 0 (the thermal-neutral lever: a species
+// with a thermal drive but no comfort_temp/thermal_band never feels stress).
+func thermalStress(appTemp, comfort, band float64) float64 {
+	if band <= scalarZero {
+		return scalarZero
+	}
+	return math.Abs(appTemp-comfort) / band
 }

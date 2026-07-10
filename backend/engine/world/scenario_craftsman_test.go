@@ -214,9 +214,7 @@ func TestCraftsman_LowSelfEstimate_ForcesBasicCraft(t *testing.T) {
 		craftsmanA.Plan.Actions, craftsmanA.NeedIntensities["Satiety"])
 
 	// D12.
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (craftsman low self-estimate)")
-	}
+	assertWorldDigestsEqual(t, "craftsman low self-estimate", worldA, worldB)
 }
 
 // ── Test 2: Calibrated self-estimate unlocks advanced craft ──────────────────
@@ -266,9 +264,7 @@ func TestCraftsman_HighSelfEstimate_UnlocksAdvancedCraft(t *testing.T) {
 		craftsmanA.Plan.Actions, craftsmanA.NeedIntensities["Satiety"])
 
 	// D12.
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (craftsman high self-estimate)")
-	}
+	assertWorldDigestsEqual(t, "craftsman high self-estimate", worldA, worldB)
 }
 
 // ── Test 3: Information asymmetry enables exploitation ────────────────────────
@@ -364,9 +360,5 @@ func TestCraftsman_Determinism(t *testing.T) {
 		return fx.world
 	}
 
-	if dA, dB := worldDigest(run()), worldDigest(run()); dA != dB {
-		t.Error("DETERMINISM FAILED (craftsman scenario)")
-	} else {
-		t.Log("DETERMINISM PASSED: craftsman plan-divergence + exploiter asymmetry byte-identical")
-	}
+	assertScenarioDeterministic(t, "craftsman scenario", run)
 }

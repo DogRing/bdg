@@ -266,9 +266,7 @@ func TestRobinHood_ConscienceBlocksAtLowNeed(t *testing.T) {
 	t.Logf("plan at low urgency=%v (intensity=0.20, urgency≈0.364)", robinHoodA.Plan.Actions)
 
 	// 2. Determinism (D12).
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Robin Hood blocked test)")
-	}
+	assertWorldDigestsEqual(t, "Robin Hood blocked test", worldA, worldB)
 }
 
 // ── Test 2: conscience gate PASSES Take at critical need ─────────────────────
@@ -331,9 +329,7 @@ func TestRobinHood_ConsciencePassesAtCriticalNeed(t *testing.T) {
 	}
 
 	// Determinism (D12).
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (Robin Hood unblocked test)")
-	}
+	assertWorldDigestsEqual(t, "Robin Hood unblocked test", worldA, worldB)
 }
 
 // ── Test 3: very honest agent never steals ────────────────────────────────────
@@ -375,9 +371,7 @@ func TestRobinHood_HighHonesty_NeverSteals(t *testing.T) {
 	}
 	t.Logf("saintly plan=%v satiety=%.4f (Take absent: conscience held)", saintlyA.Plan.Actions, saintlyA.NeedIntensities["Satiety"])
 
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (high-honesty test)")
-	}
+	assertWorldDigestsEqual(t, "high-honesty test", worldA, worldB)
 }
 
 // ── Test 4: dishonest agent steals without needing urgency ───────────────────
@@ -418,7 +412,5 @@ func TestRobinHood_LowHonesty_StealsImmediately(t *testing.T) {
 	}
 	t.Logf("dishonest thief: plan=%v satiety=%.4f", thiefA.Plan.Actions, thiefA.NeedIntensities["Satiety"])
 
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Errorf("DETERMINISM FAILED (low-honesty test)")
-	}
+	assertWorldDigestsEqual(t, "low-honesty test", worldA, worldB)
 }

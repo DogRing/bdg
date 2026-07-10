@@ -68,6 +68,8 @@
         "stamina_recover_per_tick": { "type": "number", "minimum": 0, "description": "stamina regained per tick while not engaged" },
         "fatigue_pursuit_per_tick": { "type": "number", "minimum": 0, "description": "fatigue gained per tick during a high-effort chase/flight (M2)" },
         "fatigue_recover_per_tick": { "type": "number", "minimum": 0, "description": "fatigue shed per tick while resting / low-effort" },
+        "sleep_fatigue_recover_per_tick": { "type": "number", "minimum": 0, "description": "deep-torpor fatigue shed per tick while SLEEPING (state:sleep action); > fatigue_recover_per_tick (SS2/FM11b)" },
+        "sleep_wake_scent_threshold": { "type": "number", "minimum": 0, "description": "torpor F45 wake gate: a sleeping animal wakes only to predator scent >= this (SS3/FM12); 0 = any scent wakes" },
         "vital_regen_per_tick": { "type": "number", "minimum": 0, "description": "combat vital regeneration rate per tick" },
         "hide_duration": { "type": "integer", "minimum": 0, "description": "cover-hiding duration in ticks after a successful hide roll (M3)" },
         "hidden_flush_factor": { "type": "number", "minimum": 0, "description": "hidden prey flush radius factor multiplied by scent_cell_size (M3)" },

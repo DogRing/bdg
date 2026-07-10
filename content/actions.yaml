@@ -155,14 +155,14 @@ actions:
 
   # ── Recovery ─────────────────────────────────────────────────────────────────
   - id: Sleep
-    tags: [ "effort:none", "risk:low" ]   # vulnerable while sleeping -> Safety gate matters
+    tags: [ "effort:none", "risk:low", "state:sleep" ]   # vulnerable while sleeping -> Safety gate matters; state:sleep = fauna torpor (no-loco steer + deep fatigue recovery + high F45 wake threshold, P_sleep1)
     duration: 360
     produces: [ has_Rest ]
     effect_per_minute: { Rest: 0.0030 }
     interruptible: true
 
   - id: Rest
-    tags: [ "effort:none" ]
+    tags: [ "effort:none", "no:locomotion" ]  # no:locomotion → fauna no-loco steer (a resting animal holds position, NextPos == Pos)
     duration: 30
     produces: [ has_Rest ]
     effect_per_minute: { Rest: 0.0010 }   # weaker than Sleep; tops up Stamina between tasks

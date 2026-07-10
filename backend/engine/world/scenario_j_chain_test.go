@@ -274,9 +274,7 @@ func TestChain_DCooksNormally(t *testing.T) {
 		t.Errorf("D (no near_other) should NOT plan Take: plan=%v", dA.Plan.Actions)
 	}
 
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (normal cook)")
-	}
+	assertWorldDigestsEqual(t, "normal cook", worldA, worldB)
 }
 
 // -- Test 2: Crime bypass — C holds buffered inventory, D is desperate -----------
@@ -345,9 +343,7 @@ func TestChain_DCrimeBypass(t *testing.T) {
 
 	t.Logf("Crime bypass confirmed: Honesty=0.48 => [Take,Eat]; Honesty=0.80 => [MoveTo,Cook]")
 
-	if dAdig, dBdig := worldDigest(worldA), worldDigest(worldB); dAdig != dBdig {
-		t.Error("DETERMINISM FAILED (crime bypass)")
-	}
+	assertWorldDigestsEqual(t, "crime bypass", worldA, worldB)
 }
 
 // -- Test 3: Stamina gate hard-blocks A's production role ------------------------
@@ -399,9 +395,7 @@ func TestChain_StaminaBottleneck(t *testing.T) {
 	// Determinism using the low-stamina run.
 	worldA, _ := runA(0.0)
 	worldB, _ := runA(0.0)
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (stamina gate hard-block)")
-	}
+	assertWorldDigestsEqual(t, "stamina gate hard-block", worldA, worldB)
 }
 
 // -- Test 4: Full cascade — A's bottleneck drives D to crime ---------------------
@@ -467,7 +461,5 @@ func TestChain_FullCascadeToCrime(t *testing.T) {
 
 	t.Logf("Full cascade: A(stamina bottleneck, no ChopWood) => D(crime[Take]) — supply chain collapse documented")
 
-	if dAdig, dBdig := worldDigest(worldA), worldDigest(worldB); dAdig != dBdig {
-		t.Error("DETERMINISM FAILED (full cascade to crime)")
-	}
+	assertWorldDigestsEqual(t, "full cascade to crime", worldA, worldB)
 }

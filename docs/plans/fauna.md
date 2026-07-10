@@ -10,7 +10,8 @@ Concept & rationale: `docs/core/design.md §5`(연속좌표·동적지형), `§6
 > **게이트 전부 완료:** §0 잠금 + §1 F1~F46 + 클러스터 6~10 **전부 RESOLVED**(사람 확정 2026-06-26 ~ 2026-07-08).
 > **이 문서 = 확정값(결정 기록) + phase 로드맵.** 옵션 전문·판단 근거 = **`docs/decisions/fauna-gates.md`**
 > (F25~F44 클러스터 상세·FC/M SPEC-design 전문; F1~F24 pre-resolution 전문만 커밋 `bebc643`).
-> **확정 메커니즘의 구현 정본은 module SPEC:** `backend/engine/fauna/SPEC.md`(코어) ·
+> **확정 메커니즘의 구현 정본은 module SPEC:** `backend/engine/fauna/SPEC.md`(코어; 페이즈 델타 sub-spec =
+> `SPEC-combat.md` FC1~FC13 · `SPEC-cover.md` M3/M4-b/M5-b · `SPEC-steering.md` M6/M7) ·
 > `backend/engine/space/scent/SPEC.md`(냄새 그리드) · `backend/engine/world/SPEC-world-fauna.md`(apply/사망/feed) ·
 > `backend/platform/config/SPEC-world.md`(`fauna:` content 컴파일).
 > **메커니즘을 발명하면 결함이지 주도성이 아니다** — SPEC/구현이 §0·§1을 벗어나면 여기를 먼저 고치고 사람 승인.
@@ -58,7 +59,7 @@ Concept & rationale: `docs/core/design.md §5`(연속좌표·동적지형), `§6
 | F7 | 먹이사슬/개체군 | **(a) 창발** — eat·death·reproduce가 base에서; 표적팅 = tag(`edible`/`prey`/diet) |
 | F8 | 포식자→Safety | **(a) 기존 threat→Safety hostile-tag 채널 재사용** (포식자 = `threat:predator` 단 움직이는 entity) |
 | F9 | P1 번식 | **(c) 타이머-respawn 부트스트랩** (`prey_respawn`; §7 비차단) → 창발 birth는 P_fa4 |
-| F10 | 체감온도 거동 | **(a)+(b)** thermal drive bias + 지속초과 vital 손상; **climate 전 thermal-OFF**(내성식 존재·중립 출하) |
+| F10 | 체감온도 거동 | **(a)+(b)** thermal drive bias + 지속초과 vital 손상. **FA5 RESOLVED(2026-07-09):** thermal drive = `clamp01(\|apparent_temp − comfort_temp\| / thermal_band)` — **대칭 comfort 밴드**(한랭+고온 둘 다 stress↑), `apparent_temp`(§6)는 렌더용 **°C 유지**(CA3), 새 종-블록 스칼라 `comfort_temp`/`thermal_band`; `thermal_band ≤ 0` = 중립 레버. 근거 = `docs/decisions/fauna-gates.md`(FA5). ~~climate 전 thermal-OFF~~(구: clamp01(°C)라 1로 포화·부호 반대 → 인코딩 불가였음) |
 | F11 | 사체/산물 | **(a) `carcass` 객체** + owner-agnostic decay lot(Dm4) + Butcher 추출; 미추출 → `rotten_matter`(W10) |
 | F12 | Butcher | **(a) 신규 extract 행위** (`tool:cutting` gate, Dexterity §6 yield; Mine/Fell 평행, non-recipe) |
 | F13 | husbandry | **(a) 이연** (P1 야생만; 'tame' 플래그/상태 = D2 위반 금지) |
@@ -182,7 +183,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 
 > **기빌드 모듈 수정(2026-07-01 검증) — 전부 SPEC 반영 완료:** scent(`ChanCarrion`) · decay(런타임 lot 추가 API) ·
 > world(`SPEC-world-fauna.md` §Combat/death/carcass apply) · config(`SPEC-world.md` §Fauna combat content) ·
-> fauna(`SPEC.md` §Combat & Predation FC1~FC13). 검증 원문 = `docs/decisions/fauna-gates.md`.
+> fauna(`SPEC-combat.md` FC1~FC13). 검증 원문 = `docs/decisions/fauna-gates.md`.
 
 ---
 
@@ -200,7 +201,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 - **맵 저작 — cover flora (2026-07-02):** `starter_village.fixture.yaml`에 숲(oak 클러스터)·덤불(berry_shrub thicket)
   저작 + `oak`/`berry_shrub`에 **`cover` 태그**(glossary 등재). 숲은 지형 타입이 아니라 flora 클러스터로 창발(D11).
 - **M3 — cover 은신.** "prey가 풀숲에 들어가면 일정 확률로 ~100틱 안 보이게."
-  **SPEC: fauna `SPEC.md` §Cover-hiding + `SPEC-world-fauna.md` §Cover-hiding apply.**
+  **SPEC: fauna `SPEC-cover.md` §Cover-hiding + `SPEC-world-fauna.md` §Cover-hiding apply.**
   - M3-a 발동: `flee`(선택 steer=`flee:predator`) 중일 때만 판정. M3-b: §6 `hide_chance`(종별, D4/D7) +
     `hide_duration`=balance(기본 100틱). M3-c: sight+`scent:prey` **둘 다 제외**(완전 은신); predator가 flush 반경
     (`hidden_flush_factor`×scent cell) 진입 시 즉시 발각. M3-d 해제: 만료 ∨ engaged ∨ flush(은신 중 crouch=제자리).
@@ -214,21 +215,21 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   - M4-b cover flora 이동 저항 — RESOLVED (i): world가 이동량을 `1 + coverDensity(pos)×종 cover_cost`로 스케일
     (감속만·낙상 없음; peaky 밀도 → 이동 중 결정적 속도 변주, RNG 없음, D12). 비대칭 = 종별 `cover_cost`(D10,
     rabbit 0.3 < deer 0.6~0.7 < wolf 1.2 < bear 2.0). OFF-neutral(cover 없음/`cover_cost=0` → resistance=1).
-    **SPEC: fauna `SPEC.md` §Cover speed resistance + `SPEC-world-fauna.md`.**
+    **SPEC: fauna `SPEC-cover.md` §Cover speed resistance + `SPEC-world-fauna.md`.**
 - **M5 — 매복·감지.** predator가 cover 은신으로 prey 시야(Flee)를 늦춰 접근 → 매복 창발. 사실 확인: fauna 감지 =
   반경+FOV(`sightQuery`), shade/LoS 미반영(perception full-LoS 동물 지각 = park) → M5-b가 cover-근접 피탐지↓로 근사.
   - M5-a prey 조기감지 = content 튜닝(기존 `senses` 필드, 신규 메커니즘 아님, D10).
   - M5-b — RESOLVED (ii): predator `Concealment = coverDensity(pos)×conceal_factor`(파생 transient, 매틱 재계산) →
     prey 유효 시야 반경 `SightRadius/(1+Concealment)`. **scent(Wary)·hunt/`combatTarget` 불변 — 시야(Flee)만 늦춤**
     (prey는 냄새로는 알되 늦게 봄). OFF-neutral(`conceal_factor=0` → byte-identical).
-    **SPEC: fauna `SPEC.md` §Ambush concealment + `SPEC-world-fauna.md`.**
+    **SPEC: fauna `SPEC-cover.md` §Ambush concealment + `SPEC-world-fauna.md`.**
   - M5-c 몰이(cornering): 별도 코드 없음 — 강+bounds+M4 지형비용 상호작용으로 창발 유지(D2/D3).
 - **M6 — 관성·저크(juke).** 현행 이동엔 관성 없음(매 틱 즉시 회전·즉시 180°) → **heading 변화율 제한**으로 prey
   juke·predator 오버슈트 동시 창발. ⚠ ~15% 목표는 M1~M5로 달성 — M6은 리얼리즘 향상.
   - M6-a — RESOLVED (i): fauna `steerFull`에서 `±turn_rate×DT` 클램프(기존 `Heading` 상태 재사용, world 무변경).
     M6-b — RESOLVED (i): `turn_rate` = §6 `Program`(base+Agility 파생, D7 — 'nimble' 창발). M6-c — RESOLVED (i):
     heading turn-rate만(speed `accel` 캡은 후행 증분). OFF-neutral(미저작 → 무제한 → 골든 불변).
-    **SPEC: fauna `SPEC.md` §Turn-rate inertia.**
+    **SPEC: fauna `SPEC-steering.md` §Turn-rate inertia.**
 - **M7 — 다중 포식자 회피 벡터 (RESOLVED 2026-07-08).** prey 시야에 포식자가 둘 이상이면 모두 반영해 도망.
   사실 확인: 시야 경로만 **최근접 1마리** 반발(냄새 경로는 이미 필드 합산) → 협공(pincer) 시 2번째 포식자 쪽으로
   직진하는 결함(실제 유제류는 둘 사이 측면으로 빠짐).
@@ -237,7 +238,7 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
     회피 **창발**(D2/D3, 코너링 FSM 없음). `distPred` = 최근접 유지(fear·flush·M3 hidden 불변). OFF-neutral:
     가시 ≤1 → 기존 단일-대상 경로 **byte-identical**(골든 불변); 합산 ~0(대칭 협공) → 최근접 fallback(결정적).
     F44(단일 최근접 시야)를 다중-대상으로 정련.
-    **SPEC: fauna `SPEC.md` §Multi-predator flee steering + Public Interface SENSE/STEER(M7 주석).**
+    **SPEC: fauna `SPEC-steering.md` §Multi-predator flee steering (+ 코어 `SPEC.md` SENSE/STEER의 M7 포인터).**
 
 **균형(공통):** M3~M7 착지 후 balance.yaml + `tools/tuner`로 **~15% 포식 성공률** 타겟 튜닝. 측정 시나리오: 토끼-늑대,
 사슴-늑대/곰(스모크 digest 확장 or scenario fixture). 종별 성공률·평균 추격시간·개체군 안정성 로그.
@@ -260,7 +261,9 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
   sinew, W7/W8)·미추출 부패(W10). 이 phase에서만 영향 골든 재기준.
 - **P_fa4 — 창발 번식/개체군 사이클 + 체감온도 thermal 거동** ⬜ 부분
   drive-gated 창발 birth(F9 승격 — 현재는 activation-gate G5대로 **respawn-to-target 유지, birth 미착수**) +
-  thermal drive/vital(F10 — apparent_temp §6는 저작·climate 출하됨; '겨울' die-off/이주 압력 창발은 미검증).
+  thermal drive/vital(F10 — **thermal drive는 FA5로 RESOLVED·SHIPPED**(대칭 comfort 밴드, `comfort_temp`/`thermal_band`,
+  `TestFA5ClimateThermal`+`TestThermalStressComfortBand`); **잔여 = ① thermal 지속초과→vital 손상 미착수, ② '겨울' die-off/
+  이주 압력 창발 미검증, ③ comfort/band 밸런스 튜닝**(현재 UNTUNED placeholder)).
   남획→붕괴→아사(공유지 L) 시나리오. 의존: (선택) §7 lifecycle 정합.
 - **P_fa5 — 직렬화/스트림 + 렌더** ✅ SHIPPED
   `animals[]` periodic full + sparse delta(spawn/move/die) → `platform/persist` + `docs/core/data-contracts.md §6`;
@@ -300,3 +303,107 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 - **cross-doc(climate):** F40(apparent_temp)·F33(scent 바람 확산)·F41(world 와이어링)은 `docs/plans/climate.md §1c`
   의 **CA1(연주기)·CA2(바람 `wind.dir`/`wind.mag`)·CA3(단위 °C·operand 노출)** 와 결합 — operand 명칭·단위
   (`temperature`/`moisture`/`wind.dir`/`wind.mag`)는 두 문서에서 **반드시 동일**.
+
+## 4. 이동·nav 장(場) 서브시스템 (FM · Open-Question 게이트 — 2026-07-09 개시)
+
+동물 이동을 **potential-field 스티어**로 확장. 배경 심의: `docs/decisions/`(추후 이관). cross-ref: `engine/space/scent`
+(다채널 냄새장, 바람확산, gradient 방향 — 이미 존재)·`engine/space/navmap`(hex, `Neighbors`/`StepCost`/`Passable`/`RequiredTags`)·
+`engine/space/pathfind`(A*, 빌드됨·미사용)·`docs/plans/map.md`·agent 물 모델(`content/needs.yaml` **Hydration** + `content/actions.yaml`
+**Drink** + terrain **salinity** 음용 게이트 — 재사용). 불변 프레임: 장 = 연속좌표 샘플하는 **보조 색인**(D11, scent/navmap 동류)이지
+칸 스냅 아님; 목표(무엇을 원하나)=§6 / 방향(어디로)=장 = **D5 분리**; 장 갱신·샘플·블렌드·apply 전부 **결정적**(D12).
+
+**핵심 관찰:** 사용자 "동물 방향은 거의 비슷하다 → 공유 장" = per-agent A* 회피. **F35 "per-agent pathfind 없음"은 유지**된다 —
+우리는 개체별 경로가 아니라 **공유 navmap-flood 거리장**(보조 색인)을 추가하는 것(D11이 명시 허용). 개체 차등은 장이 공유돼도
+**각 개체가 자기 위치에서 자기 drive로 가중**하므로 보존(D1/D6/D8).
+
+### 4.0 Keystone — **RESOLVED (2026-07-09)**
+**행동 선택 = §6 이산 utility-max(기존, 개체별) + 방향 해석에 얇은 blend.** 순수 potential-field 교체(b) 기각(F35 전면 재설계·
+지역최소/진동 위험), 순수 단일채널(a) 기각(도주 중 절벽 돌진). 채택 = **a-backbone + bounded blend**: 선택된 행동의 주 pull 벡터에
+**상시 hazard/포식자 반발 + (후행)무리 separation**을 §6 계수로 가중 합산. 지금도 flee+wander를 합산 중이라 **확장**임. 오해 교정 기록:
+장 공유 ≠ 획일 행동(pull은 개체 drive 가중).
+
+### 4.1 Open questions (해당 phase 착수 전 사람 RESOLVE — 게이트)
+- **FM1 — 장 인벤토리 (신규 vs 재사용).** steer 입력장 집합. **장은 종별로 합성**(사용자 2026-07-09 "종별 navmap") —
+  물리적 scent 채널(food/prey/predator)은 **공유**하되, navmap 비용/통과성(종별 `terrain_cost`/`Caps`/`impassable` — **이미 존재**)과
+  채널 가중은 **종마다 다름**(deer=강 저비용 도하, wolf=강 고비용, fish=육지 hazard). options: (a) **하이브리드** — 동적 유인/포식자=scent
+  (이미 바람확산), 정적 hazard·물=navmap-flood 거리장, (b) 전부 navmap-flood 통일, (c) 전부 scent. **rec: (a) + 종별 합성**. **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM2 — 정적 hazard 장(절벽/급경사/물가).** options: (a) navmap `StepCost`/wear에 hazard 비용만(반발벡터 약함),
+  (b) **별도 정적 hazard 거리장**(hazard 셀에서 flood-fill, 1회·불변, gradient=명확한 away). hazard 소스 terrain은 content tag.
+  **종별 flood**(각 종의 통과성/비용 뷰로 계산 → deer/wolf/fish가 서로 다른 hazard 장; N종 = N장, 정적이라 1회). **rec: (b) 종별.** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+  - **P_move1 실현(축소, 사람 지시 2026-07-09 "재사용 하되 나중을 위해 곱할 e 값을 종마다 정해놔. 연속 회피 먼저"):**
+    P_move1은 **단일 공유 hazard 장 1장** + **종별 스칼라 `e`(`hazard_avoidance`, §6)** 로 출하한다 — 개체 차등은 `e`
+    가중으로 보존되므로 "연속 회피"에는 공유 장으로 충분. **종별 N장(위 (b))은 후행(P_move1b/P_move3와 통합)**,
+    fish-inversion(물=집)도 그때 per-species 장으로 처리(현재는 `hazard_avoidance: 0.0`으로 임시 비활성). danger 소스는
+    **navmap `BaseCost`/`Passable` 프록시**(의도된 §5 depth/slope는 terrainAttrs 미배선 — 별도 후행). 빌더=신규 leaf `engine/space/field`(FM-build).
+- **FM3 — 동적 포식자 도주장.** options: (a) scent.predator gradient(직선반대·이미 cadence 갱신, 장애물 우회 X),
+  (b) 포식자 셀 navmap-flood 거리장(우회 도주, **포식자 타일 변경/신규/사망 시에만** 재계산, 반경 제한 local flood),
+  (c) **하이브리드** — 탐지·경계는 scent/FOV(F43/F44 유지), **도주 방향만** flood. **rec: (c).** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM4 — fauna `thirst` drive + 물 유인 (별도 phase 가능).** fauna에 `thirst` drive 추가(D10, rate=balance).
+  물장 = 음용가능(river·salinity 0, 재사용) 셀 flood 거리장; 근접 시 hunger 유사 회복. options: (a) 신규 fauna thirst+Drink 상당,
+  (b) agent Hydration need 기계 재사용(fauna는 need 아닌 drive라 부적합). **rec: (a).** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM5 — blend 식 = §6 vs 엔진고정 + 상시반발 범위.** 이동벡터 = 주 pull + Σ 상시반발, 각 항 가중치.
+  options(계수 위치): (a) **§6/content**(D4/D10), (b) 엔진 상수. options(상시반발 범위): 절벽만 / 절벽+포식자 / +무리 separation.
+  **rec: 계수=(a) §6; 범위=phase 점진(P_move1 절벽+포식자, 무리=P_move4).** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM6 — 장 갱신 cadence & 트리거 (D12).** 정적장=1회 불변; 동적 포식자장=셀변경 이벤트; wind=scent 자체처리;
+  "flat→wander/rest"(유효장 임계 이하면 seeded 국소 wander 또는 정지=에너지보존). options: (a) 순수 이벤트, (b) **이벤트+저빈도
+  타이머 하이브리드**. 트리거는 스냅샷 파생, flood 정렬 결정적, 고정 animal-ID apply. **rec: (b).** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM7 — 포식자 측 장(사냥).** predator 이동장 = navmap cost(지형) + prey 유인. options: (a) scent.prey gradient만(있음, 기존 Hunt),
+  (b) + prey 위치 flood 유인장(원거리 사냥). **rec: (a) 우선, (b) 후행.** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM8 — 무리(herd) 공유 (P_move4, 후행).** options: (i) 명시 herd 그룹 대표가 장 추종, (ii) **창발형** — 감지자만 장 추종,
+  이웃은 boids **alignment**로 방향 승계(자기 flood 불필요). M7 반발합산=separation 재사용. **rec: (ii) D2.** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM-build — 장-빌더(navmap flood-fill) 위치.** navmap에 Field/flood API 추가 vs 신규 leaf `engine/space/field`. **rec: 신규 leaf**
+  (navmap은 순수 지형색인 유지). **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+
+#### 밤잠·기상 (FM11~FM12 · 2026-07-10 개시 — 사용자 "저녁에 자는 것도 있나? 주변에 이벤트가 생기면 일어나게")
+> **사실 확인:** 세계엔 낮/밤이 있으나(`worldtime.Clock.HourOfDay` → climate 일교차·렌더 day_night) **fauna §6엔 시간대 operand가 없다**
+> — 동물이 "밤이다"를 읽고 잘 수단이 없음(현행 밤 효과는 apparent_temp 저온뿐, 간접). `Rest` 액션·`fatigue` drive는 존재하나 시간대 미연결.
+> "주변 이벤트에 기상"은 **F45 wake(`ActiveUntil`)가 포식자 냄새 도달 시 즉시 깨움**으로 이미 부분 존재(dormant 한정·포식자 한정).
+- **FM11 — 밤잠 활성화 = 시간대 §6 operand.** 동물이 밤을 인지하도록 §6에 시간 채널 주입(EnvSample에 `w.clock` 파생 필드 추가 →
+  `context.Attr` 노출, temperature와 동형 배선). 주행성/야행성은 content §6 부호로 창발((1−daylight) vs daylight = D2/D10, 하드코딩
+  flag 금지). *options:* (a) **`daylight` ∈[0,1]**(정오=1·자정=0, HourOfDay 사인) — clamp01 친화·완만한 여명/황혼; (b) `hour_of_day`
+  ∈[0,24) — 자정 wrap 불연속; (c) `is_night` 이진 — 하드 컷오프. **rec: (a).** **RESOLVED: (a) `daylight ∈[0,1]` (사람 승인 2026-07-10).**
+- **FM11b — 밤잠 구현 형태.** *options:* (a) **기존 `Rest` 재사용** — 밤에 Rest utility가 이기는 창발, 신규 액션/상태 0(D3), fatigue
+  자동 회복; (b) **신규 `Sleep` torpor 상태** — 별도 Sleep 액션 + 더 큰 fatigue 회복 + 높은 기상 임계(약한 자극엔 안 깸). **rec: (a) 최소표면.**
+  **RESOLVED: (b) 신규 Sleep torpor (사람 승인 2026-07-10)** — 사람이 얕은 rest 아닌 **깊은 잠**(회복↑·기상 임계↑)을 선택 → 아래 SS1~SS3 하위 게이트 발생.
+- **FM12 — 기상 트리거 범위.** 자는 동물을 cadence 밖에서 **즉시** 재중재시키는 자극. 깨면 fear가 Sleep/Rest를 이겨 도주 = 창발.
+  *options:* (a) **F45 포식자 냄새 wake 그대로**(이미 존재; 최소 표면); (b) **확장**(포식자∨굶주린 포식자의 prey∨동종 경보); (c) 총 각성도 ε.
+  **rec: (a) 우선(P_sleep1), (b)는 후행.** **RESOLVED: (a) F45 재사용 (사람 승인 2026-07-10)** — 단 torpor(FM11b-b)의 높은 임계는 SS3에서 정의.
+
+##### SS1~SS3 — Sleep torpor 하위 shape (FM11b-b가 연 신규 게이트 · 2026-07-10)
+- **SS1 — Sleep 상태 표현.** *options:* (a) **`CurrentAction=="Sleep"` 재사용** — 신규 직렬화 필드 0; 기상/회복 조건이 CurrentAction 판독;
+  torpor=이진(자는 중 iff Sleep). (b) 신규 `Animal.Sleeping bool`/`SleepDepth float64` 지속 필드. **rec: (a).** **RESOLVED: (a) (사람 승인 2026-07-10).**
+- **SS2 — 깊은 fatigue 회복.** *options:* (a) **balance 파라미터 `SleepFatigueRecoverPerTick`**(CurrentAction==Sleep 시 적용, 기존
+  `FatigueRecoverPerTick`와 동형 계열); (b) 액션 tag(`torpor`) → recovery×K; (c) 자동(깊음 없음). **rec: (a).** **RESOLVED: (a) (사람 승인 2026-07-10).**
+- **SS3 — 기상 임계(F45 during Sleep).** *options:* (a) **balance 파라미터 `SleepWakeScentThreshold`** — CurrentAction==Sleep이면 F45가
+  포식자 냄새 intensity ≥ threshold일 때만 wake(현행: >0); (b) sleep depth 스케일(SS1-b 필드 필요). **rec: (a).** **RESOLVED: (a) (사람 승인 2026-07-10).**
+> **게이트 상태(밤잠·기상):** FM11/FM11b/FM12 + SS1~SS3 **전부 RESOLVED (2026-07-10).** **P_sleep1 SPEC 착수 가능.**
+> 빌드 순서(leaf-first): ① `engine/fauna` — `daylight` operand(EnvSample.Daylight + context.Attr) + Sleep 액션 인식(CurrentAction=="Sleep":
+> torpor fatigue 회복 + F45 wake 임계) → ② `platform/config` — `sleep_fatigue_recover`/`sleep_wake_scent_threshold` balance 파싱 + daylight 배선 →
+> ③ world — EnvSample.Daylight = `w.clock` 파생 주입 → ④ content — 종별 `Sleep` §6 액션(daylight-구동 utility) + balance 값.
+
+### 4.2 Phases (각 독립 shippable + 결정성 골든)
+- **P_move1** — 정적 hazard 장(FM2, **단일 공유 장 + 종별 `e`**) + a-backbone blend steer(FM5) + flat→wander(FM6). 단독 개체.
+  **연속 hazard 회피 SHIPPED (2026-07-09):** `engine/space/field`(potential 장 leaf) + fauna steer blend(`e·Repulsion`) +
+  world 단일 장 1회 빌드·주입. 종별 필드·thirst 유인·포식자 도주장·무리는 P_move1b~P_move4 후행.
+- **P_move2** — `thirst` drive + 물 유인장(FM4); drive>cost 창발 음용.
+- **P_move3** — 동적 포식자 flood 도주장 + 이벤트 캐시(FM3/FM6); 포식자 측 유인 개선(FM7).
+- **P_move4** — 무리 alignment 공유(FM8); herd 창발.
+- **P_sleep1** — 밤잠(FM11 `daylight` operand → 신규 `Sleep` torpor 창발) + 기상(FM12 F45 재사용, SS3 임계).
+  **SHIPPED (2026-07-10):** worldtime `DayFraction` + fauna `daylight`/`TagSleep`/wake 임계 + world daylight 주입·torpor fatigue 회복 + content(5종 Sleep §6·`state:sleep`). fish·FM12 확장·튜닝은 후행.
+
+### 4.3 현실성(realism) 기준 + 신규 Open items (2026-07-09 — "현실적으로 움직이나" 검증 산물)
+장-블렌드 모델은 고전적 실패모드(지역최소 stall / 로봇틱 beeline / restless drift / 상시 등속 활주)가 있어, **현실적 이동을 만들려면
+아래가 필수**다. 대부분 기존 레버(wander·is_current stickiness·turn-rate·fatigue/stamina) 확장이지만, 둘은 신규 메커니즘:
+- **FM9 — 이동 deadband (sub-threshold → 정지/미세만).** 유효 blend 벡터 크기 < ε면 **정지 또는 미세 wander만**(에너지보존·
+  "위협/필요 없으면 대체로 안 움직임"). options: (a) deadband, (b) 항상 gradient 추종(restless·비현실). **rec: (a)**, ε=balance 튜닝. **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **FM10 — 간헐 이동(move-pause 버스트) + 에너지-게이트 속도.** 기본 저속/정지, **fear/hunger 임계 초과 시에만** 버스트(§6 speed가
+  이미 drive 읽음 + stamina 소모로 자기제한). options: (a) 상시 연속 활주(로봇틱), (b) **drive-게이트 버스트-휴지 리듬**. **rec: (b)** —
+  사용자 "체력 아끼려 계속 안 뛴다"의 직접 인코딩. **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+- **realism 수용기준(각 phase 골든/시나리오로 검증, 신규 메커니즘 아님):** ① anti-stall — "강 건너 먹이 앞 무한 pacing" 없음
+  (wander+stickiness로 이탈); ② non-beeline — 경로가 직선 로봇 아님(turn-rate+wander); ③ 기본 정지 — 무자극 시 대체로 rest/미세이동;
+  ④ 위협 반응 등급 — 원거리=경계(Wary, 이동 적음), 근접=버스트 도주(F43/F44 유지).
+
+> **게이트 상태:** FM1~FM10·FM-build **전부 RESOLVED(2026-07-09, rec+종별)**.
+> **P_move1 연속 hazard 회피 = SHIPPED (2026-07-09, 단일 공유 장 + 종별 `e`; 종별 필드는 후행).** 배경 심의 → `docs/decisions/fauna-gates.md`.
+> 빌드 순서(leaf-first, 완료): ① `engine/space/field`(potential 장 leaf) → ② `engine/fauna` steer delta(hazard blend) →
+> ③ content(`hazard_avoidance` 종별 §6 계수) → ④ world 와이어링(단일 정적 hazard 장 1회 빌드·주입). deadband/버스트(FM9/FM10)·thirst(FM4)·도주장(FM3)·무리(FM8)=후행 phase.

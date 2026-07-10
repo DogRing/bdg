@@ -197,9 +197,7 @@ func TestGentrify_AgentsPhysicallyConvergeAtPrimeZone(t *testing.T) {
 	}
 
 	// D12.
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (physical prime zone convergence)")
-	}
+	assertWorldDigestsEqual(t, "physical prime zone convergence", worldA, worldB)
 }
 
 // -- Test 2: Economic displacement at prime zone ----------------------------------
@@ -274,9 +272,7 @@ func TestGentrify_StrongAgentEconomicallyDisplacesWeak(t *testing.T) {
 	t.Log("Economic displacement: strong agent (Honesty=0.30) holds prime zone via Take")
 
 	// D12.
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (economic displacement)")
-	}
+	assertWorldDigestsEqual(t, "economic displacement", worldA, worldB)
 }
 
 // -- Test 3: Slum crime surge at periphery ----------------------------------------
@@ -346,9 +342,7 @@ func TestGentrify_SlumCrimeSurgeAtPeriphery(t *testing.T) {
 	t.Log("Slum crime surge: desperation-driven Take at periphery, conscience holds for victim")
 
 	// D12.
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (slum crime surge)")
-	}
+	assertWorldDigestsEqual(t, "slum crime surge", worldA, worldB)
 }
 
 // -- Test 4: Full scenario determinism --------------------------------------------
@@ -396,9 +390,5 @@ func TestGentrify_Determinism(t *testing.T) {
 		return fx.world
 	}
 
-	if dA, dB := worldDigest(run()), worldDigest(run()); dA != dB {
-		t.Error("DETERMINISM FAILED (full gentrification scenario)")
-	} else {
-		t.Log("DETERMINISM PASSED: gentrification (convergence+displacement+slum crime) byte-identical")
-	}
+	assertScenarioDeterministic(t, "full gentrification scenario", run)
 }

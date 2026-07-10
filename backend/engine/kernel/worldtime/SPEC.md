@@ -78,6 +78,12 @@ func (c Clock) DaysPerYear() int64
 // int64-derived values), no wall-clock. `world` injects it into `climate.Forcing.YearFraction`.
 func (c Clock) YearFraction(t core.Tick) float64
 
+// DayFraction returns the continuous position within the current day in [0,1): 0 at the day's start
+// (midnight reference), 0.5 at solar-noon — the diurnal twin of YearFraction, `float64(MinuteOfDay) /
+// float64(DayMinutes)`. `world` derives the fauna `daylight` cue from it (`½(1−cos(2π·DayFraction))`,
+// P_sleep1/FM11 — the diurnal sleep operand). Closed-form deterministic, no wall-clock.
+func (c Clock) DayFraction(t core.Tick) float64
+
 // Calendar bundles all derived fields for a Tick (one struct, for logging / events / render).
 type Calendar struct {
     Minute  core.GameMinutes // absolute game-minute count

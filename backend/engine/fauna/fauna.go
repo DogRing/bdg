@@ -14,9 +14,10 @@
 // ObjectID order.
 //
 // Forbidden imports (one-way wiring): engine/world, engine/agent,
-// engine/mind/planner, engine/space/navmap, engine/env/climate, engine/mind/needs,
-// engine/mind/stats, engine/mind/tom, engine/mind/values, engine/mind/gates,
-// engine/mind/perception.
+// engine/mind/planner, engine/space/navmap, engine/space/field (the hazard field is
+// injected via the HazardSampler interface — dependency inversion, F35/D11),
+// engine/env/climate, engine/mind/needs, engine/mind/stats, engine/mind/tom,
+// engine/mind/values, engine/mind/gates, engine/mind/perception.
 package fauna
 
 import (
@@ -77,6 +78,7 @@ type EnvSample struct {
 	Temperature float64    // §6 operand "temperature"; neutral in P1
 	Moisture    float64    // §6 operand "moisture"; neutral in P1
 	Wind        scent.Wind // {Dir radians, Mag} (operands "wind.dir"/"wind.mag"); zero in P1
+	Daylight    float64    // §6 operand "daylight" ∈[0,1]: 1=solar-noon, 0=midnight (FM11); world-injected from the clock; 0 ⇒ perpetual-night neutral
 }
 
 // TerrainSampler is the read-only navmap view fauna declares and world adapts
@@ -92,6 +94,19 @@ type TerrainSampler interface {
 	BaseCost(p core.Vec2) float64
 }
 
+// HazardSampler is the read-only per-species STATIC hazard potential field fauna
+// declares and world adapts (dependency inversion, like TerrainSampler so fauna
+// must NOT import engine/space/field/navmap, F35/D11). Satisfied by
+// *engine/space/field.Field, which world builds once (P_move1/FM1/FM2).
+//   - Repulsion(p): the away-from-danger steering vector at p — the UNIT away
+//     direction scaled by the LOCAL DANGER INTENSITY (severity × proximity; deep
+//     water / a cliff push harder than a shallow bank). Zero where safe/flat. The
+//     steer adds e·Repulsion (e = the species' §6 HazardAvoidance) to the heading —
+//     a continuous cost, NOT a block: a stronger drive/flight overcomes it (FM5).
+type HazardSampler interface {
+	Repulsion(p core.Vec2) core.Vec2
+}
+
 // Cadence carries the F45 adaptive per-animal cadence parameters (balance data,
 // world-injected; NOT per-species). DormantPeriod is the N in the dormant
 // re-arbitration gate (Tick+phase(ID))%N==0 (N≈100). WakeCooldown is how many
@@ -101,28 +116,34 @@ type TerrainSampler interface {
 type Cadence struct {
 	DormantPeriod int       // ≥ 1; the dormant re-arbitration period N
 	WakeCooldown  core.Tick // ≥ 0; ticks an animal stays ACTIVE after a predator-scent wake
+	// SleepWakeScentThreshold is the torpor wake gate (SS3/FM12): while an animal is SLEEPING
+	// (CurrentAction is a state:sleep action), the F45 predator-scent wake fires only when the
+	// predator intensity at its cell is ≥ this threshold — a deep sleeper ignores a faint/distant
+	// predator and wakes only to a near/strong one. 0 ⇒ any scent wakes (identical to non-sleep).
+	SleepWakeScentThreshold float64
 }
 
 // CombatParams carries balance-authored combat timing/range/regeneration values.
 // Zero values are neutral until platform/config wires real content values.
 type CombatParams struct {
-	ExchangeMinTicks       int
-	ExchangeMaxTicks       int
-	EngageCooldownMinTicks int
-	EngageCooldownMaxTicks int
-	DisengageRangeFactor   float64 // multiplied by Snapshot.ScentCellSize
-	StaminaDropThreshold   float64
-	StaminaDrainPerTick    float64 // stamina spent per tick while engaged in combat (FC6 / scenario #8)
-	StaminaRecoverPerTick  float64 // stamina regained per tick while not engaged
-	FatiguePursuitPerTick  float64 // fatigue gained per tick during a high-effort chase/flight (M2 endurance)
-	FatigueRecoverPerTick  float64 // fatigue shed per tick while resting/low-effort
-	VitalRegenPerTick      float64
-	VitalCapDamageFraction float64
-	HiddenFlushFactor      float64 // × Snapshot.ScentCellSize = flush radius for hidden prey detection (M3)
-	HideDurationTicks      int     // ticks a prey stays hidden after a successful world-side hide roll (M3)
-	HideCoverFactor        float64 // × ScentCellSize = cover reach for world nearCoverFlora (M3)
-	CoverRadiusFactor      float64 // × plant Width = cover-drag radius for world-side resistance (M4-b)
-	ConcealFactor          float64 // × cover density = per-animal concealment for prey sight reduction (M5-b)
+	ExchangeMinTicks           int
+	ExchangeMaxTicks           int
+	EngageCooldownMinTicks     int
+	EngageCooldownMaxTicks     int
+	DisengageRangeFactor       float64 // multiplied by Snapshot.ScentCellSize
+	StaminaDropThreshold       float64
+	StaminaDrainPerTick        float64 // stamina spent per tick while engaged in combat (FC6 / scenario #8)
+	StaminaRecoverPerTick      float64 // stamina regained per tick while not engaged
+	FatiguePursuitPerTick      float64 // fatigue gained per tick during a high-effort chase/flight (M2 endurance)
+	FatigueRecoverPerTick      float64 // fatigue shed per tick while resting/low-effort
+	SleepFatigueRecoverPerTick float64 // fatigue shed per tick while SLEEPING (state:sleep) — the deep-torpor rate, > FatigueRecoverPerTick (SS2/FM11b); ≤0 ⇒ no deep bonus, a sleeper falls back to the ordinary FatigueRecoverPerTick (never LESS than resting)
+	VitalRegenPerTick          float64
+	VitalCapDamageFraction     float64
+	HiddenFlushFactor          float64 // × Snapshot.ScentCellSize = flush radius for hidden prey detection (M3)
+	HideDurationTicks          int     // ticks a prey stays hidden after a successful world-side hide roll (M3)
+	HideCoverFactor            float64 // × ScentCellSize = cover reach for world nearCoverFlora (M3)
+	CoverRadiusFactor          float64 // × plant Width = cover-drag radius for world-side resistance (M4-b)
+	ConcealFactor              float64 // × cover density = per-animal concealment for prey sight reduction (M5-b)
 }
 
 // Snapshot is the read-only world view the controller scores over (the read phase;
@@ -140,6 +161,13 @@ type Snapshot struct {
 	Combat        CombatParams
 	ScentCellSize float64
 	DT            float64 // locomotion time-step magnitude for one tick (world/balance)
+	// HazardField is the shared STATIC hazard potential field (P_move1/FM2). world builds it once
+	// (source cells = dangerous terrain, weight = danger) and injects it; steering adds e·Repulsion
+	// (e = the species' HazardAvoidance) to the chosen direction (F35). Per-species DIFFERENTIATION is
+	// via `e` (a hardy goat has a low e, a skittish rabbit a high one), so one shared field suffices in
+	// P_move1; per-species FIELDS (fish-inversion) are deferred. nil ⇒ NO hazard blend (the P_move1-off
+	// lever — byte-identical to pre-P_move1).
+	HazardField HazardSampler
 }
 
 // Intent is the controller's per-animal output (ONE per animal, F1/F41). world
@@ -179,6 +207,7 @@ func AttrOperands() []core.Tag {
 	// Fixed list, pre-sorted alphabetically (D12).
 	fixed := []core.Tag{
 		attrApparentTemp,
+		attrDaylight,
 		attrDistFood,
 		attrDistPredator,
 		attrDistPrey,

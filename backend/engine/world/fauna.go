@@ -2,6 +2,7 @@ package world
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +59,16 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 			animals = append(animals, cloneAnimal(*a))
 		}
 	}
+	// Build the shared static hazard field once (terrain is static in P_move1); a typed-nil
+	// *field.Field must NOT be stored in the interface (it would satisfy != nil and panic on call).
+	if !w.hazardFieldBuilt {
+		w.hazardField = w.buildHazardField()
+		w.hazardFieldBuilt = true
+	}
+	var hazard fauna.HazardSampler
+	if w.hazardField != nil {
+		hazard = w.hazardField
+	}
 	return &fauna.Snapshot{
 		Animals:       animals,
 		Scent:         w.scent,
@@ -69,6 +80,7 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 		Combat:        w.envCfg.FaunaCombat,
 		ScentCellSize: w.envCfg.ScentCellSize,
 		DT:            w.envCfg.FaunaDT,
+		HazardField:   hazard,
 	}
 }
 
@@ -77,6 +89,10 @@ func (w *World) buildFaunaEnvSamples() map[core.ObjectID]fauna.EnvSample {
 	var global climate.Wind
 	var dailyMean float64
 	coverOn := w.exposureCover != nil
+	// Daylight (FM11): world-uniform diurnal light cue, 1 at solar-noon, 0 at midnight; smooth.
+	// Injected into every animal's EnvSample so §6 can drive the Sleep action (D11-style scalar,
+	// like temperature). Clock-derived ⇒ deterministic (D12).
+	daylight := 0.5 * (1 - math.Cos(2*math.Pi*w.clock.DayFraction(w.tick)))
 	if w.climateState != nil {
 		global = w.climateState.Wind()
 		dailyMean = w.climateState.DailyMeanTemperature()
@@ -87,7 +103,7 @@ func (w *World) buildFaunaEnvSamples() map[core.ObjectID]fauna.EnvSample {
 			continue
 		}
 		// SH1: per-position local wind = global × ε(cell). Shelter-OFF ⇒ global unchanged.
-		sample := fauna.EnvSample{Wind: w.localWindAt(a.Pos, global)}
+		sample := fauna.EnvSample{Wind: w.localWindAt(a.Pos, global), Daylight: daylight}
 		if w.climateState != nil {
 			cell := w.climateState.CellAt(a.Pos)
 			// SH3: overhead cover buffers sensed temperature toward the day's mean and moisture toward

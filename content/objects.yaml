@@ -266,6 +266,7 @@ object_kinds:
         - { action: Wary,   utility: "fear" }                                       # predator SCENT → vigilance band (F43)
         - { action: Flee,   utility: "(fear - 0.6) * 5" }                           # predator SIGHT (higher fear) → flight band (F43)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2" }
+        - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6 - fear * 2.5" } # P_sleep1: diurnal night torpor — deep fatigue recovery + high wake threshold; hunger/fear/day out-bid it (untuned)
         - { action: MoveTo, utility: "0.1" }                                        # wander baseline (lowest)
       drives:
         - { id: hunger,  rate: 0.0008 }                                             # accumulator (D9): ~0→1 over ~1250 ticks
@@ -273,6 +274,9 @@ object_kinds:
         - { id: fear,    decay: 0.05, wary_level: 0.5, flee_level: 1.0 }            # SET-from-context (F43); cools when clear
         - { id: thermal }                                                          # DERIVED from apparent_temp (F40); no rate
       apparent_temp: "temperature - wind.mag * 6 - moisture * 3"                    # °C felt: wind-chill + wet (CA3 °C); P1 climate-OFF ⇒ neutral
+      comfort_temp: 12                                                              # °C comfort midpoint; thermal = clamp01(|apparent_temp−comfort|/band), FA5 symmetric (untuned)
+      thermal_band: 20                                                              # °C half-width: apparent_temp −8°C or +32°C → thermal 1 (cold AND heat stress)
+      hazard_avoidance: 2.0                                                         # e: wary grazer avoids deep water / steep terrain (P_move1/FM5; untuned, overcome by flee/thirst)
       speed: "Agility * 0.003 + fear * 0.2 - fatigue * 0.1 - thermal * 0.0015"      # base Agility; fear→faster, fatigue/thermal→slower (체온→운동능력; thermal from apparent_temp F40, 0 under climate-OFF)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
       graze: "0.06 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora (world applyAnimalGraze; parallels predator feed)
@@ -298,12 +302,16 @@ object_kinds:
         - { action: Attack, utility: "hunger * (0.8 + scent.prey) - dist.prey * 0.05 - target.threat * 0.7 + is_current * (0.1 + scent.prey * 2)" } # close prey → engage; predator targets damped by threat cost; is_current stickiness (F30/R5) locks the exchange in once engaged instead of flickering back to Hunt every other tick — scent-scaled (not a flat bonus) so a predator that loses the scent trail entirely (scent.prey→0) is NOT stuck picking Attack forever with no target (a flat bonus large enough to fix the melee flicker would also out-bid Hunt's baseline at zero scent — verified against this species' smell_radius/hunger ceiling)
         - { action: Feed,   utility: "hunger * scent.carrion * 4" }                     # committed carrion scent → feed after a kill
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
+        - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.7" } # P_sleep1: night torpor (predator, no fear); hunger/day out-bid it. Nocturnal = swap to `daylight` (D2/D10, no code). Untuned
         - { action: MoveTo, utility: "0.15" }                                       # range/wander baseline
       drives:
         - { id: hunger,  rate: 0.0008 }  # Phase 10: hunt-attempt cadence ~9 real-min at 500ms ticks (was 12.5) — spectator drama density; respawn absorbs the extra predation pressure
         - { id: fatigue, rate: 0.0005 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 5 - moisture * 2"
+      comfort_temp: 8                                                               # °C; cold-tolerant apex predator (untuned)
+      thermal_band: 22                                                              # wide tolerance (FA5 symmetric)
+      hazard_avoidance: 1.2                                                         # e: ranges widely, avoids drowning but commits to a chase (untuned)
       speed: "Agility * 0.0038 - fatigue * 0.3 - thermal * 0.0013"                  # faster than deer (pursuit); thermal stress → slower (F40)
       turn_rate: "0.5 + Agility*0.0048"                                            # M6 turn-rate (untuned placeholder)
       attack_power: "Strength * 0.006"                                              # §6 damage magnitude from base stat composition (FC4)
@@ -328,6 +336,7 @@ object_kinds:
         - { action: Wary,   utility: "fear * 1.1" }
         - { action: Flee,   utility: "(fear - 0.5) * 6" }                           # bolts EARLY (low flee threshold)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2.5" }
+        - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 3" } # P_sleep1: night torpor; twitchiest — a whiff of fear out-bids sleep (wakes early). Untuned
         - { action: MoveTo, utility: "0.1" }
       drives:
         - { id: hunger,  rate: 0.0012 }                                            # small body → eats often
@@ -335,6 +344,9 @@ object_kinds:
         - { id: fear,    decay: 0.04, wary_level: 0.6, flee_level: 1.0 }            # twitchier than deer
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 7 - moisture * 3"                    # small body → wind-chills fast
+      comfort_temp: 14                                                              # °C; small body, warmth-preferring (untuned)
+      thermal_band: 16                                                              # narrow tolerance → stresses sooner (FA5 symmetric)
+      hazard_avoidance: 2.5                                                         # e: skittish prey, strongest hazard avoidance (untuned)
       speed: "Agility * 0.004 + fear * 0.25 - fatigue * 0.1 - thermal * 0.0018"     # very fast sprinter; small body → strong thermal penalty (F40)
       turn_rate: "1.0 + Agility*0.0115"                                            # M6 turn-rate (untuned placeholder)
       graze: "0.07 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
@@ -357,6 +369,7 @@ object_kinds:
         - { action: Wary,   utility: "fear * 0.9" }
         - { action: Flee,   utility: "(fear - 0.65) * 5" }                         # flees later than deer (mountain safety)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 1.8" }
+        - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 2" } # P_sleep1: night torpor; hardy mountain sleeper. Untuned
         - { action: MoveTo, utility: "0.1" }
       drives:
         - { id: hunger,  rate: 0.0007 }
@@ -364,6 +377,9 @@ object_kinds:
         - { id: fear,    decay: 0.06, wary_level: 0.4, flee_level: 0.9 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 4 - moisture * 2"                    # hardy mountain coat
+      comfort_temp: 6                                                               # °C; hardy mountain species, cold-adapted (untuned)
+      thermal_band: 24                                                              # broad tolerance (FA5 symmetric)
+      hazard_avoidance: 0.6                                                         # e: sure-footed on steep terrain — LOW avoidance (roams hills freely; untuned)
       speed: "Agility * 0.0028 - fatigue * 0.08 - thermal * 0.0008"                 # hardy mountain coat → small thermal penalty (F40)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
       graze: "0.05 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
@@ -389,12 +405,16 @@ object_kinds:
         - { action: Feed,   utility: "hunger * scent.carrion * 4" }                     # scavenges/feeds from committed carcass scent
         - { action: Graze,  utility: "hunger * (0.2 + scent.food)" }                # grazes when food scent dominates (emergent omnivore)
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
+        - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6" } # P_sleep1: night torpor (large omnivore, no fear); hunger/day out-bid it. Untuned
         - { action: MoveTo, utility: "0.15" }
       drives:
         - { id: hunger,  rate: 0.0005 }                                            # large body → slow hunger
         - { id: fatigue, rate: 0.0004 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 3 - moisture * 1"                    # large, well-insulated
+      comfort_temp: 8                                                               # °C; large, well-insulated (untuned)
+      thermal_band: 26                                                              # widest tolerance (FA5 symmetric)
+      hazard_avoidance: 0.8                                                         # e: large & confident, wades/climbs readily — low avoidance (untuned)
       speed: "Agility * 0.0030 - fatigue * 0.3 - thermal * 0.0006"                  # strong, not fast; well-insulated → smallest thermal penalty (F40)
       turn_rate: "0.4 + Agility*0.004"                                             # M6 turn-rate (untuned placeholder)
       attack_power: "Strength * 0.008"                                              # heavier hit than wolf (FC4)
@@ -425,6 +445,9 @@ object_kinds:
         - { id: fear,    decay: 0.06, wary_level: 0.5, flee_level: 1.0 }
         - { id: thermal }                                                          # (no hunger drive — aquatic foraging deferred)
       apparent_temp: "temperature - moisture * 1"                                   # in-water: negligible wind effect
+      comfort_temp: 12                                                              # °C; aquatic, buffered by water (untuned)
+      thermal_band: 18                                                              # water damps extremes (FA5 symmetric)
+      hazard_avoidance: 0.0                                                         # e: aquatic — water is HOME, not a hazard; land already impassable (fish-inversion deferred, P_move later)
       speed: "Agility * 0.0033 - fatigue * 0.08 - thermal * 0.0013"                 # cold-blooded → water temperature swings movement (F40)
       senses: { smell_radius: 7.0, sight_radius: 10.0, fov_arc: 1.2 }
       respawn_target: 20                                                           # shoal in the river (F9)

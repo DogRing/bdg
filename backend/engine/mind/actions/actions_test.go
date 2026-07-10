@@ -143,7 +143,7 @@ func TestGetRoundTrip(t *testing.T) {
 		},
 		{
 			id:                "Rest",
-			wantTags:          []core.Tag{"effort:none"},
+			wantTags:          []core.Tag{"effort:none", "no:locomotion"},
 			wantDuration:      30,
 			wantTarget:        TargetNone,
 			wantTargetKindID:  "",

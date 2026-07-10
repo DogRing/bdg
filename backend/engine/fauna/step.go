@@ -46,8 +46,15 @@ func Step(snap *Snapshot, rules *Rules, r *rng.RNG) []Intent {
 
 		// ── Step 0: CADENCE / WAKE (F45) ─────────────────────────────────────
 		// O(1) predator intensity probe on COMMITTED buffer (next-tick latency, F33).
+		// Torpor wake gate (SS3/FM12): a SLEEPING animal (CurrentAction is a state:sleep
+		// action) wakes only to a predator scent ≥ SleepWakeScentThreshold — a deep sleeper
+		// ignores a faint/distant predator. Non-sleeping ⇒ threshold 0 ⇒ any scent wakes (as before).
 		predIntensity := snap.Scent.IntensityAt(scent.ChanPredator, a.Pos)
-		predBit := predIntensity > scalarZero
+		wakeThreshold := scalarZero
+		if rules.steerChannelFor(a.Species, a.CurrentAction) == TagSleep {
+			wakeThreshold = snap.Cadence.SleepWakeScentThreshold
+		}
+		predBit := predIntensity > wakeThreshold
 		isPred := rules.IsPredator(a.Species)
 
 		newActiveUntil := a.ActiveUntil
@@ -342,8 +349,8 @@ func steerFull(
 	// Check steer channel from Rules (content-defined, D4/D10).
 	tag := rules.steerChannelFor(a.Species, act)
 
-	// TagNoLoco or zero-speed actions: Rest → NextPos == Pos.
-	if tag == TagNoLoco {
+	// TagNoLoco/TagSleep or zero-speed actions: Rest/Sleep → NextPos == Pos.
+	if tag == TagNoLoco || tag == TagSleep {
 		return a.Pos, a.Heading
 	}
 
@@ -356,6 +363,16 @@ func steerFull(
 
 	// Resolve base direction from steer channel.
 	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred)
+
+	// Thin always-on HAZARD-REPULSION blend (P_move1/FM5, "a-backbone + bounded blend"):
+	// add e·Repulsion to bend the chosen direction away from dangerous terrain. Repulsion already
+	// scales with local danger SEVERITY + proximity (deep water/cliff push harder than a shallow
+	// bank); it is a continuous COST, not a block — a strong flee/drive out-pulls it. nil field or
+	// e ≤ 0 ⇒ no bend (byte-identical to pre-P_move1). Only the resulting ANGLE is used below.
+	if e := rules.hazardAvoidance(a.Species); e > scalarZero && snap.HazardField != nil {
+		rep := snap.HazardField.Repulsion(a.Pos)
+		dir = core.Vec2{X: dir.X + rep.X*e, Y: dir.Y + rep.Y*e}
+	}
 
 	// Apply angular jitter to heading (stochastic wander, D12), then cap turn
 	// rate when authored (M6). turn_rate <= 0 means unlimited/off-neutral.

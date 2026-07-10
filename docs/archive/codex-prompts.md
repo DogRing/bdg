@@ -332,7 +332,7 @@ ObjectID-sorted invariant, panics on dup id. `New` stays init-only; `Step` signa
 Done when: unit test — WithLot inserts sorted + is pure (prev unchanged), then `Step` decays it like any lot;
 `go test ./engine/env/decay/ -count=2`.
 
-### 6c — fauna: combat core   `@backend/engine/fauna/SPEC.md` §Combat & Predation (+ 클러스터 9)
+### 6c — fauna: combat core   `@backend/engine/fauna/SPEC-combat.md` (+ 클러스터 9)
 Goal: FC1–FC13 fauna side — SHARED actions `Attack`+`Feed` (utility-scored, no FSM, D3); `Animal` fields
 `EngagedWith`/`NextExchangeTick`/`EngageCooldownUntil`/`VitalCap` (+serialize); operands `target.threat` +
 `scent.carrion` in `AttrOperands()`; per-species `attack_power`/`hit` §6 (stat compositions, D4/D7, no stored

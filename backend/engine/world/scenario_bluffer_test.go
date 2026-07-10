@@ -245,9 +245,7 @@ func TestBluffer_ChoosesFlee(t *testing.T) {
 		blufferA.Plan.Actions, blufferA.NeedIntensities["Safety"])
 
 	// D12.
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (bluffer chooses flee)")
-	}
+	assertWorldDigestsEqual(t, "bluffer chooses flee", worldA, worldB)
 }
 
 // ── Test 2: Hero's strength passes gate → Patrol chosen ──────────────────────
@@ -293,9 +291,7 @@ func TestBluffer_HeroPatrols(t *testing.T) {
 		heroA.Plan.Actions, heroA.NeedIntensities["Safety"])
 
 	// D12.
-	if dA, dB := worldDigest(worldA), worldDigest(worldB); dA != dB {
-		t.Error("DETERMINISM FAILED (hero patrols)")
-	}
+	assertWorldDigestsEqual(t, "hero patrols", worldA, worldB)
 }
 
 // ── Test 3: Witness reveal bursts the reputation bubble ──────────────────────
@@ -387,9 +383,5 @@ func TestBluffer_Determinism(t *testing.T) {
 		return fx.world
 	}
 
-	if dA, dB := worldDigest(run()), worldDigest(run()); dA != dB {
-		t.Error("DETERMINISM FAILED (bluffer scenario)")
-	} else {
-		t.Log("DETERMINISM PASSED: bluffer flee + reputation reveal byte-identical")
-	}
+	assertScenarioDeterministic(t, "bluffer scenario", run)
 }

@@ -202,7 +202,9 @@ func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, statReg *stat
 			return nil, err
 		}
 		species[fauna.SpeciesID(obj.ID)] = fauna.SpeciesRule{
-			Utilities: utilities, Drives: drives, AppTemp: appTemp, Speed: speed,
+			Utilities: utilities, Drives: drives, AppTemp: appTemp,
+			ComfortTemp: obj.Fauna.ComfortTemp, ThermalBand: obj.Fauna.ThermalBand,
+			HazardAvoidance: obj.Fauna.HazardAvoidance, Speed: speed,
 			TurnRate: turnRate, AttackPower: attackPower, Hit: hit, Feed: feed, Graze: graze, HideChance: hideChance,
 			CoverCost: obj.Fauna.CoverCost,
 			Diet:      faunaDiet(obj), Tags: faunaTags(obj), IsPredator: faunaIsPredator(obj), SmellRadius: obj.Fauna.Senses.SmellRadius,
