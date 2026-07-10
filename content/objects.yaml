@@ -215,6 +215,56 @@ object_kinds:
       yields:                       # tiny yield (mostly a ground-cover, qty ∝ length is small anyway)
         - { item: berries, chance: "0.1 + Dexterity*0.2", qty: [0, 1] }
 
+  # TALL GRASS: Thrives in high moisture, grows much taller than normal grass.
+  - id: tall_grass
+    mobile: false
+    tags: [ scent:food, forage ]    # Herbivores love it
+    flora:
+      suitability: "moisture*0.8 + (1 - slope)*0.2"  # Requires a lot of moisture
+      length_rate: 0.08             # Grows taller
+      width_rate:  0.03
+      stages: [0.2, 0.6]            # LENGTH thresholds: sprout / tall blade / thick thicket
+      yield_stage: 2
+      propagate_stage: 2
+      shade:
+        radius:  "width * 0.1"
+        opacity: "width * 0.05"
+      propagation:
+        radius: 2.0
+        chance: 0.10                # Spreads slower than normal grass
+      death_threshold: 0.40         # Dies easily if moisture drops
+      death_hysteresis: 2
+    harvest:
+      action: Forage
+      provides: [ has_food ]
+      yields:
+        - { item: berries, chance: "0.2 + Dexterity*0.3", qty: [0, 2] }
+
+  # DRY SHRUB: Thrives in dry environments like dry_dirt or sand.
+  - id: dry_shrub
+    mobile: false
+    tags: [ forage ]                # Marginal food
+    flora:
+      suitability: "(1 - moisture)*0.7 + (temperature/40)*0.2" # Loves dry heat (temperature normalized to a degree)
+      length_rate: 0.03
+      width_rate:  0.04
+      stages: [0.2, 0.4]            # LENGTH thresholds: scrub / dry bush
+      yield_stage: 2
+      propagate_stage: 2
+      shade:
+        radius:  "width * 0.1"
+        opacity: "width * 0.02"
+      propagation:
+        radius: 4.0
+        chance: 0.05                # Very slow to spread
+      death_threshold: 0.10         # Very hardy, rarely dies
+      death_hysteresis: 5
+    harvest:
+      action: Forage
+      provides: [ has_wood ]
+      yields:
+        - { item: stone, chance: "0.1", qty: [0, 1] } # Placeholder, maybe yields dry twigs later
+
   # WILDFLOWER: LOW length, MODERATE width (a spreading bloom wider than it is tall →
   # width_rate > length_rate). Casts a little shade from its spread but yields no harvest material
   # (no `harvest` block). The inverse shape of the oak: wide-but-short. Demonstrates a species whose

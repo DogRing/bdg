@@ -33,8 +33,11 @@ init:
 # First-match-wins per `from` (D12). A richer table (river-freeze needs an `ice` terrain type, etc.) is a
 # later content+terrain addition; these two show sustained drought baking soil → sand and wet recovery.
 transitions:
-  - { from: soil, to: sand, when: "moisture < 0.15" }   # sustained drought desiccates fertile soil → loose sand
-  - { from: sand, to: soil, when: "moisture > 0.60" }   # prolonged wetness lets sand re-vegetate → soil
+  - { from: soil, to: dry_dirt, when: "moisture < 0.15" } # 비옥한 흙이 가뭄으로 마르면 마른 흙(dry_dirt)이 됨
+  - { from: dry_dirt, to: soil, when: "moisture > 0.40" } # 마른 흙에 수분이 차면 다시 비옥한 흙이 됨
+  - { from: lake, to: dry_dirt, when: "moisture < 0.20" } # 호수가 증발하면 마른 흙이 됨
+  - { from: river, to: sand, when: "moisture < 0.20" }    # 강이 마르면 모래가 됨
+  - { from: sea, to: sand, when: "moisture < 0.10" }      # 바다가 마르면 모래가 됨
 
 # ── Tuning injected into climate.Config (D9 spirit; the rain SHAPE is fixed design) ──────
 balance:
@@ -44,8 +47,8 @@ balance:
   rain_dur_min_hours:  2           # rain lasts 2..12 game-hours — FIXED DESIGN
   rain_dur_max_hours:  12
   moisture_rain_rate:  0.08        # Moisture gained per game-hour while raining
-  evap_base_rate:      0.01        # base Moisture lost per dry game-hour (temperature-independent)
-  evap_temp_scale:     0.0015      # EXTRA Moisture lost per dry game-hour per +°C (Temp→Moisture feedback, floored at 0)
+  evap_base_rate:      0.005       # base Moisture lost per dry game-hour (temperature-independent) (기존 0.01에서 하향)
+  evap_temp_scale:     0.0005      # EXTRA Moisture lost per dry game-hour per +°C (Temp→Moisture feedback, floored at 0) (기존 0.0015에서 하향)
 
   # Annual °C cycle (CA1) — actual temperature = annual_mid + annual_amp·sin(2π·YearFraction + annual_phase)
   #                          + daily delta − rain drop. Year = 120 days = 172,800 ticks (world.yaml calendar).

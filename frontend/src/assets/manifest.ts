@@ -76,6 +76,8 @@ export const DEFAULT_FLORA_COLOR = '#4a8a2a' // glyph fallback (circle, width-sc
 export interface FloraCoverageStyle { color: string; radiusUnits: number; alpha: number; plateau: number }
 export const FLORA_COVERAGE: Record<string, FloraCoverageStyle> = Object.freeze({
   grass: Object.freeze({ color: '92,150,54', radiusUnits: 4.5, alpha: 0.30, plateau: 0.6 }),
+  tall_grass: Object.freeze({ color: '60,110,40', radiusUnits: 6.0, alpha: 0.40, plateau: 0.7 }), // 짙고 울창한 녹색
+  dry_shrub: Object.freeze({ color: '180,160,100', radiusUnits: 3.5, alpha: 0.50, plateau: 0.5 }), // 누런 마른 풀 색
 })
 
 // ── ActionID → Pose (ordered, first match wins; ids are open content) ────────

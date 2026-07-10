@@ -23,11 +23,13 @@ const TILE_INDEX: Record<string, number> = {
   soil: 0, plain: 0, grass: 0, forest: 0, sand: 1,
   mountain: 2, steep: 2, bare_rock: 2, stone: 2,
   river: 3, sea: 3, lake: 3, water: 3, swamp: 4,
+  dry_dirt: 5,
 }
 const ELEV_FRAC: Record<string, number> = {
   soil: 0.55, plain: 0.55, grass: 0.55, forest: 0.72, swamp: 0.35, sand: 0.24,
   mountain: 1.6, steep: 1.4, bare_rock: 1.1, stone: 1.4,
   river: 0.0, sea: 0.0, lake: 0.0, water: 0.0,
+  dry_dirt: 0.55,
 }
 const SKIRT_FRAC = -0.30
 // Per-cell relief mapping (gl/SPEC.md): a grid carrying `elevation[]` (generated worlds,
@@ -149,7 +151,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
   }
   gl.bindTexture(gl.TEXTURE_2D, tex)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([126, 158, 120, 255])); texParams()
-  const TILES = ['grass', 'sand', 'stone', 'water', 'dirt']
+  const TILES = ['grass', 'sand', 'stone', 'water', 'dirt', 'dry_dirt']
   const imgs: HTMLImageElement[] = []
   let imgDone = 0, imgOk = 0
   TILES.forEach((k, i) => {
