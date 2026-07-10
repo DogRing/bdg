@@ -9,18 +9,19 @@ import (
 // tuning. platform/config builds it from content; world consumes it when env is
 // installed.
 type EnvConfig struct {
-	Min, Max        core.Vec2
-	NavmapCellSize  float64
-	ClimateGridCols int
-	ClimateGridRows int
-	ClimateStep     int
-	FloraStep       int
-	DecayStep       int
-	ScentCellSize   float64
-	ScentSpread     int
-	FaunaDT         float64
-	FaunaCadence    fauna.Cadence
-	FaunaCombat     fauna.CombatParams
-	RespawnCadence  core.Tick
-	MaxSpeed        float64
+	Min, Max          core.Vec2
+	NavmapCellSize    float64
+	ClimateGridCols   int
+	ClimateGridRows   int
+	ClimateStep       int
+	FloraStep         int
+	DecayStep         int
+	ScentCellSize     float64
+	ScentSpread       int
+	FaunaDT           float64
+	FaunaMoveDeadband float64 // FM9 locomotion deadband: §6 speed below this ⇒ hold (0 ⇒ off)
+	FaunaCadence      fauna.Cadence
+	FaunaCombat       fauna.CombatParams
+	RespawnCadence    core.Tick
+	MaxSpeed          float64
 }

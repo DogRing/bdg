@@ -44,6 +44,7 @@ motion:
   herbivore_base_speed: 1.0
   predator_base_speed: 1.4
   max_speed: 1.4                 # fastest species; drives scent_cell_size floor (1.4 × 6 = 8.4 ≤ 10 ✓)
+  move_deadband: 0.0             # FM9 (docs/plans/fauna.md §4.3): §6 speed below this ⇒ hold position (energy conservation). 0 = OFF (byte-identical); raise in P_fa4 tuning just above idle speed so unstimulated fauna mostly rest
 
 # ── Cadence (W4) — env-phase step intervals (ticks; world drives via tick % N) ─────────
 cadence:

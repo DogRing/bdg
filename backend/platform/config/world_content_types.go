@@ -40,8 +40,9 @@ type worldDoc struct {
 		ScentCellSize   float64 `yaml:"scent_cell_size"`
 	} `yaml:"grids"`
 	Motion struct {
-		FaunaDT  float64 `yaml:"fauna_dt"`
-		MaxSpeed float64 `yaml:"max_speed"`
+		FaunaDT      float64 `yaml:"fauna_dt"`
+		MaxSpeed     float64 `yaml:"max_speed"`
+		MoveDeadband float64 `yaml:"move_deadband"` // FM9 locomotion deadband: §6 speed below this ⇒ hold (0 ⇒ off)
 	} `yaml:"motion"`
 	Cadence struct {
 		ClimateStep                int     `yaml:"climate_step"`

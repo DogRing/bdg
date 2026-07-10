@@ -80,6 +80,7 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 		Combat:        w.envCfg.FaunaCombat,
 		ScentCellSize: w.envCfg.ScentCellSize,
 		DT:            w.envCfg.FaunaDT,
+		MoveDeadband:  w.envCfg.FaunaMoveDeadband,
 		HazardField:   hazard,
 	}
 }

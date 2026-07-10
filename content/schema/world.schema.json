@@ -42,7 +42,8 @@
         "fauna_dt":             { "type": "number", "exclusiveMinimum": 0, "description": "locomotion time-step magnitude for one tick (fauna.Snapshot.DT)" },
         "herbivore_base_speed": { "type": "number", "minimum": 0 },
         "predator_base_speed":  { "type": "number", "minimum": 0 },
-        "max_speed":            { "type": "number", "exclusiveMinimum": 0, "description": "fastest species; drives the scent_cell_size floor (W3)" }
+        "max_speed":            { "type": "number", "exclusiveMinimum": 0, "description": "fastest species; drives the scent_cell_size floor (W3)" },
+        "move_deadband":        { "type": "number", "minimum": 0, "description": "FM9 locomotion deadband: §6 speed below this ⇒ hold position (energy conservation, docs/plans/fauna.md §4.3). 0 = off (byte-identical); optional, defaults off when absent" }
       }
     },
 

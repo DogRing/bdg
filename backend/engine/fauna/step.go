@@ -361,6 +361,14 @@ func steerFull(
 		return a.Pos, a.Heading
 	}
 
+	// FM9 locomotion deadband (P_move-realism, docs/plans/fauna.md §4.3): below the deadband the animal
+	// HOLDS position rather than crawling — §6 speed already encodes drive (fear/hunger ↑ ⇒ speed ↑), so a
+	// sub-deadband speed means no salient drive ("mostly doesn't move", energy conservation). MoveDeadband
+	// ≤ 0 ⇒ OFF (byte-identical). Burst-rest UNDER drive is the fatigue axis (M2), not here.
+	if snap.MoveDeadband > scalarZero && speed < snap.MoveDeadband {
+		return a.Pos, a.Heading
+	}
+
 	// Resolve base direction from steer channel.
 	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred)
 

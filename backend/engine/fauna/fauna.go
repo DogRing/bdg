@@ -161,6 +161,12 @@ type Snapshot struct {
 	Combat        CombatParams
 	ScentCellSize float64
 	DT            float64 // locomotion time-step magnitude for one tick (world/balance)
+	// MoveDeadband is the FM9 locomotion deadband (P_move-realism, docs/plans/fauna.md §4.3): when the
+	// §6-evaluated speed is BELOW this, the animal HOLDS position (energy conservation — "no salient
+	// threat/need ⇒ mostly doesn't move"; §6 speed already encodes drive, so a sub-deadband speed means
+	// no salient drive). Burst-rest UNDER drive is the fatigue axis (M2 — effort:high ⇒ fatigue, §6 speed
+	// reads −fatigue), NOT here. ≤ 0 ⇒ OFF (only the existing speed ≤ 0 hold applies — byte-identical).
+	MoveDeadband float64
 	// HazardField is the shared STATIC hazard potential field (P_move1/FM2). world builds it once
 	// (source cells = dangerous terrain, weight = danger) and injects it; steering adds e·Repulsion
 	// (e = the species' HazardAvoidance) to the chosen direction (F35). Per-species DIFFERENTIATION is

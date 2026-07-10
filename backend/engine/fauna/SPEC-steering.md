@@ -1,11 +1,13 @@
-# SPEC — `engine/fauna` · Steering deltas (M6 turn-rate inertia · M7 multi-predator flee)
+# SPEC — `engine/fauna` · Steering deltas (M6 turn-rate inertia · M7 multi-predator flee · FM9 locomotion deadband)
 
 > Status: `DRAFT`
 > Sub-spec of: [`SPEC.md`](SPEC.md)  ·  Owner agent: `<filled by implementer>`
 > Scope = **M6 / M7** (fauna-realism; gates RESOLVED 2026-07-02 / 2026-07-08 — rationale:
-> `docs/plans/fauna.md` 클러스터 10, deliberation: `docs/decisions/fauna-gates.md`).
-> Both deltas are **entirely fauna-side** (no world/config/serialization change; M6 adds only the
-> `turn_rate` content key) and refine the SENSE/STEER steps of the core `Step` pipeline.
+> `docs/plans/fauna.md` 클러스터 10) **+ FM9** (P_move-realism deadband; gate RESOLVED 2026-07-09/-10 —
+> `docs/plans/fauna.md` §4.3, deliberation: `docs/decisions/fauna-gates.md`).
+> M6/M7 are **entirely fauna-side** (M6 adds only the `turn_rate` content key). FM9 adds one
+> world-injected balance scalar (`Snapshot.MoveDeadband`, `world.yaml motion.move_deadband`). All
+> three refine the SENSE/STEER steps of the core `Step` pipeline.
 
 ## Purpose
 
@@ -51,6 +53,33 @@ existing `Speed`/`HideChance` §6 accessor pattern and the existing `angularDiff
 - **Scope (M6-c):** heading-rate only; speed `accel` inertia is deferred. **Cheap/DORMANT path:** the clamp
   lives in `steerFull` (full pipeline); `cheap.go` mostly holds `Heading`, so it is naturally inertial — apply
   the same clamp there only if a cheap-steer branch changes heading materially (verify at implementation).
+
+## Locomotion deadband (FM9)
+
+**"위협·필요 없으면 대체로 안 움직임" (energy conservation).** After the §6 `Speed` eval, if the speed
+is **below `Snapshot.MoveDeadband`** the animal **HOLDS position** (`NextPos == Pos`, `NextHeading ==
+Heading`) instead of crawling forward. This kills the classic field-blend failure mode of restless
+drift / constant gliding (`docs/plans/fauna.md §4.3` realism 수용기준 ③ "기본 정지").
+
+- **Why a speed threshold, not a blend-vector magnitude (FM9a, RESOLVED 2026-07-10):** `baseSteerDir`
+  returns a **unit direction** (keystone = §6 discrete pick + a thin blend, `docs/plans/fauna.md §4.0`),
+  so the blend vector carries no drive magnitude. Drive magnitude lives in **§6 `Speed`** (species author
+  `speed` reading `fear`/`hunger`/… — e.g. deer `Agility*0.003 + fear*0.2 − fatigue*0.1`). So a
+  sub-deadband speed *is* the "no salient drive" signal; the deadband is applied to `Speed`.
+- **`steerFull` / `cheapPath`:** both hold when `MoveDeadband > 0 ∧ speed < MoveDeadband` (the dormant
+  cheap path too, so a dormant animal doesn't crawl where an ACTIVE one would stop). Placed **after** the
+  existing `speed ≤ 0` hold, so it only tightens the floor.
+- **`Snapshot.MoveDeadband float64`** — world-injected from `world.yaml motion.move_deadband` (via
+  `config` → `envCfg.FaunaMoveDeadband` → `buildFaunaSnapshot`). A single balance scalar (no per-species
+  key in P_move-realism; per-species deadband is a later tuning lever if needed).
+- **Neutrality:** `MoveDeadband ≤ 0` ⇒ only the pre-existing `speed ≤ 0` hold applies ⇒ **byte-identical**
+  to pre-FM9 (existing world/ecosim goldens hold; the shipped `world.yaml` value is `0.0`, tuned up in
+  P_fa4 to just above idle speed). Deterministic, no RNG/operand/state field (D12).
+- **NOT here — burst-rest under drive (FM10):** the drive-gated burst→tire→pause→recover rhythm is the
+  **existing M2 fatigue axis** (`effort:high` Flee/Hunt ⇒ `applyAnimalFatigue` accrues `fatigue`; every
+  species' §6 `speed` reads `− fatigue`; Rest sheds it). FM9 is only the *floor* (idle stop); FM10 added
+  **no new mechanism** — its remaining work is fatigue-coefficient tuning (`docs/plans/fauna.md §4.1`
+  FM10a, RESOLVED "M2 재사용" 2026-07-10).
 
 ## Multi-predator flee steering (M7)
 

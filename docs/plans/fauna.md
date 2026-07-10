@@ -399,6 +399,18 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 - **FM10 — 간헐 이동(move-pause 버스트) + 에너지-게이트 속도.** 기본 저속/정지, **fear/hunger 임계 초과 시에만** 버스트(§6 speed가
   이미 drive 읽음 + stamina 소모로 자기제한). options: (a) 상시 연속 활주(로봇틱), (b) **drive-게이트 버스트-휴지 리듬**. **rec: (b)** —
   사용자 "체력 아끼려 계속 안 뛴다"의 직접 인코딩. **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+  - **FM9a — deadband 신호원 (shape 하위게이트 · 2026-07-10, P_move-realism 빌드 착수 중 발견).** FM9 rec는 "유효 blend 벡터 크기 < ε"였으나
+    shipped 아키텍처에서 `baseSteerDir`는 **단위 방향만** 반환(키스톤=§6 이산 pick + 얇은 blend; 드라이브 크기는 벡터가 아니라 **§6 `speed`에** 인코딩)
+    → blend 벡터 크기는 드라이브 신호가 아님. *options:* (a) **§6 `speed` 임계** — `rules.Speed(ctx) < ε`면 정지/미세 wander(shipped 아키텍처·FM10과 정합,
+    드라이브 이미 §6 speed 인코딩); (b) `baseSteerDir`를 드라이브-가중 크기 벡터로 개조(키스톤의 "순수 potential-field 교체" 기각과 충돌); (c) §6가 별도 `move_intent` 스칼라 저작. **rec: (a).** **OPEN.**
+  - **FM10a — 버스트-휴지 에너지 게이트 shape (하위게이트 · 2026-07-10).** FM10 rec (b) "drive-게이트 버스트-휴지"에서 **에너지 자기제한이 붙는 형식**.
+    현재 stamina 드레인/회복은 **전투 engaged 한정**(`nextStamina`) — 자유 이동(도주 포함)엔 stamina 소모 없음 ⇒ 무한 질주 가능. *options:*
+    (a) **순수 §6-창발(최소면)** — 신규 stamina 배선 0; 버스트-휴지는 §6 speed가 fear/hunger를 읽어 창발(드라이브↑→버스트·도주 후 드라이브↓→휴지), stamina 자기제한 없음(지속 도주 시 무한 질주 잔존);
+    (b) **stamina §6 operand + 이동 stamina 동역학** — `stamina`를 §6 operand 노출 + stamina 드레인을 이동 effort(speed)에 비례로 확장·rest서 회복 ⇒ content가 소진/회복 곡선 저작(D4/D10; 지속 도주도 버스트화);
+    (c) 엔진 speed cap `f(stamina)`(D4/D7 위배 — 기각). **rec: (b)**(당시 rec). **RESOLVED-then-SUPERSEDED (2026-07-10):**
+    빌드 착수 중 **버스트-휴지가 이미 M2 fatigue 축으로 라이브**임을 확인 — Flee/Hunt=`effort:high` → `applyAnimalFatigue`가 `fatigue` 누적 → **모든 종 §6 `speed`가 `- fatigue`** → 지쳐 감속(휴지)·정지 시 배출(회복). 별도 stamina-locomotion 축은 **중복 메커니즘**(D-rule "메커니즘 발명은 결함")이라 (b) 철회. **최종 RESOLVED: (M2 재사용) — 신규 에너지 메커니즘 0; FM10 잔여 = fatigue 계수/rate 튜닝(balance, P_fa4). (사람 승인 2026-07-10).**
+  > **게이트 상태(FM9a/FM10a):** FM9a=**RESOLVED (a) §6 speed 임계**; FM10a=**M2 fatigue 재사용**(별도 stamina 축 없음). → **P_move-realism 신규 코드 = FM9 deadband 뿐.**
+  > 빌드 순서(leaf-first): ① `engine/fauna` — steerFull/cheap deadband(§6 `speed < MoveDeadband` ⇒ 정지) → ② `platform/config` — `move_deadband` balance 파싱 → ③ world — `MoveDeadband`를 fauna Snapshot에 주입(ScentCellSize/DT 동형). **중립성:** `MoveDeadband ≤ 0` ⇒ 기존 `speed ≤ 0` 정지 로직만 = byte-identical(기존 골든 보존). FM10 = 코드 없음(fatigue 튜닝 후행).
 - **realism 수용기준(각 phase 골든/시나리오로 검증, 신규 메커니즘 아님):** ① anti-stall — "강 건너 먹이 앞 무한 pacing" 없음
   (wander+stickiness로 이탈); ② non-beeline — 경로가 직선 로봇 아님(turn-rate+wander); ③ 기본 정지 — 무자극 시 대체로 rest/미세이동;
   ④ 위협 반응 등급 — 원거리=경계(Wary, 이동 적음), 근접=버스트 도주(F43/F44 유지).

@@ -172,6 +172,8 @@ type Snapshot struct {
     // Later-phase delta fields — NOT part of the P_fa1 core contract:
     //   + Combat CombatParams, ScentCellSize float64 (combat/cover/sleep balance params + the
     //     scent-cell scale their range factors multiply, FC) → SPEC-combat.md
+    //   + MoveDeadband float64 (FM9 locomotion deadband: §6 speed below this ⇒ hold position;
+    //     ≤ 0 ⇒ off/byte-identical; docs/plans/fauna.md §4.3) → SPEC-steering.md
 }
 
 // HazardSampler is the read-only per-species static hazard POTENTIAL field fauna declares and world
