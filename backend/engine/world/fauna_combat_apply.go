@@ -96,6 +96,27 @@ func (w *World) applyAnimalGraze(a *fauna.Animal) {
 	a.Drives[driveHunger] = clamp01(a.Drives[driveHunger] - mult)
 }
 
+// applyAnimalDrink (FM4): a thirsty animal standing on a DRINKABLE-water cell recovers thirst by the
+// species' §6 `drink` factor — parallels applyAnimalGraze (hunger↓ at forage). No-op off water, for a
+// species that tracks no `thirst` drive, or one authoring no `drink` program (mult 0). The terrain lookup
+// is a deterministic CellOf index read (D11); the drinkable set is config-derived (FM4-src).
+func (w *World) applyAnimalDrink(a *fauna.Animal) {
+	if a == nil || a.Drives == nil || w.nav == nil || w.faunaRules == nil {
+		return
+	}
+	if _, ok := a.Drives[driveThirst]; !ok {
+		return
+	}
+	if len(w.envCfg.DrinkableTerrains) == 0 || !w.envCfg.DrinkableTerrains[w.nav.TerrainAt(w.nav.CellOf(a.Pos))] {
+		return
+	}
+	mult := w.faunaRules.Drink(a.Species, animalFeedContext{animal: a})
+	if mult <= zeroScalar {
+		return
+	}
+	a.Drives[driveThirst] = clamp01(a.Drives[driveThirst] - mult)
+}
+
 func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
 	if a == nil || w.faunaRules == nil || hideRNG == nil {
 		return

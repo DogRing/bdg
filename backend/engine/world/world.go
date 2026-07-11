@@ -62,6 +62,7 @@ const (
 
 	kindCarcass    = core.Tag("carcass")
 	driveHunger    = fauna.DriveID("hunger")
+	driveThirst    = fauna.DriveID("thirst")
 	causePredation = "predation"
 )
 
@@ -146,6 +147,9 @@ type World struct {
 
 	hazardField      *field.Field // shared STATIC fauna hazard potential field (P_move1/FM2); built once, lazily
 	hazardFieldBuilt bool         // guards the one-time lazy build (terrain is static in P_move1)
+
+	waterField      *field.Field // shared STATIC fauna water-ATTRACTION field (FM4); built once from drinkable-terrain cells, lazily
+	waterFieldBuilt bool         // guards the one-time lazy build (terrain is static)
 
 	terrainAttrs     map[navmap.TerrainID]map[core.Tag]float64
 	decayLotPos      map[core.ObjectID]core.Vec2

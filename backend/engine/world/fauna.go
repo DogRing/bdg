@@ -69,6 +69,15 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 	if w.hazardField != nil {
 		hazard = w.hazardField
 	}
+	// Build the shared static water-attraction field once (FM4); typed-nil guard as for hazard.
+	if !w.waterFieldBuilt {
+		w.waterField = w.buildWaterField()
+		w.waterFieldBuilt = true
+	}
+	var water fauna.WaterSampler
+	if w.waterField != nil {
+		water = w.waterField
+	}
 	return &fauna.Snapshot{
 		Animals:       animals,
 		Scent:         w.scent,
@@ -82,6 +91,7 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 		DT:            w.envCfg.FaunaDT,
 		MoveDeadband:  w.envCfg.FaunaMoveDeadband,
 		HazardField:   hazard,
+		WaterField:    water,
 	}
 }
 

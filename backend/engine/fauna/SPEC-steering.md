@@ -81,6 +81,33 @@ drift / constant gliding (`docs/plans/fauna.md §4.3` realism 수용기준 ③ "
   **no new mechanism** — its remaining work is fatigue-coefficient tuning (`docs/plans/fauna.md §4.1`
   FM10a, RESOLVED "M2 재사용" 2026-07-10).
 
+## Water attraction (FM4)
+
+**Thirst-driven pull toward drinkable water.** A species that authors a `thirst` drive + a `seek:water`
+action steers **up the water-attraction field Gradient** (toward the nearest drinkable water) when that
+action wins §6 utility. Motivation lives in §6 (the thirst-gated action utility); DIRECTION lives in the
+field (D5) — exactly the food/`seek:food` pattern, but the direction is the `Snapshot.WaterField` Gradient
+instead of a scent channel.
+
+- **`Snapshot.WaterField WaterSampler`** (`Gradient(p) core.Vec2` = UNIT direction toward the nearest/
+  strongest drinkable-water source). world builds ONE shared static attraction field from the config-derived
+  drinkable-terrain cells and injects it (dependency inversion, like `HazardSampler`; world adapts
+  `*engine/space/field.Field` whose `Gradient` = toward increasing intensity = attraction). nil ⇒ no water
+  steering.
+- **`steerFull`:** computes `waterDir` **only when the chosen steer channel is `TagSteerWater`** (`seek:water`),
+  from `snap.WaterField.Gradient(a.Pos)`; a non-drinking species never touches the field. `baseSteerDir`'s
+  `TagSteerWater` case returns `waterDir`, else falls through to continue-heading (nil field / flat gradient ⇒
+  no spurious pull). The always-on hazard/turn-rate/deadband stages then apply as usual (a strong flee/hazard
+  still out-pulls the water attraction — it is one pull among the blend, not a lock).
+- **Thirst recovery (world side, FM4):** while on a drinkable cell and enacting the `seek:water` action, the
+  world reduces `thirst` by the species' §6 `Drink` factor — the exact mirror of `Graze` (hunger↓ at forage).
+  See `docs/plans/world-integration.md` / `SPEC-world-fauna.md`.
+- **Neutrality:** no species authoring `thirst`/`seek:water` ⇒ the field is built but never queried and the
+  recovery never fires ⇒ **byte-identical** to pre-FM4 (world/ecosim goldens hold). Deterministic (D12): the
+  field is a static index; no RNG/wall-clock; the drinkable source set is order-free (membership only).
+  Source identification is **config-time terrain-attr derivation** (salinity/moisture), NOT a Go
+  terrain-name switch and NOT runtime `terrainAttrs` (`docs/plans/fauna.md §4.1` FM4-src).
+
 ## Multi-predator flee steering (M7)
 
 With ≥2 predators simultaneously visible (both FOV and concealment gates passed), fleeing from only the

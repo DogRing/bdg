@@ -44,6 +44,11 @@ type worldDoc struct {
 		MaxSpeed     float64 `yaml:"max_speed"`
 		MoveDeadband float64 `yaml:"move_deadband"` // FM9 locomotion deadband: §6 speed below this ⇒ hold (0 ⇒ off)
 	} `yaml:"motion"`
+	Water struct {
+		SalinityMax float64 `yaml:"salinity_max"` // FM4: terrain salinity ≤ this = fresh (drinkable); excludes sea
+		MoistureMin float64 `yaml:"moisture_min"` // FM4: AND moisture ≥ this = open water (river/lake, not damp soil); ≤ 0 ⇒ water field OFF
+		FieldDecay  float64 `yaml:"field_decay"`  // FM4: attraction intensity decay per world-unit (reach = weight/decay)
+	} `yaml:"water"`
 	Cadence struct {
 		ClimateStep                int     `yaml:"climate_step"`
 		FloraStep                  int     `yaml:"flora_step"`
@@ -168,6 +173,7 @@ type objectKindDoc struct {
 		Hit             any      `yaml:"hit"`
 		Feed            any      `yaml:"feed"`
 		Graze           any      `yaml:"graze"`
+		Drink           any      `yaml:"drink"`
 		HideChance      any      `yaml:"hide_chance"`
 		CoverCost       float64  `yaml:"cover_cost"`
 		RespawnTarget   int      `yaml:"respawn_target"`

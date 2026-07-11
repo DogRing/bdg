@@ -369,8 +369,16 @@ func steerFull(
 		return a.Pos, a.Heading
 	}
 
-	// Resolve base direction from steer channel.
-	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred)
+	// Resolve base direction from steer channel. For the thirst-seek channel the direction is the
+	// water-attraction field Gradient at Pos (toward the nearest drinkable water, FM4); queried ONLY for
+	// that channel so non-drinking species never touch the field (byte-identical to pre-FM4).
+	var waterDir *core.Vec2
+	if tag == TagSteerWater && snap.WaterField != nil {
+		if g := snap.WaterField.Gradient(a.Pos); g.X != scalarZero || g.Y != scalarZero {
+			waterDir = &g
+		}
+	}
+	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred, waterDir)
 
 	// Thin always-on HAZARD-REPULSION blend (P_move1/FM5, "a-backbone + bounded blend"):
 	// add e·Repulsion to bend the chosen direction away from dangerous terrain. Repulsion already
@@ -426,11 +434,18 @@ func steerFull(
 func baseSteerDir(
 	a Animal, tag core.Tag,
 	reading scent.Reading, nearPredPos, fleePredDir *core.Vec2, sightPred float64,
+	waterDir *core.Vec2,
 ) core.Vec2 {
 	switch tag {
 	case TagSteerFood:
 		if reading.Food.Intensity > scalarZero {
 			return reading.Food.Dir
+		}
+	case TagSteerWater:
+		// Thirst-seek: toward the water-attraction field Gradient (FM4). nil (no field / flat) ⇒
+		// fall through to continue-heading (no spurious pull when no water is reachable).
+		if waterDir != nil {
+			return *waterDir
 		}
 	case TagSteerPrey:
 		if reading.Prey.Intensity > scalarZero {

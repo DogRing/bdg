@@ -73,6 +73,23 @@ func (r *Rules) Graze(sp SpeciesID, ctx expr.Context) float64 {
 	return v
 }
 
+// Drink evaluates the species' §6 thirst-recovery program (FM4; parallels Graze). Returns 0 when absent so
+// non-drinking content remains outcome-neutral (world applies it only when the animal is at drinkable water).
+func (r *Rules) Drink(sp SpeciesID, ctx expr.Context) float64 {
+	if r == nil {
+		return scalarZero
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.drink == nil {
+		return scalarZero
+	}
+	v := sd.drink.EvalNumber(ctx)
+	if v < scalarZero {
+		return scalarZero
+	}
+	return v
+}
+
 // HideChance evaluates the species' §6 cover-hide probability program (M3). Returns 0 when absent so a
 // species with no hide_chance never hides (OFF-neutral). Parallels Graze/Feed/AttackPower/Hit.
 func (r *Rules) HideChance(sp SpeciesID, ctx expr.Context) float64 {

@@ -218,6 +218,27 @@ func terrainAttrSet(td terrainDoc) map[core.Tag]bool {
 	return out
 }
 
+// deriveDrinkableTerrains (FM4-src, docs/plans/fauna.md §4.1) computes the set of terrain IDs whose water is
+// DRINKABLE from terrain.yaml attrs: fresh (salinity ≤ salinityMax) AND open water (moisture ≥ moistureMin).
+// This is the config-time, data-defined source for the fauna water-attraction field — no Go terrain-name
+// hardcoding, and no runtime terrainAttrs wiring (attrs are per-TYPE uniform, so load-time derivation
+// suffices). moistureMin ≤ 0 ⇒ OFF (nil ⇒ no water field, byte-identical). Membership set (order-free, D12).
+func deriveDrinkableTerrains(td terrainDoc, salinityMax, moistureMin float64) map[core.Tag]bool {
+	if moistureMin <= 0 {
+		return nil
+	}
+	out := make(map[core.Tag]bool)
+	for _, t := range td.Terrains {
+		if t.Attrs["moisture"] >= moistureMin && t.Attrs["salinity"] <= salinityMax {
+			out[core.Tag(t.ID)] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func buildFaunaDrives(obj objectKindDoc, baseAllowed map[core.Tag]bool) ([]fauna.DriveRule, map[core.Tag]bool) {
 	allowed := cloneTagSet(baseAllowed)
 	drives := make([]fauna.DriveRule, 0, len(obj.Fauna.Drives))
@@ -249,7 +270,7 @@ func buildFaunaUtilities(
 		if def, ok := actReg.Get(id); ok {
 			for _, tag := range def.Tags {
 				switch tag {
-				case fauna.TagSteerFood, fauna.TagSteerPrey, fauna.TagFleePred, fauna.TagWaryPred, fauna.TagNoLoco, fauna.TagSleep, fauna.TagAttack, fauna.TagFeed:
+				case fauna.TagSteerFood, fauna.TagSteerWater, fauna.TagSteerPrey, fauna.TagFleePred, fauna.TagWaryPred, fauna.TagNoLoco, fauna.TagSleep, fauna.TagAttack, fauna.TagFeed:
 					steer[id] = tag
 				}
 			}

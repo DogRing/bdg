@@ -19,7 +19,9 @@ type EnvConfig struct {
 	ScentCellSize     float64
 	ScentSpread       int
 	FaunaDT           float64
-	FaunaMoveDeadband float64 // FM9 locomotion deadband: §6 speed below this ⇒ hold (0 ⇒ off)
+	FaunaMoveDeadband float64           // FM9 locomotion deadband: §6 speed below this ⇒ hold (0 ⇒ off)
+	DrinkableTerrains map[core.Tag]bool // FM4: terrain IDs whose water is drinkable (config-derived: salinity ≤ max ∧ moisture ≥ min); water-attraction field sources. Empty ⇒ no water field
+	WaterFieldDecay   float64           // FM4: water-attraction intensity decay per world-unit (reach = weight/decay); ≤ 0 ⇒ no water field
 	FaunaCadence      fauna.Cadence
 	FaunaCombat       fauna.CombatParams
 	RespawnCadence    core.Tick

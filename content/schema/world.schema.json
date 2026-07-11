@@ -47,6 +47,17 @@
       }
     },
 
+    "water": {
+      "type": "object",
+      "description": "FM4 (docs/plans/fauna.md §4.1 FM4-src): fauna thirst → water-attraction field. Config derives the drinkable-terrain source set from terrain.yaml attrs. Optional; moisture_min ≤ 0 or absent ⇒ no water field (byte-identical).",
+      "additionalProperties": false,
+      "properties": {
+        "salinity_max": { "type": "number", "minimum": 0, "description": "terrain salinity ≤ this = fresh/drinkable (excludes sea)" },
+        "moisture_min": { "type": "number", "minimum": 0, "description": "AND moisture ≥ this = open water (river/lake, not damp soil); ≤ 0 ⇒ water field OFF" },
+        "field_decay":  { "type": "number", "minimum": 0, "description": "attraction intensity decay per world-unit (reach = weight/decay)" }
+      }
+    },
+
     "cadence": {
       "type": "object",
       "description": "Env-phase step intervals in ticks (world drives via tick % N, never wall-clock, D12).",

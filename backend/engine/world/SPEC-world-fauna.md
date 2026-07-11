@@ -448,6 +448,32 @@ P_move1; per-species fields (FM2's full 종별) are deferred (fish-inversion lik
 - **Neutrality:** no dangerous terrain (all-passable, low-cost) ⇒ no sources ⇒ nil field ⇒ no bend; and every
   species with `hazard_avoidance` unset/≤0 ⇒ fauna skips the blend regardless. Deterministic, no RNG (D12).
 
+## Water-attraction field wiring (FM4 thirst; rationale: `docs/plans/fauna.md` §4.1 FM4/FM4-src, gates RESOLVED 2026-07-09/-10)
+
+The **attraction** twin of the hazard field: a thirsty animal steers TOWARD drinkable water. Mirrors the
+hazard wiring (shared static `*field.Field`, lazy build + cache, typed-nil guard) with two differences —
+the sources are **drinkable-water** cells and fauna follows the `Gradient` (toward the source) instead of
+`Repulsion`.
+
+- **Drinkable-terrain source set (config, FM4-src):** `platform/config` derives `EnvConfig.DrinkableTerrains`
+  (`map[TerrainID]bool`) from `terrain.yaml` attrs at load — `salinity ≤ water.salinity_max ∧ moisture ≥
+  water.moisture_min` (river/lake in, sea/soil out). Data-defined (no Go terrain-name switch); NO runtime
+  `terrainAttrs` (attrs are per-TYPE uniform ⇒ load-time derivation suffices). `moisture_min ≤ 0` / no match
+  ⇒ nil set ⇒ no water field.
+- **`buildWaterField() → *field.Field`** (`engine/world/water.go`; nil when no navmap, empty
+  `DrinkableTerrains`, `WaterFieldDecay ≤ 0`, or no drinkable cells): enumerate navmap cells (same padded
+  sample step as `buildHazardField`), collect drinkable cells as equal-weight `field.Source{Cell,
+  Weight:waterSourceWeight=1.0}`, and `field.Build(w.nav, sources, w.envCfg.WaterFieldDecay, w.nav.Passable)`
+  (attraction flows through the passable graph). `field.Build` re-sorts sources (D12).
+- **Lazy build + cache + inject (`buildFaunaSnapshot`):** `w.waterField`/`w.waterFieldBuilt`, boxed into
+  `fauna.WaterSampler` ONLY inside `if w.waterField != nil` (same typed-nil guard) → `Snapshot.WaterField`.
+- **Thirst recovery (`applyAnimalDrink`, mirrors `applyAnimalGraze`):** hooked on the `seek:water` steer tag
+  in the action-effect apply — a `thirst`-tracking animal ON a drinkable cell (`DrinkableTerrains[TerrainAt
+  (CellOf(Pos))]`) recovers `thirst` by the species' §6 `Drink` factor. No-op off water / no `thirst` drive /
+  no `drink` program.
+- **Neutrality:** no species authoring `thirst`+`seek:water` ⇒ the field is built but never queried and the
+  recovery never fires ⇒ **byte-identical** to pre-FM4 (world/ecosim goldens hold). Deterministic, no RNG (D12).
+
 ## Diurnal sleep injection & torpor recovery (P_sleep1; rationale: `docs/plans/fauna.md` §4 FM11/FM11b/FM12 + SS1–SS3, gate RESOLVED 2026-07-10 · `docs/decisions/fauna-gates.md` cluster 11)
 
 Animals sleep at night and wake to a near predator (user 2026-07-10: "저녁에 자는 것 + 주변 이벤트에 기상"). The

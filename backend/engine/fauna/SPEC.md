@@ -174,6 +174,8 @@ type Snapshot struct {
     //     scent-cell scale their range factors multiply, FC) → SPEC-combat.md
     //   + MoveDeadband float64 (FM9 locomotion deadband: §6 speed below this ⇒ hold position;
     //     ≤ 0 ⇒ off/byte-identical; docs/plans/fauna.md §4.3) → SPEC-steering.md
+    //   + WaterField WaterSampler (FM4 water-ATTRACTION field: Gradient toward drinkable water; the
+    //     seek:water steer channel follows it; nil ⇒ off/byte-identical; docs/plans/fauna.md §4.1) → SPEC-steering.md
 }
 
 // HazardSampler is the read-only per-species static hazard POTENTIAL field fauna declares and world

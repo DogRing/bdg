@@ -341,6 +341,15 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 - **FM4 — fauna `thirst` drive + 물 유인 (별도 phase 가능).** fauna에 `thirst` drive 추가(D10, rate=balance).
   물장 = 음용가능(river·salinity 0, 재사용) 셀 flood 거리장; 근접 시 hunger 유사 회복. options: (a) 신규 fauna thirst+Drink 상당,
   (b) agent Hydration need 기계 재사용(fauna는 need 아닌 drive라 부적합). **rec: (a).** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**
+  - **FM4-src — 물 유인장 소스 식별 (shape 하위게이트 · 2026-07-10, P_move2 착수 중 발견).** FM4 원문 "river·salinity 0 셀"은 개념만 정하고
+    **런타임 소스 식별 기전**은 미정. 발견: (1) 에이전트 Drink는 **오브젝트 kind `water_source`**(objects.yaml, `provides: at_water`, 무한)를 쓰나
+    현 fauna 월드엔 **미배치**(물=river/lake **지형** 셀); (2) salinity/moisture는 terrain.yaml **지형-TYPE별** attr이나 런타임 `terrainAttrs`는
+    **미배선**(make만·flora도 빈 채 소비); (3) Go 지형명 하드코딩 금지. *options:*
+    (a) **오브젝트 `water_source` 재사용** — 에이전트 Drink 모델과 통일(D1), 단 fauna 월드에 water_source 오브젝트 배치 선행 필요(물=지형인데 오브젝트로 이중화);
+    (b) **config-time 지형-attr 유도(rec)** — config가 terrain.yaml attrs(`salinity ≤ ε ∧ moisture ≥ θ`)에서 **음용 지형 ID 집합** 유도 → world가 그 타입 navmap 셀을 `field.Build` 소스로(hazard 필드의 navmap-셀 소스와 동형; river/lake 자동 포함·sea 자동 제외). 지형명 하드코딩 0 + 런타임 terrainAttrs 불필요(속성이 TYPE-uniform ⇒ load-time 유도로 충분);
+    (c) **런타임 terrainAttrs 배선** 후 셀별 salinity/moisture 판정 — 원문 최충실이나 terrainAttrs 배선(별도 게이트·flora도 영향)을 P_move2에 포함 = 스코프 확대;
+    (d) 조합. **rec: (b).** **RESOLVED: (b) config-time 지형-attr 유도 (사람 승인 2026-07-10).** thirst drive 추가·§6 물-탐색·근접 회복은 데이터 정의(hunger/food/Graze 미러)·RESOLVED.
+    > **빌드 순서(leaf-first):** ① `platform/config` — terrain attrs에서 **음용 지형 ID 집합** 유도(`salinity ≤ ε ∧ moisture ≥ θ`, ε/θ=world.yaml `water:` 블록) → `EnvConfig.DrinkableTerrains` → ② `engine/space/field` — 재사용(attraction=`Gradient` as-is, 신규 코드 0) → ③ `engine/world` — `buildWaterField()`(음용 셀=소스, 1회 캐시·hazard 동형) + fauna Snapshot에 `WaterField` 주입(신규 `AttractionSampler` 인터페이스, 의존성 역전) + 근접 시 thirst 회복 apply(hunger/Graze 미러) → ④ `engine/fauna` — `thirst` drive operand + `seek:water` 스티어 채널(WaterField `Gradient` 방향) → ⑤ content — 종별 `thirst` drive(rate) + §6 물-탐색 액션(utility=f(thirst)) + `seek:water` steer + world.yaml `water:` 임계. **중립성:** WaterField nil(음용 지형 0) 또는 thirst 미저작 ⇒ byte-identical.
 - **FM5 — blend 식 = §6 vs 엔진고정 + 상시반발 범위.** 이동벡터 = 주 pull + Σ 상시반발, 각 항 가중치.
   options(계수 위치): (a) **§6/content**(D4/D10), (b) 엔진 상수. options(상시반발 범위): 절벽만 / 절벽+포식자 / +무리 separation.
   **rec: 계수=(a) §6; 범위=phase 점진(P_move1 절벽+포식자, 무리=P_move4).** **RESOLVED (rec 채택 · 사람 승인 2026-07-09).**

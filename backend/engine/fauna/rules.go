@@ -48,6 +48,7 @@ type SpeciesRule struct {
 	Hit             *expr.Program                      // §6 hit multiplier/probability composition (FC4)
 	Feed            *expr.Program                      // §6 carcass feed value composition (FC8)
 	Graze           *expr.Program                      // §6 herbivore graze hunger-recovery factor (parallels Feed)
+	Drink           *expr.Program                      // §6 thirst-recovery factor at water (FM4; parallels Graze)
 	HideChance      *expr.Program                      // §6 cover-hide probability (M3)
 	CoverCost       float64                            // scalar cover-drag cost (M4-b)
 	Diet            []core.Tag                         // diet/target tags (F7)
@@ -65,14 +66,15 @@ type SpeciesRule struct {
 // action Tags via SpeciesRule.SteerChannel). Content authors place these tags on
 // actions in content/actions.yaml to declare the steer channel (D10).
 const (
-	TagSteerFood core.Tag = "seek:food"     // steer toward food scent channel
-	TagSteerPrey core.Tag = "seek:prey"     // steer toward prey scent channel
-	TagFleePred  core.Tag = "flee:predator" // steer away from predator (reversed dir)
-	TagWaryPred  core.Tag = "wary:predator" // steer slowly away from predator
-	TagNoLoco    core.Tag = "no:locomotion" // rest: NextPos == Pos
-	TagAttack    core.Tag = "combat:attack" // engage/exchange against a diet target
-	TagFeed      core.Tag = "feed:carrion"  // steer toward carrion scent / feed target
-	TagSleep     core.Tag = "state:sleep"   // torpor sleep: NextPos == Pos (like no-loco) + high F45 wake threshold (SS3) + deep fatigue recovery (SS2)
+	TagSteerFood  core.Tag = "seek:food"     // steer toward food scent channel
+	TagSteerWater core.Tag = "seek:water"    // steer toward the water-attraction field gradient (FM4 thirst)
+	TagSteerPrey  core.Tag = "seek:prey"     // steer toward prey scent channel
+	TagFleePred   core.Tag = "flee:predator" // steer away from predator (reversed dir)
+	TagWaryPred   core.Tag = "wary:predator" // steer slowly away from predator
+	TagNoLoco     core.Tag = "no:locomotion" // rest: NextPos == Pos
+	TagAttack     core.Tag = "combat:attack" // engage/exchange against a diet target
+	TagFeed       core.Tag = "feed:carrion"  // steer toward carrion scent / feed target
+	TagSleep      core.Tag = "state:sleep"   // torpor sleep: NextPos == Pos (like no-loco) + high F45 wake threshold (SS3) + deep fatigue recovery (SS2)
 )
 
 // ── internal compiled species table ───────────────────────────────────────────
@@ -92,6 +94,7 @@ type speciesData struct {
 	hit             *expr.Program
 	feed            *expr.Program
 	graze           *expr.Program
+	drink           *expr.Program
 	hideChance      *expr.Program
 	coverCost       float64
 	diet            []core.Tag
@@ -169,6 +172,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			hit:             sr.Hit,
 			feed:            sr.Feed,
 			graze:           sr.Graze,
+			drink:           sr.Drink,
 			hideChance:      sr.HideChance,
 			coverCost:       sr.CoverCost,
 			diet:            cloneTags(sr.Diet),

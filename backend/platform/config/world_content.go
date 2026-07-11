@@ -40,6 +40,11 @@ func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *a
 		if err != nil {
 			return out, err
 		}
+		// FM4 water-attraction field: derive the drinkable-terrain source set from terrain.yaml attrs
+		// (salinity ≤ max ∧ moisture ≥ min) at load — data-defined, no Go terrain-name hardcoding, no
+		// runtime terrainAttrs. Empty/decay ≤ 0 ⇒ world builds no water field (byte-identical).
+		env.DrinkableTerrains = deriveDrinkableTerrains(terrain, wd.Water.SalinityMax, wd.Water.MoistureMin)
+		env.WaterFieldDecay = wd.Water.FieldDecay
 		out.WorldEnv = env
 		out.NavCfg = nav
 	}

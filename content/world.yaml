@@ -46,6 +46,16 @@ motion:
   max_speed: 1.4                 # fastest species; drives scent_cell_size floor (1.4 × 6 = 8.4 ≤ 10 ✓)
   move_deadband: 0.0             # FM9 (docs/plans/fauna.md §4.3): §6 speed below this ⇒ hold position (energy conservation). 0 = OFF (byte-identical); raise in P_fa4 tuning just above idle speed so unstimulated fauna mostly rest
 
+# ── Water (FM4) — fauna thirst → water-attraction field (docs/plans/fauna.md §4.1 FM4-src) ─────────────
+# Config derives the drinkable-terrain SOURCE set from terrain.yaml attrs (fresh + open water); world
+# floods a static attraction field from those cells. A thirsty species (§6 `thirst` drive + a `seek:water`
+# action) steers up the gradient. No species authors `seek:water` yet ⇒ field is built but unqueried
+# (byte-identical); enable per-species in content tuning.
+water:
+  salinity_max: 0.05             # terrain salinity ≤ this = fresh (drinkable); excludes sea (salinity 1.0)
+  moisture_min: 0.9              # AND moisture ≥ this = open water (river/lake moisture 1.0; not damp soil 0.5). ≤ 0 ⇒ water field OFF
+  field_decay: 0.03              # attraction intensity decay per world-unit (reach = weight/decay); mirrors hazard decay (untuned)
+
 # ── Cadence (W4) — env-phase step intervals (ticks; world drives via tick % N) ─────────
 cadence:
   climate_step: 60               # 1 game-hour (climate RESOLVED #9; wind shares this)

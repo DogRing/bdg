@@ -107,6 +107,16 @@ type HazardSampler interface {
 	Repulsion(p core.Vec2) core.Vec2
 }
 
+// WaterSampler is the read-only STATIC water-ATTRACTION potential field fauna declares and world adapts
+// (dependency inversion, like HazardSampler — fauna imports no engine/space/field or navmap). Satisfied by
+// *engine/space/field.Field, which world builds once from drinkable-water terrain cells (FM4, config-derived
+// DrinkableTerrains). Gradient(p) = the UNIT direction toward the nearest/strongest water source (attraction
+// = toward increasing intensity). The steer uses it ONLY for the thirst-seek action (TagSteerWater); nil ⇒
+// no water steering (byte-identical to pre-FM4). Read-only, D11 (samples continuous p, snaps nothing).
+type WaterSampler interface {
+	Gradient(p core.Vec2) core.Vec2
+}
+
 // Cadence carries the F45 adaptive per-animal cadence parameters (balance data,
 // world-injected; NOT per-species). DormantPeriod is the N in the dormant
 // re-arbitration gate (Tick+phase(ID))%N==0 (N≈100). WakeCooldown is how many
@@ -167,6 +177,11 @@ type Snapshot struct {
 	// no salient drive). Burst-rest UNDER drive is the fatigue axis (M2 — effort:high ⇒ fatigue, §6 speed
 	// reads −fatigue), NOT here. ≤ 0 ⇒ OFF (only the existing speed ≤ 0 hold applies — byte-identical).
 	MoveDeadband float64
+	// WaterField is the shared STATIC water-attraction potential field (FM4). world builds it once from
+	// drinkable-water terrain cells and injects it; steering follows its Gradient (toward water) ONLY when
+	// the thirst-seek action (TagSteerWater) is chosen — so non-thirsty / non-drinking species never query
+	// it. nil ⇒ NO water steering (byte-identical to pre-FM4). Read-only.
+	WaterField WaterSampler
 	// HazardField is the shared STATIC hazard potential field (P_move1/FM2). world builds it once
 	// (source cells = dangerous terrain, weight = danger) and injects it; steering adds e·Repulsion
 	// (e = the species' HazardAvoidance) to the chosen direction (F35). Per-species DIFFERENTIATION is

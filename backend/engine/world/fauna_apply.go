@@ -200,6 +200,9 @@ func (w *World) applyAnimalCombat(intent fauna.Intent) {
 	if w.actionHasTag(intent.Action, fauna.TagSteerFood) {
 		w.applyAnimalGraze(a)
 	}
+	if w.actionHasTag(intent.Action, fauna.TagSteerWater) {
+		w.applyAnimalDrink(a)
+	}
 	if a.Vital <= 0 {
 		w.killAnimal(a.ID, causePredation)
 	}
