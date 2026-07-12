@@ -147,7 +147,9 @@ RESOLVED note in Open Questions), so the world does NOT re-join `terrainTypes` f
      tick (agent or animal), resolve by the relevant stat (the action's `uses:` tag over the
      contender's Real stats — for an animal, `Animal.Stats`), ties by ObjectID (the shared
      conflict model, SPEC-tick.md §Conflict resolution).
-  2. **Move**: `spatial.Move(a.ID, intent.NextPos)`; set `a.Pos = NextPos`, `a.Heading = NextHeading`.
+  2. **Move**: clamp+reflect `intent.NextPos`/`NextHeading` at the world bounds (`reflectAtBounds`, FM13 —
+     see §Boundary reflection), apply cover drag, then `spatial.Move(a.ID, pos)`; set `a.Pos = pos`,
+     `a.Heading = reflectedHeading`.
   3. **Commit fauna state**: `a.Drives = intent.Drives` (the passive per-tick evolution), `a.Stamina
      = intent.Stamina`, `a.ActiveUntil = intent.ActiveUntil`, `a.CurrentAction = intent.Action`.
   4. **Layer the action's drive Effect** (world the sole mutator): the enacted action's own effect on
@@ -356,15 +358,24 @@ drag, **no stumble/stop/fall**. World-side (world owns flora; parallels M3 and `
 only exposes the per-species affinity via `Rules.CoverCost`. This is a movement SCALE applied when world
 commits the animal's move, NOT a §6 speed change (fauna's speed is unchanged).
 
-- **Where (in `commitAnimalOwnState`, movement commit):** after `intended := w.clampToBounds(intent.NextPos)`,
-  scale the DISPLACEMENT by the cover resistance at the destination:
+- **Where (in `commitAnimalOwnState`, movement commit):** after
+  `intended, heading := w.reflectAtBounds(intent.NextPos, intent.NextHeading)` (FM13 — clamp into bounds +
+  reflect the heading off any wall crossed), scale the DISPLACEMENT by the cover resistance at the destination:
   ```
   res  := w.coverResistance(a.Species, intended)          // ≥ 1
   pos  := a.Pos.Add(intended.Sub(a.Pos).Scale(1.0 / res)) // moves LESS through denser cover; res=1 ⇒ pos=intended
   w.spatial.Move(a.ID, pos); a.Pos = pos                  // pos is between a.Pos and intended ⇒ still in bounds
+  a.Heading = heading                                     // reflected inward at a wall, else == intent.NextHeading
   ```
   A crouching (M3 hidden) or engaged animal has `intended == a.Pos` (zero displacement) ⇒ resistance is a
   no-op, so M4-b never fights M3/combat.
+- **Boundary reflection (`reflectAtBounds`, FM13, `docs/plans/fauna.md §4.4`):** clamps `p` into
+  `[Min,Max]` AND flips the outward `cos/sin(heading)` component on each wall crossed, so an animal that
+  steers off-map **bounces back inside** instead of pinning against the edge and sliding (the "everyone
+  rubs the wall" bug). Fires only when a wall is actually crossed; an interior commit returns
+  `(p, heading)` unchanged ⇒ byte-identical to the old `clampToBounds` path (existing goldens hold).
+  `clampToBounds` is retained for off-map respawn placement (position-only, no heading). Pure trig,
+  deterministic (no RNG/state). Respawn stays near-live (FM15, unchanged).
 - **`coverResistance(species, p)`** (nil-safe; returns 1 when nothing applies):
   ```
   cc := w.faunaRules.CoverCost(species)                   // per-species content affinity; 0 ⇒ unaffected

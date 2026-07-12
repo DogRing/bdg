@@ -256,7 +256,10 @@ type Intent struct {
 //      crosses anyway (FM5). Only the blended ANGLE is used (atan2); HazardAvoidance (the per-species
 //      multiplier `e`) ≤ 0 or a nil field ⇒ no bend (byte-identical to pre-P_move1). NextPos = Pos + dir·speed·DT
 //      clamped by TerrainSampler (blocked iff FootprintBlocked OR !TerrainCost(species,terrain).passable —
-//      so water is traversable for a swimmer, impassable for a fish-on-land; D11); NextHeading turns toward dir.
+//      so water is traversable for a swimmer, impassable for a fish-on-land; D11). On a BLOCKED step the
+//      animal HOLDS position (NextPos == Pos) but STILL commits the turned NextHeading (wander + blend),
+//      never freezing its old heading against the obstacle (FM13, SPEC-steering.md); otherwise NextHeading
+//      turns toward dir. (World then reflects NextHeading off any world-bound wall it overshot — FM13.)
 // rng is the injected per-tick fork world supplies (per-step fork(tick), F41). Arbitration, drive
 // advance, scent read are deterministic and draw nothing; rng is drawn ONLY by a stochastic steering
 // term (a species §6 wander/jitter operand) — same seed ⇒ identical steering.

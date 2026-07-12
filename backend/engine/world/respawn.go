@@ -1,6 +1,7 @@
 package world
 
 import (
+	"math"
 	"sort"
 
 	"github.com/dogring/bdg/engine/fauna"
@@ -105,6 +106,40 @@ func (w *World) respawnPos(sp core.Tag, live []core.Vec2, fork *rng.RNG) core.Ve
 		X: base.X + (fork.Float64()-centeredRandomOffset)*off,
 		Y: base.Y + (fork.Float64()-centeredRandomOffset)*off,
 	})
+}
+
+// reflectAtBounds clamps p into the world [Min,Max] rectangle AND, on each wall it hits, reflects the
+// heading's component across that wall (bounce) so a boundary-bound animal turns back INTO the map instead
+// of pinning against the edge and sliding along it (FM13, docs/plans/fauna.md §4.4). The heading component
+// is flipped only when it points OUTWARD through the crossed wall, so an animal already steering inward
+// keeps its heading. Returns (clamped pos, reflected heading). No-op (returns p, h) when bounds are unset
+// (Max ≤ Min) or p is already interior — so interior movement is byte-identical to the old clamp path.
+func (w *World) reflectAtBounds(p core.Vec2, h float64) (core.Vec2, float64) {
+	if w.envCfg.Max.X <= w.envCfg.Min.X || w.envCfg.Max.Y <= w.envCfg.Min.Y {
+		return p, h
+	}
+	vx, vy := math.Cos(h), math.Sin(h)
+	reflected := false
+	switch {
+	case p.X < w.envCfg.Min.X:
+		p.X = w.envCfg.Min.X
+		vx, reflected = math.Abs(vx), true // point +X (back inside)
+	case p.X > w.envCfg.Max.X:
+		p.X = w.envCfg.Max.X
+		vx, reflected = -math.Abs(vx), true // point −X
+	}
+	switch {
+	case p.Y < w.envCfg.Min.Y:
+		p.Y = w.envCfg.Min.Y
+		vy, reflected = math.Abs(vy), true
+	case p.Y > w.envCfg.Max.Y:
+		p.Y = w.envCfg.Max.Y
+		vy, reflected = -math.Abs(vy), true
+	}
+	if !reflected {
+		return p, h // interior — leave heading exact (byte-identical to the old clamp)
+	}
+	return p, math.Atan2(vy, vx)
 }
 
 // clampToBounds keeps a position inside the world's [Min,Max] rectangle so animals (fleeing prey, roaming

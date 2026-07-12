@@ -42,6 +42,7 @@ type SpeciesRule struct {
 	ComfortTemp     float64                            // °C midpoint of the thermal comfort band (FA5)
 	ThermalBand     float64                            // °C half-width; thermal = clamp01(|apparent_temp−comfort|/band); ≤0 ⇒ thermal neutral (0)
 	HazardAvoidance float64                            // per-species hazard-repulsion multiplier `e` (P_move1/FM5); ≤0 ⇒ no bend
+	MoveDeadband    float64                            // per-species §6-speed hold threshold (FM14a); >0 overrides Snapshot.MoveDeadband, ≤0 ⇒ fall back to the global
 	Speed           *expr.Program                      // §6 locomotion speed (F35)
 	TurnRate        *expr.Program                      // §6 max turn rate radians/unit time (M6)
 	AttackPower     *expr.Program                      // §6 damage magnitude composition (FC4)
@@ -88,6 +89,7 @@ type speciesData struct {
 	comfortTemp     float64
 	thermalBand     float64
 	hazardAvoidance float64
+	moveDeadband    float64
 	speed           *expr.Program
 	turnRate        *expr.Program
 	attackPower     *expr.Program
@@ -166,6 +168,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			comfortTemp:     sr.ComfortTemp,
 			thermalBand:     sr.ThermalBand,
 			hazardAvoidance: sr.HazardAvoidance,
+			moveDeadband:    sr.MoveDeadband,
 			speed:           sr.Speed,
 			turnRate:        sr.TurnRate,
 			attackPower:     sr.AttackPower,
@@ -314,6 +317,22 @@ func (r *Rules) hazardAvoidance(sp SpeciesID) float64 {
 		return sd.hazardAvoidance
 	}
 	return scalarZero
+}
+
+// moveDeadband returns the effective locomotion deadband for the species (FM14a): the species' own
+// `move_deadband` when it authored a POSITIVE one, else the world's `global` (`Snapshot.MoveDeadband`).
+// A single global scalar cannot separate a fast idler (rabbit idle ≈ 0.34) from a slow forager whose
+// graze-seek speed equals its idle speed (deer ≈ 0.21) — stopping the former would freeze the latter's
+// foraging. Per-species overrides break that tie; the global stays the fallback so unauthored species and
+// the FM9 off-lever (global 0) are byte-identical.
+func (r *Rules) moveDeadband(sp SpeciesID, global float64) float64 {
+	if r == nil {
+		return global
+	}
+	if sd, ok := r.species[sp]; ok && sd.moveDeadband > scalarZero {
+		return sd.moveDeadband
+	}
+	return global
 }
 
 // AppTemp evaluates the species' §6 apparent_temp Program over climate operands +

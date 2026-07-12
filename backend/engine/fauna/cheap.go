@@ -53,8 +53,10 @@ func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick)
 	var nextPos core.Vec2
 	var nextHeading float64
 	// FM9 deadband also gates the dormant path (docs/plans/fauna.md §4.3): a below-deadband drift is
-	// held so a dormant animal doesn't crawl where an ACTIVE one would stop. MoveDeadband ≤ 0 ⇒ OFF.
-	if speed <= scalarZero || (snap.MoveDeadband > scalarZero && speed < snap.MoveDeadband) {
+	// held so a dormant animal doesn't crawl where an ACTIVE one would stop. Per-species when authored,
+	// else the global Snapshot.MoveDeadband (FM14a); ≤ 0 ⇒ OFF.
+	db := rules.moveDeadband(a.Species, snap.MoveDeadband)
+	if speed <= scalarZero || (db > scalarZero && speed < db) {
 		nextPos = a.Pos
 		nextHeading = a.Heading
 	} else {

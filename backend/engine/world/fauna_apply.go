@@ -129,7 +129,7 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	if a == nil {
 		return
 	}
-	intended := w.clampToBounds(intent.NextPos)
+	intended, heading := w.reflectAtBounds(intent.NextPos, intent.NextHeading)
 	pos := intended
 	if res := w.coverResistance(a.Species, intended); res > 1 {
 		pos = a.Pos.Add(intended.Sub(a.Pos).Scale(unitScalar / res))
@@ -140,7 +140,7 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	if cf := w.envCfg.FaunaCombat.ConcealFactor; cf > 0 {
 		a.Concealment = w.coverDensity(pos) * cf
 	}
-	a.Heading = intent.NextHeading
+	a.Heading = heading
 	a.Drives = cloneFaunaDrives(intent.Drives)
 	a.Stamina = intent.Stamina
 	w.commitAnimalVital(a, intent)

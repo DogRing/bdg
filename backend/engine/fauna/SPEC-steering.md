@@ -66,20 +66,64 @@ drift / constant gliding (`docs/plans/fauna.md §4.3` realism 수용기준 ③ "
   so the blend vector carries no drive magnitude. Drive magnitude lives in **§6 `Speed`** (species author
   `speed` reading `fear`/`hunger`/… — e.g. deer `Agility*0.003 + fear*0.2 − fatigue*0.1`). So a
   sub-deadband speed *is* the "no salient drive" signal; the deadband is applied to `Speed`.
-- **`steerFull` / `cheapPath`:** both hold when `MoveDeadband > 0 ∧ speed < MoveDeadband` (the dormant
-  cheap path too, so a dormant animal doesn't crawl where an ACTIVE one would stop). Placed **after** the
-  existing `speed ≤ 0` hold, so it only tightens the floor.
-- **`Snapshot.MoveDeadband float64`** — world-injected from `world.yaml motion.move_deadband` (via
-  `config` → `envCfg.FaunaMoveDeadband` → `buildFaunaSnapshot`). A single balance scalar (no per-species
-  key in P_move-realism; per-species deadband is a later tuning lever if needed).
-- **Neutrality:** `MoveDeadband ≤ 0` ⇒ only the pre-existing `speed ≤ 0` hold applies ⇒ **byte-identical**
-  to pre-FM9 (existing world/ecosim goldens hold; the shipped `world.yaml` value is `0.0`, tuned up in
-  P_fa4 to just above idle speed). Deterministic, no RNG/operand/state field (D12).
+- **`steerFull` / `cheapPath`:** both hold when `db > 0 ∧ speed < db`, where `db :=
+  rules.moveDeadband(species, snap.MoveDeadband)` (the dormant cheap path too, so a dormant animal doesn't
+  crawl where an ACTIVE one would stop). Placed **after** the existing `speed ≤ 0` hold, so it only
+  tightens the floor.
+- **Per-species deadband (FM14a, RESOLVED 2026-07-12):** `rules.moveDeadband(species, global)` returns the
+  species' own `SpeciesRule.MoveDeadband` (content `objects.yaml fauna.move_deadband`) when POSITIVE, else
+  the global `Snapshot.MoveDeadband`. A single global scalar can't separate a fast idler (rabbit idle ≈
+  Agility·0.004 ≈ 0.34) from a slow forager whose graze-seek speed equals its idle speed (deer ≈ 0.21) —
+  stopping the former with a global would freeze the latter. Per-species overrides break that cross-species
+  tie; the global stays the fallback (unauthored species + FM9 off-lever byte-identical).
+- **`Snapshot.MoveDeadband float64`** — world-injected global fallback, from `world.yaml
+  motion.move_deadband` (via `config` → `envCfg.FaunaMoveDeadband` → `buildFaunaSnapshot`).
+- **Neutrality:** species `move_deadband` unset (0) AND global `MoveDeadband ≤ 0` ⇒ only the pre-existing
+  `speed ≤ 0` hold applies ⇒ **byte-identical** to pre-FM9 (existing world/ecosim goldens hold; shipped
+  values are all `0.0`). Deterministic, no RNG/operand/state field (D12).
+- **Values need a §6 hunger term (FM14b, RESOLVED (a) 2026-07-12):** a deadband set *above* idle speed also
+  freezes FORAGING unless purposeful movement is faster than idle wander — and originally **no species' §6
+  `speed` rose with hunger** (only `fear` did, deer/rabbit), so idle-wander == graze-seek speed. The fix is
+  a **hunger-restlessness term** added to each herbivore's §6 `speed` (`+ hunger·k`): a sated animal
+  (hunger≈0) sits at idle speed and is held by its deadband (rest, energy conservation); a hungry one's
+  speed rises above the deadband and it roams to forage (exploration even with no food scent in range; the
+  `Graze` steer then homes on food when scent appears). So **rest-when-sated + roam-when-hungry emerges from
+  the §6 sign** (D2/D10), not a state flag. Applied to **herbivores only** (deer/rabbit/goat) with
+  per-species `move_deadband` just above each species' sated idle speed (deer 0.27>0.21, rabbit 0.42>0.34,
+  goat 0.21>0.174 — all UNTUNED, P_fa4); predators/fish keep `move_deadband` 0 (always roam) to leave the
+  hunt-success band undisturbed. Verified: arena hunt-success 12.8% (in band), prey population stable over
+  3000 ticks (no deadband-starvation). Wall-piling itself is fixed by FM13 (reflect), independent of this.
 - **NOT here — burst-rest under drive (FM10):** the drive-gated burst→tire→pause→recover rhythm is the
   **existing M2 fatigue axis** (`effort:high` Flee/Hunt ⇒ `applyAnimalFatigue` accrues `fatigue`; every
   species' §6 `speed` reads `− fatigue`; Rest sheds it). FM9 is only the *floor* (idle stop); FM10 added
   **no new mechanism** — its remaining work is fatigue-coefficient tuning (`docs/plans/fauna.md §4.1`
   FM10a, RESOLVED "M2 재사용" 2026-07-10).
+
+## Boundary de-sink: blocked-heading commit + reflect (FM13)
+
+**"동물들이 다들 벽에 가서 벽을 비빈다" fix** (`docs/plans/fauna.md §4.4`, P_dist1). The map boundary was an
+absorbing sink: an animal that steered outward got its position clamped back in but kept its outward heading,
+so it slid along the wall; and an animal that steered into impassable terrain had its heading **frozen**, so
+it re-proposed the same blocked step every tick. Two composed fixes turn the edge from a sink into a mirror:
+
+- **Blocked-heading commit (fauna, `steerFull`):** when the tentative `NextPos` is blocked
+  (`FootprintBlocked ∨ !passable`), HOLD position (`NextPos == Pos`) but return the **already-turned
+  `heading`** (post wander + hazard blend + turn-rate clamp) instead of the old `a.Heading`. The step is
+  still held; only the heading is no longer frozen, so the next tick re-evaluates from a new angle and the
+  animal rotates off deep sea / a cliff (hazard repulsion + wander do the work) rather than pinning against
+  it. Byte-identical for any animal whose step is NOT blocked. The `cheapPath` hold is unchanged (dormant,
+  no turn to commit).
+- **Boundary reflection (world, `reflectAtBounds`, `commitAnimalOwnState`):** replaces the bare
+  `clampToBounds` in the animal own-state commit. It clamps `NextPos` into `[Min,Max]` AND, for each wall it
+  overshot, **reflects the outward heading component** (`vx`/`vy` sign flip) so the animal bounces back inside
+  instead of sliding along the edge. Only fires when a wall is actually crossed; an interior commit returns
+  `(pos, heading)` unchanged (byte-identical to the old clamp path). `clampToBounds` itself is retained for
+  respawn placement. Deterministic (pure trig, no RNG/state).
+- **Distribution rationale:** a reflecting boundary makes a wandering (persistent-random-walk) population
+  equilibrate toward roughly uniform interior density instead of collecting at the walls — with a thin
+  residual edge layer that later `move_deadband` tuning (FM14, deferred pending the FM14a shape gate) calms.
+  Respawn stays **near-live** (FM15, unchanged): once survivors are spread through the interior, near-live
+  respawn seeds there too.
 
 ## Water attraction (FM4)
 

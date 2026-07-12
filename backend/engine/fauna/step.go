@@ -363,9 +363,10 @@ func steerFull(
 
 	// FM9 locomotion deadband (P_move-realism, docs/plans/fauna.md §4.3): below the deadband the animal
 	// HOLDS position rather than crawling — §6 speed already encodes drive (fear/hunger ↑ ⇒ speed ↑), so a
-	// sub-deadband speed means no salient drive ("mostly doesn't move", energy conservation). MoveDeadband
-	// ≤ 0 ⇒ OFF (byte-identical). Burst-rest UNDER drive is the fatigue axis (M2), not here.
-	if snap.MoveDeadband > scalarZero && speed < snap.MoveDeadband {
+	// sub-deadband speed means no salient drive ("mostly doesn't move", energy conservation). The threshold
+	// is the species' own `move_deadband` when authored, else the global Snapshot.MoveDeadband (FM14a); ≤ 0
+	// ⇒ OFF (byte-identical). Burst-rest UNDER drive is the fatigue axis (M2), not here.
+	if db := rules.moveDeadband(a.Species, snap.MoveDeadband); db > scalarZero && speed < db {
 		return a.Pos, a.Heading
 	}
 
@@ -408,8 +409,12 @@ func steerFull(
 	blocked := snap.Terrain.FootprintBlocked(tentative) || !passable
 
 	if blocked {
-		// Cannot enter: stay.
-		return a.Pos, a.Heading
+		// Cannot enter this tick: HOLD position but COMMIT the turned heading (FM13, docs/plans/fauna.md
+		// §4.4). Freezing the heading here made an animal that steered into impassable terrain (deep sea /
+		// cliff) re-propose the SAME blocked step every tick — pinned against the obstacle. Returning the
+		// already-turned `heading` (wander + hazard-repulsion blend + turn-rate applied above) lets it keep
+		// rotating off the obstacle so the next tick re-evaluates from a new heading. Position unchanged.
+		return a.Pos, heading
 	}
 
 	// Effective cost: BaseCost × species mult (W10b).

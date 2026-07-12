@@ -327,7 +327,8 @@ object_kinds:
       comfort_temp: 12                                                              # °C comfort midpoint; thermal = clamp01(|apparent_temp−comfort|/band), FA5 symmetric (untuned)
       thermal_band: 20                                                              # °C half-width: apparent_temp −8°C or +32°C → thermal 1 (cold AND heat stress)
       hazard_avoidance: 2.0                                                         # e: wary grazer avoids deep water / steep terrain (P_move1/FM5; untuned, overcome by flee/thirst)
-      speed: "Agility * 0.003 + fear * 0.2 - fatigue * 0.1 - thermal * 0.0015"      # base Agility; fear→faster, fatigue/thermal→slower (체온→운동능력; thermal from apparent_temp F40, 0 under climate-OFF)
+      speed: "Agility * 0.003 + hunger * 0.2 + fear * 0.2 - fatigue * 0.1 - thermal * 0.0015"  # base Agility; hunger→roam (FM14b restlessness: idle Ag·0.003≈0.21, sated animal holds under move_deadband, a hungry one roams to forage); fear→faster; fatigue/thermal→slower (F40)
+      move_deadband: 0.27                                                          # FM14b: just above sated idle speed (≈0.21) — a sated deer rests; hunger>~0.3 breaks it → roam (UNTUNED, P_fa4)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
       graze: "0.06 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora (world applyAnimalGraze; parallels predator feed)
       hide_chance: "0.35 + Agility*0.003"                                          # M3 cover-hiding probability while fleeing near cover
@@ -397,7 +398,8 @@ object_kinds:
       comfort_temp: 14                                                              # °C; small body, warmth-preferring (untuned)
       thermal_band: 16                                                              # narrow tolerance → stresses sooner (FA5 symmetric)
       hazard_avoidance: 2.5                                                         # e: skittish prey, strongest hazard avoidance (untuned)
-      speed: "Agility * 0.004 + fear * 0.25 - fatigue * 0.1 - thermal * 0.0018"     # very fast sprinter; small body → strong thermal penalty (F40)
+      speed: "Agility * 0.004 + hunger * 0.25 + fear * 0.25 - fatigue * 0.1 - thermal * 0.0018"  # very fast sprinter; hunger→roam (FM14b: idle Ag·0.004≈0.34 holds under deadband, hungry roams); small body → strong thermal penalty (F40)
+      move_deadband: 0.42                                                          # FM14b: just above sated idle speed (≈0.34) — sated rabbit rests, hunger>~0.3 roams (UNTUNED, P_fa4)
       turn_rate: "1.0 + Agility*0.0115"                                            # M6 turn-rate (untuned placeholder)
       graze: "0.07 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       hide_chance: "0.6 + Agility*0.004"                                           # small prey: high cover-hiding chance
@@ -430,7 +432,8 @@ object_kinds:
       comfort_temp: 6                                                               # °C; hardy mountain species, cold-adapted (untuned)
       thermal_band: 24                                                              # broad tolerance (FA5 symmetric)
       hazard_avoidance: 0.6                                                         # e: sure-footed on steep terrain — LOW avoidance (roams hills freely; untuned)
-      speed: "Agility * 0.0028 - fatigue * 0.08 - thermal * 0.0008"                 # hardy mountain coat → small thermal penalty (F40)
+      speed: "Agility * 0.0028 + hunger * 0.15 - fatigue * 0.08 - thermal * 0.0008"  # hardy mountain coat; hunger→roam (FM14b: idle Ag·0.0028≈0.174 holds under deadband, hungry roams); small thermal penalty (F40)
+      move_deadband: 0.21                                                          # FM14b: just above sated idle speed (≈0.174) — sated goat rests, hunger>~0.24 roams (UNTUNED, P_fa4)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
       graze: "0.05 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       hide_chance: "0.3 + Agility*0.003"                                           # M3 cover-hiding probability while fleeing near cover
