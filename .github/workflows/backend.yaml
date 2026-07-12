@@ -25,7 +25,29 @@ env:
   IMAGE_TAG: 0.1.0
 
 jobs:
+  # Race-detector gate: the concurrency introduced by the live-replay/persist
+  # hardening (single-writer worldPub, emitter LastStreamID, prune cadence) can
+  # only be verified with `-race`, which needs CGO/gcc — unavailable in the dev
+  # sandbox, so CI is the sole place it runs. build-and-push is gated on this so
+  # a race-failing commit never produces a :latest image Flux would auto-deploy.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Test with race detector
+        working-directory: backend
+        run: go test -race ./...
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

@@ -25,7 +25,29 @@ env:
   IMAGE_TAG: 0.1.0
 
 jobs:
+  # Race-detector gate scoped to the code THIS image contains (the SSE handler +
+  # its wiring). backend.yaml runs `-race` over the whole module in parallel, but
+  # cross-workflow `needs` does not exist — so without this a race in the SSE path
+  # would still ship the bdg-sse image. `./platform/api/... ./cmd/sse/...` is the
+  # sse binary's first-party concurrency surface (XRead loop, ctx, redis adapter).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Test with race detector
+        working-directory: backend
+        run: go test -race ./platform/api/... ./cmd/sse/...
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

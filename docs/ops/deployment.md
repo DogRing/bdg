@@ -58,6 +58,10 @@ Two multi-stage Dockerfiles, both built from the **repo root** and pushed to `re
 GitHub Actions (`.github/workflows/{backend,sse}.yaml`, Zot login via `ZOT_USERNAME/PASSWORD`):
 - `backend/Dockerfile.api` → `bdg-backend`: ships `content/` (`CONTENT_DIR=/app/content`).
 - `backend/Dockerfile.sse` → `bdg-sse`: no content (read-only stream tailer).
+
+`backend.yaml` gates the image build on a `test` job (`go test -race ./...`, `needs: test`) — the
+race detector needs CGO/gcc (absent from the dev sandbox), so CI is the only place it runs and a
+race-failing commit never produces a `:latest` image Flux would auto-deploy.
 Both: static CGO-off binary on `distroless/static-debian12:nonroot`. Health via k8s httpGet probes
 (`/healthz`, `/readyz`) — no in-image HEALTHCHECK (distroless has no shell).
 
