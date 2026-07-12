@@ -38,6 +38,13 @@ Phase 2 — PLAN (parallel-safe, read-only):
     sorted-id position (not by goroutine scheduling order), the gathered intents are independent of
     the order goroutines happened to run in. cfg.PlanWorkers == 1 degenerates to the sequential
     walk; the two paths MUST be byte-identical (see Acceptance — Scale & performance).
+  - PLAN-PHASE EVENTS ARE BUFFERED (D12): each plan goroutine hands agent.Tick a goroutine-local
+    event collector, NOT the world's injected emitter. After ALL goroutines complete, the buffered
+    events are flushed to the injected EventEmitter in sorted agent-ID order (each agent's own
+    emission order preserved) — the same per-agent-slot gathering the []Intent path uses. The
+    emitted-event sequence is therefore scheduler-independent; direct emission from plan goroutines
+    would let goroutine interleaving reorder the stream and break Tick's "same emitted-event
+    sequence" contract (and the platform seq stamped at fan-out would inherit that nondeterminism).
   - TIME-SLICING (round-robin replan) — ⚠ **STATUS: DEFERRED / NOT YET IMPLEMENTED (2026-07-08).**
     The design below is the intended future agent-side planner-LOD; it is **not wired today**. The
     execute-only (no-replan) fast path does not exist, so every agent runs the FULL plan every tick
@@ -82,7 +89,7 @@ Phase 4 — APPLY (serial, fixed AgentID order, D12):
          hook (the world decides who-receives-what; folding math is the agent's, see OoS).
   - After all intents: advance the tick counter; run the reliance-cluster scan (SPEC-emergent.md);
     run the ToM prune pass (SPEC-emergent.md) when the tick is on the prune schedule; emit
-    TickDone{tick, agent_count, intent_count}; emit SnapshotReady every BackupEveryTicks ticks.
+    AgentFrame render deltas; emit SnapshotReady every BackupEveryTicks ticks.
 ```
 
 ### Per-agent RNG fork (the determinism anchor, D12)
@@ -230,6 +237,11 @@ Plus:
 - [ ] **Per-agent RNG fork is order-independent (D12)**: evaluating the plan phase over agents in
   two different iteration orders produces the IDENTICAL fork (and identical intents) per agent
   id; a digest of all forks' first draws matches a golden.
+- [ ] **Plan-phase event sequence is scheduler-independent (D12)**: with MANY agents planning in
+  parallel (goroutine interleaving realistic), a recording `EventEmitter` sees the plan-phase
+  events grouped per agent in sorted agent-ID order (never interleaved across agents), and two
+  identical-seed runs produce the IDENTICAL event list (types, agents, order). Sequential Emit
+  calls alone do not exercise this — the test must run the real parallel plan phase.
 - [ ] **Conflict: higher Real Stat wins, ties by AgentID (D12)**: two agents target the same
   object in one tick; the one with the higher Real Stat for the contested `uses:<StatID>` tag gets
   `Succeeded`, the other `Interrupted`. With EQUAL Real Stats, the lower `AgentID` wins
@@ -255,9 +267,14 @@ Plus:
   (*WorldSnapshot)(nil)` compiles; `EntitiesInRadius`/`Tags`/`IsOpaque`/`SoundEvents`/
   `KnownObjects`/`BeliefOf` return tick-scoped data; `KnownObjects` is in `ObjectID` order (D12).
   A write-attempt on the snapshot is impossible (read-only API; no mutator exposed).
-- [ ] **TickDone / SnapshotReady events**: every `Tick()` emits `TickDone{tick, agent_count,
-  intent_count}`; `SnapshotReady` is emitted exactly every `BackupEveryTicks` ticks and never
-  performs IO (the world only signals). `real_stats` appears on no event payload (god-view).
+- [ ] **AgentFrame / SnapshotReady events**: `Tick()` emits `AgentFrame{tick, agents[], removed[]}`
+  when public agent render/status fields changed; `SnapshotReady` is emitted exactly every
+  `BackupEveryTicks` ticks and never performs IO (the world only signals). Tick counters and
+  aggregate counts may remain internal-only. `real_stats` appears on no event payload (god-view).
+- [ ] **AgentFrame is a SPARSE delta**: a never-seen agent gets a full entry (`id, pos, goal,
+  mood, action`); a frame where nothing changed emits NO AgentFrame at all; a single-field change
+  produces an entry carrying `id` + only the changed field(s); an agent that left the world since
+  the previous frame appears exactly once in `removed[]`, sorted by ID (D12).
 - [ ] **No hardcoded constant / id (D10/D7 guard)**: grep guard — no cell-size /
   threshold / difficulty / backup-interval literal and no stat/action-name string literal in
   `engine/world` logic; all flow from `Config`/registries.

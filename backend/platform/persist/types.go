@@ -2,6 +2,7 @@ package persist
 
 import (
 	"context"
+	"time"
 
 	"github.com/dogring/bdg/engine/kernel/core"
 )
@@ -82,6 +83,10 @@ type TerrainView struct {
 	Elevation   []float64   `json:"elevation,omitempty"` // per-cell relief ∈[0,1] (generated worlds);
 	//                                                      static render-only — absent ⇒ frontend
 	//                                                      falls back to per-type heights
+	// WorldRevision tags which published single-world revision this grid was
+	// written for (data-contracts §2) — a reader verifies it against the
+	// snapshot's world_revision so a mid-regen fetch pair can't mix revisions.
+	WorldRevision int64 `json:"world_revision,omitempty"`
 }
 
 // RunMeta is the sim:{run}:meta hash payload (§2).
@@ -118,7 +123,18 @@ type LiveStore interface {
 	// installed.
 	WriteTerrain(ctx context.Context, run core.RunID, v TerrainView) error
 	// InitMeta writes sim:{run}:meta { tick, schema_version, started_at, status }.
+	// It deliberately does NOT touch the world_revision/terrain publication
+	// fields (HSET of the listed fields only; the meta key is never deleted on
+	// regen), so a meta refresh can never un-publish or re-publish a revision.
 	InitMeta(ctx context.Context, run core.RunID, m RunMeta) error
+	// PublishWorldRevision publishes the single-world revision marker
+	// (data-contracts §2): ONE HSET writes {world_revision, terrain:"on"|"off"}
+	// onto sim:{run}:meta. The run-driver calls it LAST — only after the same
+	// revision's snapshot (and terrain, when env is on) live writes succeeded —
+	// so a reader observing the new revision finds matching, revision-tagged
+	// baselines already servable. NOT a run generation (multi-world stays
+	// DEFERRED, docs/plans/run-generation.md).
+	PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn bool) error
 	// ReadSnapshot loads the latest snapshot blob (for resume / hand-off to backup).
 	ReadSnapshot(ctx context.Context, run core.RunID) ([]byte, error)
 	// Expire applies the TTL/expiry policy for a run (called on completion).
@@ -132,12 +148,43 @@ type LiveStore interface {
 type BackupStore interface {
 	// UpsertRun writes/updates the runs row.
 	UpsertRun(ctx context.Context, r RunRecord) error
-	// WriteSnapshot inserts one snapshots row (run_id, tick, blob, created_at).
-	WriteSnapshot(ctx context.Context, run core.RunID, tick core.Tick, blob []byte) error
-	// WriteEvents appends event rows (run_id, tick, seq, agent_id, type, payload JSONB).
-	WriteEvents(ctx context.Context, run core.RunID, evs []core.Event) error
-	// LatestSnapshot loads the most recent snapshots blob for a run (replay/resume).
+	// WriteBackup persists ONE backup flush atomically: a single transaction
+	// inserts the drained why-trace event rows (events table) AND the snapshots
+	// row (run_id, tick, blob, created_at, last_event_seq), committing together
+	// or rolling back together. last_event_seq is computed in-store as the max
+	// Event.Seq of evs — the rows written in the same transaction, so the replay
+	// boundary can never reference rows that failed to persist; evs empty ⇒
+	// NULL. High-frequency render/operational events are excluded upstream and
+	// never count. On error NOTHING was written; the caller re-buffers evs and
+	// retries on the next flush cadence. Seq is a process-local counter (SPEC
+	// Notes "Seq scope"): the (snapshot, seq ≤ last_event_seq) replay cut holds
+	// within one simulation process lifetime only — seq values repeat across
+	// process restarts of the same run, and cross-restart replay is unsupported.
+	WriteBackup(ctx context.Context, run core.RunID, tick core.Tick, blob []byte, evs []core.Event) error
+	// LatestSnapshot loads the most recently PERSISTED snapshots blob for a run
+	// (replay/resume). Recency is storage order (newest created_at, ties by row
+	// id) — NOT the highest tick: a /api/restart debugging rewind resets tick to
+	// 0 while preserving history, so a pre-restart high-tick row must never
+	// shadow a newer post-restart low-tick row. No production caller exists yet;
+	// the semantics are specified ahead of the future resume path.
 	LatestSnapshot(ctx context.Context, run core.RunID) (tick core.Tick, blob []byte, err error)
+	// PruneSnapshots applies the retention/downsample policy (§3) to a run
+	// (legacy method name retained): snapshots and events older than 3 days are
+	// deleted; surviving snapshots newer than 1h stay at full cadence, rows
+	// 1h–24h old keep one per 10-minute bucket, and rows 24h–3d old keep one per
+	// 1-day bucket ("newest" = latest created_at, ties by tick, then row id).
+	// Called after each successful backup; SQL maintenance runs immediately on
+	// the first request and then at most once per run per 6 hours.
+	PruneSnapshots(ctx context.Context, run core.RunID, now time.Time) error
+	// ResetRunData atomically resets a run for POST /api/regen ("new map", same
+	// run_id — the current single-world mode; a multi-world redesign is DEFERRED,
+	// docs/plans/run-generation.md): ONE transaction
+	// deletes the run's events + snapshots rows AND upserts the runs row to r
+	// (the regenerated world's record). A failure at any step rolls everything
+	// back — old history and old runs metadata stay intact so the run-driver can
+	// abort the regen. Other runs untouched. NOT called on /api/restart (a
+	// debugging rewind keeps the Postgres history).
+	ResetRunData(ctx context.Context, r RunRecord) error
 }
 
 // RunRecord mirrors the §3 runs table.

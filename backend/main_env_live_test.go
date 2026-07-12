@@ -33,7 +33,9 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 		},
 	}
 
-	writeEnvLive(context.Background(), rv, run, live)
+	if !writeEnvLive(context.Background(), rv, run, 3, live) {
+		t.Fatal("writeEnvLive returned false on a healthy store")
+	}
 
 	if got := live.AnimalViewOf(run, "an:d1"); !strings.Contains(got, `"species":"deer"`) {
 		t.Fatalf("animal key missing/wrong: %s", got)
@@ -47,6 +49,10 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 	if got := live.TerrainOf(run); !strings.Contains(got, `"cell_size":2`) || !strings.Contains(got, `"terrain":["grass","water"]`) {
 		t.Fatalf("terrain key missing/wrong: %s", got)
 	}
+	// The terrain blob is tagged with the publishing revision (data-contracts §2).
+	if got := live.TerrainOf(run); !strings.Contains(got, `"world_revision":3`) {
+		t.Fatalf("terrain blob missing world_revision tag: %s", got)
+	}
 }
 
 // TestWriteEnvLive_EnvOffWritesNothing verifies env-off neutrality: an empty
@@ -56,7 +62,9 @@ func TestWriteEnvLive_EnvOffWritesNothing(t *testing.T) {
 	live := persist.NewFakeRedis()
 	run := core.RunID("test-run")
 
-	writeEnvLive(context.Background(), world.RenderView{Tick: 7}, run, live)
+	if !writeEnvLive(context.Background(), world.RenderView{Tick: 7}, run, 1, live) {
+		t.Fatal("writeEnvLive returned false with no terrain to write")
+	}
 
 	if got := live.FloraOf(run); got != "" {
 		t.Fatalf("flora key written on env-off: %s", got)

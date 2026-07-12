@@ -54,6 +54,12 @@ type RedisReader interface {
 	Get(ctx context.Context, key string) ([]byte, error)
 	HGetAll(ctx context.Context, key string) (map[string]string, error)
 	XRead(ctx context.Context, key, lastID string, block time.Duration) (entries []StreamEntry, newLastID string, err error)
+	// StreamMaxDeletedID returns the stream's max-deleted-entry-id (XINFO
+	// STREAM) — the highest entry ID ever trimmed/deleted; "0-0" when nothing
+	// was deleted OR the key does not exist (a regen-recreated stream restarts
+	// this metadata). The SSE handler compares a client replay cursor against
+	// it to detect a trimmed (gapped) backlog.
+	StreamMaxDeletedID(ctx context.Context, key string) (string, error)
 }
 
 // StreamEntry is one Redis STREAM entry the SSE tail forwards.
@@ -81,6 +87,7 @@ func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
 	s.mux.HandleFunc("GET /sse", s.handleSSE)
+	s.mux.HandleFunc("GET /api/meta", s.handleMeta)
 	s.mux.HandleFunc("GET /api/snapshot", s.handleSnapshot)
 	s.mux.HandleFunc("GET /api/terrain", s.handleTerrain)
 	s.mux.HandleFunc("GET /api/agents/{id}", s.handleAgent)

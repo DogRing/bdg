@@ -30,6 +30,7 @@ const (
 	TypeCopingEntered    = "CopingEntered"
 	TypeRoleEmerged      = "RoleEmerged"
 	TypeTickDone         = "TickDone"
+	TypeAgentFrame       = "AgentFrame"
 	TypeWorldFrame       = "WorldFrame"
 	TypeSnapshotReady    = "SnapshotReady"
 
@@ -42,9 +43,10 @@ const (
 
 // RedisClient is the minimal interface Emitter needs from a Redis client.
 // Using an interface keeps the package testable without a live Redis connection.
-// The concrete implementation is injected by the run-driver.
+// The concrete implementation is injected by the run-driver. XAdd returns the
+// entry ID Redis assigned (XADD with *), which feeds LastStreamID.
 type RedisClient interface {
-	XAdd(ctx context.Context, stream string, values map[string]string) error
+	XAdd(ctx context.Context, stream string, values map[string]string) (id string, err error)
 }
 
 // Emitter implements core.EventEmitter and writes to a Redis STREAM.
@@ -55,28 +57,53 @@ type Emitter struct {
 	client RedisClient
 	stream string // "sim:{runID}:events", composed once on construction
 
-	seq      int64 // monotone counter; incremented atomically per Emit
-	errOnce  sync.Once
-	firstErr error
+	seq       int64 // monotone counter; incremented atomically per Emit
+	callerSeq bool  // WithCallerSeq: Event.Seq is pre-stamped by the caller
+	errOnce   sync.Once
+	firstErr  error
+
+	// lastID is the entry ID of the LAST successful XAdd ("" before the first
+	// success) — the transport replay cursor the run-driver stamps onto the
+	// snapshot wrapper (stream_cursor, data-contracts §1/§2). A failed append
+	// never advances it, so a snapshot cursor can never point past a lost entry.
+	lastIDMu sync.Mutex
+	lastID   string
 }
 
 // Compile-time interface satisfaction check.
 var _ core.EventEmitter = (*Emitter)(nil)
 
+// Option configures an Emitter at construction.
+type Option func(*Emitter)
+
+// WithCallerSeq disables the Emitter's internal seq stamping: the caller has
+// already stamped Event.Seq with one shared monotone numbering (the run-driver's
+// fan-out emitter stamps once so the Redis stream and the Postgres why-trace
+// carry the SAME seq for the same event — data-contracts §4 "two views of the
+// same stream"), and this Emitter serializes it verbatim.
+func WithCallerSeq() Option {
+	return func(e *Emitter) { e.callerSeq = true }
+}
+
 // New creates an Emitter for the given run.
 // client is a Redis client satisfying RedisClient (injected via interface).
 // ctx scopes the run's XADD calls.
-// seq starts at 0; the first Emit call stamps seq 0 and increments to 1.
-func New(ctx context.Context, client RedisClient, runID core.RunID) (*Emitter, error) {
+// By default seq starts at 0 and the first Emit call stamps seq 0 and increments
+// to 1; WithCallerSeq switches to the caller's pre-stamped Event.Seq instead.
+func New(ctx context.Context, client RedisClient, runID core.RunID, opts ...Option) (*Emitter, error) {
 	if client == nil {
 		return nil, fmt.Errorf("events.New: client must not be nil")
 	}
-	return &Emitter{
+	e := &Emitter{
 		ctx:    ctx,
 		client: client,
 		stream: "sim:" + string(runID) + ":events",
 		seq:    0,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e, nil
 }
 
 // Emit satisfies core.EventEmitter. It serializes the event to JSON, stamps the
@@ -98,13 +125,13 @@ func (e *Emitter) Emit(ev core.Event) {
 // (platform/api, cmd/run) that want the failure inline.
 // Emit routes through this and stores the result.
 func (e *Emitter) EmitErr(ev core.Event) error {
-	// Atomically claim the next seq value (starting at 0 for the first call).
-	seq := atomic.AddInt64(&e.seq, 1) - 1
-
-	// Stamp seq on the event. We do NOT modify the caller's ev.Seq — we stamp
-	// the serialized form only. We set ev.Seq here before marshaling so that
-	// the JSON carries the correct value.
-	ev.Seq = seq
+	if !e.callerSeq {
+		// Atomically claim the next seq value (starting at 0 for the first call).
+		// We do NOT modify the caller's ev.Seq — we stamp the local copy only,
+		// so the serialized JSON carries the correct value. Under WithCallerSeq
+		// the caller stamped ev.Seq already and it is serialized verbatim.
+		ev.Seq = atomic.AddInt64(&e.seq, 1) - 1
+	}
 
 	// Marshal the full event to JSON.
 	raw, err := json.Marshal(ev)
@@ -124,10 +151,25 @@ func (e *Emitter) EmitErr(ev core.Event) error {
 		"payload": string(stripped),
 	}
 
-	if err := e.client.XAdd(e.ctx, e.stream, values); err != nil {
+	id, err := e.client.XAdd(e.ctx, e.stream, values)
+	if err != nil {
 		return fmt.Errorf("events.EmitErr: XAdd: %w", err)
 	}
+	e.lastIDMu.Lock()
+	e.lastID = id
+	e.lastIDMu.Unlock()
 	return nil
+}
+
+// LastStreamID returns the Redis STREAM entry ID of the last successfully
+// appended event ("" before the first success). The run-driver captures it on
+// the tick goroutine AFTER the tick's emissions completed and stamps it onto
+// the snapshot wrapper as stream_cursor (data-contracts §1/§2). Safe for
+// concurrent use.
+func (e *Emitter) LastStreamID() string {
+	e.lastIDMu.Lock()
+	defer e.lastIDMu.Unlock()
+	return e.lastID
 }
 
 // Err returns the first transport error observed by Emit since construction (nil if healthy).

@@ -38,7 +38,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"sync"
+	"strings"
 	"syscall"
 	"time"
 
@@ -137,6 +137,7 @@ func main() {
 		redisReader   api.RedisReader
 		pgEventBuf    *eventBuffer
 		purgeEntities func(context.Context, *world.World)
+		purgeRunKeys  func(context.Context)
 	)
 
 	if redisAddr != "" {
@@ -151,7 +152,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "warning: redis ping %s failed: %v (ops will retry per call)\n", redisAddr, err)
 		}
 		wa := redisWriteAdapter{c: rc}
-		em, err := events.New(sigCtx, wa, runIDc)
+		// The fan-out emitter (multiEmitter) stamps ONE shared seq per event, so the
+		// Redis stream, the stderr log, and the Postgres why-trace buffer all carry
+		// the same numbering — the emitter must not re-stamp (WithCallerSeq).
+		em, err := events.New(sigCtx, wa, runIDc, events.WithCallerSeq())
 		fatal(err, "events")
 		eventsEmitter = em
 		sinks = append(sinks, em)
@@ -176,6 +180,23 @@ func main() {
 			}
 			if err := wa.Del(ctx, keys...); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: purge stale entity keys: %v\n", err)
+			}
+		}
+
+		// Regen ("new map") additionally deletes the fixed single-key-per-run live
+		// keys so no old map state stays visible under the same run_id. Explicit,
+		// deterministic key list (no SCAN); sim:{run}:meta is NOT deleted — the
+		// regen path immediately refreshes it via InitMeta. Deleting the events
+		// STREAM is safe for SSE: clients tail from "$" and XADD entry IDs are
+		// wall-clock-based, so a recreated stream keeps IDs monotone for a
+		// connection that outlives the regen.
+		purgeRunKeys = func(ctx context.Context) {
+			keys := []string{
+				keyer.SnapshotKey(), keyer.Tick(), keyer.Events(),
+				keyer.Flora(), keyer.Climate(), keyer.Terrain(),
+			}
+			if err := wa.Del(ctx, keys...); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: purge run keys: %v\n", err)
 			}
 		}
 
@@ -284,6 +305,81 @@ func main() {
 		}
 	}
 
+	// ── 11b. Single-world publication marker (world_revision, data-contracts §2) ─
+	// Boot rule (persist SPEC step 5): read the stored revision and claim
+	// stored+1 — never backwards, never reused. A restarted process rebuilds
+	// from the fixture and may therefore publish a DIFFERENT map than the last
+	// published revision, so the stored value must not be re-claimed. The boot
+	// revision is published with the FIRST successful baseline flush; until
+	// then meta/baselines still describe the previous process's world
+	// self-consistently.
+	var pub *worldPub
+	if liveStore != nil {
+		stored := int64(0)
+		if redisReader != nil {
+			if h, err := redisReader.HGetAll(sigCtx, persist.Keyer{Run: runIDc}.Meta()); err == nil {
+				if v, perr := strconv.ParseInt(h["world_revision"], 10, 64); perr == nil && v > 0 {
+					stored = v
+				}
+			}
+		}
+		pub = &worldPub{live: liveStore, runID: runIDc, revision: stored + 1}
+		if eventsEmitter != nil {
+			pub.cursorFn = eventsEmitter.LastStreamID
+		}
+		fmt.Fprintf(os.Stderr, "world_revision: boot epoch %d (stored %d; publishes with the first flush)\n",
+			pub.revision, stored)
+	}
+
+	// resetRunData is the POST /api/regen ("new map") cleanup — the current
+	// single-world development mode: the run keeps its run_id and the OLD map's
+	// data is deleted (a multi-world redesign that would instead preserve old
+	// runs is DEFERRED — docs/plans/run-generation.md, design notes only).
+	// Ordering is the consistency mechanism
+	// (persist SPEC "restart vs regen"; Redis and Postgres cannot share one
+	// transaction):
+	//   1. Postgres reset, MANDATORY: ResetRunData — ONE transaction deleting
+	//      the run's events + snapshots AND upserting the runs row to the new
+	//      seed. A failure at any step (even after the deletes) rolls everything
+	//      back, returns an error, and the tick loop ABORTS the regen — the
+	//      current world keeps running, nothing in Redis was touched yet, and a
+	//      half-cleaned run is never presented as new.
+	//   2. Redis cleanup, best-effort (ACCEPTED interim limitation): per-entity +
+	//      fixed live keys deleted, meta refreshed via InitMeta. Failures are
+	//      logged only — the immediate fresh flush plus per-tick writes overwrite
+	//      every fixed key, so stale data self-heals (worst case: a stale
+	//      per-entity hash if that DEL failed).
+	// POST /api/restart never runs this: a restart is a debugging rewind that
+	// keeps the Postgres history (append-only) and only purges the swapped-out
+	// entity live keys.
+	resetRunData := func(ctx context.Context, old *world.World, seed int64) error {
+		newStartedAt := time.Now().UTC().Format(time.RFC3339)
+		if backupStore != nil {
+			if err := backupStore.ResetRunData(ctx, persist.RunRecord{
+				RunID: runIDc, Seed: seed, SchemaVersion: persist.SchemaVersion,
+				StartedAt: newStartedAt, Status: "running", ConfigHash: cfg.ConfigHash(),
+			}); err != nil {
+				return fmt.Errorf("pg ResetRunData: %w", err)
+			}
+		}
+		if purgeEntities != nil {
+			purgeEntities(ctx, old)
+		}
+		if purgeRunKeys != nil {
+			purgeRunKeys(ctx)
+		}
+		runSeed = seed
+		startedAt = newStartedAt
+		if liveStore != nil {
+			if err := liveStore.InitMeta(ctx, runIDc, persist.RunMeta{
+				Tick: 0, SchemaVersion: persist.SchemaVersion, StartedAt: startedAt, Status: "running",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: regen redis InitMeta: %v\n", err)
+			}
+		}
+		return nil
+	}
+
 	// ── 12. Start the read-only HTTP/SSE API (own context, cancelled AFTER the
 	//        final flush so the SIGTERM order is: stop ticks → flush → close SSE) ──
 	apiCtx, apiCancel := context.WithCancel(context.Background())
@@ -334,12 +430,15 @@ func main() {
 	fmt.Fprintf(os.Stderr, "running (ticks=%d backup_every=%d)...\n", *ticks, backupEvery)
 	w = runLoop(sigCtx, w, *ticks, runIDc, backupEvery, liveStore, backupStore, pgEventBuf,
 		time.Duration(tickSleepMs)*time.Millisecond,
-		loopControl{restart: restartCh, regen: regenCh, rebuild: buildWorld, purge: purgeEntities})
+		loopControl{restart: restartCh, regen: regenCh, rebuild: buildWorld,
+			purge: purgeEntities, reset: resetRunData, pub: pub})
 
 	// ── 14. Final snapshot flush (fresh ctx — sigCtx is already cancelled on SIGTERM) ─
 	fmt.Fprintln(os.Stderr, "tick loop stopped; flushing final snapshot...")
 	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	flushSnapshot(flushCtx, w, runIDc, liveStore, backupStore, pgEventBuf)
+	if ok, terrainOn := flushSnapshot(flushCtx, w, runIDc, pub, liveStore, backupStore, pgEventBuf); ok {
+		pub.publishIfReady(flushCtx, ok, terrainOn)
+	}
 	finalizeRun(flushCtx, w, runIDc, runSeed, startedAt, cfg.ConfigHash(), liveStore, backupStore)
 	flushCancel()
 	if eventsEmitter != nil {
@@ -362,13 +461,27 @@ func main() {
 // ── Tick loop & persistence flush ───────────────────────────────────────────────
 
 // loopControl carries the tick loop's runtime control surface: the restart/regen
-// signal channels (POST /api/restart / /api/regen) and the world (re)build + stale
-// live-key purge callbacks. A nil channel case never fires; a nil purge is skipped.
+// signal channels (POST /api/restart / /api/regen) and the world (re)build +
+// cleanup callbacks. A nil channel case never fires; a nil callback is skipped.
+//   - purge: restart's cleanup — the outgoing world's per-entity live keys only
+//     (a restart is a debugging rewind; the Postgres history is preserved).
+//   - reset: regen's cleanup — the full "new map, same run_id" wipe (old live
+//     keys + Postgres snapshots/events history + runs/meta refresh). An error
+//     means the MANDATORY part of the cleanup failed: the loop ABORTS the regen
+//     and keeps the current world (a half-cleaned run must not be presented as
+//     a new map). When nil, regen falls back to purge.
 type loopControl struct {
 	restart <-chan struct{}
 	regen   <-chan int64
 	rebuild func(seed int64) (*world.World, error) // seed 0 ⇒ the original fixture/scenario seed
 	purge   func(ctx context.Context, old *world.World)
+	reset   func(ctx context.Context, old *world.World, seed int64) error
+	// pub is the single-world publication marker (world_revision). nil ⇒ no
+	// publication (no Redis). A successful regen bumps it BEFORE the fresh
+	// flush; every successful baseline flush publishes a pending revision
+	// (publish-last, persist SPEC steps 4–5). Restarts and failed/aborted
+	// regens never touch it.
+	pub *worldPub
 }
 
 // runLoop advances the world until the tick limit is reached (limit <= 0 = until
@@ -387,17 +500,57 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 	tickSleep time.Duration, ctl loopControl) *world.World {
 	infinite := limit <= 0
 	doRebuild := func(i *int64, seed int64, kind string) {
+		regen := kind == "regen"
+		// Separate the OLD world's buffered why-trace from CANDIDATE-world
+		// construction events (persist SPEC "restart vs regen" step 1): the
+		// buffer is drained before ctl.rebuild, so everything buffered during
+		// the rebuild belongs to the candidate. On ANY failure the candidate
+		// batch is discarded and the old batch restored exactly once (original
+		// seq order) — candidate events never leak into the continuing world's
+		// why-trace. On success, regen DROPS the old batch (its Postgres rows
+		// were just wiped) while restart re-queues it AHEAD of the candidate's
+		// (append-only history, seq order preserved).
+		var old []core.Event
+		if buf != nil {
+			old = buf.drain()
+		}
+		abort := func(step string, err error) {
+			if buf != nil {
+				_ = buf.drain() // discard the candidate's construction events
+				if len(old) > 0 {
+					buf.restore(old)
+				}
+			}
+			fmt.Fprintf(os.Stderr, "warning: %s %s: %v (keeping current world)\n", kind, step, err)
+		}
 		nw, err := ctl.rebuild(seed)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %s rebuild failed: %v (keeping current world)\n", kind, err)
+			abort("rebuild failed", err)
 			return
 		}
-		if ctl.purge != nil {
+		if regen && ctl.reset != nil {
+			if err := ctl.reset(sigCtx, w, seed); err != nil {
+				// The mandatory Postgres cleanup failed: do NOT present a
+				// half-cleaned run as a new map.
+				abort("cleanup failed", err)
+				return
+			}
+		} else if ctl.purge != nil {
 			ctl.purge(sigCtx, w)
+		}
+		if !regen && buf != nil && len(old) > 0 {
+			buf.restore(old)
+		}
+		if regen {
+			// Claim the next world_revision for the regenerated world BEFORE its
+			// baseline flush (the fresh snapshot/terrain are tagged with it); it
+			// becomes externally visible only via publishIfReady below.
+			ctl.pub.bump()
 		}
 		w = nw
 		*i = 0
-		flushSnapshot(sigCtx, w, runID, live, backup, buf)
+		ok, terrainOn := flushSnapshot(sigCtx, w, runID, ctl.pub, live, backup, buf)
+		ctl.pub.publishIfReady(sigCtx, ok, terrainOn)
 	}
 	doRestart := func(i *int64) {
 		fmt.Fprintln(os.Stderr, "restart signal: rebuilding world from initial state (tick 0)")
@@ -427,10 +580,11 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 				fmt.Fprintf(os.Stderr, "warning: WriteTick(%d): %v\n", tick, err)
 			}
 		}
-		// Live movement streams to the god-view via the per-tick TickDone event (SSE),
+		// Live movement streams to the god-view via SSE AgentFrame/WorldFrame events,
 		// so the full snapshot + Postgres backup only need to run on the backup cadence.
 		if backupEvery > 0 && int64(tick)%int64(backupEvery) == 0 {
-			flushSnapshot(sigCtx, w, runID, live, backup, buf)
+			ok, terrainOn := flushSnapshot(sigCtx, w, runID, ctl.pub, live, backup, buf)
+			ctl.pub.publishIfReady(sigCtx, ok, terrainOn)
 		}
 		if tickSleep > 0 {
 			select {
@@ -463,50 +617,161 @@ func randomSeed() int64 {
 	return s
 }
 
-// flushSnapshot captures the world's deterministic state and writes it to the live
-// Redis keyspace (snapshot + per-agent render views) and, when configured, the Postgres
-// backup (snapshot row + drained why-trace events). All errors are logged, not fatal —
-// a transient store outage must not abort the simulation.
-func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID,
-	live persist.LiveStore, backup persist.BackupStore, buf *eventBuffer) {
-	if live == nil && backup == nil {
+// worldPub tracks the single-world publication marker (world_revision,
+// data-contracts §2; persist SPEC "restart vs regen" steps 4–5). NOT a run
+// generation: one run_id, one active world — the marker only identifies which
+// published map revision the live baselines belong to. Single-writer: every
+// touch happens on the run's main goroutine (same contract as multiEmitter).
+type worldPub struct {
+	live     persist.LiveStore
+	runID    core.RunID
+	revision int64
+	// published: the current revision is visible in sim:{run}:meta. false ⇒
+	// pending — the next successful baseline flush publishes it (publish-last;
+	// self-healing across transient Redis failures).
+	published bool
+	// cursorFn returns the events emitter's last successfully appended stream
+	// entry ID — the snapshot wrapper's stream_cursor. nil ⇒ "" (no stream).
+	cursorFn func() string
+}
+
+func (p *worldPub) rev() int64 {
+	if p == nil {
+		return 0
+	}
+	return p.revision
+}
+
+func (p *worldPub) cursor() string {
+	if p == nil || p.cursorFn == nil {
+		return ""
+	}
+	return p.cursorFn()
+}
+
+// bump claims the NEXT revision for a successful regen. It stays unpublished
+// until the regenerated baseline flush succeeds — a reader observing the new
+// revision must find matching baselines servable. Serial (tick goroutine), so
+// concurrent regen signals can never reuse a revision.
+func (p *worldPub) bump() {
+	if p == nil {
 		return
 	}
-	blob, err := persist.Encode(persist.CaptureSnapshot(runID, w))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: encode snapshot: %v\n", err)
+	p.revision++
+	p.published = false
+}
+
+// publishIfReady publishes the pending revision AFTER a successful baseline
+// flush (persist SPEC step 5). baselineOK=false or an HSET failure keeps the
+// revision pending; the next backup-cadence flush retries flush+publication.
+func (p *worldPub) publishIfReady(ctx context.Context, baselineOK, terrainOn bool) {
+	if p == nil || p.published || !baselineOK {
 		return
+	}
+	if p.live == nil {
+		p.published = true // nothing externally visible to publish to
+		return
+	}
+	if err := p.live.PublishWorldRevision(ctx, p.runID, p.revision, terrainOn); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: publish world_revision %d: %v (retrying next flush)\n", p.revision, err)
+		return
+	}
+	p.published = true
+	fmt.Fprintf(os.Stderr, "world_revision %d published (terrain_on=%t)\n", p.revision, terrainOn)
+}
+
+// flushSnapshot captures the world's deterministic state once, encodes the untouched
+// base for Postgres, then stamps and separately encodes a copy for the live Redis
+// keyspace. This keeps transport/publication metadata out of deterministic backup bytes.
+// Postgres also receives the drained why-trace events and applies retention pruning.
+// All errors are logged, not fatal — a transient store outage must not abort the simulation.
+//
+// The snapshot wrapper is stamped with the publication metadata (data-contracts
+// §1): pub's world_revision, the emitter's stream_cursor (captured HERE, on the
+// tick goroutine, after the tick's emissions completed — so the state reflects
+// every entry at or before it) and the explicit terrain availability flag.
+// Returns baselineOK (the live snapshot — and terrain, when env is on — writes
+// succeeded: the gate for pub.publishIfReady) and terrainOn.
+func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID, pub *worldPub,
+	live persist.LiveStore, backup persist.BackupStore, buf *eventBuffer) (baselineOK, terrainOn bool) {
+	if live == nil && backup == nil {
+		return true, false
+	}
+	rv := w.RenderView()
+	terrainOn = rv.Terrain != nil
+
+	baseSnapshot := persist.CaptureSnapshot(runID, w)
+	backupBlob, err := persist.Encode(baseSnapshot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: encode backup snapshot: %v\n", err)
+		return false, terrainOn
+	}
+
+	liveSnapshot := baseSnapshot
+	liveSnapshot.WorldRevision = pub.rev()
+	liveSnapshot.StreamCursor = pub.cursor()
+	if terrainOn {
+		liveSnapshot.TerrainStatus = "on"
+	} else {
+		liveSnapshot.TerrainStatus = "off"
+	}
+	liveBlob, err := persist.Encode(liveSnapshot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: encode live snapshot: %v\n", err)
+		return false, terrainOn
 	}
 	tick := w.CurrentTick()
 
-	writeLive(ctx, w, runID, live, blob)
+	baselineOK = writeLive(ctx, w, rv, runID, pub.rev(), live, liveBlob)
 
 	if backup != nil {
-		if err := backup.WriteSnapshot(ctx, runID, tick, blob); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: pg WriteSnapshot: %v\n", err)
-		}
+		// One transaction: the drained why-trace batch + the snapshot row stamped
+		// with the batch's max seq (persist SPEC WriteBackup) — a partial flush
+		// cannot exist. On failure NOTHING was stored, so the batch goes back
+		// into the buffer and the next flush retries it (a transient Postgres
+		// outage loses no why-trace unless the bounded diagnostic buffer reaches
+		// its 5,000-event safety limit).
+		var evs []core.Event
 		if buf != nil {
-			if evs := buf.drain(); len(evs) > 0 {
-				if err := backup.WriteEvents(ctx, runID, evs); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: pg WriteEvents: %v\n", err)
-				}
+			if dropped := buf.takeDropped(); dropped > 0 {
+				fmt.Fprintf(os.Stderr, "warning: pg event buffer dropped %d oldest why-trace events (limit %d)\n",
+					dropped, eventBufferMaxEvents)
 			}
+			evs = buf.drain()
+		}
+		if err := backup.WriteBackup(ctx, runID, tick, backupBlob, evs); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: pg WriteBackup: %v\n", err)
+			if buf != nil && len(evs) > 0 {
+				buf.restore(evs)
+			}
+		} else if err := backup.PruneSnapshots(ctx, runID, time.Now().UTC()); err != nil {
+			// Prune runs ONLY after a committed backup (never alongside a failed
+			// one); its own failure just defers downsampling to the next flush —
+			// the committed backup stands.
+			fmt.Fprintf(os.Stderr, "warning: pg PruneSnapshots: %v\n", err)
 		}
 	}
+	return baselineOK, terrainOn
 }
 
 // writeLive writes the snapshot blob and each agent's render view to the live Redis
-// keyspace. Called from flushSnapshot on the backup cadence.
-func writeLive(ctx context.Context, w *world.World, runID core.RunID, live persist.LiveStore, blob []byte) {
+// keyspace. Called from flushSnapshot on the backup cadence. Returns whether the
+// BASELINE writes succeeded — the snapshot key and, when env is on, the terrain
+// key (what a bootstrap client requires; per-entity/flora/climate failures are
+// logged but self-heal on the per-flush overwrite and do not gate publication).
+func writeLive(ctx context.Context, w *world.World, rv world.RenderView, runID core.RunID,
+	rev int64, live persist.LiveStore, blob []byte) bool {
 	if live == nil {
-		return
+		return true
 	}
+	ok := true
 	if err := live.WriteSnapshot(ctx, runID, blob); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: live WriteSnapshot: %v\n", err)
+		ok = false
 	}
 	for _, id := range w.AgentIDs() {
-		a, ok := w.AgentOf(id)
-		if !ok {
+		a, aok := w.AgentOf(id)
+		if !aok {
 			continue
 		}
 		if err := live.WriteAgent(ctx, runID, persist.AgentView{
@@ -516,7 +781,10 @@ func writeLive(ctx context.Context, w *world.World, runID core.RunID, live persi
 		}
 	}
 
-	writeEnvLive(ctx, w.RenderView(), runID, live)
+	if !writeEnvLive(ctx, rv, runID, rev, live) {
+		ok = false
+	}
+	return ok
 }
 
 // writeEnvLive writes the WI-P4 env render keys (sim:{run}:animal:{id} / :flora /
@@ -525,7 +793,11 @@ func writeLive(ctx context.Context, w *world.World, runID core.RunID, live persi
 // the keys stay ABSENT (§2 "absent ⇒ env-off"). Staleness is TTL-bounded: dead
 // animals' hashes and a flora set that empties out age off via the store's TTL
 // rather than an explicit delete (same policy as agent hashes).
-func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID, live persist.LiveStore) {
+// The terrain blob is tagged with the publishing world_revision; its write is
+// the only env write that gates baseline publication (returned bool) — animal/
+// flora/climate failures are logged and self-heal on the next flush.
+func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
+	rev int64, live persist.LiveStore) bool {
 	for _, a := range rv.Animals {
 		if err := live.WriteAnimal(ctx, runID, persist.AnimalView{
 			ID: a.ID, Pos: a.Pos, Species: a.Species,
@@ -559,16 +831,19 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID, li
 
 	if rv.Terrain != nil {
 		if err := live.WriteTerrain(ctx, runID, persist.TerrainView{
-			CellSize:    rv.Terrain.CellSize,
-			Orientation: rv.Terrain.Orientation,
-			Size:        persist.TerrainSize{Cols: rv.Terrain.Cols, Rows: rv.Terrain.Rows},
-			Terrain:     rv.Terrain.Terrain,
-			Wear:        rv.Terrain.Wear,
-			Elevation:   rv.Terrain.Elevation,
+			CellSize:      rv.Terrain.CellSize,
+			Orientation:   rv.Terrain.Orientation,
+			Size:          persist.TerrainSize{Cols: rv.Terrain.Cols, Rows: rv.Terrain.Rows},
+			Terrain:       rv.Terrain.Terrain,
+			Wear:          rv.Terrain.Wear,
+			Elevation:     rv.Terrain.Elevation,
+			WorldRevision: rev,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteTerrain: %v\n", err)
+			return false
 		}
 	}
+	return true
 }
 
 // finalizeRun marks the run completed: it refreshes the Redis meta hash and the Postgres
@@ -606,41 +881,102 @@ func currentAction(a *agent.Agent) string {
 // ── Event sinks & Redis/Postgres client adapters ────────────────────────────────
 
 // multiEmitter fans one engine event out to every sink (stderr log, Redis STREAM, and
-// the Postgres why-trace buffer) in order. It implements core.EventEmitter.
-type multiEmitter struct{ sinks []core.EventEmitter }
+// the Postgres why-trace buffer) in order. It stamps a monotone Event.Seq ONCE
+// before the fan-out, so every sink carries the same numbering (the Redis
+// emitter is constructed WithCallerSeq and serializes it verbatim) — the seq that
+// backs snapshots.last_event_seq. It implements core.EventEmitter.
+//
+// SEQ SCOPE (persist SPEC Notes "Seq scope"): the counter starts at 0 with the
+// PROCESS, not the run. /api/restart rebuilds in-process, so the sequence stays
+// monotone across that rewind; a real process restart begins a new process-local
+// epoch while the run_id and its Postgres history persist, so seq values repeat
+// within one run across process lifetimes. Replay across process restarts is
+// unsupported; durable cross-process identity is deferred (run-generation.md).
+//
+// SINGLE-WRITER CONTRACT: every production emission happens on the run's main
+// goroutine — the world buffers plan-phase events and flushes them serially in
+// sorted agent-ID order (engine/world SPEC-tick.md "PLAN-PHASE EVENTS ARE
+// BUFFERED"), and all other emitters (apply phase, fauna, world construction)
+// already run there. seq is therefore a plain counter, deterministic across
+// identical-seed runs; a future concurrent emitter is a bug that `go test -race`
+// should surface, not something to mask with synchronization here.
+type multiEmitter struct {
+	seq   int64 // next Event.Seq (single-writer, see contract above)
+	sinks []core.EventEmitter
+}
 
 func (m *multiEmitter) Emit(e core.Event) {
+	e.Seq = m.seq
+	m.seq++
 	for _, s := range m.sinks {
 		s.Emit(e)
 	}
 }
 
-// eventBuffer accumulates why-trace events for periodic batch insert into Postgres.
-// High-frequency housekeeping (TickDone/WorldFrame/SnapshotReady) is dropped — those
-// are operational/render signals, not part of the why-trace (data-contracts §3 events
-// table). It is filled by the tick goroutine and drained on the backup cadence; the
-// mutex guards that hand-off.
+// eventBuffer accumulates why-trace events for the periodic WriteBackup flush.
+// High-frequency housekeeping (TickDone/AgentFrame/WorldFrame/SnapshotReady) is
+// dropped — those are operational/render signals, not part of the why-trace
+// (data-contracts §3 events table); their seqs therefore appear as gaps in the
+// Postgres rows.
+//
+// SINGLE-WRITER CONTRACT (same as multiEmitter): Emit, drain and restore all run
+// on the run's main goroutine, so there is no lock — a future concurrent emitter
+// is race-detectable. Append order equals seq order (the fan-out stamps seq
+// immediately before Emit), and restore prepends an older drained batch ahead of
+// anything buffered since, so the buffer stays seq-ascending by construction.
 type eventBuffer struct {
-	mu  sync.Mutex
-	evs []core.Event
+	evs                []core.Event
+	droppedSinceReport uint64
 }
+
+const (
+	// why-trace is diagnostic, not simulation state. Bound it tightly enough to
+	// keep the backend alive through a prolonged Postgres outage. At roughly
+	// 0.5–1 KiB/event this is normally a few MiB plus payload allocations.
+	eventBufferMaxEvents = 5_000
+	// Trim in chunks to avoid shifting the slice for every new event once full.
+	eventBufferTrimEvents = 500
+)
 
 func (b *eventBuffer) Emit(e core.Event) {
 	switch e.Type {
-	case events.TypeTickDone, events.TypeWorldFrame, events.TypeSnapshotReady:
+	case events.TypeTickDone, events.TypeAgentFrame, events.TypeWorldFrame, events.TypeSnapshotReady:
 		return
 	}
-	b.mu.Lock()
 	b.evs = append(b.evs, e)
-	b.mu.Unlock()
+	b.enforceLimit()
 }
 
+func (b *eventBuffer) enforceLimit() {
+	if len(b.evs) <= eventBufferMaxEvents {
+		return
+	}
+	drop := len(b.evs) - (eventBufferMaxEvents - eventBufferTrimEvents)
+	copy(b.evs, b.evs[drop:])
+	clear(b.evs[len(b.evs)-drop:])
+	b.evs = b.evs[:len(b.evs)-drop]
+	b.droppedSinceReport += uint64(drop)
+}
+
+func (b *eventBuffer) takeDropped() uint64 {
+	dropped := b.droppedSinceReport
+	b.droppedSinceReport = 0
+	return dropped
+}
+
+// drain empties the buffer and returns the events in emission (= seq) order.
 func (b *eventBuffer) drain() []core.Event {
-	b.mu.Lock()
 	out := b.evs
 	b.evs = nil
-	b.mu.Unlock()
 	return out
+}
+
+// restore re-queues previously drained events at the FRONT of the buffer (their
+// seqs predate anything buffered since). Used when a backup flush or a regen
+// fails after draining, so the why-trace is retried instead of lost.
+func (b *eventBuffer) restore(evs []core.Event) {
+	b.evs = append(evs, b.evs...)
+	b.enforceLimit()
 }
 
 // redisWriteAdapter wraps a *redis.Client for the write/append path. It satisfies both
@@ -650,12 +986,14 @@ func (b *eventBuffer) drain() []core.Event {
 // shapes the interfaces expect, mapping redis.Nil (missing key) to a zero value + nil err.
 type redisWriteAdapter struct{ c *redis.Client }
 
-// eventStreamMaxLen caps the events STREAM length (approximate trim). TickDone now
-// carries a per-agent render frame every tick, so the stream would otherwise grow
+// eventStreamMaxLen caps the events STREAM length (approximate trim). AgentFrame carries
+// per-agent render deltas, so the stream would otherwise grow
 // unbounded; ~10k entries is ample backlog for SSE (which tails from "$").
 const eventStreamMaxLen = 10_000
 
-func (a redisWriteAdapter) XAdd(ctx context.Context, stream string, values map[string]string) error {
+// XAdd returns the entry ID Redis assigned (XADD *) — the transport cursor
+// the events.Emitter retains for the snapshot's stream_cursor.
+func (a redisWriteAdapter) XAdd(ctx context.Context, stream string, values map[string]string) (string, error) {
 	m := make(map[string]any, len(values))
 	for k, v := range values {
 		m[k] = v
@@ -665,7 +1003,7 @@ func (a redisWriteAdapter) XAdd(ctx context.Context, stream string, values map[s
 		MaxLen: eventStreamMaxLen,
 		Approx: true, // MAXLEN ~ N: cheap radix-tree-node-boundary trim
 		Values: m,
-	}).Err()
+	}).Result()
 }
 
 func (a redisWriteAdapter) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
@@ -713,6 +1051,23 @@ func (a redisReadAdapter) Get(ctx context.Context, key string) ([]byte, error) {
 
 func (a redisReadAdapter) HGetAll(ctx context.Context, key string) (map[string]string, error) {
 	return a.c.HGetAll(ctx, key).Result()
+}
+
+// StreamMaxDeletedID exposes XINFO STREAM's max-deleted-entry-id — the SSE
+// handler's trim/gap check (api SPEC GET /sse). A missing key (fresh or
+// regen-recreated stream) maps to "0-0": nothing after any cursor was lost.
+func (a redisReadAdapter) StreamMaxDeletedID(ctx context.Context, key string) (string, error) {
+	info, err := a.c.XInfoStream(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil || strings.Contains(err.Error(), "no such key") {
+			return "0-0", nil
+		}
+		return "", err
+	}
+	if info.MaxDeletedEntryID == "" {
+		return "0-0", nil
+	}
+	return info.MaxDeletedEntryID, nil
 }
 
 func (a redisReadAdapter) XRead(ctx context.Context, key, lastID string, block time.Duration) ([]api.StreamEntry, string, error) {
@@ -1017,12 +1372,12 @@ func copingName(c agent.CopingState) string {
 
 // stderrLogger emits events as JSON lines on stderr, filtering tick noise.
 // Trade, plan, and coping events are always emitted; per-tick housekeeping
-// (TickDone, WorldFrame, SnapshotReady) is suppressed to keep the log readable.
+// (AgentFrame, WorldFrame, SnapshotReady) is suppressed to keep the log readable.
 type stderrLogger struct{}
 
 func (l *stderrLogger) Emit(e core.Event) {
 	switch e.Type {
-	case events.TypeTickDone, events.TypeWorldFrame, events.TypeSnapshotReady:
+	case events.TypeTickDone, events.TypeAgentFrame, events.TypeWorldFrame, events.TypeSnapshotReady:
 		return // skip high-frequency housekeeping/render events
 	}
 	b, err := json.Marshal(e)

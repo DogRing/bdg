@@ -279,9 +279,13 @@ function step() {
     ? [...flora.values()].map(f => ({ id: f.id, pos: round(f.pos), species: f.species, stage: f.stage, width: f.width }))
     : floraDelta
 
-  emit('TickDone', null, {
+  // AgentFrame (data-contracts §4): sparse per-agent delta; the mock keeps it
+  // simple and re-sends every agent's full fields each tick (a valid delta —
+  // every field counts as changed).
+  emit('AgentFrame', null, {
     tick,
     agents: agents.map(a => ({ id: a.id, pos: round(a.pos), goal: a.goal, action: a.action, mood: a.mood })),
+    removed: [],
   })
   emit('WorldFrame', null, {
     tick,
@@ -290,7 +294,6 @@ function step() {
     temperature,
     raining,
     wind: { dir: Math.round(climateWind.dir * 1000) / 1000, mag: Math.round(climateWind.mag * 100) / 100 },
-    agents: agents.map(a => ({ id: a.id, pos: round(a.pos), action: a.action })),
     animals: [...animals.values()].map(a => ({
       id: a.id, pos: round(a.pos), species: a.species, action: a.action,
       heading: Math.round(a.heading * 1000) / 1000,
@@ -310,14 +313,33 @@ if (DUMP > 0) {
 }
 
 // ── http server ──────────────────────────────────────────────────────────────
+// world_revision (data-contracts §2): the mock publishes revision 1 at boot and
+// bumps it on POST /api/regen — parity with the backend's publish-last marker
+// (the mock's rebuild is synchronous, so "published" and "servable" coincide).
+// The mock streams live-tail only (no id: lines / ?cursor replay) — the
+// frontend treats an id-less transport as legacy and applies frames
+// unconditionally (frontend/SPEC.md §Bootstrap).
+let worldRevision = 1
 const clients = new Set()
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   const url = req.url ?? ''
-  if (url.startsWith('/api/snapshot')) {
+  if (url.startsWith('/api/meta')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      tick: String(tick),
+      schema_version: '1',
+      started_at: '1970-01-01T00:00:00Z',
+      status: 'running',
+      world_revision: String(worldRevision),
+      terrain: 'on',
+    }))
+  } else if (url.startsWith('/api/snapshot')) {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({
       tick,
+      world_revision: worldRevision,
+      terrain: 'on',
       agents: agents.map(a => ({ id: a.id, pos: round(a.pos), goal: a.goal, action: a.action, mood: a.mood })),
       objects,
     }))
@@ -330,6 +352,7 @@ const server = http.createServer((req, res) => {
       terrain,
       wear: [...wear].map(v => Math.round(v * 100) / 100),
       elevation,
+      world_revision: worldRevision,
     }))
   } else if (url.startsWith('/sse')) {
     res.writeHead(200, {
@@ -350,7 +373,8 @@ const server = http.createServer((req, res) => {
     seed = m ? Number(m[1]) : Math.floor(Math.random() * 2 ** 31) || 1
     buildTerrain(seed)
     resetWorld()
-    console.log(`[mock] world regenerated with seed ${seed} (POST /api/regen)`)
+    worldRevision++ // publish the new revision (rebuild is synchronous here)
+    console.log(`[mock] world regenerated with seed ${seed} (POST /api/regen) → world_revision ${worldRevision}`)
     res.writeHead(202, { 'Content-Type': 'application/json' })
     res.end('{"status":"regenerating"}')
   } else if (url.startsWith('/healthz') || url.startsWith('/readyz')) {

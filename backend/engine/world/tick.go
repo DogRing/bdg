@@ -57,13 +57,28 @@ func (w *World) readPhase() {
 	// collected during this tick's apply phase become visible on the next tick.
 	w.pendingSignals = make(map[core.AgentID][]core.Signal)
 	w.pendingFloraFrame = nil
+	w.pendingTerrainFrame = nil
 	w.currentSnap = newSnapshot(w)
 }
+
+// planEventCollector buffers one agent's plan-phase event emissions. Each plan
+// goroutine gets its OWN collector (goroutine-local, no lock); the world flushes
+// the buffers to the injected emitter in sorted agent-ID order AFTER the parallel
+// phase, so the emitted-event sequence is scheduler-independent (SPEC-tick.md
+// Phase 2 "PLAN-PHASE EVENTS ARE BUFFERED", D12).
+type planEventCollector struct{ evs []core.Event }
+
+func (c *planEventCollector) Emit(e core.Event) { c.evs = append(c.evs, e) }
 
 func (w *World) planAgentIntents() []agent.Intent {
 	// ── Phase 2: PLAN (per-agent Tick, read-only on shared state) ─────────
 	planSeed := w.nextPhaseSeed()
 	allIntents := make([]agent.Intent, 0, len(w.agentIDs)*defaultIntentCapHint)
+
+	// Per-agent event buffers, indexed by sorted-ID position — the same
+	// gathering pattern as the intents, so neither depends on goroutine
+	// scheduling.
+	collectors := make([]planEventCollector, len(w.agentIDs))
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -72,13 +87,21 @@ func (w *World) planAgentIntents() []agent.Intent {
 		go func(agentID core.AgentID, idx int) {
 			defer wg.Done()
 			fork := rng.New(planSeed + int64(idx))
-			intents := w.agents[agentID].Tick(w.currentSnap, w.tick, fork, w.svc, w.emit)
+			intents := w.agents[agentID].Tick(w.currentSnap, w.tick, fork, w.svc, &collectors[idx])
 			mu.Lock()
 			allIntents = append(allIntents, intents...)
 			mu.Unlock()
 		}(agentID, i)
 	}
 	wg.Wait()
+
+	// Flush buffered plan-phase events in sorted agent-ID order (per-agent
+	// emission order preserved) — the deterministic event sequence Tick promises.
+	for i := range collectors {
+		for _, e := range collectors[i].evs {
+			w.emit.Emit(e)
+		}
+	}
 	return allIntents
 }
 
@@ -151,8 +174,10 @@ func (w *World) finishApplyPhase(
 	// Never prunes if PruneThreshold == 0 (current behaviour).
 	w.pruneToMBeliefs()
 
-	// Emit TickDone.
-	w.emitTickDone()
+	// Emit render deltas. AgentFrame carries changed agent fields; WorldFrame
+	// carries env/fauna/climate projection when env is installed.
+	w.emitAgentFrame()
+	w.emitWorldFrame()
 
 	// Emit SnapshotReady every BackupEveryTicks ticks.
 	if w.cfg.BackupEveryTicks > 0 && int(w.tick)%w.cfg.BackupEveryTicks == 0 {
@@ -630,47 +655,6 @@ func (w *World) emitTradeEvent(sender, receiver core.AgentID, eventType string, 
 }
 
 // ── Event emission ─────────────────────────────────────────────────────────────
-
-func (w *World) emitTickDone() {
-	// TickDone is the per-tick render frame for the god-view: it carries every
-	// agent's current pos/goal/mood/action so the frontend animates movement from
-	// the SSE stream (no snapshot polling). Iterated in sorted agent-ID order (D12).
-	// This event is dropped from the Postgres why-trace and stderr log (operational).
-	agents := make([]map[string]any, 0, len(w.agentIDs))
-	for _, id := range w.agentIDs {
-		a := w.agents[id]
-		if a == nil {
-			continue
-		}
-		action := ""
-		if a.PlanIdx >= 0 && a.PlanIdx < len(a.Plan.Actions) {
-			action = string(a.Plan.Actions[a.PlanIdx])
-		}
-		agents = append(agents, map[string]any{
-			"id":     string(a.ID),
-			"pos":    a.Pos, // core.Vec2 → {"x","y"}
-			"goal":   string(a.Goal),
-			"mood":   a.Mood,
-			"action": action,
-		})
-	}
-	w.emit.Emit(core.Event{
-		SchemaVersion: 1,
-		Tick:          w.tick,
-		AgentID:       "",
-		Type:          "TickDone",
-		Payload: map[string]any{
-			"tick":         int64(w.tick),
-			"agent_count":  len(w.agents),
-			"intent_count": 0, // filled by caller
-			"agents":       agents,
-		},
-	})
-
-	// WI-P4: the real WorldFrame, built from live env state (renderframe.go).
-	// No-op when env is OFF (data-contracts §4).
-	w.emitWorldFrame()
-}
 
 func (w *World) emitSnapshotReady() {
 	w.emit.Emit(core.Event{

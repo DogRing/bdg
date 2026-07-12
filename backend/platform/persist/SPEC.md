@@ -25,6 +25,7 @@ package persist
 import (
     "context"
     "errors"
+    "time"
 
     "github.com/dogring/bdg/engine/kernel/core"
     "github.com/dogring/bdg/engine/world"
@@ -39,8 +40,10 @@ const SchemaVersion int = 1
 
 // ── Snapshot (data-contracts §1) ──────────────────────────────────────────────
 
-// Snapshot is the complete deterministic state for one tick — the unit persist
-// serializes/deserializes. Same Snapshot + same seed → byte-identical next tick.
+// Snapshot carries the complete deterministic state for one tick. The run-driver
+// encodes TWO storage views from it: the base CaptureSnapshot result is the
+// deterministic Postgres backup blob; a COPY with the publication wrapper stamped
+// is the Redis live snapshot. Same base Snapshot + same seed → byte-identical next tick.
 // `World` carries the engine's serializable state (world.WorldState: tick, rng_state,
 // agents incl. RealStats, objects, known sets, emerged roles). RealStats live ONLY in
 // this blob (Postgres) — never in Redis live keys or events (god-view boundary, below).
@@ -48,12 +51,19 @@ type Snapshot struct {
     SchemaVersion int              `json:"schema_version"`
     RunID         core.RunID       `json:"run_id"`
     Tick          core.Tick        `json:"tick"`
+    // Redis-live publication wrapper (data-contracts §1/§2) — OPERATIONAL metadata the
+    // run-driver stamps on a COPY at flush time, NOT deterministic sim state. CaptureSnapshot
+    // leaves these zero and the Postgres backup blob MUST omit them via omitempty:
+    WorldRevision int64  `json:"world_revision,omitempty"` // single-world publication marker
+    StreamCursor  string `json:"stream_cursor,omitempty"`  // Redis events entry ID the state reflects
+    TerrainStatus string `json:"terrain,omitempty"`        // "on"|"off" — explicit env-terrain availability
     World         world.WorldState `json:"world"` // engine state (incl. rng_state, agents[])
 }
 
-// Encode serializes a Snapshot to a deterministic byte blob (JSON for P1; the encoding
-// MUST be byte-stable — sorted map-key order, data-contracts §0). It stamps
-// s.SchemaVersion = SchemaVersion before encoding.
+// Encode serializes one Snapshot view to a byte-stable blob (JSON for P1; sorted map-key
+// order, data-contracts §0). It stamps s.SchemaVersion = SchemaVersion before encoding.
+// Deterministic backup callers pass the untouched CaptureSnapshot result; live Redis
+// callers pass the publication-stamped copy.
 func Encode(s Snapshot) ([]byte, error)
 
 // Decode parses a blob back into a Snapshot. It REJECTS (returns ErrSchemaMismatch)
@@ -117,8 +127,19 @@ type LiveStore interface {
     // the SAME JSON shape GET /api/terrain forwards verbatim (api SPEC). Called
     // only when navmap is installed.
     WriteTerrain(ctx context.Context, run core.RunID, v TerrainView) error
-    // InitMeta writes sim:{run}:meta { tick, schema_version, started_at, status }.
+    // InitMeta writes sim:{run}:meta { tick, schema_version, started_at, status }. It
+    // deliberately does NOT touch the world_revision/terrain publication fields (HSET of the
+    // listed fields only — the meta key is never deleted on regen), so a meta refresh can
+    // never un-publish or re-publish a revision.
     InitMeta(ctx context.Context, run core.RunID, m RunMeta) error
+    // PublishWorldRevision publishes the single-world revision marker (data-contracts §2):
+    // ONE HSET writes {world_revision, terrain:"on"|"off"} onto sim:{run}:meta. The
+    // run-driver calls it LAST — only after the revision's snapshot+terrain live baselines
+    // were written successfully — so any reader observing the new revision finds matching,
+    // revision-tagged baselines already servable. NOT a run generation: one run_id, one
+    // active world; the marker only identifies which published map revision the current
+    // baselines belong to (multi-world remains DEFERRED, docs/plans/run-generation.md).
+    PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn bool) error
     // ReadSnapshot loads the latest snapshot blob (for resume / hand-off to backup).
     ReadSnapshot(ctx context.Context, run core.RunID) ([]byte, error)
     // Expire applies the TTL/expiry policy for a run (called on completion).
@@ -196,19 +217,69 @@ type RunMeta struct {
 
 // ── Postgres backup (data-contracts §3) ───────────────────────────────────────
 
-// BackupStore persists the periodic full blob + the why-trace event rows (§3 replay/
-// analytics source). It is the ONLY tier that stores RealStats (inside the blob).
+// BackupStore persists the periodic deterministic base snapshot blob + the why-trace
+// event rows (§3 replay/analytics source). The blob omits Redis-live publication fields.
+// It is the ONLY tier that stores RealStats (inside the blob).
 type BackupStore interface {
     // UpsertRun writes/updates the runs row (run_id, seed, schema_version, started_at,
     // ended_at, status, config_hash).
     UpsertRun(ctx context.Context, r RunRecord) error
-    // WriteSnapshot inserts one snapshots row (run_id, tick, blob, created_at). Called
-    // every BackupEveryTicks ticks (driven by the SnapshotReady signal / caller).
-    WriteSnapshot(ctx context.Context, run core.RunID, tick core.Tick, blob []byte) error
-    // WriteEvents appends event rows (run_id, tick, seq, agent_id, type, payload JSONB).
-    WriteEvents(ctx context.Context, run core.RunID, evs []core.Event) error
-    // LatestSnapshot loads the most recent snapshots blob for a run (replay/resume).
+    // WriteBackup persists ONE backup flush atomically — blob is the untouched,
+    // deterministically encoded CaptureSnapshot result (no world_revision,
+    // stream_cursor or terrain wrapper fields), and a single Postgres
+    // transaction inserts the drained why-trace event rows (events: run_id,
+    // tick, seq, agent_id, type, payload JSONB, created_at) AND the snapshots row (run_id,
+    // tick, blob, created_at, last_event_seq), committing together or rolling
+    // back together. last_event_seq is computed INSIDE the store as the max
+    // Event.Seq of evs (the rows written in the same transaction — the boundary
+    // can never reference rows that failed to persist); evs empty ⇒ NULL.
+    // High-frequency render/operational events are excluded upstream and never
+    // count. On error NOTHING was written: the caller may re-buffer evs and
+    // retry on the next flush cadence (no partial batch). The run-driver's
+    // diagnostic buffer is bounded at 5,000 events; a prolonged outage may
+    // discard the oldest why-trace to preserve backend memory.
+    // The pair (snapshot at tick T, events with seq ≤ last_event_seq) is a
+    // consistent replay cut WITHIN one simulation process lifetime — seq is a
+    // process-local counter and repeats across process restarts of the same
+    // run (Notes "Seq scope"); cross-restart replay is not supported yet.
+    // Called every BackupEveryTicks ticks.
+    WriteBackup(ctx context.Context, run core.RunID, tick core.Tick, blob []byte, evs []core.Event) error
+    // LatestSnapshot loads the most recently PERSISTED snapshots blob for a run
+    // (replay/resume). Recency is storage order — newest created_at, ties by row
+    // id — NOT the highest tick: POST /api/restart is a debugging rewind that
+    // resets tick to 0 while preserving history, so a pre-restart high-tick row
+    // must never shadow a newer post-restart low-tick row. Deliberately still
+    // (tick, blob) WITHOUT last_event_seq: NO production caller exists yet —
+    // the semantics are specified ahead of the future resume path, which will
+    // need the blob alone; no consumer of the replay boundary exists either.
+    // Extend the return when a replay tool lands.
     LatestSnapshot(ctx context.Context, run core.RunID) (tick core.Tick, blob []byte, err error)
+    // PruneSnapshots applies the §3 Postgres retention/downsample policy to a run
+    // (legacy method name retained): snapshots and events older than 3 days are
+    // deleted by created_at; surviving snapshots are bucketed by created_at
+    // (wall-clock; now is caller-supplied):
+    //   · newer than 1h            → keep all (full backup cadence)
+    //   · 1h–24h old               → keep the newest row per 10-minute bucket
+    //   · 24h–3d old               → keep the newest row per 1-day bucket
+    //   · older than 3d            → delete snapshots and events
+    // Buckets are epoch-aligned (floor(epoch/bucket)); "newest" = latest
+    // created_at, ties by tick, then row id. Called by the run-driver after each
+    // successful backup; SQL maintenance runs immediately on the first request
+    // and then at most once per run per 6 hours. Compression and incremental
+    // snapshot chains are Out of Scope.
+    PruneSnapshots(ctx context.Context, run core.RunID, now time.Time) error
+    // ResetRunData atomically resets a run for POST /api/regen ("new map",
+    // same run_id — the current single-world development mode; a multi-world
+    // redesign is DEFERRED, docs/plans/run-generation.md): ONE Postgres
+    // transaction deletes the
+    // run's events + snapshots rows AND upserts the runs row to the
+    // regenerated world's record (new seed/started_at/status/schema_version/
+    // config_hash). All three steps commit together or roll back together, so
+    // a failed reset leaves the old history AND the old runs metadata fully
+    // intact and the run-driver ABORTS the regen (Notes "restart vs regen").
+    // Other runs are untouched. NOT called on POST /api/restart: a restart is
+    // a debugging rewind and never deletes Postgres history.
+    ResetRunData(ctx context.Context, r RunRecord) error
 }
 
 // RunRecord mirrors the §3 runs table.
@@ -243,7 +314,9 @@ func NewPgBackupStorePool(pool *pgxpool.Pool) *PgBackupStore
 // EnsureSchema creates the runs/snapshots/events tables (data-contracts §3) if absent —
 // a first-run bootstrap, NOT a migration tool (versioned migrations remain Out of Scope).
 // Safe to call on every startup (CREATE TABLE IF NOT EXISTS); table shapes mirror the SQL
-// in PgBackupStore exactly.
+// in PgBackupStore exactly. One additive exception rides along: an idempotent
+// ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS last_event_seq BIGINT upgrades tables
+// created before the column existed (backfilled NULL = "no boundary recorded", correct).
 func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
 ```
 
@@ -338,12 +411,46 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
 - [ ] **TTL / expiry policy (data-contracts §2)**: `Expire` removes (or sets TTL on) all
   `sim:{run}:*` keys for a completed run; active runs keep their keys. (Live keys hold only active
   runs; on completion → back up to Postgres, then expire.)
+- [ ] **Revision publication (`PublishWorldRevision`)**: one call HSETs
+  `{world_revision, terrain}` onto `sim:{run}:meta`; `InitMeta` before/after it never clears
+  those fields. Run-driver ordering (verified in `backend/main.go` tests): the revision is
+  published only AFTER the same revision's snapshot (and terrain, when env is on) live writes
+  succeeded; rebuild/reset failures and restarts never bump it; a failed baseline write leaves
+  it unpublished until the next flush retries.
 
 ### §3 Postgres backup
 - [ ] **Three tables mapped**: `UpsertRun` → `runs(run_id, seed, schema_version, started_at,
-  ended_at, status, config_hash)`; `WriteSnapshot` → `snapshots(run_id, tick, blob, created_at)`;
-  `WriteEvents` → `events(run_id, tick, seq, agent_id, type, payload JSONB)`. Verified against a
-  fake/embedded store.
+  ended_at, status, config_hash)`; `WriteBackup` → one transaction over
+  `events(run_id, tick, seq, agent_id, type, payload JSONB, created_at)` +
+  `snapshots(run_id, tick, blob, created_at, last_event_seq)`.
+  Verified against a fake/embedded store.
+- [ ] **Backup flush is atomic**: `WriteBackup` inserts the event batch and the snapshot row in one
+  transaction — on failure NOTHING is stored (no partial event batch, no snapshot without its
+  events, no events without their snapshot); the run-driver re-buffers the drained batch and the
+  next flush persists it. Verified via failure injection on the fake (all-or-nothing) and the
+  transaction plumbing on the SQL client, including a mid-batch event-INSERT failure and a payload
+  marshal failure — both end in ROLLBACK with no COMMIT and no snapshot row.
+- [ ] **`last_event_seq` semantics**: a flush that writes why-trace events stamps the snapshot row
+  with the batch's max `Event.Seq` (computed in-store from the rows of the same transaction); a
+  flush with no drained events stamps NULL. Excluded high-frequency events
+  (`TickDone`/`AgentFrame`/`WorldFrame`/`SnapshotReady`) never count — their seqs appear as gaps.
+- [ ] **`LatestSnapshot` = storage recency, not tick**: after a restart rewind writes a
+  lower-tick row later, `LatestSnapshot` returns that newest row (`created_at DESC, id DESC`),
+  never the pre-restart high-tick row.
+- [ ] **Retention/downsample (`PruneSnapshots`)**: with rows spread over the `created_at`
+  bands, pruning keeps all rows younger than 1h, exactly one (the newest; tick tie-break) per
+  10-minute bucket for 1h–24h, and one per 1-day bucket for 24h–3d; this run's snapshots and
+  events older than 3d are deleted. Other runs' rows are untouched and a second prune with the
+  same `now` is a no-op. Verified against FakePg (policy) and the fake pgx client (SQL band
+  bounds + bucket widths).
+- [ ] **Prune cadence**: the first prune request runs immediately; a request less than 6 hours
+  later performs no SQL, and the boundary request at 6 hours runs.
+- [ ] **Regen reset (`ResetRunData`) is atomic**: one transaction deletes the run's `snapshots` +
+  `events` rows AND refreshes the `runs` row to the new record; other runs are untouched. A
+  failure at ANY step (including the runs-row upsert AFTER the deletes) rolls the whole reset
+  back — old history and old runs metadata both survive, so the run-driver can abort the regen
+  cleanly. Verified via failure injection on the fake (all-or-nothing) and a rollback test on the
+  SQL client (upsert fails after the deletes ⇒ ROLLBACK).
 - [ ] **Backup cadence from `BACKUP_EVERY_TICKS`**: with `BACKUP_EVERY_TICKS=N`, a snapshot row is
   written exactly once every N ticks (driven by the `SnapshotReady` signal the world emits every
   `BackupEveryTicks` ticks); off-cadence ticks write no `snapshots` row. Table-driven over N.
@@ -435,3 +542,74 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
   `world.Config.BackupEveryTicks`); the env var `BACKUP_EVERY_TICKS` (data-contracts §3) is the
   deploy-time override the wiring reads. The world emits `SnapshotReady` on that cadence; persist
   reacts — it does not own the counter.
+- **Why-trace exclusion + one shared seq (run-driver policy, data-contracts §3/§4).** The
+  run-driver (`backend/main.go`) stamps `Event.Seq` ONCE at fan-out (its Redis emitter runs
+  `events.WithCallerSeq`), buffers only why-trace events for Postgres (high-frequency
+  `TickDone`/`AgentFrame`/`WorldFrame`/`SnapshotReady` stay on the Redis stream only), and on the
+  backup cadence hands the drained batch to `WriteBackup` — one transaction, so `last_event_seq`
+  can never reference rows that failed to persist. On a failed flush the run-driver re-buffers the
+  batch and retries on the next cadence. A transient outage within the 5,000-event buffer loses
+  no why-trace; a longer outage drops oldest diagnostic events and logs the count.
+  **Seq scope = one simulation PROCESS lifetime.** The fan-out counter starts at 0 when the
+  process starts; `POST /api/restart` does not restart the process, so the sequence stays monotone
+  across that debugging rewind. A REAL process restart begins a new process-local seq epoch at 0
+  while the run_id and its (restart-preserved) Postgres history persist — seq values therefore
+  REPEAT within one run across process lifetimes, and high-frequency events consume seqs that
+  never reach Postgres, so no stored maximum can reconstruct the shared namespace.
+  `(snapshot at tick T, events with seq ≤ last_event_seq)` is a consistent replay cut only among
+  events written during the SAME process lifetime; replay across process restarts is NOT currently
+  supported. Durable cross-process sequence identity belongs to the deferred world/run lifecycle
+  design (`docs/plans/run-generation.md`).
+- **restart vs regen (control-flow contract with `platform/api`) + regen failure policy.**
+  `POST /api/restart` is a debugging rewind: same seed, live entity keys purged, Postgres history
+  APPENDED to (never deleted). `POST /api/regen` is — **INTERIM, see below** — "new map, same
+  run_id", in this order:
+  1. the run-driver SEPARATES the old world's buffered why-trace from the rebuild: the buffer is
+     drained before `ctl.rebuild`, so everything buffered during the rebuild belongs to the
+     CANDIDATE world. A rebuild failure aborts: the candidate's partial construction events are
+     DISCARDED and the old batch is restored exactly once (original seq order) — candidate events
+     never leak into the continuing world's why-trace. The same drain/discard/restore discipline
+     applies to a restart rebuild; on a SUCCESSFUL restart (append-only history) the old batch is
+     re-queued AHEAD of the candidate's construction events, preserving seq order, while a
+     successful regen DROPS the old batch (its Postgres rows were just deleted);
+  2. **Postgres reset — MANDATORY, abort-on-failure**: `ResetRunData` (ONE transaction: delete
+     events + delete snapshots + upsert the runs row to the new seed). If it fails NOTHING was
+     changed and the regen is ABORTED: the rebuilt world is discarded, its construction events
+     are dropped, the old buffer is restored, and the CURRENT world keeps running — a
+     half-cleaned run is never presented as a new map;
+  3. **Redis cleanup — best-effort (ACCEPTED interim limitation)**: deletion of the per-entity +
+     snapshot/tick/events/flora/climate/terrain keys is ATTEMPTED; meta refreshed via `InitMeta`
+     (which never touches the publication fields). Failures here are logged, not fatal: the
+     immediate fresh flush + per-tick writes overwrite every fixed key, so stale data self-heals
+     — residual risk: a stale per-entity hash whose DEL failed lingers until the run ends (see
+     api SPEC);
+  4. **fresh baseline flush**: the regenerated world's snapshot (wrapper stamped with the NEXT
+     `world_revision` + the emitter's `stream_cursor` + the `terrain` flag) and, when env is on,
+     the revision-tagged terrain blob are written to the live keys;
+  5. **revision publication — LAST**: only after step 4's live snapshot (and terrain, when env is
+     on) writes SUCCEED does the run-driver call `PublishWorldRevision` — a reader observing the
+     new revision in meta is guaranteed matching baselines are servable. A transient step-4/5
+     failure leaves the revision UNPUBLISHED (pending) and the next backup-cadence flush retries
+     flush+publication; restart and every failed/aborted regen never bump the revision, and the
+     serial tick goroutine makes concurrent regen signals coalesce (no revision reuse).
+     **Process restart**: the run-driver reads the stored `world_revision` at boot and publishes
+     `stored+1` with its first flush — never backwards, never reused (a restarted process
+     rebuilds from the fixture and may publish a different map, so the stored value must not be
+     re-claimed). Until that first flush, meta and baselines still describe the previous
+     process's world self-consistently.
+  Redis and Postgres are NOT one distributed transaction; the ordering above (abortable Postgres
+  step BEFORE any Redis mutation, world swap only after the mandatory step, revision publication
+  only after the baseline) is the consistency mechanism. Wall-clock (`time.Now`) for
+  prune/refresh lives in the run-driver — never inside persist encode paths (D12 holds; the
+  Redis-live snapshot WRAPPER's stream_cursor/world_revision are operational flush-time metadata.
+  The run-driver encodes that wrapper separately from the untouched deterministic base snapshot
+  passed to Postgres, so transport/publication changes cannot alter backup bytes (data-contracts §1).
+  **Scope (human, 2026-07-11): current single-world development mode.** Destructive same-run
+  regen IS the supported contract for this phase — exactly one world is exposed, all viewers
+  reload after a regen (no resync signal), and there is no run pointer or automatic SSE run
+  switching. A multi-world redesign (regen creates a NEW run and preserves the old one,
+  dissolving the cross-store deletion problem) was chosen as the preferred future direction but
+  is **DEFERRED** to be designed together with the world-selection layer —
+  `docs/plans/run-generation.md` (design notes, not contracts). Do not harden the interim Redis
+  deletion further (mandatory-with-compensation was considered and declined), and do not replace
+  this path with generation-based storage now.

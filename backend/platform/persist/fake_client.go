@@ -128,10 +128,16 @@ func (r *fakePgxRow) Scan(dest ...any) error {
 
 // fakePgxClient records SQL calls and returns pre-configured results.
 type fakePgxClient struct {
-	mu        sync.Mutex
-	execCalls []execCall
-	rows      map[string]*fakePgxRow // sql pattern -> row result (matched by substring)
-	result    fakePgxResult
+	mu         sync.Mutex
+	execCalls  []execCall
+	queryCalls []execCall
+	rows       map[string]*fakePgxRow // sql pattern -> row result (matched by substring)
+	result     fakePgxResult
+
+	// Failure injection: Exec returns failErr when the SQL contains failOn
+	// (tests use this to fail one statement inside a transaction).
+	failOn  string
+	failErr error
 }
 
 type execCall struct {
@@ -149,12 +155,35 @@ func (f *fakePgxClient) Exec(_ context.Context, sql string, args ...any) (pgComm
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.execCalls = append(f.execCalls, execCall{SQL: sql, Args: args})
+	if f.failOn != "" && strings.Contains(sql, f.failOn) {
+		return f.result, f.failErr
+	}
 	return f.result, nil
+}
+
+// InTx runs fn against the same recorder, prefixed/suffixed with BEGIN/COMMIT
+// markers in execCalls so tests can assert the transactional envelope. Rollback
+// semantics are NOT simulated here — FakePg is the all-or-nothing semantic fake.
+func (f *fakePgxClient) InTx(_ context.Context, fn func(pgxClient) error) error {
+	f.mu.Lock()
+	f.execCalls = append(f.execCalls, execCall{SQL: "BEGIN"})
+	f.mu.Unlock()
+	if err := fn(f); err != nil {
+		f.mu.Lock()
+		f.execCalls = append(f.execCalls, execCall{SQL: "ROLLBACK"})
+		f.mu.Unlock()
+		return err
+	}
+	f.mu.Lock()
+	f.execCalls = append(f.execCalls, execCall{SQL: "COMMIT"})
+	f.mu.Unlock()
+	return nil
 }
 
 func (f *fakePgxClient) QueryRow(_ context.Context, sql string, args ...any) pgxRow {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.queryCalls = append(f.queryCalls, execCall{SQL: sql, Args: args})
 	// Find the best matching row by SQL substring match.
 	// The real SQL may contain leading whitespace from raw string literals.
 	for pattern, row := range f.rows {

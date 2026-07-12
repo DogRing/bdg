@@ -462,22 +462,34 @@ func TestOutcomeResolution_LowStatsFail(t *testing.T) {
 	}
 }
 
-func TestTick_EmitsTickDone(t *testing.T) {
+func TestTick_EmitsAgentFrame(t *testing.T) {
 	fx := newFixtureSeeded(t, 42)
 	cfg := agent.DefaultConfig()
 	fx.world.Spawn("agent_1", core.Vec2{X: 10, Y: 10}, cfg, rng.New(1))
 	fx.emit.events = nil
 	fx.world.Tick()
 
-	foundTickDone := false
+	var frame *core.Event
 	for _, ev := range fx.emit.events {
 		if ev.Type == "TickDone" {
-			foundTickDone = true
-			break
+			t.Fatalf("TickDone should remain internal-only; got external event %+v", ev)
+		}
+		if ev.Type == "AgentFrame" {
+			frame = &ev
 		}
 	}
-	if !foundTickDone {
-		t.Error("expected TickDone event")
+	if frame == nil {
+		t.Fatal("expected AgentFrame event")
+	}
+	payload := frame.Payload.(map[string]any)
+	agents := payload["agents"].([]map[string]any)
+	if len(agents) != 1 {
+		t.Fatalf("AgentFrame agents len = %d, want 1: %+v", len(agents), payload)
+	}
+	for _, key := range []string{"id", "pos", "goal", "mood", "action"} {
+		if _, ok := agents[0][key]; !ok {
+			t.Errorf("AgentFrame agent missing key %q: %+v", key, agents[0])
+		}
 	}
 }
 

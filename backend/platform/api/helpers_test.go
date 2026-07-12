@@ -22,6 +22,15 @@ type fakeRedisReader struct {
 	blobs        map[string][]byte // key-addressed GET blobs (e.g. sim:{run}:terrain)
 	agentHashes  map[string]map[string]string
 	eventsCh     chan StreamEntry
+
+	// Cursor-replay surface (SPEC §Routes GET /sse): retained is the stream's
+	// ID-ordered retained backlog — XRead with a concrete lastID serves the
+	// retained entries strictly after it FIRST, then falls through to the live
+	// channel; lastID "$" skips the backlog (live tail only). maxDeleted backs
+	// StreamMaxDeletedID ("0-0" default), maxDeletedErr injects XINFO failure.
+	retained      []StreamEntry
+	maxDeleted    string
+	maxDeletedErr error
 }
 
 func newFakeRedisReader() *fakeRedisReader {
@@ -56,7 +65,23 @@ func (f *fakeRedisReader) HGetAll(_ context.Context, key string) (map[string]str
 	return out, nil
 }
 
-func (f *fakeRedisReader) XRead(ctx context.Context, _, _ string, _ time.Duration) ([]StreamEntry, string, error) {
+func (f *fakeRedisReader) XRead(ctx context.Context, _, lastID string, _ time.Duration) ([]StreamEntry, string, error) {
+	// Retained-backlog replay: a concrete cursor serves everything strictly
+	// after it in one batch (mirrors XREAD's ID-exclusive semantics); "$" or a
+	// caught-up cursor falls through to the live channel.
+	if lastID != "$" {
+		f.mu.Lock()
+		var out []StreamEntry
+		for _, e := range f.retained {
+			if streamIDLess(lastID, e.ID) {
+				out = append(out, e)
+			}
+		}
+		f.mu.Unlock()
+		if len(out) > 0 {
+			return out, out[len(out)-1].ID, nil
+		}
+	}
 	select {
 	case entry, ok := <-f.eventsCh:
 		if !ok {
@@ -66,6 +91,25 @@ func (f *fakeRedisReader) XRead(ctx context.Context, _, _ string, _ time.Duratio
 	case <-ctx.Done():
 		return nil, "", ctx.Err()
 	}
+}
+
+func (f *fakeRedisReader) StreamMaxDeletedID(_ context.Context, _ string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.maxDeletedErr != nil {
+		return "", f.maxDeletedErr
+	}
+	if f.maxDeleted == "" {
+		return "0-0", nil
+	}
+	return f.maxDeleted, nil
+}
+
+func (f *fakeRedisReader) setRetained(maxDeleted string, entries ...StreamEntry) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.retained = entries
+	f.maxDeleted = maxDeleted
 }
 
 func (f *fakeRedisReader) setAgentHash(key string, fields map[string]string) {

@@ -29,9 +29,19 @@ import (
 type Emitter struct { /* opaque: redis client, run id, ctx, seq counter */ }
 
 // New creates an Emitter for the given run. client is a live Redis client (injected via the
-// minimal RedisClient interface). ctx scopes the run's XADD calls. seq starts at 0; each Emit
-// call atomically increments it.
-func New(ctx context.Context, client RedisClient, runID core.RunID) (*Emitter, error)
+// minimal RedisClient interface). ctx scopes the run's XADD calls. By default seq starts at 0
+// and each Emit call atomically increments it; options adjust construction.
+func New(ctx context.Context, client RedisClient, runID core.RunID, opts ...Option) (*Emitter, error)
+
+// Option configures an Emitter at construction.
+type Option func(*Emitter)
+
+// WithCallerSeq disables the Emitter's internal seq stamping: the caller (the run-driver's
+// fan-out emitter, backend/main.go multiEmitter) has already stamped Event.Seq with ONE shared
+// monotone numbering, so the Redis stream and the Postgres why-trace rows carry the SAME seq
+// for the same event (data-contracts §4 — why-trace and SSE are two views of the same stream).
+// The Emitter then serializes ev.Seq verbatim.
+func WithCallerSeq() Option
 
 // Emit satisfies core.EventEmitter (signature MUST match core.EventEmitter.Emit, which returns
 // nothing — see Open Questions on the error channel). It serializes the event to JSON
@@ -51,12 +61,21 @@ func (e *Emitter) EmitErr(ev core.Event) error
 // The run-driver checks this after a tick batch to decide whether to abort the run.
 func (e *Emitter) Err() error
 
+// LastStreamID returns the Redis STREAM entry ID of the LAST successfully appended event
+// ("" before the first success). This is the transport replay cursor the run-driver stamps
+// onto the snapshot wrapper as stream_cursor (data-contracts §1/§2): a failed XADD never
+// advances it, so a snapshot cursor can never point past an entry that was not durably
+// appended. It is the Redis ENTRY ID, deliberately distinct from Event.Seq (which is
+// process-local and repeats across process restarts). Safe for concurrent use.
+func (e *Emitter) LastStreamID() string
+
 // RedisClient is the minimal interface Emitter needs from a Redis client. Using an interface
 // (not a concrete *redis.Client) keeps the package testable without a live Redis (a stub
 // satisfies RedisClient in tests). The concrete implementation is injected by the run-driver
-// (platform/api or cmd/run).
+// (platform/api or cmd/run). XAdd returns the entry ID Redis assigned (XADD with *), which
+// feeds LastStreamID.
 type RedisClient interface {
-    XAdd(ctx context.Context, stream string, values map[string]string) error
+    XAdd(ctx context.Context, stream string, values map[string]string) (id string, err error)
 }
 
 // ── Event type constants (the full list from data-contracts §4, used as Event.Type values) ──
@@ -76,6 +95,7 @@ const (
     TypeCopingEntered    = "CopingEntered"
     TypeRoleEmerged      = "RoleEmerged"
     TypeTickDone         = "TickDone"
+    TypeAgentFrame       = "AgentFrame"
     TypeWorldFrame       = "WorldFrame"
     TypeSnapshotReady    = "SnapshotReady"
 
@@ -115,9 +135,15 @@ const (
 
 ## Invariants
 
-- **Seq is monotone**: each `Emit` atomically increments `seq` and stamps it on the serialized
-  event; two events in the same tick are disambiguated by `seq` (data-contracts §4 `seq`). Across
-  the run, `seq` is strictly increasing from 0.
+- **Seq is monotone within one process lifetime**: each `Emit` atomically increments `seq` and
+  stamps it on the serialized event; two events in the same tick are disambiguated by `seq`
+  (data-contracts §4 `seq`). The counter starts at 0 with the EMITTER (i.e. the simulation
+  process), not the run: `POST /api/restart` rebuilds in-process so the sequence continues,
+  while a real process restart begins a new seq epoch at 0 under the same run_id
+  (data-contracts §4 "Scope"). Under `WithCallerSeq` the stamping moves to the caller (one
+  shared numbering across all sinks — Redis stream, stderr log, Postgres why-trace buffer); the
+  Emitter forwards the pre-stamped `ev.Seq` verbatim and the (process-lifetime) monotonicity
+  guarantee is the caller's.
 - **No `real_stats` on the stream (data-contracts §4 SSE policy)**: before `XADD`, strip any
   `real_stats` key from the serialized payload. God-view fields live only in the simulation
   snapshot (data-contracts §1); they NEVER enter the event stream. This holds regardless of which
@@ -182,6 +208,10 @@ correct payload.
   `ReputationGossip` XADD).
 - [ ] **Wired — RoleEmerged**: when `engine/world`'s reliance scan crosses threshold it emits
   `TypeRoleEmerged`; the `Emitter` writes it.
+- [ ] **LastStreamID tracks only successful appends**: after N successful `Emit`s,
+  `LastStreamID()` equals the entry ID the stub returned for the LAST one; a failing `XAdd`
+  leaves it at the previous value (a snapshot stream_cursor can never point past a lost entry);
+  before any success it is `""`.
 - [ ] **No real logic (import guard)**: a grep guard confirms `platform/events` imports only
   `engine/kernel/core` (no other `engine/*` package), `encoding/json`, `context`, and the redis interface
   package — nothing that performs simulation.

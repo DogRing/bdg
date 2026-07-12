@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -88,6 +89,23 @@ func (a redisReadAdapter) Get(ctx context.Context, key string) ([]byte, error) {
 
 func (a redisReadAdapter) HGetAll(ctx context.Context, key string) (map[string]string, error) {
 	return a.c.HGetAll(ctx, key).Result()
+}
+
+// StreamMaxDeletedID mirrors the main backend's adapter: XINFO STREAM
+// max-deleted-entry-id for the SSE trim/gap check; a missing key (fresh or
+// regen-recreated stream) maps to "0-0" (nothing after any cursor was lost).
+func (a redisReadAdapter) StreamMaxDeletedID(ctx context.Context, key string) (string, error) {
+	info, err := a.c.XInfoStream(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil || strings.Contains(err.Error(), "no such key") {
+			return "0-0", nil
+		}
+		return "", err
+	}
+	if info.MaxDeletedEntryID == "" {
+		return "0-0", nil
+	}
+	return info.MaxDeletedEntryID, nil
 }
 
 func (a redisReadAdapter) XRead(ctx context.Context, key, lastID string, block time.Duration) ([]api.StreamEntry, string, error) {

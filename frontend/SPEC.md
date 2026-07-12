@@ -20,9 +20,9 @@ visible **movement, attack, and death motion**, weather + wind + day-night) in r
 > The render layer is the current work — specified across this file (state/UI contract) and the
 > child SPECs (`src/render` draw/camera/motion, `src/assets` manifest/spritesheets, `dev` mock +
 > asset generator). The hardcoded decorative terrain mockup in the old `utils/canvasRenderer.ts` is
-> **deleted** by this phase. Backend `WorldFrame` emission (WI-P4) and `GET /api/terrain` do not
-> exist yet; until they do, development runs against `dev/mock-server.mjs` and the live viewer
-> renders social-only (env-off neutrality below).
+> **deleted** by this phase. Backend `AgentFrame`/`WorldFrame` emission (WI-P4) and
+> `GET /api/terrain` are live; `dev/mock-server.mjs` remains the contract-parity offline harness.
+> An env-off backend still renders social-only (env-off neutrality below).
 
 ## Backend Contract (what the frontend reads)
 
@@ -40,8 +40,9 @@ otherwise ignored.
 
 | `type` | Payload (gist) | Treatment |
 |---|---|---|
-| `TickDone` | `tick, agents[]{id,pos,goal,action,mood}` | Per-tick **agent** render frame: merge agent pos/goal/mood/action; advance tick. Returns early (no log line) |
-| `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge agent + animal positions (keeping prev values for interpolation), flora stage deltas (grow FX on stage increase), terrain deltas, ambient weather. Returns early (no log line) |
+| `AgentFrame` | `tick, agents[]{id,pos?,goal?,mood?,action?}, removed[]` | Per-tick **sparse agent delta** (replaced the removed full-roster `TickDone`): merge only the fields present onto the known agent (REST snapshot = the baseline), delete `removed[]` ids; advance tick. Returns early (no log line) |
+| `StreamGap` | `reason` | **Transport control frame** (api SPEC GET /sse): the replay cursor fell behind the trimmed backlog — the reducer bumps `baselineRetries` (fresh snapshot/cursor reacquisition, §Bootstrap step 5); never logged, never rendered |
+| `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge animal positions (keeping prev values for interpolation), flora stage deltas (grow FX on stage increase), terrain deltas, ambient weather. Carries NO agents — agent state is `AgentFrame`'s. Returns early (no log line) |
 | `GoalSelected` | `dimension, target, eff_value` | Set agent goal; log "🎯 farmer_1 → Satiety" |
 | `PlanBuilt` | `steps[], total_cost, provisioned[]` | Log (detail) |
 | `ActionStarted` / `ActionDone` | `action, pos? / action, result` | Move agent dot (if `pos`); log |
@@ -56,12 +57,11 @@ otherwise ignored.
 
 ### Env render channel — `WorldFrame` (WI-P4, data-contracts §4/§10)
 Once the env subsystem is installed backend-side, the world streams a periodic **`WorldFrame`** —
-the graphics frame carrying agent + animal positions/actions, flora **stage** deltas, terrain
+the graphics frame carrying animal positions/actions, flora **stage** deltas, terrain
 deltas, and the ambient weather. Wire shape (snake_case; `WorldFramePayload` in `src/types.ts`):
 ```ts
 { tick, hour_of_day, day_night:'day'|'night', temperature, apparent_temp?, raining,
   wind:{dir, mag},
-  agents:[{id, pos, action}],
   animals:[{id, pos, species, action, heading}],
   flora_delta:[{id, pos, stage}],
   terrain_delta:[{cell, terrain?, wear?}] }
@@ -74,8 +74,14 @@ prevFrameAtMs` so the render layer can interpolate between frames at any streami
 `apparent_temp`. When env is OFF no `WorldFrame` is emitted and the env slices stay empty.
 
 ### REST endpoints (initial load)
-- `GET /api/snapshot` — full world blob on page load (`loadSnapshot` in `useWorld.ts`): tick,
-  agents (`{id,pos,goal,action,mood}`), placed objects (`{id,kind,pos}`).
+- `GET /api/snapshot` — full world blob (`loadSnapshot` in `useWorld.ts`): tick,
+  agents (`{id,pos,goal,action,mood}`), placed objects (`{id,kind,pos}`), plus the publication
+  wrapper `world_revision` / `stream_cursor` / `terrain:"on"|"off"` (data-contracts §1; absent
+  on legacy/mock backends). **The required baseline** for applying `AgentFrame` deltas
+  (§Bootstrap below).
+- `GET /api/meta` — the published run metadata (`{tick, schema_version, started_at, status,
+  world_revision?, terrain?}`, all strings): the §New-map flow's readiness marker. Not used by
+  the regular bootstrap (the snapshot self-identifies).
 - `GET /api/terrain` — **initial terrain grid** (plan Q5 · hex `docs/plans/hex-grid.md`; *pending backend
   SPEC delta on `platform/api`*): `{cell_size, orientation:'flat', size:{cols,rows}, terrain:[…],
   wear?:[…]}` — an **offset (col,row) rectangular array** (`i = row·cols + col`) of flat-top hex cells;
@@ -91,6 +97,50 @@ prevFrameAtMs` so the render layer can interpolate between frames at any streami
 God-view routes (`/api/god/*`, `?god=true`) are **out of scope** (no `real_stats`, divergence,
 reputation, or relations display).
 
+### Bootstrap & baseline acquisition (`useSSE` + `useWorld`) — snapshot-first + stream cursor
+
+`AgentFrame` is sparse, so deltas are only meaningful over a snapshot baseline — and the
+baseline pairs with a **transport cursor**: the snapshot wrapper's `stream_cursor` (the Redis
+events entry ID the captured state already reflects, data-contracts §1/§4). The flow:
+
+1. **Snapshot FIRST.** On mount, `loadSnapshot` retries with capped exponential backoff
+   (`retryUntil`, base 500 ms → cap 10 s, unbounded attempts, generation-cancelled on unmount;
+   stale responses discarded) until a REAL snapshot arrives — an empty synthetic snapshot is
+   NEVER a baseline, and a transient failure can never permanently blank the page.
+2. **Authoritative acceptance.** `SNAPSHOT_LOADED` REPLACES the agent roster (agents absent
+   from the snapshot are gone — no ghost survives a merge accident; SSE-only fields like
+   `cluster`/`copingMode` re-derive from post-cursor events), records
+   `worldRevision`/`snapshotCursor`/`terrainStatus`, and sets `lastAppliedStreamId` to the
+   cursor. Within the SAME revision, a snapshot whose cursor is BEHIND `lastAppliedStreamId`
+   is REJECTED (`baselineRetries++` → refetch after ~2 s) — accepting it would roll sparse
+   state back across deltas that will never replay. A DIFFERENT `worldRevision` always accepts
+   and first CLEARS every old-revision slice (agents via replacement, animals, flora, climate,
+   fx, terrain + queued terrain deltas); tick may rewind across revisions.
+3. **SSE after the baseline, WITH the cursor.** `useSSE` is enabled only once
+   `snapshotLoaded`; every (re)connect passes `?cursor=` = `lastAppliedStreamId` (falling back
+   to `snapshotCursor`). The server replays retained entries strictly after it into the live
+   tail (api SPEC `GET /sse`), so the [capture, connect) window and any disconnect window are
+   recovered losslessly — including agents that moved, changed goal/mood/action, or were
+   REMOVED before the connection existed.
+4. **Ordered, at-most-once application.** Every SSE frame carries its Redis entry id
+   (`MessageEvent.lastEventId`); the reducer applies an identified frame only when its id is
+   strictly after `lastAppliedStreamId` — duplicates, pre-cursor stragglers and old-revision
+   leftovers (always ≤ the new cursor: regen deletes the old entries and IDs stay monotone)
+   are all dropped by one rule. Id-less frames (legacy/mock transport) apply unconditionally.
+   Events arriving before any baseline are dropped (SSE is gated, so only mis-ordered
+   stragglers can).
+5. **Gap ⇒ reacquire, never a partial history.** If the server detects the requested cursor
+   is older than the retained backlog (MAXLEN trim), it sends one `StreamGap` control frame
+   and closes. The reducer bumps `baselineRetries` (→ fresh snapshot/cursor after ~2 s);
+   the auto-reconnect loop keeps re-offering the current cursor and converges once the new
+   baseline lands. Bounded memory: nothing is queued while disconnected.
+6. **Terrain by explicit availability.** `terrainStatus` comes from the snapshot's `terrain`
+   flag: `'off'` ⇒ env-off — terrain is never fetched and never polled; `'on'`/`'unknown'` ⇒
+   `loadTerrain(worldRevision)` retries with capped backoff, and a grid tagged with a
+   DIFFERENT `world_revision` counts as not-ready (another regen landed between reads).
+   env-off is NEVER inferred from a failed fetch. `terrain_delta`s arriving before the grid
+   queue in `pendingTerrainDeltas` and apply when it lands.
+
 ## UI Layout
 
 ```
@@ -102,7 +152,7 @@ reputation, or relations display).
 │  ≈≈ river   ▒ forest          │  └────────────────────────┘│
 │  · farmer_1 (satiety)         │  EventLog                  │
 │  ▷ deer (walk→run, flee)      │  [filter: all ▾]           │
-│  ▶ wolf (attack lunge)        │  TickDone 42               │
+│  ▶ wolf (attack lunge)        │  ⚒ farmer_1 Crafted axe    │
 │  ♣ oak (stage 3, grow fx)     │  🐺 wolf_1 killed deer_2   │
 │  ~wind→  ☂rain   ◐dusk        │  🎯 farmer_1 → Satiety     │
 └───────────────────────────────┴───────────────────────────┘
@@ -110,10 +160,24 @@ reputation, or relations display).
 
 - **Header** (`components/Header.tsx`): run id, tick, agent count, fauna count + ambient weather
   chip (day-night icon, temperature + `apparentTemp`, rain/wind), connection badge, theme + pause
-  toggles, and a **new-map button** (confirm → `POST /api/regen` → the backend rebuilds the world
-  from its fixture with a NEW seed (random terrain/placements re-rolled) → page reload after
-  ~1.5 s so client state starts fresh; failure surfaces an alert). The backend's `POST
+  toggles, and a **new-map button** (§New-map flow below). The backend's `POST
   /api/restart` (same-seed deterministic reset) stays available but has no header button.
+
+  **§New-map flow** (`App.tsx regenWorld` + `src/utils/regenReady.ts`; api SPEC `POST
+  /api/regen`; data-contracts §2 `world_revision`): `202` means *accepted*, not completed, so
+  the reload is completion-aware — never a fixed timer, never tick heuristics (tick is
+  simulation time, not world identity): (1) read the PUBLISHED `world_revision` from
+  `GET /api/meta`; unreadable ⇒ report a recoverable error and DO NOT submit (readiness could
+  not be verified); (2) `POST /api/regen`; (3) poll `/api/meta` with capped backoff
+  (500 ms → 4 s) until a DIFFERENT revision is published — the backend publishes only after
+  the regenerated snapshot+terrain baselines are servable, and restart/failed regens never
+  change the marker; (4) verify the servable `/api/snapshot` (and, when that meta poll said
+  `terrain:"on"`, `/api/terrain`) carries exactly that `world_revision` (a further regen
+  between reads shows as a tag mismatch ⇒ keep polling); (5) only then
+  `window.location.reload()` so client state starts fresh. A bounded budget (60 s) ends the
+  wait: on timeout or POST failure an alert reports it and the current view stays usable
+  (re-submission allowed; concurrent submissions coalesce behind a busy guard). Other
+  connected viewers still reload manually — single-world contract, no resync signal.
 - **WorldCanvas** (`components/WorldCanvas.tsx`, left, flex-1): HTML5 Canvas, RAF render loop.
   Draws (back→front) terrain → flora → placed objects → animals → agents → fx → ambient. **Camera
   (plan Q6): wheel zoom (cursor-anchored), drag pan, click an entity to select + follow it**;
@@ -153,6 +217,9 @@ frontend/
     assets/               manifest (data tables) + spritesheet cache    → src/assets/SPEC.md
     utils/
       eventFormatter.ts   formatEvent(ev) → LogEntry | null
+      retry.ts            retryUntil (capped-backoff, cancellable) — loader backbone
+      streamId.ts         compareStreamIds (Redis entry-id ordering — §Bootstrap cursor guard)
+      regenReady.ts       fetchPublishedRevision + waitForRegenReady (§New-map flow)
 ```
 `src/utils/canvasRenderer.ts` is **deleted** (absorbed into `src/render/`). State lives in the
 `useWorld` reducer (single source of truth, passed down as props); the camera is component state in
@@ -173,17 +240,29 @@ interface RenderConfig { bounds:{min,max}; pixelsPerUnit }
 interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connectionStatus;
                          selectedEntity:{kind:'agent'|'animal', id}|null; paused; food; wood;
                          animals:Map; flora:PlantState[]; climate:ClimateState|null;
-                         terrain:TerrainGrid|null; fx:FxInstance[]; render:RenderConfig|null }
+                         terrain:TerrainGrid|null; fx:FxInstance[]; render:RenderConfig|null;
+                         snapshotLoaded;
+                         worldRevision:number|null;      // accepted baseline's published revision
+                         snapshotCursor; lastAppliedStreamId; // §Bootstrap transport cursor
+                         terrainStatus:'on'|'off'|'unknown';  // explicit availability
+                         pendingTerrainDeltas:TerrainDelta[]; // pre-grid deltas
+                         baselineRetries }                    // gap/stale → reacquire
 ```
 `Pose`, `CameraState`, and manifest types are owned by the children (`src/assets/SPEC.md`,
 `src/render/SPEC.md`).
 
 ## SSE Connection (`src/hooks/useSSE.ts`)
 
-- Open `new EventSource(\`${API_BASE}/sse\`)`. On `message`: `JSON.parse` → `SimEvent` → dispatch.
-- On `open`/first message: `setConnection('live')`. On `error`: `'reconnecting'`, retry after
-  `min(2^retries × 500ms, 30s)`; reset on success. Live tail only — no replay; a reconnect gap
-  shows as a break in the log. Decode once; no re-stringify for display.
+- Enabled only once `snapshotLoaded` (§Bootstrap step 3). Every (re)connect opens
+  `new EventSource(\`${API_BASE}/sse?cursor=<id>\`)` where the cursor comes from `getCursor()`
+  (= `lastAppliedStreamId` ∥ `snapshotCursor`; '' ⇒ no query, live tail — legacy/mock). The
+  server replays retained entries strictly after the cursor into the live tail (api SPEC), so
+  reconnects resume after the last applied frame with neither gap nor duplicates.
+- On `message`: `JSON.parse` → `SimEvent` → dispatch with `MessageEvent.lastEventId` (the
+  frame's Redis entry id from the server's `id:` line; the reducer's ordering guard).
+- On `open`: `setConnection('live')`. On `error` (including the server's close after a
+  `StreamGap` control frame): `'reconnecting'`, retry after `min(2^retries × 500ms, 30s)`;
+  reset on success. Decode once; no re-stringify for display.
 
 ## Rendering & Motion (contract summary — detail in `src/render/SPEC.md`)
 
@@ -217,7 +296,9 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 
 ## Invariants
 
-- **Read-only.** No POST/PUT/DELETE; the local pause toggle freezes the *view* reducer only.
+- **Read-only observation, one sim control.** No writes except the two documented sim control
+  signals (`POST /api/regen` behind the new-map button's confirm, `POST /api/restart` unexposed);
+  the local pause toggle freezes the *view* reducer only.
 - **No god-view.** `?god=true` never sent; `real_stats`/`drives`/`stats` never read or displayed —
   not for agents, not for animals.
 - **Reconnect on failure.** SSE drop → badge + capped-backoff retry; never a page reload.
@@ -229,7 +310,8 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 - **Data-driven content mapping (D10 mirror).** species/ActionID/TerrainID → sprite/pose/colour
   only via the assets manifest + fallback chain; unknown content renders a fallback, never throws.
 - **Decode once.** Parse the SSE payload once; format from parsed fields.
-- **Tick counter only advances.**
+- **Tick counter only advances WITHIN a revision.** A `world_revision` switch (regen) is the
+  one legitimate rewind; everything else keeps `max(tick, ev.tick)`.
 - **One world transform (D11).** Every layer shares one `buildTransform` per frame.
 - **Env-off neutrality.** No `WorldFrame`/terrain streamed ⇒ env slices empty ⇒ canvas + Header
   render exactly as the social-only viewer.
@@ -240,7 +322,39 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 
 - [ ] **SSE connect/reconnect** — `useSSE` opens `EventSource("/sse")`; first message → `live`;
   forced error → reopen within 2× backoff showing `reconnecting`.
-- [ ] **TickDone agent frame** — updates `agents[id].pos`, no log line.
+- [ ] **AgentFrame sparse merge** — a delta carrying only `pos` moves the agent while its
+  `goal/mood/action` keep the baseline values; `removed[]` deletes the agent; no log line.
+- [ ] **Loader retry (§Bootstrap steps 1/6)** — `fetchSnapshotWithRetry` / `fetchTerrainWithRetry`
+  survive a 404/network/malformed response and resolve on a later success, back off
+  exponentially to the cap, and return null (no dispatch) once cancelled — stale responses after
+  a generation bump are discarded; the snapshot parser surfaces the publication wrapper
+  (`revision`/`cursor`/`terrain`, legacy ⇒ null/''/'unknown'); a terrain grid tagged with a
+  different revision than expected is retried, never dispatched.
+- [ ] **Cursor-ordered application (§Bootstrap step 4)** — with a baseline at cursor C: a frame
+  at C is ignored (already in the snapshot), frames after C apply once in id order, duplicate
+  ids and older ids are ignored, `lastAppliedStreamId` tracks the applied head; id-less frames
+  (legacy/mock) apply unconditionally; pre-baseline events are dropped.
+- [ ] **Lossless late join (§Bootstrap steps 3–4)** — a stale periodic snapshot plus replayed
+  post-cursor frames recovers pre-connect changes: moved `pos`, changed `goal/mood/action`, and
+  an agent removed after capture but before connection (via a replayed `removed[]`).
+- [ ] **Authoritative roster (§Bootstrap step 2)** — a reaccepted snapshot REPLACES the agent
+  map (ghosts absent from it disappear); post-cursor deltas re-apply on top; a snapshot whose
+  cursor is behind `lastAppliedStreamId` (same revision) is rejected with `baselineRetries++`
+  and nothing rolls back.
+- [ ] **Revision switch (§Bootstrap step 2)** — a snapshot with a different `world_revision`
+  clears agents/animals/flora/climate/fx/terrain/queued deltas, accepts a lower cursor and a
+  rewound tick, and subsequent new-stream frames apply normally.
+- [ ] **StreamGap ⇒ reacquisition (§Bootstrap step 5)** — the control frame increments
+  `baselineRetries` (fresh snapshot/cursor refetch) and changes nothing else.
+- [ ] **Terrain availability (§Bootstrap step 6)** — `terrain:"off"` completes bootstrap without
+  ever fetching terrain and clears any grid/queued deltas; `"on"` retries transient failures and
+  revision mismatches; `"unknown"` (legacy/mock) keeps the capped-backoff fallback.
+- [ ] **New-map completion-aware reload (§New-map flow)** — `waitForRegenReady` reports ready
+  only after a NEW `world_revision` is published AND the snapshot (and terrain when that
+  revision says on) carries exactly that revision; an unchanged revision (rebuild running,
+  regen aborted, restart) times out as not-ready within the bounded budget; readiness never
+  fires on the old baseline; an unreadable pre-regen revision blocks submission with a
+  recoverable error.
 - [ ] **WorldFrame env reduce + motion fields** — a second `WorldFrame` for the same animal moves
   `pos→prevPos`, `heading→prevHeading`, stamps `frameAtMs/prevFrameAtMs`; merges flora (by id),
   terrain deltas (grid object replaced), climate; ignores injected god-view fields.

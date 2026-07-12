@@ -84,7 +84,11 @@ func (w *World) runClimateEnv() {
 		if len(cells) == 0 {
 			continue
 		}
-		w.nav.SetTerrain(cells, navmap.TerrainID(tr.To))
+		terrain := navmap.TerrainID(tr.To)
+		w.nav.SetTerrain(cells, terrain)
+		for _, c := range cells {
+			w.pendingTerrainFrame = append(w.pendingTerrainFrame, terrainFrameEntry{Cell: c, Terrain: terrain})
+		}
 	}
 }
 

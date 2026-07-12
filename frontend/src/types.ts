@@ -131,11 +131,17 @@ export interface WorldFramePayload {
   apparent_temp?: number
   raining: boolean
   wind: { dir: number; mag: number }
-  agents: Array<{ id: string; pos: AgentPos; action: string }>
   animals: Array<{ id: string; pos: AgentPos; species: string; action: string; heading: number }>
   flora_delta: Array<{ id: string; pos: AgentPos; stage: number }>
   terrain_delta: TerrainDelta[]
 }
+
+// Explicit terrain availability of the published world revision
+// (data-contracts §2): 'off' means env-off — bootstrap completes WITHOUT
+// terrain and no polling happens; 'unknown' (legacy backend/mock without the
+// flag) falls back to capped-backoff retrying. NEVER inferred from one failed
+// fetch.
+export type TerrainStatus = 'on' | 'off' | 'unknown'
 
 // Render config from content/world.yaml (bounds + scale): sizes the canvas + sprite scale.
 // Loaded from REST (world geometry), not SSE; null until fetched.
@@ -169,18 +175,52 @@ export interface WorldState {
   flora: PlantState[]
   climate: ClimateState | null
   terrain: TerrainGrid | null
+  pendingTerrainDeltas: TerrainDelta[]
+  snapshotLoaded: boolean
+  // ── Baseline identity + transport cursor (frontend/SPEC.md §Bootstrap) ──
+  // worldRevision: the published single-world revision the accepted baseline
+  // belongs to (null until the first snapshot; a snapshot with a DIFFERENT
+  // revision resets the env/fx state before applying).
+  worldRevision: number | null
+  // snapshotCursor: the accepted snapshot's Redis stream entry ID — SSE (re)
+  // connects with it and replay starts strictly after it. '' ⇒ no cursor
+  // (legacy/mock backend ⇒ live tail).
+  snapshotCursor: string
+  // lastAppliedStreamId: the highest stream entry ID applied so far — the
+  // reconnect cursor AND the duplicate guard (entries at or below it are
+  // ignored; entries without an id apply unconditionally, legacy/mock).
+  lastAppliedStreamId: string
+  terrainStatus: TerrainStatus
+  // Increments when the baseline must be reacquired: a StreamGap control frame
+  // (trimmed backlog) or a stale snapshot (cursor behind what was already
+  // applied). The useWorld hook watches it and refetches after a delay.
+  baselineRetries: number
   fx: FxInstance[]
   render: RenderConfig | null
 }
 
 export type Theme = 'light' | 'dark'
 
+export interface SnapshotPayloadAction {
+  agents: AgentState[]
+  objects?: WorldObject[]
+  tick: number
+  food?: number
+  wood?: number
+  // Publication wrapper (data-contracts §1): absent on legacy/mock backends.
+  revision?: number | null
+  cursor?: string
+  terrain?: TerrainStatus
+}
+
 export type WorldAction =
-  | { type: 'SNAPSHOT_LOADED'; payload: { agents: AgentState[]; objects?: WorldObject[]; tick: number; food?: number; wood?: number } }
+  | { type: 'SNAPSHOT_LOADED'; payload: SnapshotPayloadAction }
   | { type: 'AGENT_UPDATED'; payload: Partial<AgentState> & { id: string } }
   // atMs: wall-clock (performance.now) injected at the dispatch boundary so the
   // reducer stays pure/testable — it stamps interpolation windows + fx times.
-  | { type: 'EVENT'; payload: SimEvent; atMs?: number }
+  // streamId: the SSE frame's Redis entry id (MessageEvent.lastEventId); ''
+  // when the transport carries none (legacy/mock).
+  | { type: 'EVENT'; payload: SimEvent; atMs?: number; streamId?: string }
   | { type: 'TERRAIN_LOADED'; payload: TerrainGrid }
   | { type: 'SET_CONNECTION'; payload: WorldState['connectionStatus'] }
   | { type: 'SELECT_AGENT'; payload: string | null }

@@ -34,9 +34,19 @@ var ErrSchemaMismatch = errors.New("persist: snapshot schema_version mismatch")
 // Go 1.26+ json.Marshal sorts map keys for string-keyed maps, so encoding is
 // deterministic at every nesting level. No proxy types needed.
 type Snapshot struct {
-	SchemaVersion int              `json:"schema_version"`
-	RunID         string           `json:"run_id"`
-	Tick          int64            `json:"tick"`
+	SchemaVersion int    `json:"schema_version"`
+	RunID         string `json:"run_id"`
+	Tick          int64  `json:"tick"`
+	// Publication wrapper (data-contracts §1/§2): OPERATIONAL metadata the
+	// run-driver stamps at flush time — the single-world publication marker,
+	// the Redis events-stream entry ID the captured state already reflects
+	// (SSE replay starts strictly after it), and the revision's explicit
+	// terrain availability ("on"/"off"; "" ⇒ unknown/legacy). NOT part of the
+	// deterministic sim state: omitted when zero/empty, never set by
+	// CaptureSnapshot, ignored by resume, excluded from determinism digests.
+	WorldRevision int64            `json:"world_revision,omitempty"`
+	StreamCursor  string           `json:"stream_cursor,omitempty"`
+	TerrainStatus string           `json:"terrain,omitempty"`
 	World         world.WorldState `json:"world"`
 }
 

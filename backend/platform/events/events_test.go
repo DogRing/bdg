@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -24,11 +25,16 @@ type stubRedis struct {
 	err   error // returned for every XAdd call if non-nil
 }
 
-func (s *stubRedis) XAdd(_ context.Context, stream string, values map[string]string) error {
+// XAdd records the call and hands back a deterministic fake entry ID
+// ("<n>-0" for the n-th successful append), mirroring XADD-with-*.
+func (s *stubRedis) XAdd(_ context.Context, stream string, values map[string]string) (string, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return "", s.err
+	}
 	s.calls = append(s.calls, xAddCall{stream: stream, values: values})
-	s.mu.Unlock()
-	return s.err
+	return fmt.Sprintf("%d-0", len(s.calls)), nil
 }
 
 func (s *stubRedis) recorded() []xAddCall {
@@ -124,6 +130,34 @@ func TestSeqIsMonotone(t *testing.T) {
 	}
 }
 
+// WithCallerSeq: the Emitter serializes the caller's pre-stamped Seq verbatim
+// instead of stamping its own counter (the run-driver's fan-out stamps once so
+// the Redis stream and the Postgres why-trace share one seq numbering).
+func TestWithCallerSeqPreservesSeq(t *testing.T) {
+	stub := &stubRedis{}
+	em, err := events.New(context.Background(), stub, core.RunID("run1"), events.WithCallerSeq())
+	if err != nil {
+		t.Fatalf("events.New: %v", err)
+	}
+
+	for _, want := range []int64{41, 7, 45} {
+		ev := simpleEvent(events.TypeActionStarted)
+		ev.Seq = want
+		em.Emit(ev)
+	}
+
+	calls := stub.recorded()
+	if len(calls) != 3 {
+		t.Fatalf("want 3 XAdd calls, got %d", len(calls))
+	}
+	for i, want := range []float64{41, 7, 45} {
+		m := parsePayload(t, calls[i])
+		if got, ok := m["seq"].(float64); !ok || got != want {
+			t.Errorf("call %d: want Seq=%v, got %v", i, want, m["seq"])
+		}
+	}
+}
+
 // AC3: real_stats is stripped from the payload before XAdd.
 func TestRealStatsStripped(t *testing.T) {
 	stub := &stubRedis{}
@@ -215,6 +249,40 @@ func TestPayloadRoundTrips(t *testing.T) {
 	}
 }
 
+// LastStreamID tracks only SUCCESSFUL appends: it equals the entry ID of the
+// last XAdd that succeeded, and a failing append leaves it untouched — the
+// snapshot stream_cursor can never point past an entry that was never stored.
+func TestLastStreamIDTracksSuccessfulAppendsOnly(t *testing.T) {
+	stub := &stubRedis{}
+	em := makeEmitter(t, stub)
+
+	if got := em.LastStreamID(); got != "" {
+		t.Fatalf("LastStreamID before any Emit = %q, want \"\"", got)
+	}
+
+	em.Emit(simpleEvent(events.TypeGoalSelected))
+	em.Emit(simpleEvent(events.TypePlanBuilt))
+	if got := em.LastStreamID(); got != "2-0" {
+		t.Fatalf("LastStreamID after two appends = %q, want 2-0", got)
+	}
+
+	stub.mu.Lock()
+	stub.err = errors.New("redis down")
+	stub.mu.Unlock()
+	em.Emit(simpleEvent(events.TypeActionStarted))
+	if got := em.LastStreamID(); got != "2-0" {
+		t.Fatalf("LastStreamID after FAILED append = %q, want 2-0 (unchanged)", got)
+	}
+
+	stub.mu.Lock()
+	stub.err = nil
+	stub.mu.Unlock()
+	em.Emit(simpleEvent(events.TypeActionDone))
+	if got := em.LastStreamID(); got != "3-0" {
+		t.Fatalf("LastStreamID after recovery = %q, want 3-0", got)
+	}
+}
+
 // AC5: EmitErr returns an error when the stub returns one.
 func TestEmitErrReturnsError(t *testing.T) {
 	stub := &stubRedis{err: errors.New("redis unavailable")}
@@ -296,6 +364,7 @@ func TestTypeConstants(t *testing.T) {
 		events.TypeCopingEntered,
 		events.TypeRoleEmerged,
 		events.TypeTickDone,
+		events.TypeAgentFrame,
 		events.TypeWorldFrame,
 		events.TypeSnapshotReady,
 		events.TypeAnimalBorn,
@@ -308,7 +377,7 @@ func TestTypeConstants(t *testing.T) {
 			t.Errorf("event type constant is empty")
 		}
 	}
-	if want := 17; len(constants) != want {
+	if want := 18; len(constants) != want {
 		t.Errorf("want %d type constants, got %d", want, len(constants))
 	}
 }

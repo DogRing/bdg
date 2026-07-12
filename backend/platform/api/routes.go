@@ -14,6 +14,7 @@ const (
 	agentNotFound      = `{"error":"agent not found"}`
 	snapNotFound       = `{"error":"snapshot not found"}`
 	terrainNotFound    = `{"error":"terrain not found"}`
+	metaNotFound       = `{"error":"meta not found"}`
 	restartUnavailable = `{"error":"restart unavailable"}`
 	regenUnavailable   = `{"error":"regen unavailable"}`
 	regenInvalidSeed   = `{"error":"invalid seed"}`
@@ -39,6 +40,27 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// ── GET /api/meta ────────────────────────────────────────────────────────────
+
+// handleMeta forwards the sim:{run}:meta hash as a flat JSON object of strings:
+// {tick, schema_version, started_at, status, world_revision?, terrain?}.
+// world_revision is the PUBLISHED single-world revision marker (data-contracts
+// §2) — written last, after the revision's snapshot+terrain baselines are
+// servable — so a poller that observes a new value may immediately load the
+// matching baselines. terrain ("on"/"off") is the published revision's explicit
+// env-terrain availability: clients must never infer env-off from a failed
+// /api/terrain fetch.
+func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
+	hash, err := s.rds.HGetAll(r.Context(), s.keyer.Meta())
+	if err != nil || len(hash) == 0 {
+		http.Error(w, metaNotFound, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(hash)
 }
 
 // ── GET /api/snapshot ─────────────────────────────────────────────────────────

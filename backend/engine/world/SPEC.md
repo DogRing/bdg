@@ -172,8 +172,8 @@ func (w *World) RemoveObject(id core.ObjectID)
 // (read → plan → collect → apply, D12; see SPEC-tick.md). It is deterministic: the same
 // (world state, root rng state, Config, Services, content) run twice yields byte-identical state
 // and the same emitted-event sequence. After the apply phase it advances the tick counter, runs
-// the reliance-cluster scan (SPEC-emergent.md), and emits TickDone (and SnapshotReady every
-// BackupEveryTicks ticks).
+// the reliance-cluster scan (SPEC-emergent.md), and emits AgentFrame render deltas (and
+// SnapshotReady every BackupEveryTicks ticks).
 func (w *World) Tick()
 
 // CurrentTick returns the world's authoritative tick counter (advanced only by Tick).
@@ -250,7 +250,7 @@ func (w *World) SetTerrainElevation(elev []float64)
 ## Dependencies
 
 - `engine/kernel/core` — `AgentID`, `ObjectID`, `ActionID`, `Tag`, `Dimension`, `StatID`, `Vec2`, `Tick`,
-  `EventEmitter`, `Event`. Emits `TickDone`/`RoleEmerged`/`SnapshotReady` via the injected emitter.
+  `EventEmitter`, `Event`. Emits `AgentFrame`/`WorldFrame`/`RoleEmerged`/`SnapshotReady` via the injected emitter.
 - `engine/space/spatial` — `*SpatialHash` (`New`, `Insert`/`Move`/`Remove`, `NearbyEntities`/`NearbyIDs`/
   `PosOf`). The world OWNS one instance; it sizes the cell from `cfg.SpatialHashCell`.
 - `engine/kernel/worldtime` — `Clock` (`TicksForMinutes` for durative scaling; `At`/calendar for events).
@@ -399,10 +399,12 @@ the entire module:
 
 ## Notes
 
-- **Events emitted (data-contracts §4).** The world emits `TickDone{tick, agent_count,
-  intent_count}` and `RoleEmerged{function, holder, reliance_share}`; `SnapshotReady{tick}` signals
-  persist (the world does no IO). Agent-scoped events originate in `engine/agent` through the SAME
-  injected emitter — the world threads the emitter to `Tick`. No `real_stats` on any payload.
+- **Events emitted (data-contracts §4).** The world emits `AgentFrame{tick, agents[], removed[]}`
+  when public agent render/status fields change, `WorldFrame` when env is installed, and
+  `RoleEmerged{function, holder, reliance_share}`; `SnapshotReady{tick}` signals persist (the world
+  does no IO). Tick aggregate counters are internal-only. Agent-scoped events originate in
+  `engine/agent` through the SAME injected emitter — the world threads the emitter to `Tick`. No
+  `real_stats` on any payload.
 - **Snapshot field mapping (data-contracts §1).** `tick` ← the world's counter; `rng_state` ←
   `root.State()`; `world.objects[]` ← the object records (`id, kind, pos, contents`);
   `agents[]` ← each agent's public state (`id, pos, real_stats, body, goal, plan_summary,

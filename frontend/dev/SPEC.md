@@ -23,22 +23,32 @@ emission) does not exist yet:
   `--dump N` prints the first N ticks' events as JSON lines and exits (no server) — the
   determinism-AC harness.
 - **Routes** (same paths/shapes the real `platform/api` serves — no `/mock-*` prefixes):
-  - `GET /api/snapshot` — `{tick, agents:[{id,pos,goal,action,mood}], objects:[{id,kind,pos}]}`.
+  - `GET /api/snapshot` — `{tick, world_revision, terrain:"on", agents:[{id,pos,goal,action,mood}],
+    objects:[{id,kind,pos}]}`. NO `stream_cursor`: the mock's SSE is a live tail without `id:`
+    lines/replay, and the frontend treats a cursor-less baseline + id-less frames as the legacy
+    transport (apply unconditionally) — that degradation path IS the mock contract.
+  - `GET /api/meta` — `{tick, schema_version, started_at, status, world_revision, terrain:"on"}`
+    (strings) — enough for the §New-map readiness flow against the mock.
   - `GET /api/terrain` — the Q5 · hex shape: `{cell_size, orientation:'flat', size:{cols,rows},
-    terrain:[...], wear:[...], elevation:[...]}` — a flat-top hex offset(col,row) array
-    (`i=row·cols+col`, mirrors navmap hex.go) with a seeded map: **river (N–S band, carved low),
-    soil (grass), forest (NE), sand (village fields), rolling-hill `elevation` ∈[0,1] (seeded
-    cosine bumps; peaks read as mountain)** — parity with the backend's GenerateTerrain relief.
-    `terrain_delta.cell` is the offset index (not `{x,y}`).
-  - `GET /sse` — `text/event-stream`; every `tick-ms` emits one `TickDone` and one `WorldFrame`
-    (data-contracts §4 keys: `hour_of_day, day_night, temperature, raining, wind{dir,mag},
-    agents[], animals[]{id,pos,species,action,heading}, flora_delta[], terrain_delta[]`), plus
-    scripted lifecycle events.
+    terrain:[...], wear:[...], elevation:[...], world_revision}` — a flat-top hex offset(col,row)
+    array (`i=row·cols+col`, mirrors navmap hex.go) with a seeded map: **river (N–S band, carved
+    low), soil (grass), forest (NE), sand (village fields), rolling-hill `elevation` ∈[0,1]
+    (seeded cosine bumps; peaks read as mountain)** — parity with the backend's GenerateTerrain
+    relief. `terrain_delta.cell` is the offset index (not `{x,y}`).
+  - `GET /sse` — `text/event-stream`; every `tick-ms` emits one `AgentFrame`
+    (`tick, agents[]{id,pos,goal,mood,action}, removed[]` — the mock re-sends full fields, a
+    valid sparse delta) and one `WorldFrame` (data-contracts §4 keys: `hour_of_day, day_night,
+    temperature, raining, wind{dir,mag}, animals[]{id,pos,species,action,heading}, flora_delta[],
+    terrain_delta[]` — no `agents[]`), plus scripted lifecycle events. Live tail only — no `id:`
+    lines, no `?cursor=` replay, no `StreamGap` (the real cursor semantics are api-server work;
+    the frontend's legacy path covers the difference).
   - `POST /api/restart` — parity with the real api's restart control route: resets the scripted
     world (tick 0, re-seeded PRNG, initial animal/flora/agent/wear state) and responds
     `202 {"status":"restarting"}`, mirroring the backend's deterministic fixture rebuild.
+    `world_revision` does NOT change (restart is not a new map).
   - `POST /api/regen` — parity with the real api's regen control route: re-rolls the mock seed
-    (optional `?seed=` pins it), rebuilds the terrain grid + scripted state from the new seed and
+    (optional `?seed=` pins it), rebuilds the terrain grid + scripted state from the new seed,
+    **bumps `world_revision`** (the mock rebuild is synchronous, so published = servable) and
     responds `202 {"status":"regenerating"}`, mirroring the backend's new-seed world rebuild.
 - **Scripted scenario** (seeded PRNG from `--seed`; deterministic given seed): deer herd grazing →
   a wolf hunts (action `hunt` → pose attack near contact) → one `AnimalDied` → respawn later via
@@ -66,7 +76,7 @@ emission) does not exist yet:
 ## Acceptance Criteria
 
 - [ ] `curl /api/snapshot`, `/api/terrain` return the documented shapes; `/sse` streams
-  `data: {...}\n\n` frames including `TickDone`, `WorldFrame`, and at least one of each lifecycle
+  `data: {...}\n\n` frames including `AgentFrame`, `WorldFrame`, and at least one of each lifecycle
   event within the scripted loop; two runs with the same `--seed` emit identical event sequences.
 - [ ] `vite.config.ts` dev proxy pointed at the mock ⇒ the app renders terrain, animals with
   walk/run/eat/attack motion, spawn/death/grow FX, day-night + rain, with **zero** `src/` changes.

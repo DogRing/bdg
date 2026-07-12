@@ -44,10 +44,14 @@ it. It does not restate the SPECs; per-module detail lands in `frontend/SPEC.md`
 
 ## 1. Current baseline (what already works)
 
-- **Data/state layer is done and ahead of the renderer**: `useWorld.ts` reduces `TickDone` +
+- **Data/state layer is done and ahead of the renderer**: `useWorld.ts` reduces `AgentFrame`
+  (sparse per-agent deltas; replaced the removed full-roster `TickDone` frame, data-contracts §4) +
   `WorldFrame` into `WorldState.agents / animals / flora / climate`; `types.ts` carries every env
   shape (`AnimalState{pos,species,action,heading,stamina}`, `PlantState{pos,species,stage,width}`,
-  `ClimateState`, `TerrainDelta`, `RenderConfig`). SSE connect/reconnect (`useSSE.ts`) works.
+  `ClimateState`, `TerrainDelta`, `RenderConfig`). Bootstrap is snapshot-first with a Redis
+  stream-cursor replay boundary + `world_revision` readiness marker (lossless late join, regen
+  completion detection — the mechanism lives in `frontend/SPEC.md` §Bootstrap/§New-map flow).
+  SSE connect/reconnect (`useSSE.ts`) works.
 - **Render layer is a mockup**: `canvasRenderer.ts` draws a **hardcoded decorative map** (fake
   quadratic river, forests, buildings in canvas pixel coords, wrong "(1000,1000)" label) + agent
   dots; `buildTransform` auto-fits the agent/object bbox and ignores `RenderConfig`.
@@ -169,7 +173,8 @@ it. It does not restate the SPECs; per-module detail lands in `frontend/SPEC.md`
   transform.
 - **Q7 — Dev/mock story** `RESOLVED: keep the mock server, SPEC'd`. Move to
   `frontend/dev/mock-server.mjs`; it MUST emit byte-shape-identical data-contracts §4 events
-  (`TickDone`, `WorldFrame`, lifecycle events) and serve `/api/snapshot` + `/api/terrain` with the
+  (`AgentFrame`, `WorldFrame`, lifecycle events — `TickDone` is no longer emitted) and serve
+  `/api/snapshot` + `/api/terrain` with the
   real casing/paths (today's mock drifts: `world.Agents` casing, `/mock-api` paths — rewrite).
 - **Q8 — Agent representation** `RESOLVED: coloured dot + cluster colour/aura stays`. Sprite
   treatment for agents is revisited after motion ships.

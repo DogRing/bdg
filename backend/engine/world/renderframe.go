@@ -69,6 +69,19 @@ type TerrainRenderView struct {
 	//                       static, full-grid only (never in terrain_delta)
 }
 
+// terrainFrameEntry is one queued terrain_delta entry for this tick's
+// WorldFrame. Terrain entries are appended by runClimateEnv on content
+// transitions. Wear is RESERVED: no wear mutation is wired into the world yet
+// (navmap Deposit/Decay have no world-side caller), so nothing fills it and SSE
+// frames currently never carry a wear delta — /api/terrain is the only wear
+// source. When wear gets wired, its mutation site MUST append entries here or
+// live viewers will not see trails change until a reload.
+type terrainFrameEntry struct {
+	Cell    navmap.Cell
+	Terrain navmap.TerrainID
+	Wear    *float64
+}
+
 // RenderView builds the current render-visible env projection. Called by persist
 // (periodic-full live Redis keys) at the render/backup cadence; safe to call
 // every tick if a future caller needs that (pure read, no mutation).
@@ -158,7 +171,6 @@ func (w *World) emitWorldFrame() {
 			"temperature":   temperature,
 			"raining":       raining,
 			"wind":          map[string]any{"dir": windDir, "mag": windMag},
-			"agents":        w.frameAgents(),
 			"animals":       w.frameAnimals(),
 			"flora_delta":   w.frameFloraDelta(),
 			"terrain_delta": w.frameTerrainDelta(),
@@ -166,26 +178,8 @@ func (w *World) emitWorldFrame() {
 	})
 }
 
-// frameAgents builds the WorldFrame agents[]{id,pos,action} list (data-contracts
-// §4) — a render-only subset of what TickDone already carries (no goal/mood).
-func (w *World) frameAgents() []map[string]any {
-	out := make([]map[string]any, 0, len(w.agentIDs))
-	for _, id := range w.agentIDs {
-		a := w.agents[id]
-		if a == nil {
-			continue
-		}
-		action := ""
-		if a.PlanIdx >= 0 && a.PlanIdx < len(a.Plan.Actions) {
-			action = string(a.Plan.Actions[a.PlanIdx])
-		}
-		out = append(out, map[string]any{"id": string(a.ID), "pos": a.Pos, "action": action})
-	}
-	return out
-}
-
 // frameAnimals builds the WorldFrame animals[] list — ALL live animals every
-// frame (not a delta), mirroring TickDone.agents[]; small population, cheap.
+// frame (not a delta); small population, cheap.
 // Includes `stamina` (beyond the data-contracts §4 payload gist) because the
 // frontend reducer/AnimalState already reads+renders it (dimming by stamina;
 // frontend/src/hooks/useWorld.ts, frontend/SPEC.md AnimalState) — an
@@ -218,15 +212,11 @@ func (w *World) frameFloraDelta() []map[string]any {
 	return out
 }
 
-// frameTerrainDelta builds the WorldFrame terrain_delta[]{cell,terrain?,wear?}
-// list from the navmap's current override + active-wear sets (data-contracts
-// §4/§6). CHOICE: re-emits every cell that has EVER deviated from the base
-// layout or currently carries wear (not a true since-last-tick delta) — a
-// deliberate simplification (no additional per-tick transient buffer for wear,
-// which changes gradually and idempotently overwrites on the frontend); see the
-// WI-P4 implementation report.
+// frameTerrainDelta builds this tick's WorldFrame
+// terrain_delta[]{cell,terrain?,wear?} list. The full terrain grid is loaded via
+// /api/terrain; SSE carries only cells changed since the previous tick.
 func (w *World) frameTerrainDelta() []map[string]any {
-	if w.nav == nil {
+	if w.nav == nil || len(w.pendingTerrainFrame) == 0 {
 		return []map[string]any{}
 	}
 	type entry struct {
@@ -236,21 +226,18 @@ func (w *World) frameTerrainDelta() []map[string]any {
 		wear       float64
 	}
 	byCell := make(map[navmap.Cell]*entry)
-	for _, tc := range w.nav.TerrainOverrides() {
-		e := byCell[tc.Cell]
+	for _, pending := range w.pendingTerrainFrame {
+		e := byCell[pending.Cell]
 		if e == nil {
 			e = &entry{}
-			byCell[tc.Cell] = e
+			byCell[pending.Cell] = e
 		}
-		e.hasTerrain, e.terrain = true, string(tc.Terrain)
-	}
-	for _, wc := range w.nav.ActiveWear() {
-		e := byCell[wc.Cell]
-		if e == nil {
-			e = &entry{}
-			byCell[wc.Cell] = e
+		if pending.Terrain != "" {
+			e.hasTerrain, e.terrain = true, string(pending.Terrain)
 		}
-		e.hasWear, e.wear = true, wc.Wear
+		if pending.Wear != nil {
+			e.hasWear, e.wear = true, *pending.Wear
+		}
 	}
 	cells := make([]navmap.Cell, 0, len(byCell))
 	for c := range byCell {

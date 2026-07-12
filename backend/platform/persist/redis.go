@@ -161,6 +161,26 @@ func (r *RedisLiveStore) InitMeta(ctx context.Context, run core.RunID, m RunMeta
 	return nil
 }
 
+// PublishWorldRevision publishes the single-world revision marker: one HSET of
+// {world_revision, terrain} onto sim:{run}:meta (data-contracts §2). Called by
+// the run-driver only AFTER the revision's live baselines were written, so a
+// reader observing the new value finds matching baselines servable. InitMeta
+// never touches these fields.
+func (r *RedisLiveStore) PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn bool) error {
+	keyer := Keyer{Run: run}
+	terrain := "off"
+	if terrainOn {
+		terrain = "on"
+	}
+	if err := r.client.HSet(ctx, keyer.Meta(),
+		"world_revision", fmt.Sprintf("%d", rev),
+		"terrain", terrain,
+	); err != nil {
+		return fmt.Errorf("redis.PublishWorldRevision: %w", err)
+	}
+	return nil
+}
+
 func (r *RedisLiveStore) ReadSnapshot(ctx context.Context, run core.RunID) ([]byte, error) {
 	keyer := Keyer{Run: run}
 	val, err := r.client.Get(ctx, keyer.SnapshotKey())

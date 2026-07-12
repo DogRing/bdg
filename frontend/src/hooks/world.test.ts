@@ -5,18 +5,24 @@ import type { SimEvent, WorldState, TerrainGrid } from '../types'
 const ev = (type: string, payload: Record<string, unknown>, tick = 1): SimEvent =>
   ({ schema_version: 1, tick, seq: 0, agent_id: null, type, payload })
 
-const dispatch = (state: WorldState, e: SimEvent, atMs: number): WorldState =>
-  worldReducer(state, { type: 'EVENT', payload: e, atMs })
+const dispatch = (state: WorldState, e: SimEvent, atMs: number, streamId = ''): WorldState =>
+  worldReducer(state, { type: 'EVENT', payload: e, atMs, streamId })
+
+const agent = (id: string, over: Record<string, unknown> = {}) =>
+  ({ id, pos: { x: 0, y: 0 }, goal: '', action: '', mood: 0.5, cluster: null, copingMode: null, ...over })
 
 const frame = (animals: Array<Record<string, unknown>>, flora: Array<Record<string, unknown>> = []) =>
-  ev('WorldFrame', { agents: [], animals, flora_delta: flora, wind: { dir: 0, mag: 0 } })
+  ev('WorldFrame', { animals, flora_delta: flora, wind: { dir: 0, mag: 0 } })
+
+const ready = (): WorldState =>
+  worldReducer(initialWorldState, { type: 'SNAPSHOT_LOADED', payload: { agents: [], tick: 0 } })
 
 const deer = (over: Record<string, unknown> = {}) =>
   ({ id: 'd1', pos: { x: 0, y: 0 }, species: 'deer', action: 'graze', heading: 0, ...over })
 
 describe('WorldFrame interpolation stamps (Q3)', () => {
   it('first frame has no stamps; the second shifts pos→prevPos and stamps the window', () => {
-    let s = dispatch(initialWorldState, frame([deer()]), 1000)
+    let s = dispatch(ready(), frame([deer()]), 1000)
     expect(s.animals.get('d1')!.prevPos).toBeUndefined()
 
     s = dispatch(s, frame([deer({ pos: { x: 10, y: 0 }, heading: 1 })]), 1400)
@@ -35,14 +41,14 @@ describe('WorldFrame interpolation stamps (Q3)', () => {
 
 describe('fx queue (Q4)', () => {
   it('attack-pose entry enqueues ONE attack fx (not re-armed while it stays attack)', () => {
-    let s = dispatch(initialWorldState, frame([deer({ id: 'w1', species: 'wolf', action: 'wander' })]), 0)
+    let s = dispatch(ready(), frame([deer({ id: 'w1', species: 'wolf', action: 'wander' })]), 0)
     s = dispatch(s, frame([deer({ id: 'w1', species: 'wolf', action: 'hunt_deer' })]), 500)
     s = dispatch(s, frame([deer({ id: 'w1', species: 'wolf', action: 'hunt_deer' })]), 600)
     expect(s.fx.filter(f => f.kind === 'attack' && f.id === 'w1')).toHaveLength(1)
   })
 
   it('AnimalDied removes the animal and enqueues a death fx with its last pos/heading', () => {
-    let s = dispatch(initialWorldState, frame([deer({ pos: { x: 7, y: 8 }, heading: 2 })]), 0)
+    let s = dispatch(ready(), frame([deer({ pos: { x: 7, y: 8 }, heading: 2 })]), 0)
     s = dispatch(s, ev('AnimalDied', { object_id: 'd1', cause: 'hunted' }), 100)
     expect(s.animals.has('d1')).toBe(false)
     const death = s.fx.find(f => f.kind === 'death')!
@@ -50,7 +56,7 @@ describe('fx queue (Q4)', () => {
   })
 
   it('AnimalBorn / PlantSpawned add the entity + a spawn fx; PlantDied removes + death fx', () => {
-    let s = dispatch(initialWorldState,
+    let s = dispatch(ready(),
       ev('AnimalBorn', { object_id: 'd2', species: 'deer', pos: { x: 1, y: 2 } }), 0)
     expect(s.animals.get('d2')).toMatchObject({ species: 'deer', pos: { x: 1, y: 2 } })
     s = dispatch(s, ev('PlantSpawned', { object_id: 'p1', species: 'tree', pos: { x: 3, y: 4 } }), 10)
@@ -62,7 +68,7 @@ describe('fx queue (Q4)', () => {
   })
 
   it('a flora stage increase enqueues a grow fx', () => {
-    let s = dispatch(initialWorldState,
+    let s = dispatch(ready(),
       ev('PlantSpawned', { object_id: 'p1', species: 'tree', pos: { x: 0, y: 0 }, stage: 1 }), 0)
     s = dispatch(s, frame([], [{ id: 'p1', pos: { x: 0, y: 0 }, stage: 2 }]), 100)
     expect(s.fx.find(f => f.kind === 'grow')).toMatchObject({ id: 'p1', at: 100 })
@@ -73,11 +79,11 @@ describe('fx queue (Q4)', () => {
 
   it('terrain deltas mutate cells + wear and replace the grid object; deltas without a base grid drop', () => {
     const grid: TerrainGrid = { cellSize: 8, cols: 2, rows: 2, orientation: 'flat', terrain: ['plain', 'plain', 'plain', 'plain'] }
-    let s = worldReducer(initialWorldState, { type: 'TERRAIN_LOADED', payload: grid })
+    let s = worldReducer(ready(), { type: 'TERRAIN_LOADED', payload: grid })
     expect(s.terrain).toBe(grid)
 
     s = dispatch(s, ev('WorldFrame', {
-      agents: [], animals: [], flora_delta: [], wind: { dir: 0, mag: 0 },
+      animals: [], flora_delta: [], wind: { dir: 0, mag: 0 },
       terrain_delta: [
         { cell: 1, terrain: 'water' },   // offset index i=row·cols+col
         { cell: 2, wear: 0.5 },
@@ -89,20 +95,189 @@ describe('fx queue (Q4)', () => {
     expect(s.terrain!.wear![2]).toBeCloseTo(0.5)
     expect(grid.terrain[1]).toBe('plain')        // base grid untouched (no mutation)
 
-    const dropped = dispatch(initialWorldState, ev('WorldFrame', {
-      agents: [], animals: [], flora_delta: [], wind: { dir: 0, mag: 0 },
+    const queued = dispatch(ready(), ev('WorldFrame', {
+      animals: [], flora_delta: [], wind: { dir: 0, mag: 0 },
       terrain_delta: [{ cell: 0, terrain: 'water' }],
     }), 0)
-    expect(dropped.terrain).toBeNull()
+    expect(queued.terrain).toBeNull()
+    expect(queued.pendingTerrainDeltas).toHaveLength(1)
+
+    const loaded = worldReducer(queued, { type: 'TERRAIN_LOADED', payload: grid })
+    expect(loaded.terrain!.terrain[0]).toBe('water')
+    expect(loaded.pendingTerrainDeltas).toHaveLength(0)
   })
 
   it('expired fx are pruned on a later reduce', () => {
-    let s = dispatch(initialWorldState, ev('AnimalDied', { object_id: 'x', species: 'deer', pos: { x: 0, y: 0 } }), 0)
+    let s = dispatch(ready(), ev('AnimalDied', { object_id: 'x', species: 'deer', pos: { x: 0, y: 0 } }), 0)
     expect(s.fx).toHaveLength(1)
     s = dispatch(s, frame([deer()]), 1400)   // death still inside 1500ms
     expect(s.fx).toHaveLength(1)
     s = dispatch(s, frame([deer()]), 1600)   // past it → pruned
     expect(s.fx).toHaveLength(0)
+  })
+
+  it('AgentFrame merges sparse agent deltas', () => {
+    let s = worldReducer(initialWorldState, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 4, agents: [{ id: 'a1', pos: { x: 0, y: 0 }, goal: 'Rest', action: '', mood: 0.5, cluster: null, copingMode: null }] },
+    })
+    s = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 2, y: 3 }, action: 'MoveTo' }], removed: [] }, 5), 100)
+    expect(s.agents.get('a1')).toMatchObject({ pos: { x: 2, y: 3 }, goal: 'Rest', action: 'MoveTo', mood: 0.5 })
+  })
+
+})
+
+describe('stream cursor, authoritative roster, revision (SPEC §Bootstrap)', () => {
+  const baseline = (): WorldState => worldReducer(initialWorldState, {
+    type: 'SNAPSHOT_LOADED',
+    payload: { tick: 10, agents: [agent('a1')], revision: 1, cursor: '100-0', terrain: 'off' },
+  })
+
+  it('events arriving before any snapshot baseline are dropped (SSE is gated)', () => {
+    const s = dispatch(initialWorldState, ev('AgentFrame', {
+      agents: [{ id: 'a1', pos: { x: 7, y: 8 } }], removed: [],
+    }, 5), 100, '90-0')
+    expect(s.agents.size).toBe(0)
+    expect(s.snapshotLoaded).toBe(false)
+  })
+
+  it('identified frames apply exactly once, in cursor order', () => {
+    let s = baseline()
+    expect(s.lastAppliedStreamId).toBe('100-0')
+
+    // At-cursor entry: already baked into the snapshot ⇒ ignored.
+    s = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 5, y: 5 } }], removed: [] }, 10), 0, '100-0')
+    expect(s.agents.get('a1')!.pos).toEqual({ x: 0, y: 0 })
+
+    // Replayed post-cursor entry (emitted BEFORE the client connected —
+    // recovered through server-side replay): applies.
+    s = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 7, y: 8 }, goal: 'Satiety' }], removed: [] }, 11), 10, '101-0')
+    expect(s.agents.get('a1')).toMatchObject({ pos: { x: 7, y: 8 }, goal: 'Satiety' })
+    expect(s.lastAppliedStreamId).toBe('101-0')
+
+    // Duplicate stream id ⇒ ignored.
+    s = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 9, y: 9 } }], removed: [] }, 11), 20, '101-0')
+    expect(s.agents.get('a1')!.pos).toEqual({ x: 7, y: 8 })
+
+    // Older id (pre-cursor straggler / old-revision leftover) ⇒ ignored.
+    s = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 1, y: 1 } }], removed: [] }, 9), 30, '100-5')
+    expect(s.agents.get('a1')!.pos).toEqual({ x: 7, y: 8 })
+    expect(s.lastAppliedStreamId).toBe('101-0')
+  })
+
+  it('an agent removed after the snapshot cursor is removed by the replayed frame', () => {
+    let s = baseline()
+    s = dispatch(s, ev('AgentFrame', { agents: [], removed: ['a1'] }, 11), 0, '101-0')
+    expect(s.agents.has('a1')).toBe(false)
+  })
+
+  it('the snapshot roster is authoritative: ghosts do not survive a refresh', () => {
+    let s = baseline()
+    // A second agent appears via SSE, then dies while we are disconnected; the
+    // reacquired snapshot no longer contains it.
+    s = dispatch(s, ev('AgentFrame', { agents: [agent('ghost', { pos: { x: 3, y: 3 } })], removed: [] }, 11), 0, '101-0')
+    expect(s.agents.has('ghost')).toBe(true)
+
+    const refreshed = worldReducer(s, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 30, agents: [agent('a1', { goal: 'Rest' })], revision: 1, cursor: '200-0', terrain: 'off' },
+    })
+    expect(refreshed.agents.has('ghost')).toBe(false) // authoritative roster
+    expect(refreshed.agents.get('a1')).toMatchObject({ goal: 'Rest' })
+    expect(refreshed.lastAppliedStreamId).toBe('200-0') // replay resumes after the new cursor
+
+    // A post-refresh delta still applies (roster replacement then replay).
+    const after = dispatch(refreshed, ev('AgentFrame', {
+      agents: [{ id: 'a1', pos: { x: 4, y: 4 } }], removed: [],
+    }, 31), 0, '201-0')
+    expect(after.agents.get('a1')!.pos).toEqual({ x: 4, y: 4 })
+  })
+
+  it('a snapshot older than already-applied entries is rejected for reacquisition', () => {
+    let s = baseline()
+    s = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 7, y: 8 } }], removed: [] }, 11), 0, '150-0')
+
+    const rejected = worldReducer(s, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 9, agents: [agent('a1')], revision: 1, cursor: '120-0', terrain: 'off' },
+    })
+    expect(rejected.baselineRetries).toBe(1)
+    expect(rejected.agents.get('a1')!.pos).toEqual({ x: 7, y: 8 }) // nothing rolled back
+    expect(rejected.lastAppliedStreamId).toBe('150-0')
+  })
+
+  it('a revision switch clears old-world slices and accepts a lower cursor/tick', () => {
+    let s = baseline()
+    s = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 7, y: 8 } }], removed: [] }, 11), 0, '150-0')
+    s = dispatch(s, ev('AnimalBorn', { object_id: 'd1', species: 'deer', pos: { x: 1, y: 2 } }, 12), 5, '151-0')
+    expect(s.animals.has('d1')).toBe(true)
+    expect(s.fx.length).toBeGreaterThan(0)
+
+    const switched = worldReducer(s, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 1, agents: [agent('b1')], revision: 2, cursor: '50-0', terrain: 'off' },
+    })
+    expect(switched.worldRevision).toBe(2)
+    expect(switched.tick).toBe(1)                       // tick rewinds across revisions
+    expect(switched.agents.has('a1')).toBe(false)       // old roster gone
+    expect(switched.agents.has('b1')).toBe(true)
+    expect(switched.animals.size).toBe(0)               // env slices cleared
+    expect(switched.flora).toHaveLength(0)
+    expect(switched.fx).toHaveLength(0)
+    expect(switched.terrain).toBeNull()
+    expect(switched.pendingTerrainDeltas).toHaveLength(0)
+    expect(switched.lastAppliedStreamId).toBe('50-0')   // lower cursor accepted
+
+    // Newer ids can only come from the new stream (regen deleted the old
+    // entries, and their ids are all below the new cursor anyway); a replayed
+    // new-world frame applies normally.
+    const next = dispatch(switched, ev('AgentFrame', {
+      agents: [{ id: 'b1', pos: { x: 2, y: 2 } }], removed: [],
+    }, 2), 0, '51-0')
+    expect(next.agents.get('b1')!.pos).toEqual({ x: 2, y: 2 })
+  })
+
+  it('StreamGap forces baseline reacquisition and changes nothing else', () => {
+    const s = baseline()
+    const gapped = dispatch(s, ev('StreamGap', { reason: 'cursor_trimmed' }, 0), 0, '')
+    expect(gapped.baselineRetries).toBe(1)
+    expect(gapped.agents.size).toBe(s.agents.size)
+    expect(gapped.snapshotLoaded).toBe(true)
+    expect(gapped.lastAppliedStreamId).toBe('100-0') // no id line on the control frame
+  })
+
+  it('terrain "off" clears the grid and queued deltas; a later "on" revision re-arms', () => {
+    // env-on world with a loaded grid and a queued delta...
+    const grid: TerrainGrid = { cellSize: 8, cols: 1, rows: 1, orientation: 'flat', terrain: ['plain'] }
+    let s = worldReducer(initialWorldState, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 5, agents: [], revision: 3, cursor: '10-0', terrain: 'on' },
+    })
+    s = worldReducer(s, { type: 'TERRAIN_LOADED', payload: grid })
+    expect(s.terrain).not.toBeNull()
+    expect(s.terrainStatus).toBe('on')
+
+    // ...switches to an env-off revision: grid + deltas drop, status flips.
+    const off = worldReducer(s, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 1, agents: [], revision: 4, cursor: '20-0', terrain: 'off' },
+    })
+    expect(off.terrainStatus).toBe('off')
+    expect(off.terrain).toBeNull()
+    expect(off.pendingTerrainDeltas).toHaveLength(0)
+  })
+
+  it('a legacy snapshot (no wrapper) keeps the mock/live-tail behaviour', () => {
+    const s = worldReducer(initialWorldState, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 5, agents: [agent('a1')] },
+    })
+    expect(s.worldRevision).toBeNull()
+    expect(s.snapshotCursor).toBe('')
+    expect(s.terrainStatus).toBe('unknown')
+    // Unidentified frames apply unconditionally (legacy transport).
+    const next = dispatch(s, ev('AgentFrame', { agents: [{ id: 'a1', pos: { x: 7, y: 8 } }], removed: [] }, 6), 0, '')
+    expect(next.agents.get('a1')!.pos).toEqual({ x: 7, y: 8 })
   })
 })
 

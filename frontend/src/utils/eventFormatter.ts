@@ -87,6 +87,12 @@ export function formatEvent(ev: SimEvent): LogEntry | null {
     case 'TickDone': {
       return null // suppress tick-done from log; update tick counter only
     }
+    case 'AgentFrame': {
+      return null // suppress render delta from log; reducer updates agent state
+    }
+    case 'StreamGap': {
+      return null // transport control frame; reducer triggers baseline reacquisition
+    }
     default: {
       return { ...base, type: ev.type, text: `[${ev.type}] ${agentId ?? ''} ${JSON.stringify(p).slice(0, 60)}`, variant: 'normal' }
     }

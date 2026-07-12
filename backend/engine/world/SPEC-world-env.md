@@ -87,7 +87,7 @@ func (w *World) InstallEnv(
 ## The env sub-phase (Phase 4 extension — serial, after intent apply)
 
 `Tick()` Phase 4 (APPLY) gains a final **env sub-phase**, run AFTER the agent (WI-P2: + animal)
-intents are applied and BEFORE the tick counter advances / `TickDone` is emitted. When env is OFF
+intents are applied and BEFORE the tick counter advances / render deltas are emitted. When env is OFF
 it is skipped entirely. The sub-phase is **fully serial** (world = sole mutator) and runs the
 modules in this **fixed order** (D12):
 

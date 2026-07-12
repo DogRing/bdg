@@ -48,7 +48,10 @@ func terrainCells(t *testing.T, w *world.World) []string {
 
 // TestRunLoop_RegenRebuildsWithNewSeed verifies the regen signal path: a pending
 // seed-carrying signal makes runLoop swap in a world rebuilt from THAT seed (new
-// random terrain, tick 0, counter reset) and purge the outgoing world's live keys.
+// random terrain, tick 0, counter reset). NOTE: with reset==nil this exercises
+// runLoop's purge FALLBACK; the production regen routes through loopControl.reset
+// (the destructive "new map, same run_id" cleanup — see
+// TestRunLoopRegenUsesResetRestartUsesPurge in main_persist_test.go).
 func TestRunLoop_RegenRebuildsWithNewSeed(t *testing.T) {
 	build := buildRabbitMeadow(t)
 	w, err := build(0)

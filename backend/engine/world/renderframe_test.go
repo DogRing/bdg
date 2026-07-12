@@ -105,11 +105,14 @@ func TestWorldFrameEmittedShapeAndGodViewExclusion(t *testing.T) {
 	}
 	for _, key := range []string{
 		"tick", "hour_of_day", "day_night", "temperature", "raining", "wind",
-		"agents", "animals", "flora_delta", "terrain_delta",
+		"animals", "flora_delta", "terrain_delta",
 	} {
 		if _, ok := payload[key]; !ok {
 			t.Errorf("WorldFrame payload missing key %q: %+v", key, payload)
 		}
+	}
+	if _, ok := payload["agents"]; ok {
+		t.Errorf("WorldFrame payload carries agents; agent render deltas belong to AgentFrame")
 	}
 	if _, ok := payload["apparent_temp"]; ok {
 		t.Errorf("WorldFrame payload carries apparent_temp — expected omitted (optional, no representative value)")

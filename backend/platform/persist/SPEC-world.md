@@ -43,16 +43,32 @@ NOT in the live keys, only the snapshot blob):
 - `sim:{run}:flora` STRING — `[{object_id, species, pos, stage, width}]` (`stage` DERIVED from `length`)
 - `sim:{run}:climate` HASH — `temperature, apparent_temp?, moisture, raining, wind_dir, wind_mag,
   hour_of_day, day_night, year_fraction` (`day_night` DERIVED from `hour_of_day`)
-- `sim:{run}:terrain` STRING — base layout + overrides (climate transitions) + wear (trails)
-- `sim:{run}:frame` STREAM — the per-frame `WorldFrame` deltas (below); SSE tails it
-These keys exist only when env is installed; absent ⇒ env-off.
+- `sim:{run}:terrain` STRING — base layout + overrides (climate transitions) + wear (trails);
+  the blob carries `world_revision` (data-contracts §2) so a reader can verify it belongs to the
+  same published revision as the snapshot it was fetched next to
+These keys exist only when env is installed; absent ⇒ env-off — and the published meta
+`terrain` flag ("on"/"off", written by `PublishWorldRevision`) states availability EXPLICITLY,
+so clients never have to infer env-off from a failed fetch. The per-frame
+`AgentFrame`/`WorldFrame` deltas (below) are EVENT TYPES on the run's single
+`sim:{run}:events` STREAM (data-contracts §2/§4) — there is NO separate frame stream/key;
+SSE tails the events stream (with `id:`-line cursors + replay, api SPEC `GET /sse`).
 
-### `WorldFrame` (the SSE graphics frame, data-contracts §4)
+On `POST /api/regen` ("new map", same run_id — current single-world mode; a multi-world
+redesign is DEFERRED, `docs/plans/run-generation.md`) the run-driver ATTEMPTS to delete these env
+render keys (together with the per-entity, snapshot/tick/events keys) BEFORE flushing the
+regenerated world. The deletion is best-effort — a failed DEL is logged, not fatal — and the
+consistency mechanism is the overwrite: the immediate fresh flush plus per-tick writes replace
+every fixed key, so stale data self-heals (residual risk: a stale per-entity hash whose DEL
+failed, SPEC.md Notes). `sim:{run}:meta` is refreshed in place. `POST /api/restart` does not
+delete the fixed keys — the immediate re-flush overwrites them (SPEC.md Notes "restart vs regen").
+
+### `AgentFrame` / `WorldFrame` (SSE graphics frames, data-contracts §4)
 The frontend graphics projection — built from the live render keys, streamed by `platform/api` over
 SSE (persist/world supply the render view; api owns the HTTP stream):
 ```
+AgentFrame { tick, agents[]{id, pos?, goal?, mood?, action?}, removed[] }
 WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag},
-             agents[]{id, pos, action}, animals[]{id, pos, species, action, heading},
+             animals[]{id, pos, species, action, heading},
              flora_delta[]{id, pos, stage}, terrain_delta[]{cell, terrain, wear} }
 ```
 - **God-view EXCLUDED** (no `real_stats`/`tom_digest`/raw drives) — the observation-mode boundary
@@ -96,7 +112,7 @@ WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining,
 - **The engine-side `world.WorldState` env fields + the world's render-view accessors** → `engine/world`
   (the env state is owned there, SPEC-world-env/fauna; persist only READS via `world.State()` and writes
   via `world.RestoreState`). The exact `WorldState` field additions are an engine SPEC item (flagged).
-- **The SSE HTTP stream + observation-mode flag** → `platform/api` (it tails `sim:{run}:frame` and
+- **The SSE HTTP stream + observation-mode flag** → `platform/api` (it tails `sim:{run}:events` and
   applies the god-view filter; this sub-spec fixes the `WorldFrame` SHAPE, data-contracts §4).
 - **The fixture-load INPUT half** (world-gen / scenario fixture → terrain layout + placed plants/
   animals → `navmap.New`/`climate.New`/`flora.New`/`decay.New` → `world.InstallEnv`/`InstallFauna`) →

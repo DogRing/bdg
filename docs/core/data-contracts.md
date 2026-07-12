@@ -9,10 +9,14 @@
 - IDs: `RunID`, `AgentID`, `ObjectID` are strings. Tick is an integer (game-minutes).
 
 ## 1. Simulation snapshot (engine → persist)
-The complete deterministic state for one tick. Same snapshot + same seed → same next tick.
+The complete deterministic state for one tick. Same base snapshot + same seed → same next tick.
 ```
 Snapshot {                        // persist.Snapshot — JSON, snake_case keys (Go field tags)
   schema_version, run_id, tick
+  world_revision?                  // publication marker (§2); stamped by the run-driver at flush
+  stream_cursor?                   // Redis events-stream entry ID the state reflects (§2); flush-stamped
+  terrain?                         // "on" | "off" — explicit terrain/env availability of this
+                                   // revision (§2); absent ⇒ unknown (legacy blob)
   world {                          // engine world.WorldState
     tick, rng_state               // rng_state: for deterministic resume
     agents[] {
@@ -49,6 +53,14 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
   source for the god-view "others" channel: `real` (real_stats) ≠ `self` (self_est_stats) ≠ `others`
   (mean over `tom_digest[X][subject].est_stats`) are kept SEPARATE (D6/D8) — never a single reputation scalar.
 - All keys are snake_case so the read API (`platform/api`) parses the live snapshot blob directly.
+- **Two storage views.** Each backup cadence starts with one `CaptureSnapshot` base. The run-driver
+  encodes that untouched base for the Postgres `snapshots.blob`; because the wrapper fields are
+  zero/empty and `omitempty`, `world_revision`, `stream_cursor`, and `terrain` are absent. It then
+  copies the base, stamps those three fields, and separately encodes the Redis live snapshot.
+- **Wrapper vs state (determinism scope).** `world_revision` / `stream_cursor` / `terrain` are
+  OPERATIONAL Redis publication metadata (wall-clock-derived stream IDs, boot-dependent revision),
+  not deterministic simulation state. They never enter the Postgres backup blob. Determinism ACs
+  (§5, `docs/core/testing.md`) cover the base snapshot; resume consumes the base state only.
 - **Inventory vs per-instance state (Materials Dm5(a)/FINAL).** `inventory { Tag: int }` is the per-kind
   COUNT view used by needs/planning/render. Two kinds of inventory item carry PER-INSTANCE state in a
   separate channel, with the `inventory` count = sum over instances:
@@ -77,7 +89,8 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
 ## 2. Redis — live state
 Keyspace (`{run}` = RunID):
 ```
-sim:{run}:meta          HASH    { tick, schema_version, started_at, status }
+sim:{run}:meta          HASH    { tick, schema_version, started_at, status,
+                                  world_revision, terrain }        // publication marker, below
 sim:{run}:tick          STRING  current tick (fast read)
 sim:{run}:snapshot      STRING  latest Snapshot (serialized)  // or chunked
 sim:{run}:agent:{id}    HASH     live agent summary (render): pos, goal, action, mood
@@ -86,24 +99,106 @@ sim:{run}:flora         STRING   live plant render set: [{object_id, species, po
 sim:{run}:climate       HASH     ambient: temperature, apparent_temp?, moisture, raining, wind_dir, wind_mag,
                                  hour_of_day, day_night, year_fraction (WI-P4 — frontend ambient FX)
 sim:{run}:terrain       STRING   render terrain: base layout + overrides (climate transitions) + wear (trails)
-                                 + optional per-cell elevation[] ∈[0,1] (generated worlds; render-only relief) (WI-P4)
-sim:{run}:events        STREAM   events (§4). XADD append; SSE tails
-sim:{run}:frame         STREAM   per-frame render deltas (WorldFrame, §4); SSE tails for the graphics client (WI-P4)
+                                 + optional per-cell elevation[] ∈[0,1] (generated worlds; render-only relief)
+                                 + world_revision (below) (WI-P4)
+sim:{run}:events        STREAM   ALL events (§4), incl. the per-frame render deltas
+                                 (AgentFrame/WorldFrame). XADD append; SSE tails this ONE stream —
+                                 there is NO separate frame stream/key
 ```
 - Live keys hold **only what render/observation needs.** Full state lives in the snapshot key.
 - TTL: keep only active runs; on completion, back up to Postgres then expire.
-- The env render keys (`animal:{id}`/`flora`/`climate`/`terrain`/`frame`) exist only when env is
+- The env render keys (`animal:{id}`/`flora`/`climate`/`terrain`) exist only when env is
   installed; absent ⇒ env-off (WI-P4). `stage`/`day_night` are DERIVED (from `length`/`hour_of_day`)
   on write — the live keys carry the render-ready view, not the raw sim state.
+- **`world_revision` — the single-world publication marker (NOT a run generation).** One run_id
+  exposes exactly one active world; `world_revision` identifies which published map revision the
+  live baselines belong to. It is an operational readiness marker for the current single-world
+  mode — not a user-selectable world identity, not `run_id`, not the deferred multi-world
+  generation (`docs/plans/run-generation.md`). Semantics:
+  · the snapshot blob (§1 wrapper), the terrain blob and the meta hash each carry the revision
+    of the world they were written for, so a reader can verify that a snapshot/terrain pair
+    belongs to one published world without atomic multi-key reads (mismatch ⇒ refetch);
+  · a successful `POST /api/regen` publishes the NEXT revision; `POST /api/restart` and failed
+    regens never change it; publication is LAST — after the mandatory Postgres reset, the
+    best-effort Redis cleanup AND the regenerated snapshot+terrain baseline writes succeed, the
+    run-driver HSETs `world_revision` + `terrain` ("on"/"off" — explicit env-off marker) onto
+    `sim:{run}:meta` in one command. A reader that observes the new revision in meta is
+    therefore guaranteed revision-tagged baselines are already servable;
+  · a transient baseline-write failure defers publication to the next backup-cadence flush
+    (revision stays pending, old revision stays visible);
+  · process restart: the run-driver reads the stored revision at boot and publishes
+    `stored+1` with its FIRST baseline flush (never backwards, never reused — a restarted
+    process rebuilds from the fixture and may publish a different map, so reusing the stored
+    revision could mislabel it). Until that first flush, meta/baselines still describe the
+    previous process's world self-consistently.
+- **`stream_cursor` — the snapshot's transport replay boundary.** The snapshot wrapper (§1)
+  records the Redis events-STREAM entry ID (`ms-seq`, assigned by XADD) of the LAST event that
+  the captured state already reflects. Entries with IDs ≤ cursor are baked into the snapshot;
+  entries strictly after it must be replayed/delivered (SSE `?cursor=`, §4). The cursor is the
+  Redis ENTRY ID, never `Event.seq` (seq is process-local and repeats across process restarts;
+  entry IDs are wall-clock monotone even across stream re-creation). Captured on the single sim
+  writer after the tick's emissions completed; a failed XADD never advances it.
 
 ## 3. Postgres — periodic backup (replay / analytics)
 ```
 runs       ( run_id PK, seed, schema_version, started_at, ended_at, status, config_hash )
-snapshots  ( run_id FK, tick, blob BYTEA, created_at )            // every N ticks
-events     ( run_id FK, tick, seq, agent_id, type, payload JSONB ) // why-trace persisted
+snapshots  ( id PK, run_id FK, tick, blob BYTEA, created_at, last_event_seq )  // every N ticks
+events     ( id PK, run_id FK, tick, seq, agent_id, type, payload JSONB, created_at ) // why-trace persisted
 ```
 - Backup interval from config (`backup_every_ticks`). Reproduce from `seed + config_hash + last snapshot`.
+- `snapshots.blob` is the deterministic base snapshot encoding from §1. Redis-only publication
+  fields (`world_revision`, `stream_cursor`, `terrain`) are absent, so transport cursor or
+  publication changes do not change Postgres backup bytes for an otherwise identical world state.
 - `events` is the source for why-trace, emergence-metric analysis, and replay.
+- **High-frequency exclusion.** Render/operational events (`TickDone`, `AgentFrame`, `WorldFrame`,
+  `SnapshotReady`) are NEVER written to `events` — they live only on the Redis stream (§2). Their
+  seqs therefore appear as gaps in the Postgres rows.
+- **`last_event_seq`** = the max `Event.seq` among the why-trace rows written in the SAME backup
+  flush as that snapshot; `NULL` when the flush carried no why-trace events. **One flush = one
+  Postgres transaction** (persist `WriteBackup`): the event batch and its snapshot row commit
+  together or roll back together, so the boundary can never reference rows that failed to persist
+  and no partial batch can exist; on failure the run-driver re-buffers the batch and the next
+  flush retries it. Seq is stamped ONCE by the run-driver's fan-out emitter, so the Redis stream
+  (§4) and these rows share one numbering. **Seq scope = one simulation process lifetime** (§4):
+  `(snapshot at tick T, events seq ≤ last_event_seq)` is a consistent replay cut only among
+  events written during the same process lifetime — a real process restart starts a new seq
+  epoch at 0 under the same run_id, so seq values repeat across lifetimes and cross-restart
+  replay is NOT currently supported (durable cross-process identity: deferred,
+  `docs/plans/run-generation.md`).
+- **Bounded backup buffer.** Pending Postgres why-trace is capped at 5,000 events. When a prolonged
+  database outage fills it, the oldest diagnostic events are discarded in chunks and the dropped
+  count is logged at the next backup attempt. Simulation state and Redis render events are not in
+  this buffer and are unaffected; this deliberately trades old why-trace for bounded backend memory.
+- **Postgres retention (created_at-based).** The run-driver requests pruning after each successful
+  backup, but SQL maintenance runs immediately on the first request and then at most once per run
+  per 6 hours. Newer than 1h: snapshots keep full cadence. 1h–24h: snapshots keep at most one row per 10-minute bucket.
+  24h–3d: snapshots keep one row per 1-day bucket. Snapshots and why-trace events strictly older
+  than 3 days are deleted. Buckets are epoch-aligned; the newest snapshot of a bucket survives
+  (latest `created_at`, ties by `tick`, then row id). Compression is out of scope.
+- **Snapshot form.** Postgres stores periodic full snapshots, not incremental chains. Incremental
+  snapshots require an independently retained base plus an ordered, atomic delta chain and
+  chain-aware restore/retention; that recovery complexity is deferred while the 3-day TTL and
+  downsampling keep full snapshots bounded.
+- **`POST /api/regen` ("new map", same run_id — current single-world development mode)** resets
+  the run in ONE Postgres transaction (`ResetRunData`: delete the run's `events` + `snapshots`
+  rows AND upsert the `runs` row to the new seed/started_at) BEFORE the regenerated world's
+  first flush; a failure at any step rolls the whole reset back and ABORTS the regen (the
+  current world keeps running, old history AND old runs metadata intact — a half-cleaned run is
+  never presented as a new map). Redis cleanup stays best-effort — an accepted, documented
+  limitation of this phase (a stale per-entity hash can linger if its DEL fails). After a regen
+  ALL frontend viewers must reload (no multi-viewer resync signal exists); a `202` response
+  means the signal was accepted, not that the rebuild succeeded or that clients have
+  resynchronized. The initiating client reads the published `world_revision` (§2) via
+  `GET /api/meta` before submitting, then polls (capped backoff, bounded timeout) until a NEW
+  revision is published — publication happens only AFTER the regenerated snapshot+terrain
+  baselines are servable — loads the revision-matching baselines, and only then reloads; on
+  timeout/abort it reports failure and keeps the current view (api SPEC `POST /api/regen`).
+  Exactly one world is
+  exposed — no world catalog/selector, no run pointer, no automatic SSE run switching.
+  Multi-world / run-generation is **DEFERRED** (design notes: `docs/plans/run-generation.md`).
+  **`POST /api/restart` is a debugging rewind** — Postgres history is preserved (append-only),
+  never deleted; "latest snapshot" therefore means the newest **persisted** row (`created_at`,
+  row id), never the highest tick.
 
 ## 4. Event / SSE schema (observability + frontend)
 The engine emits via the `events` interface. why-trace and SSE are **two views of the same stream.**
@@ -112,6 +207,14 @@ Event {
   schema_version, tick, seq, agent_id?, type, payload
 }
 ```
+- `seq` is stamped ONCE by the run-driver's fan-out emitter (`backend/main.go`; the Redis emitter
+  runs `events.WithCallerSeq`), so the SSE stream and the Postgres `events` rows (§3) carry the
+  SAME seq for the same event — two views of one stream, one numbering. **Scope: seq is monotone
+  and deterministic within ONE simulation process lifetime.** `POST /api/restart` rebuilds
+  in-process, so the sequence continues across that debugging rewind; a REAL process restart
+  begins a new process-local seq epoch at 0 while the run_id (and its restart-preserved Postgres
+  history) persists — durable cross-process sequence identity is deferred to the world/run
+  lifecycle design (`docs/plans/run-generation.md`).
 Representative `type`s (payload gist):
 | type | payload |
 |------|---------|
@@ -130,12 +233,29 @@ Representative `type`s (payload gist):
 | `ToolBroke` | object_id, kind, owner (Materials FINAL; on a tool reaching 0 durability → object-mortality) |
 | `AnimalBorn` / `AnimalDied` | object_id, species, pos / cause (WI-P4; fauna spawn + object-mortality §7) |
 | `PlantSpawned` / `PlantDied` | object_id, species, pos (WI-P4; flora propagation + object-mortality) |
-| `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, agents[]{id,pos,action}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain,wear} (cell = offset index `i=row·cols+col` into the flat-top hex grid, `docs/plans/hex-grid.md`; WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
+| `AgentFrame` | tick, agents[]{id,pos?,goal?,mood?,action?}, removed[] (sparse changed-agent fields for the frontend; snapshot is the late-join baseline; god-view EXCLUDED) |
+| `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain?,wear?} (cell = offset index `i=row·cols+col` into the flat-top hex grid, `docs/plans/hex-grid.md`; WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
 | `EnteredShelter` / `ExitedShelter` | actor_id, portal_id, interior_id, pos (SH2; active-space transition) |
 
 - **why-trace** = NFR-3. Put the *selection rationale* (competing candidates, gates, costs) into `GoalSelected` / `PlanBuilt` so "why did it do this" is reconstructable.
 - **SSE view** = the frontend-graphics subset (positions, actions, major events). Sensitive god-view fields (`real_stats`) are not sent over SSE (controlled by an observation-mode flag).
-- **`WorldFrame`** (WI-P4) is the periodic graphics frame the frontend renders: agent + animal positions/actions, flora stage deltas, terrain deltas, and the ambient weather (hour/day-night, temperature/apparent_temp, rain, wind). It is the SSE projection of the live render keys (§2); it carries NO god-view (`real_stats`/`tom_digest`) and NO raw drive/stat vectors. `day_night` derives from `hour_of_day`; `stage` from `length`. Emitted only when env is installed.
+- **SSE transport cursor (lossless late join).** Every SSE frame carries the Redis stream entry
+  ID as its standard `id:` line. A client that loaded a snapshot (whose wrapper carries
+  `stream_cursor`, §1) connects with `GET /sse?cursor=<entry-id>` (or the standard
+  `Last-Event-ID` header on reconnect): the server XREADs strictly AFTER that ID, so retained
+  entries between the snapshot capture and the connection are REPLAYED and flow gap-free into
+  the live tail (one loop, no duplicates — each frame advances the cursor). No cursor ⇒ live
+  tail only (`$`, previous behavior). **Trim/gap detection**: the stream is MAXLEN-trimmed; at
+  connect the server compares the requested cursor against the stream's `max-deleted-entry-id`
+  (XINFO) — if entries AFTER the cursor were deleted, the server sends one
+  `{"type":"StreamGap"}` control frame (no `id:` line) and closes: the client must reacquire a
+  fresh snapshot/cursor pair instead of silently applying a partial sparse history. Regen
+  DELETES the stream; a recreated stream's `max-deleted-entry-id` restarts, and entry IDs stay
+  wall-clock monotone, so a post-regen snapshot cursor that references deleted construction
+  entries is NOT a gap (nothing after it was lost) and old-world entries (all deleted, all
+  smaller IDs) can never replay over a new-world snapshot.
+- **`AgentFrame`** is the sparse SSE delta for agent render/status fields. It carries only changed `pos`/`goal`/`mood`/`action` fields plus `removed[]`; the REST snapshot (an AUTHORITATIVE roster: agents absent from it are gone) plus replay-after-`stream_cursor` is the lossless late-join baseline.
+- **`WorldFrame`** (WI-P4) is the periodic env graphics frame the frontend renders: animal positions/actions, flora stage deltas, terrain deltas, and the ambient weather (hour/day-night, temperature/apparent_temp, rain, wind). It is the SSE projection of the live render keys (§2); it carries NO god-view (`real_stats`/`tom_digest`) and NO raw drive/stat vectors. `day_night` derives from `hour_of_day`; `stage` from `length`. Static terrain is loaded via `/api/terrain`; `terrain_delta` carries only changed cells after that baseline. Emitted only when env is installed.
 
 ## 5. Determinism & versioning
 - Resuming from a snapshot must be **byte-identical** to running from the start (test: `docs/core/testing.md`).

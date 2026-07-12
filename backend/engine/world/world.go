@@ -175,7 +175,12 @@ type World struct {
 	// pendingFloraFrame is the current tick's sparse flora spawn/grow render delta
 	// (WI-P4 WorldFrame.flora_delta) — built in runFloraEnv, cleared at the top of
 	// each Tick (like currentSounds/pendingSignals), consumed by emitWorldFrame.
-	pendingFloraFrame []floraFrameEntry
+	pendingFloraFrame   []floraFrameEntry
+	pendingTerrainFrame []terrainFrameEntry
+
+	// lastAgentFrame is the previous emitted agent render state. AgentFrame emits
+	// only changed fields over SSE; snapshot remains the late-join baseline.
+	lastAgentFrame map[core.AgentID]agentFrameState
 
 	// Respawn (F9 timer-respawn-to-target): optional; zero cadence ⇒ off. Templates + anchors are
 	// per-run (fixture, injected by worldgen); targets are content; cadence is balance.
@@ -250,6 +255,7 @@ func New(
 		resentmentTriggers: make(map[core.AgentID][]core.AgentID),
 		emergedRoles:       make(map[core.Function]core.AgentID),
 		pendingSignals:     make(map[core.AgentID][]core.Signal),
+		lastAgentFrame:     make(map[core.AgentID]agentFrameState),
 	}
 	return w
 }

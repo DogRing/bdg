@@ -125,6 +125,22 @@ func (f *FakeRedis) InitMeta(_ context.Context, run core.RunID, m RunMeta) error
 	return nil
 }
 
+// PublishWorldRevision mirrors RedisLiveStore: one write of the
+// {world_revision, terrain} publication fields onto the meta hash; InitMeta
+// never touches them.
+func (f *FakeRedis) PublishWorldRevision(_ context.Context, run core.RunID, rev int64, terrainOn bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	keyer := Keyer{Run: run}
+	terrain := "off"
+	if terrainOn {
+		terrain = "on"
+	}
+	f.meta[keyer.Meta()+":world_revision"] = fmt.Sprintf("%d", rev)
+	f.meta[keyer.Meta()+":terrain"] = terrain
+	return nil
+}
+
 func (f *FakeRedis) ReadSnapshot(_ context.Context, run core.RunID) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
