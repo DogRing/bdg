@@ -1,20 +1,19 @@
 // WebGL curved-world hex renderer — the 3D counterpart to the pure-2D src/render layer.
 // It is intentionally stateful (GL context, camera, a continuous loop) so it lives OUTSIDE
 // src/render (whose SPEC mandates purity). It consumes the SAME reduced world data the 2D
-// canvas does — terrain grid + live agents/animals — and owns two stacked canvases: a WebGL
+// canvas does — terrain grid + live agents/animals + climate (atmosphere: day/night, weather,
+// wind — gl/atmosphere.ts) — and owns two stacked canvases: a WebGL
 // canvas for the terrain, and a 2D overlay for entity markers/labels (projected through the
 // same view→curve→projection path as the shader). See src/gl/SPEC.md.
 
-import type { TerrainGrid, AgentState, AnimalState, WorldObject, RenderConfig } from '../types'
+import type { TerrainGrid, AgentState, AnimalState, WorldObject, RenderConfig, ClimateState } from '../types'
 import { FAUNA_SHEETS, DEFAULT_FAUNA } from '../assets/manifest'
 import { hexCentre, pixelToOffset, neighbourOffset } from './hex'
+import { createAtmosphere, drawRainOverlay, drawWindArrow, LEGACY, type Atmo } from './atmosphere'
 import { TILE_VS, TILE_FS, SKY_VS, SKY_FS } from './shaders'
 
 const FOV = 50 * Math.PI / 180, TANF = Math.tan(FOV / 2)
 const DEG = Math.PI / 180
-const ZEN: [number, number, number] = [0.36, 0.58, 0.78]
-const HOR: [number, number, number] = [0.86, 0.90, 0.93]   // sky horizon == fog colour
-const LIGHT = (() => { const v = [-0.45, 0.82, 0.40]; const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l] })()
 
 // terrain id → atlas tile index (0 grass,1 sand,2 stone,3 water,4 dirt) and top elevation
 // (fraction of a hex radius). Water MUST map to 3 (the shader's ripple/shimmer test). Unknown
@@ -75,7 +74,7 @@ export interface WorldGL {
   ok: true
   setTerrain(grid: TerrainGrid | null): void
   fit(render: RenderConfig | null): void
-  draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number): void
+  draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number, climate: ClimateState | null): void
   zoomBy(f: number): void
   tiltBy(dRad: number): void
   orbitBy(dRad: number): void
@@ -121,8 +120,17 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
     uLight: UL(tileP, 'uLight'), uTime: UL(tileP, 'uTime'), uHexR: UL(tileP, 'uHexR'), uRipple: UL(tileP, 'uRipple'),
     uCell: UL(tileP, 'uCell'), uCols: UL(tileP, 'uCols'), uTex: UL(tileP, 'uTex'), uFog: UL(tileP, 'uFog'),
     uFogNear: UL(tileP, 'uFogNear'), uFogFar: UL(tileP, 'uFogFar'),
+    uAmbI: UL(tileP, 'uAmbI'), uDiffI: UL(tileP, 'uDiffI'), uTint: UL(tileP, 'uTint'),
+    uWindDir: UL(tileP, 'uWindDir'), uWindSpd: UL(tileP, 'uWindSpd'),
+    uCloud: UL(tileP, 'uCloud'), uCloudOff: UL(tileP, 'uCloudOff'), uCloudScale: UL(tileP, 'uCloudScale'),
   }
-  const S = { aP: AL(skyP, 'aP'), uZen: UL(skyP, 'uZen'), uHor: UL(skyP, 'uHor') }
+  const S = {
+    aP: AL(skyP, 'aP'), uZen: UL(skyP, 'uZen'), uHor: UL(skyP, 'uHor'),
+    uCamF: UL(skyP, 'uCamF'), uCamR: UL(skyP, 'uCamR'), uCamU: UL(skyP, 'uCamU'),
+    uTanF: UL(skyP, 'uTanF'), uAspect: UL(skyP, 'uAspect'), uStar: UL(skyP, 'uStar'), uTime: UL(skyP, 'uTime'),
+    uSunDir: UL(skyP, 'uSunDir'), uSunCol: UL(skyP, 'uSunCol'), uMoonDir: UL(skyP, 'uMoonDir'), uMoonCol: UL(skyP, 'uMoonCol'),
+  }
+  const atmo = createAtmosphere()
 
   // prism template: 6-tri top fan + 6 side walls. per vertex [x,z,aTop,aFace,nx,ny,nz,aEdge] (8f, stride 32)
   const tpl: number[] = []
@@ -229,7 +237,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
     return { x: (cx / cw * 0.5 + 0.5) * cssW, y: (1 - (cyy / cw * 0.5 + 0.5)) * cssH, depth: -vz }
   }
 
-  function draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number) {
+  function draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number, climate: ClimateState | null) {
     lastAgents = agents; lastAnimals = Array.from(animals)
     cssW = glc.clientWidth || 800; cssH = glc.clientHeight || 480
     const dprPix = Math.min(window.devicePixelRatio || 1, 2)
@@ -237,28 +245,38 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
     if (glc.width !== bw || glc.height !== bh) { glc.width = bw; glc.height = bh }
     if (ovc.width !== bw || ovc.height !== bh) { ovc.width = bw; ovc.height = bh }
     gl.viewport(0, 0, bw, bh)
-    gl.clearColor(HOR[0], HOR[1], HOR[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+    const atm: Atmo = climate ? atmo.update(climate, clockMs) : LEGACY
+    gl.clearColor(atm.hor[0], atm.hor[1], atm.hor[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-    // sky (no depth)
-    gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.useProgram(skyP)
-    gl.bindBuffer(gl.ARRAY_BUFFER, skyBuf); gl.enableVertexAttribArray(S.aP); gl.vertexAttribPointer(S.aP, 2, gl.FLOAT, false, 0, 0)
-    gl.uniform3fv(S.uZen, ZEN); gl.uniform3fv(S.uHor, HOR); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-
-    // camera
+    // camera (basis needed by the ray-based sky, matrices by the terrain pass)
     perspective(proj, FOV, bw / bh, Math.max(0.5, dist * 0.02), dist * 6)
     const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw)
     lookAt(view, [fx + dist * cp * sy, dist * sp, fz + dist * cp * cy], [fx, 0, fz], [0, 1, 0])
     relief = RELIEF_MIN + RELIEF_GAIN * smoothstep(12 * DEG, 52 * DEG, pitch)
 
+    // sky (no depth): gradient + sun/moon discs + stars, all keyed to the atmosphere
+    gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.useProgram(skyP)
+    gl.bindBuffer(gl.ARRAY_BUFFER, skyBuf); gl.enableVertexAttribArray(S.aP); gl.vertexAttribPointer(S.aP, 2, gl.FLOAT, false, 0, 0)
+    gl.uniform3fv(S.uZen, atm.zen); gl.uniform3fv(S.uHor, atm.hor)
+    gl.uniform3f(S.uCamF, -cp * sy, -sp, -cp * cy); gl.uniform3f(S.uCamR, cy, 0, -sy); gl.uniform3f(S.uCamU, -sp * sy, cp, -sp * cy)
+    gl.uniform1f(S.uTanF, TANF); gl.uniform1f(S.uAspect, bw / bh); gl.uniform1f(S.uStar, atm.star); gl.uniform1f(S.uTime, clockMs * 0.001)
+    gl.uniform3fv(S.uSunDir, atm.sunDir); gl.uniform3fv(S.uSunCol, atm.sunCol)
+    gl.uniform3fv(S.uMoonDir, atm.moonDir); gl.uniform3fv(S.uMoonCol, atm.moonCol)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+
     // terrain prisms
+    const fogN = dist * 1.2 * atm.fogMul, fogF = dist * 3.0 * atm.fogMul
     if (instCount > 0) {
       gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.useProgram(tileP)
       gl.uniformMatrix4fv(T.uProj, false, proj); gl.uniformMatrix4fv(T.uView, false, view)
       gl.uniform1f(T.uCurv, CURVE_AMT / dist); gl.uniform1f(T.uRelief, relief)
-      gl.uniform3fv(T.uLight, LIGHT); gl.uniform1f(T.uTime, clockMs * 0.001)
+      gl.uniform3fv(T.uLight, atm.light); gl.uniform1f(T.uTime, clockMs * 0.001)
+      gl.uniform1f(T.uAmbI, atm.ambI); gl.uniform1f(T.uDiffI, atm.diffI); gl.uniform3fv(T.uTint, atm.tint)
+      gl.uniform2fv(T.uWindDir, atm.rippleDir); gl.uniform1f(T.uWindSpd, atm.rippleSpd)
+      gl.uniform1f(T.uCloud, atm.cloud); gl.uniform2fv(T.uCloudOff, atm.cloudOff); gl.uniform1f(T.uCloudScale, 1 / (cellSize * 6))
       gl.uniform1f(T.uHexR, cellSize); gl.uniform1f(T.uRipple, 0.05 * cellSize)
       gl.uniform2f(T.uCell, CELL / atlas.width, CELL / atlas.height); gl.uniform1f(T.uCols, ACOLS)
-      gl.uniform1f(T.uFogNear, dist * 1.2); gl.uniform1f(T.uFogFar, dist * 3.0); gl.uniform3f(T.uFog, HOR[0], HOR[1], HOR[2])
+      gl.uniform1f(T.uFogNear, fogN); gl.uniform1f(T.uFogFar, fogF); gl.uniform3fv(T.uFog, atm.hor)
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(T.uTex, 0)
       gl.bindBuffer(gl.ARRAY_BUFFER, tplBuf)
       va(T.aLocal, 2, 32, 0, 0); va(T.aTop, 1, 32, 8, 0); va(T.aFace, 1, 32, 12, 0); va(T.aNormal, 3, 32, 16, 0); va(T.aEdge, 1, 32, 28, 0)
@@ -266,7 +284,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
       va(T.iCenter, 2, 40, 0, 1); va(T.iType, 1, 40, 8, 1); va(T.iElev, 1, 40, 12, 1); va(T.iNbrA, 3, 40, 16, 1); va(T.iNbrB, 3, 40, 28, 1)
       ext.drawArraysInstancedANGLE(gl.TRIANGLES, 0, TPL_VERTS, instCount)
     }
-    drawOverlay(agents, lastAnimals, objects, selectedId, clockMs, dprPix)
+    drawOverlay(agents, lastAnimals, objects, selectedId, clockMs, dprPix, atm, fogN, fogF)
   }
 
   function va(loc: number, size: number, stride: number, offset: number, div: number) {
@@ -274,9 +292,9 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
     gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset); ext.vertexAttribDivisorANGLE(loc, div)
   }
 
-  function drawOverlay(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number, dprPix: number) {
+  function drawOverlay(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number, dprPix: number, atm: Atmo, fogN: number, fogF: number) {
     octx.setTransform(dprPix, 0, 0, dprPix, 0, 0); octx.clearRect(0, 0, cssW, cssH)
-    const pscale = cssH / (2 * TANF), fogN = dist * 1.2, fogF = dist * 3.0, lift = 0.3 * cellSize
+    const pscale = cssH / (2 * TANF), lift = 0.3 * cellSize
     const seat = (x: number, y: number) => elevWorldAt(x, y) * relief + lift
     // objects (static resource markers)
     for (const o of objects) {
@@ -307,6 +325,10 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
       if (sel) { octx.beginPath(); octx.arc(p.x, p.y, r + 4, 0, 7); octx.lineWidth = 2; octx.strokeStyle = '#ffd24a'; octx.stroke() }
     }
     octx.globalAlpha = 1
+    // atmosphere overlays: rain streaks slanted downwind (screen-space) + wind HUD arrow.
+    // Screen wind angle = world windDir + camera yaw (world +x → screen-right at yaw 0).
+    drawRainOverlay(octx, cssW, cssH, atm.rain, Math.cos(atm.windDir + yaw) * atm.windMag * 0.9, clockMs)
+    drawWindArrow(octx, atm.windDir + yaw, atm.windMag)
   }
 
   // ---- interaction ----

@@ -1,6 +1,7 @@
 # SPEC — `frontend/src/gl`
 
-> Status: `DRAFT` (plan: `docs/plans/hex-grid.md` H-frontend-3d). Parent: [`frontend/SPEC.md`](../../SPEC.md).
+> Status: `DRAFT` (plans: `docs/plans/hex-grid.md` H-frontend-3d; atmosphere: `docs/plans/gl-atmosphere.md`).
+> Parent: [`frontend/SPEC.md`](../../SPEC.md).
 > Sibling of the pure-2D [`src/render`](../render/SPEC.md); the two are **alternative views** of the
 > same reduced world data, chosen by a runtime toggle in `App` (default `2d`).
 
@@ -18,10 +19,13 @@ network or reducer surface. Terrain is drawn as lit, curved **hex prisms** in We
 
 ```
 gl/
-  hex.ts       flat-top odd-q hex math mirroring navmap hex.go: hexCentre (offset→world, ==render/terrain.ts),
-               pixelToOffset (world→cell inverse, for seating entities on terrain), neighbour steps
-  shaders.ts   GLSL source: tile (instanced curved prisms + walls + water + light) · sky (gradient)
-  worldGL.ts   createWorldGL(glCanvas, overlayCanvas) → the stateful renderer handle
+  hex.ts         flat-top odd-q hex math mirroring navmap hex.go: hexCentre (offset→world, ==render/terrain.ts),
+                 pixelToOffset (world→cell inverse, for seating entities on terrain), neighbour steps
+  shaders.ts     GLSL source: tile (instanced curved prisms + walls + water + light + cloud shadow) ·
+                 sky (ray-based gradient + procedural sun/moon disc + night stars)
+  atmosphere.ts  climate → atmosphere values: day/night colour ramp, sun/moon arc, overcast/rain/wind
+                 targets, wrap-aware eased state (τ≈3 s), overlay rain-streak + wind-arrow drawing
+  worldGL.ts     createWorldGL(glCanvas, overlayCanvas) → the stateful renderer handle
 ```
 The React wrapper is [`components/WorldCanvas3D.tsx`](../components/WorldCanvas3D.tsx) (same prop shape
 as `WorldCanvas`), so `App` swaps `<WorldCanvas/>` ⟷ `<WorldCanvas3D/>` behind the `2D map`/`3D view`
@@ -35,7 +39,7 @@ export interface WorldGL {
   ok: true
   setTerrain(grid: TerrainGrid | null): void   // rebuild the instanced prism buffer + elevation sampler
   fit(render: RenderConfig | null): void        // frame the world: focus = bounds/terrain centre, dist fits
-  draw(agents, animals, objects, selectedId, clockMs): void   // one frame: GL terrain + overlay markers
+  draw(agents, animals, objects, selectedId, clockMs, climate): void  // one frame: GL terrain + overlay markers + atmosphere
   zoomBy(f): void; tiltBy(dRad): void; orbitBy(dRad): void; panBy(dxPx, dyPx): void  // camera reducers
   pick(px, py): { kind: 'agent' | 'animal'; id: string } | null  // screen → nearest entity (last frame)
   dispose(): void
@@ -70,6 +74,28 @@ export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; e
 - **Camera.** Orbit (`yaw`), tilt (`pitch` 8–85°), dolly (`dist`, clamped to a fit-relative range),
   pan (`focus`, clamped to world bounds). Wheel = zoom · Alt+wheel = tilt · Shift+wheel = rotate ·
   drag = pan (all in `WorldCanvas3D`). `fit` frames `RenderConfig.bounds` (else the terrain bbox).
+- **Atmosphere** (`atmosphere.ts`, plan `docs/plans/gl-atmosphere.md`; drivers = the reducer's
+  `ClimateState`, passed per-frame through `draw`; `climate == null` ⇒ the fixed-daylight LEGACY
+  constants — same colours/light as pre-atmosphere; the sky gradient itself is ray-based in both
+  paths, see plan DL3):
+  - **Day/night (hybrid).** A keyframed colour ramp over `hourOfDay` (night/dawn/day/dusk keys)
+    sets sky zenith/horizon (== fog == clear colour), light tint and ambient/diffuse intensities;
+    a computed **sun/moon arc** drives the directional light so wall shading sweeps across the day.
+    Night keeps a dim blue moon light + a clamped ambient floor (`NIGHT_MIN` escape hatch) so the
+    view never goes unreadable; entity overlay markers keep full contrast.
+  - **Sky detail.** The sky shader is ray-based (camera basis uniforms): horizon-locked gradient,
+    procedural sun/moon discs (visibility from elevation), hash-based stars at night (hidden by
+    cloud cover). No textures.
+  - **Weather.** While `raining`: sky/fog/light ease toward an overcast grey, fog pulls closer,
+    hash-based **rain streaks** (2D-overlay port of `render/ambient.ts`, slanted downwind) fall,
+    the ground darkens (wet uniform). **Cloud shadows** — moisture/rain-driven noise darkening —
+    drift downwind across the terrain.
+  - **Wind.** HUD compass arrow (top-left, camera-yaw-corrected so it points where the wind blows
+    on screen; length/alpha ∝ `windMag`) + world cues: water-ripple direction/speed follow
+    `windDir/windMag`, rain slant and cloud drift follow the same vector.
+  - **Smoothing.** All drivers ease client-side toward targets (τ ≈ 3 s; wrap-aware for hour and
+    wind angle) — integer `hourOfDay` steps and `raining` flips never pop. Effects are functions of
+    `(eased climate, clockMs)`; streak/star patterns are index-hash based (no `Math.random`).
 
 ## Invariants
 
@@ -86,7 +112,8 @@ export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; e
 
 ## Out of Scope (later phases)
 
-- Flora coverage, transition FX (spawn/death/attack/grow), ambient (day-night tint / rain / wind),
-  camera-follow, animal sprite billboards (pose × heading), agent cluster colours/labels — the 2D
-  renderer still carries these; the 3D view ports them in later `docs/plans/hex-grid.md` phases.
+- Flora coverage, transition FX (spawn/death/attack/grow), camera-follow, animal sprite billboards
+  (pose × heading), agent cluster colours/labels — the 2D renderer still carries these; the 3D view
+  ports them in later phases. Atmosphere polish deferred by `docs/plans/gl-atmosphere.md` Q3/Q6:
+  world-space rain particles, temperature vignette, seasonal ground tint.
 - Culling for very large grids (current build uploads all cells; starter grids are small).
