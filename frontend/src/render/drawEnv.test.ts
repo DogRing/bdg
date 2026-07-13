@@ -18,6 +18,8 @@ function ctxMock() {
     save: () => ops.push({ op: 'save' }),
     restore: () => ops.push({ op: 'restore' }),
     translate: (x: number, y: number) => ops.push({ op: 'translate', x, y }),
+    transform: (a: number, b: number, c: number, d: number, e: number, f: number) =>
+      ops.push({ op: 'transform', a, b, c, d, e, f }),
     rotate: (a: number) => ops.push({ op: 'rotate', a }),
     beginPath: () => {},
     moveTo: () => ops.push({ op: 'moveTo' }),
@@ -59,11 +61,13 @@ const SEASON_SHEET: FloraSheetDef = {
   seasonRows: { leaf: 0, bare: 1, snow: 2 },
 }
 const VARIANT_SHEET: FloraSheetDef = { url: '/v.png', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 4 }
+const WIND_SHEET: FloraSheetDef = { url: '/g.svg', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1, windResponsive: true }
 
 const cache = (fauna: Record<string, SheetDef> = {}, ready = true): SpriteCache => ({
   fauna: (s) => (fauna[s] ? { image: {} as HTMLImageElement, def: fauna[s], ready } : null),
   flora: (s) => {
-    const def = s === 'tree' ? FLORA_SHEET : s === 'bush' ? SEASON_SHEET : s === 'oak' ? VARIANT_SHEET : null
+    const def = s === 'tree' ? FLORA_SHEET : s === 'bush' ? SEASON_SHEET : s === 'oak' ? VARIANT_SHEET
+      : s === 'grass' ? WIND_SHEET : null
     return def ? { image: {} as HTMLImageElement, def, ready } : null
   },
   preload: async () => {},
@@ -204,6 +208,32 @@ describe('drawFlora', () => {
     expect(rowOf('oak_1')).toBe(rowOf('oak_1')) // same id, same row (purity)
     const distinct = new Set(['oak_1', 'oak_2', 'oak_3', 'oak_4', 'oak_5', 'oak_6'].map(rowOf))
     expect(distinct.size).toBeGreaterThan(1)    // ids spread across shape rows
+  })
+
+  it('wind-responsive sprite: bottom-anchored billboard sheared downwind by climate', () => {
+    const clim = (windMag: number, windDir = 0) => ({
+      temperature: 15, apparentTemp: null, moisture: 0.5, raining: false,
+      windDir, windMag, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
+    })
+    const windy = ctxMock()
+    drawFlora(windy.ctx, [plant({ species: 'grass', width: 3 })], tr, cache(), 0, [], clim(1))
+    // base pinned at the plant position: translate to (cx, cy + size/2)
+    expect(windy.ops.find(o => o.op === 'translate')).toEqual({ op: 'translate', x: 400, y: 315 })
+    // sheared toward +x wind: transform c = -bendX < 0 (top moves downwind)
+    const sheared = windy.ops.find(o => o.op === 'transform')!
+    expect(sheared.c as number).toBeLessThan(-0.1)
+    // drawn bottom-anchored inside the sheared frame
+    const img = windy.ops.find(o => o.op === 'drawImage')!
+    expect(img.dw).toBe(30)
+
+    const calm = ctxMock()
+    drawFlora(calm.ctx, [plant({ species: 'grass', width: 3 })], tr, cache(), 0, [], clim(0))
+    expect((calm.ops.find(o => o.op === 'transform')!.c as number)).toBeCloseTo(0) // no wind, no bend
+
+    // same inputs ⇒ same shear (deterministic gust from the id-hash phase)
+    const again = ctxMock()
+    drawFlora(again.ctx, [plant({ species: 'grass', width: 3 })], tr, cache(), 0, [], clim(1))
+    expect(again.ops.find(o => o.op === 'transform')).toEqual(sheared)
   })
 
   it('coverage stamps accumulate: a denser clump emits more wash ops than a lone tuft', () => {

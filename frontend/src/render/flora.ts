@@ -12,8 +12,21 @@ const MIN_PX = 10
 // Coverage stamp: world-scaled (so it grows/shrinks with zoom, unlike the old
 // fixed dot) with a small px floor so a lone tuft never vanishes when zoomed out.
 const MIN_COVER_PX = 6
+const MAX_WIND_BEND = 0.42
 
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t)
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+
+// Stable per-plant phase: neighbouring tufts do not sway in lockstep, while the
+// same frame remains deterministic for (plant id, climate, clockMs).
+function phaseFor(id: string): number {
+  let h = 2166136261
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return ((h >>> 0) / 0xffffffff) * Math.PI * 2
+}
 
 export function drawFlora(
   ctx: CanvasRenderingContext2D,
@@ -64,7 +77,7 @@ export function drawFlora(
     ctx.fill()
   }
 
-  // Pass 2 — per-plant sprites/glyphs (trees, bushes, …).
+  // Pass 2 — per-plant sprites/glyphs (trees, bushes, wind-responsive grass, …).
   for (const plant of flora) {
     if (FLORA_COVERAGE[plant.species]) continue
     const cx = wx(plant.pos.x, tr)
@@ -85,9 +98,32 @@ export function drawFlora(
       const col = Math.min(Math.max(Math.floor(plant.stage), 0), d.stageFrames - 1)
       // Row = the season (single-file sheets) else a stable per-plant shape variant.
       const row = d.seasonRows ? d.seasonRows[season] ?? 0 : variantRow(plant.id, d.variantRows)
-      ctx.drawImage(loaded.image,
-        col * d.frameW, row * d.frameH, d.frameW, d.frameH,
-        cx - size / 2, cy - size / 2, size, size)
+      if (d.windResponsive) {
+        // The sprite is a side-view billboard anchored at its bottom centre. Wind
+        // displaces its top in screen-space: direction chooses the bend vector,
+        // magnitude chooses bend amount, and a deterministic gust adds life.
+        const mag = clamp01(climate?.windMag ?? 0)
+        const dir = climate?.windDir ?? 0
+        const gust = mag > 0
+          ? Math.sin(clockMs * (0.0018 + mag * 0.0022) + phaseFor(plant.id)) * mag * 0.18
+          : 0
+        const bend = Math.min(MAX_WIND_BEND, Math.max(0, mag * 0.34 + gust))
+        const bendX = Math.cos(dir) * bend
+        const bendY = Math.sin(dir) * bend * 0.22
+        ctx.save()
+        ctx.translate(cx, cy + size / 2)
+        // For source y∈[-size,0], negative shear coefficients move the top
+        // downwind while keeping the base exactly fixed at the plant position.
+        ctx.transform(1, 0, -bendX, 1 - bendY, 0, 0)
+        ctx.drawImage(loaded.image,
+          col * d.frameW, row * d.frameH, d.frameW, d.frameH,
+          -size / 2, -size, size, size)
+        ctx.restore()
+      } else {
+        ctx.drawImage(loaded.image,
+          col * d.frameW, row * d.frameH, d.frameW, d.frameH,
+          cx - size / 2, cy - size / 2, size, size)
+      }
     } else {
       // Fallback glyph: species-agnostic green circle (assets SPEC chain tail).
       ctx.fillStyle = DEFAULT_FLORA_COLOR
