@@ -84,14 +84,12 @@ const bushSheet: FloraSheetDef = Object.freeze({
   frameW: 362, frameH: 362, stageFrames: 4, variantRows: 1,
   seasonRows: Object.freeze({ leaf: 0, bare: 1, snow: 2 }),
 })
-// side-view grass tuft (SVG, 128×32 = 4 growth cols, one row): a bottom-anchored
-// billboard bent by wind. Grass stays a coverage-wash species — only the
-// `tuftDensity` sample of plants (FLORA_COVERAGE below) draws this sheet, on top
-// of the wash (P6-Q4 hybrid).
-const grassSheet: FloraSheetDef = Object.freeze({
-  url: '/assets/flora/grass.svg',
-  frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1, windResponsive: true,
-})
+// grass tufts share the hand-drawn bush art (P6-Q4): same growth×season grid,
+// ground-anchored at the frame bottom, drawn as a wind-bent billboard. Grass
+// stays a coverage-wash species — only the `tuftDensity` sample of plants
+// (FLORA_COVERAGE below) draws this sheet, on top of the wash; tufts inherit
+// the seasonal rows (leaf/bare/snow) for free.
+const grassSheet: FloraSheetDef = Object.freeze({ ...bushSheet, windResponsive: true })
 
 export const FLORA_SHEETS: Record<string, FloraSheetDef> = Object.freeze({
   grass:       grassSheet,
