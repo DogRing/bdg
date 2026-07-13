@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="32" viewBox="0 0 128 32">
+  <defs>
+    <linearGradient id="blade" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#2f6f2f"/>
+      <stop offset="0.58" stop-color="#4d9b3f"/>
+      <stop offset="1" stop-color="#79ba54"/>
+    </linearGradient>
+    <linearGradient id="bladeDark" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#285d2b"/>
+      <stop offset="1" stop-color="#5b9f42"/>
+    </linearGradient>
+  </defs>
+
+  <!-- stage 0: sprout -->
+  <g transform="translate(0 0)">
+    <ellipse cx="16" cy="28.5" rx="5.5" ry="1.6" fill="#315f2d" opacity=".55"/>
+    <path d="M15 28 C14 23 14 20 12 17 C16 19 17 23 17 28 Z" fill="url(#bladeDark)"/>
+    <path d="M16 28 C16 22 18 18 21 15 C19 21 19 25 18 28 Z" fill="url(#blade)"/>
+  </g>
+
+  <!-- stage 1: young tuft -->
+  <g transform="translate(32 0)">
+    <ellipse cx="16" cy="28.5" rx="8" ry="1.8" fill="#315f2d" opacity=".58"/>
+    <path d="M13 28 C10 22 9 18 8 13 C13 17 15 22 15 28 Z" fill="url(#bladeDark)"/>
+    <path d="M15 28 C14 19 14 15 16 9 C18 17 18 22 17 28 Z" fill="url(#blade)"/>
+    <path d="M17 28 C19 21 22 17 25 14 C22 20 21 24 20 28 Z" fill="url(#bladeDark)"/>
+    <path d="M14 28 C12 23 12 19 13 16 C15 21 16 24 16 28 Z" fill="url(#blade)"/>
+  </g>
+
+  <!-- stage 2: mature grass -->
+  <g transform="translate(64 0)">
+    <ellipse cx="16" cy="28.5" rx="10.5" ry="2" fill="#315f2d" opacity=".62"/>
+    <path d="M9 28 C7 21 5 17 4 10 C10 16 12 21 12 28 Z" fill="url(#bladeDark)"/>
+    <path d="M12 28 C9 17 10 12 11 5 C15 14 15 21 15 28 Z" fill="url(#blade)"/>
+    <path d="M15 28 C14 15 16 9 19 3 C20 13 19 21 18 28 Z" fill="url(#bladeDark)"/>
+    <path d="M18 28 C20 18 24 12 28 8 C25 17 23 23 22 28 Z" fill="url(#blade)"/>
+    <path d="M13 28 C14 20 17 15 21 12 C19 18 18 23 18 28 Z" fill="url(#blade)"/>
+  </g>
+
+  <!-- stage 3: dense mature tuft -->
+  <g transform="translate(96 0)">
+    <ellipse cx="16" cy="28.5" rx="12" ry="2.2" fill="#315f2d" opacity=".68"/>
+    <path d="M7 28 C5 20 3 15 2 7 C9 14 11 21 11 28 Z" fill="url(#bladeDark)"/>
+    <path d="M10 28 C7 15 8 9 10 2 C14 12 14 21 14 28 Z" fill="url(#blade)"/>
+    <path d="M13 28 C12 14 14 7 17 1 C19 11 18 21 17 28 Z" fill="url(#bladeDark)"/>
+    <path d="M17 28 C18 15 22 8 26 4 C24 14 22 22 21 28 Z" fill="url(#blade)"/>
+    <path d="M20 28 C23 19 27 14 31 11 C27 19 25 24 24 28 Z" fill="url(#bladeDark)"/>
+    <path d="M11 28 C11 20 13 14 16 10 C16 18 16 23 16 28 Z" fill="url(#blade)"/>
+    <path d="M15 28 C17 20 20 15 24 12 C21 19 20 24 19 28 Z" fill="url(#blade)"/>
+  </g>
+</svg>
