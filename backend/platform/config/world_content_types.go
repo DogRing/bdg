@@ -145,8 +145,9 @@ type objectKindDoc struct {
 			Opacity any `yaml:"opacity"`
 		} `yaml:"shade"`
 		Propagation struct {
-			Radius any `yaml:"radius"`
-			Chance any `yaml:"chance"`
+			Radius           any `yaml:"radius"`
+			Chance           any `yaml:"chance"`
+			CarryingCapacity int `yaml:"carrying_capacity"` // K: 1k local-density target; 0/absent = legacy 1/(1+n)
 		} `yaml:"propagation"`
 		DeathThreshold  float64 `yaml:"death_threshold"`
 		DeathHysteresis int     `yaml:"death_hysteresis"`

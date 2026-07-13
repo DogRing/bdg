@@ -72,6 +72,11 @@ object_kind에 `flora:` 블록으로 합류(1i 결정: flora가 objects[]에 합
 ### 1j. world-gen 초기 분포
 - [RESOLVED→rec] **초기 식물 분포 생성** — 라이브/시나리오 초기 숲을 어떻게 깔까? options: (a) 적합도장 위 seeded-RNG 분포(climate/terrain 적합도가 높은 곳에 군집) (b) 절차적 군집(seed 포인트 + 분산 시뮬 N스텝 pre-warm) (c) 시나리오는 픽스처, 라이브는 절차적(둘 다 — map-plan layout source와 동형); rec: (c) — 골든/시나리오 결정성(픽스처) + 라이브 다양성(절차), `map.yaml`/world-gen layout 패턴 재사용. 분포는 **content 아님**(placement = world-gen, objects.yaml 정신).
 
+### 1k. 번식 밀도 상한 (carrying capacity) — **RESOLVED 2026-07-12 (사람 확정)**
+- **문제(라이브 관찰):** flora 활성 시 `grass`가 ~8만 개까지 폭증 → 맵을 카펫처럼 뒤덮음. 기존 density weight `1/(1+n)`은 **평형 밀도가 없다**: 포화 군집(이웃 n)에서 스텝당 총 spawn ≈ `(n+1)·chance·suit/(1+n) = chance·suit`(밀도 무관 **상수**) → 선형+frontier 확장 → 무한 증식. content 튜닝(chance 0.30→0.15 등)은 증식을 늦출 뿐 수렴시키지 못함(가중치의 **형태**에 고정점이 없어서).
+- [RESOLVED→(A)] **밀도 상한 방식** — options: **(A)** carrying-capacity weight: `1/(1+n)` → `max(0, 1 − n/K)`, K = 종별 `carrying_capacity`(번식 반경 내 목표 이웃 수). n≥K인 기성 군집 내부의 국소 spawn이 정지하여 밀도 ≈K로 조절된다. n<K인 가장자리는 적합 서식지로 계속 확장할 수 있으며, K는 전역 개체 수 하드캡이 아니다. **(B)** 부모 무관 산포 spawn(목표 areal 밀도까지 여기저기) — 균일 초원 룩이나 §1a 재개방·world 후보 샘플링 필요. **(C)** 종별 전역 총량 하드캡 N — 8만은 막으나 공간적으로 부자연·N은 매직 상수. **채택: (A)** — 최소 변경, 동일 seed/config 재실행의 결정성 유지(각 eligible 부모의 3회 draw 유지), 부모-근접 군집 룩·D2 창발 보존, 국소 밀도가 종별 단일 content 노브(K). 근거·K 캘리브레이션 → `docs/decisions/flora-carrying-capacity.md`.
+- **계약:** `carrying_capacity`는 종 `propagation:` 블록의 **선택적** 정수. `K>0` → logistic weight; `K=0`/생략 → 레거시 `1/(1+n)`(미설정 종·픽스처·flora-off 바이트 불변). n 범위 = 동종(SPEC `NeighborCount` scope 결정과 정합). D9 준수(K는 룰 상수, per-plant 필드 아님)·D4/D10(content 데이터)·D12(단일 Step의 eligible 부모당 3회 draw 유지, 동일 seed/config 재현).
+
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `climate.md §2` / `map-plan.md M1~M5` 양식)
 > **핵심 안전 레버:** P_f1~P_f3는 outcome-중립(flora-off / `Rules` 비어있음 / 그늘 occluder 빈 슬라이스 → 거동 0 변화)
 > → 기존 world/perception 골든 불변. **P_f4에서만** 의도적 재기준. climate M-staging과 동형(`docs/plans/climate.md §2`).

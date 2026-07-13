@@ -96,7 +96,12 @@
       "required": ["radius", "chance"],
       "properties": {
         "radius": { "$ref": "#/$defs/scalarOrFormula" },
-        "chance": { "$ref": "#/$defs/scalarOrFormula" }
+        "chance": { "$ref": "#/$defs/scalarOrFormula" },
+        "carrying_capacity": {
+          "description": "K — target same-species neighbour count within `radius` (flora 1k). K>0 selects `max(0, 1 − n/K)`: established patch interiors stop spawning when neighbours reach K. This regulates local density; frontier plants with n<K may still expand, so K is not a global population cap. Omitted or 0 keeps the legacy `1/(1+n)` weight. Content tuning knob (D10); same seed/config remains deterministic (D12). See docs/decisions/flora-carrying-capacity.md.",
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "decayTransform": {

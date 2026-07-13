@@ -86,22 +86,26 @@ func buildFloraRules(doc objectsDoc, itemIDs map[core.Tag]bool, terrainAttrs map
 		if err != nil {
 			return nil, err
 		}
+		if obj.Flora.Propagation.CarryingCapacity < 0 {
+			return nil, fmt.Errorf("config: flora %s propagation.carrying_capacity must be >= 0 (0 = legacy density weight)", obj.ID)
+		}
 		if err := checkAscending("flora "+obj.ID+" stages", obj.Flora.Stages, false); err != nil {
 			return nil, err
 		}
 		rule := flora.SpeciesRule{
-			Suitability:     suit,
-			LengthRate:      lenRate,
-			WidthRate:       widRate,
-			ShadeRadius:     shadeRadius,
-			ShadeOpacity:    shadeOpacity,
-			Stages:          append([]float64(nil), obj.Flora.Stages...),
-			YieldStage:      obj.Flora.YieldStage,
-			PropagateStage:  obj.Flora.PropagateStage,
-			PropRadius:      propRadius,
-			PropChance:      propChance,
-			DeathThreshold:  obj.Flora.DeathThreshold,
-			DeathHysteresis: obj.Flora.DeathHysteresis,
+			Suitability:      suit,
+			LengthRate:       lenRate,
+			WidthRate:        widRate,
+			ShadeRadius:      shadeRadius,
+			ShadeOpacity:     shadeOpacity,
+			Stages:           append([]float64(nil), obj.Flora.Stages...),
+			YieldStage:       obj.Flora.YieldStage,
+			PropagateStage:   obj.Flora.PropagateStage,
+			PropRadius:       propRadius,
+			PropChance:       propChance,
+			CarryingCapacity: obj.Flora.Propagation.CarryingCapacity,
+			DeathThreshold:   obj.Flora.DeathThreshold,
+			DeathHysteresis:  obj.Flora.DeathHysteresis,
 		}
 		yields, err := floraYields(obj, itemIDs, statReg, allowed)
 		if err != nil {

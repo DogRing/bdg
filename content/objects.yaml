@@ -146,6 +146,7 @@ object_kinds:
       propagation:
         radius: 6.0                 # seed-dispersal radius around the parent Pos (1a)
         chance: 0.15                # base spawn probability · child_suitability · density_weight
+        carrying_capacity: 4        # 1k: target ~4 same-species neighbours within radius 6
       death_threshold: 0.20         # θ: suitability below this counts toward death (1b)
       death_hysteresis: 4           # consecutive sub-θ flora steps before removal (no flicker, 1b)
     harvest:
@@ -178,6 +179,7 @@ object_kinds:
       propagation:
         radius: 12.0
         chance: 0.08
+        carrying_capacity: 3        # 1k: ~3 trees within radius 12 → a sparse, real forest (not a wall)
       death_threshold: 0.15
       death_hysteresis: 8           # trees are hardy — long hysteresis
     harvest:
@@ -207,6 +209,8 @@ object_kinds:
       propagation:
         radius: 3.0                 # spreads in tight clumps
         chance: 0.15                # moderate spread (was 0.30 — halved to keep pastures from carpeting the map)
+        carrying_capacity: 6        # 1k: established tuft interiors stop spawning at ~6 same-species
+                                    # neighbours within radius 3 (local density target, not global cap)
       death_threshold: 0.15         # weedy but prunes marginal sites (was 0.10 — raised to thin poor ground)
       death_hysteresis: 3
     harvest:
@@ -232,6 +236,7 @@ object_kinds:
       propagation:
         radius: 2.0
         chance: 0.10                # Spreads slower than normal grass
+        carrying_capacity: 5        # 1k: thick interior target of ~5 neighbours within radius 2
       death_threshold: 0.40         # Dies easily if moisture drops
       death_hysteresis: 2
     harvest:
@@ -257,6 +262,7 @@ object_kinds:
       propagation:
         radius: 4.0
         chance: 0.05                # Very slow to spread
+        carrying_capacity: 4        # 1k: sparse desert scrub — ~4 shrubs within radius 4
       death_threshold: 0.10         # Very hardy, rarely dies
       death_hysteresis: 5
     harvest:
@@ -284,6 +290,7 @@ object_kinds:
       propagation:
         radius: 5.0
         chance: 0.20
+        carrying_capacity: 5        # 1k: scattered blooms — ~5 flowers within radius 5
       death_threshold: 0.18
       death_hysteresis: 2           # flowers are short-lived / fragile
 

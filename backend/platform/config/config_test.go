@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dogring/bdg/engine/env/flora"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/kernel/rng"
@@ -524,7 +525,7 @@ object_kinds:
       yield_stage: 1
       propagate_stage: 1
       shade: { radius: "width * 0.05", opacity: "width * 0.02" }
-      propagation: { radius: 3.0, chance: 0.30 }
+      propagation: { radius: 3.0, chance: 1.0, carrying_capacity: 4 }
       death_threshold: 0.10
       death_hysteresis: 3
     harvest:
@@ -850,6 +851,52 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 	if got := out.FaunaRules.CoverCost("deer"); got != 0.7 {
 		t.Fatalf("CoverCost = %v, want 0.7", got)
 	}
+
+	// carrying_capacity must survive YAML parsing and rule construction. At n=K the
+	// spawn probability is zero for every seed; a dropped/legacy K would still spawn.
+	plant := flora.Plant{ID: "grass_1", Species: "grass", Length: 1}
+	input := flora.SiteInput{Moisture: 1, TerrainAttrs: map[core.Tag]float64{"slope": 0}, NeighborCount: 4}
+	for seed := int64(0); seed < 100; seed++ {
+		state := flora.New([]flora.Plant{plant})
+		_, deltas := flora.Step(state, map[core.ObjectID]flora.SiteInput{plant.ID: input}, out.FloraRules,
+			func() core.ObjectID { return "child" }, rng.New(seed))
+		if len(deltas.Spawned) != 0 {
+			t.Fatalf("carrying_capacity mapping lost: n=K spawned at seed %d", seed)
+		}
+	}
+}
+
+func TestLoadWorldContentRejectsNegativeFloraCarryingCapacity(t *testing.T) {
+	files := worldContentFiles()
+	files["objects.yaml"] = strings.Replace(files["objects.yaml"], "carrying_capacity: 4", "carrying_capacity: -1", 1)
+	dir := writeTestContent(t, files, worldSchemaFiles())
+	_, err := LoadContent(dir)
+	if err == nil || !strings.Contains(err.Error(), "carrying_capacity must be >= 0") {
+		t.Fatalf("negative carrying_capacity error = %v", err)
+	}
+}
+
+func TestLoadWorldContentOmittedFloraCarryingCapacityUsesLegacyWeight(t *testing.T) {
+	files := worldContentFiles()
+	files["objects.yaml"] = strings.Replace(files["objects.yaml"], ", carrying_capacity: 4", "", 1)
+	dir := writeTestContent(t, files, worldSchemaFiles())
+	out, err := LoadContent(dir)
+	if err != nil {
+		t.Fatalf("LoadContent omitted carrying_capacity: %v", err)
+	}
+
+	plant := flora.Plant{ID: "grass_1", Species: "grass", Length: 1}
+	input := flora.SiteInput{Moisture: 1, TerrainAttrs: map[core.Tag]float64{"slope": 0}, NeighborCount: 4}
+	spawned := 0
+	for seed := int64(0); seed < 100; seed++ {
+		state := flora.New([]flora.Plant{plant})
+		_, deltas := flora.Step(state, map[core.ObjectID]flora.SiteInput{plant.ID: input}, out.FloraRules,
+			func() core.ObjectID { return "child" }, rng.New(seed))
+		spawned += len(deltas.Spawned)
+	}
+	if spawned == 0 {
+		t.Fatal("omitted carrying_capacity did not preserve non-zero legacy 1/(1+n) weight")
+	}
 }
 
 func TestCombatParamsParsedIntoEnvConfig(t *testing.T) {
@@ -1076,7 +1123,7 @@ cadence:
 		{
 			name:    "flora propagation radius neighbor count",
 			file:    "objects.yaml",
-			data:    strings.Replace(validObjectsWorldYAML, "propagation: { radius: 3.0, chance: 0.30 }", "propagation: { radius: \"neighbor_count + 1\", chance: 0.30 }", 1),
+			data:    strings.Replace(validObjectsWorldYAML, "radius: 3.0", "radius: \"neighbor_count + 1\"", 1),
 			wantErr: "flora grass propagation.radius must not read neighbor_count",
 		},
 		{

@@ -25,12 +25,16 @@ import (
 //	  idAlloc() called only on a positive spawn test (sorted parent order → reproducible IDs).
 //	Immature survivors (Stage < PropagateStage) are skipped with NO RNG draws (D12).
 //
-// Density-weighting functional form (SPEC leaves this to implementer; monotone decreasing
-// in NeighborCount required):
+// Density-weighting functional form (1k — monotone decreasing in NeighborCount):
 //
-//	densityWeight(n) = 1 / (1 + n)   (= 1.0 with 0 neighbors, → 0 as n → ∞)
+//	K>0 (CarryingCapacity):  densityWeight(n) = max(0, 1 − n/K)   → 0 at n=K (established
+//	                         patch interiors regulate toward density ≈K; not a global cap)
+//	K=0 (legacy):            densityWeight(n) = 1 / (1 + n)       → never 0 (no equilibrium)
 //
-// This ensures a crowded site (many neighbors) propagates less than an open site.
+// A crowded site propagates less than an open site either way; only K>0 imposes a stable
+// local density. K changes the spawn-test OUTCOME, never the three draws consumed by an
+// eligible parent in this Step. Later Steps may contain different parent sets; D12 guarantees
+// repeatability for the same seed/config, not legacy-trajectory identity.
 //
 // Missing SiteInput for a live plant panics (world-contract guard, mirrors navmap unknown-id).
 // Empty/nil rules = flora-off: no growth, no propagation, no death; StepDeltas is empty;
@@ -189,8 +193,8 @@ func Step(
 				suit = probabilityMax
 			}
 			propChance := evalNum(sr.PropChance, ctx)
-			densityWeight := densityWeightNumerator / float64(densityWeightBaseNeighbors+in.NeighborCount)
-			spawnProb := propChance * suit * densityWeight
+			dw := densityWeight(in.NeighborCount, sr.CarryingCapacity)
+			spawnProb := propChance * suit * dw
 			if spawnProb < probabilityMin {
 				spawnProb = probabilityMin
 			} else if spawnProb > probabilityMax {

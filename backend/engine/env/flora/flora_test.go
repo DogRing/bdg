@@ -440,6 +440,112 @@ func TestPropagationSeedDispersal(t *testing.T) {
 	}
 }
 
+// ── AC: Carrying-capacity density weight (1k) ────────────────────────────────
+
+// TestPropagationCarryingCapacity verifies the K>0 logistic density weight max(0,1−n/K):
+// a parent at NeighborCount≥K spawns nothing, the rate is linear below K, and
+// K never changes the RNG draw count (so child positions are reproducible for spawns that fire).
+func TestPropagationCarryingCapacity(t *testing.T) {
+	const sp = "cap_sp"
+	const propRadius = 10.0
+	const K = 4
+
+	// Base species: mature (stage 1 at length≥0.5), propChance=1, suitability=1.
+	base := makeSpecies(t,
+		"moisture", "0", "0",
+		"0", "0",
+		[]float64{0.5}, 0, 1, // yieldStage=0, propStage=1
+		propRadius, 1.0,
+		0.1, 10, "item_a", "Dexterity", 1, 1)
+	base.CarryingCapacity = K
+	rules := flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{sp: base})
+
+	mature := plant("p1", sp, core.Vec2{X: 50, Y: 50}, 1.0, 0.0)
+	siteAt := func(n int) flora.SiteInput {
+		return flora.SiteInput{Terrain: "g", Moisture: 1.0, NeighborCount: n}
+	}
+
+	// n = K: weight = max(0, 1 − K/K) = 0 → spawnProb 0 → never spawns, regardless of seed.
+	for seed := int64(0); seed < 30; seed++ {
+		s := flora.New([]flora.Plant{mature})
+		_, d := flora.Step(s, inputs1("p1", siteAt(K)), rules, seqAlloc("c"), rng.New(seed))
+		if len(d.Spawned) != 0 {
+			t.Fatalf("n=K=%d: weight must be 0 (no spawn), got %d spawns at seed %d", K, len(d.Spawned), seed)
+		}
+	}
+
+	// n > K: still clamped to 0 (max(0, …)), never negative-weight weirdness.
+	for seed := int64(0); seed < 30; seed++ {
+		s := flora.New([]flora.Plant{mature})
+		_, d := flora.Step(s, inputs1("p1", siteAt(K+5)), rules, seqAlloc("c"), rng.New(seed))
+		if len(d.Spawned) != 0 {
+			t.Fatalf("n>K: weight clamped to 0, got %d spawns at seed %d", len(d.Spawned), seed)
+		}
+	}
+
+	// n = 0: weight = 1 → guaranteed spawn (propChance·suit·1 = 1).
+	sFull := flora.New([]flora.Plant{mature})
+	_, dFull := flora.Step(sFull, inputs1("p1", siteAt(0)), rules, seqAlloc("c"), rng.New(7))
+	if len(dFull.Spawned) != 1 {
+		t.Fatalf("n=0: weight=1 → guaranteed spawn, got %d", len(dFull.Spawned))
+	}
+
+	// Table-driven frequency check over every point n=0..K. With chance=suitability=1,
+	// the expected spawn frequency is exactly the density weight 1-n/K.
+	const samples = 1000
+	for n := 0; n <= K; n++ {
+		n := n
+		t.Run(fmt.Sprintf("linear_n_%d", n), func(t *testing.T) {
+			spawned := 0
+			for seed := int64(0); seed < samples; seed++ {
+				s := flora.New([]flora.Plant{mature})
+				_, d := flora.Step(s, inputs1("p1", siteAt(n)), rules, seqAlloc("c"), rng.New(seed))
+				spawned += len(d.Spawned)
+			}
+			got := float64(spawned) / samples
+			want := 1 - float64(n)/K
+			if math.Abs(got-want) > 0.06 {
+				t.Fatalf("n=%d: spawn frequency=%g, want approximately linear weight %g", n, got, want)
+			}
+		})
+	}
+
+	// K does NOT shift the RNG draw sequence: a spawn that fires lands at the same position
+	// whether K is set or not (only the spawn-test threshold differs). Compare K=4 vs legacy
+	// (K=0) at n=0, where BOTH weights = 1 → both spawn → identical child position.
+	legacy := base
+	legacy.CarryingCapacity = 0
+	rulesLegacy := flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{sp: legacy})
+	sK := flora.New([]flora.Plant{mature})
+	_, dK := flora.Step(sK, inputs1("p1", siteAt(0)), rules, seqAlloc("c"), rng.New(123))
+	sL := flora.New([]flora.Plant{mature})
+	_, dL := flora.Step(sL, inputs1("p1", siteAt(0)), rulesLegacy, seqAlloc("c"), rng.New(123))
+	if len(dK.Spawned) != 1 || len(dL.Spawned) != 1 || dK.Spawned[0].Pos != dL.Spawned[0].Pos {
+		t.Errorf("K must not shift RNG draws: K child=%+v legacy child=%+v", dK.Spawned, dL.Spawned)
+	}
+
+	// K=0 preserves the complete legacy 1/(1+n) decision and child position for n>0.
+	// Reproduce the documented three draws independently for representative neighbor counts.
+	for _, n := range []int{1, 3, 9} {
+		for seed := int64(0); seed < 100; seed++ {
+			wantRNG := rng.New(seed)
+			angle := wantRNG.Float64() * 2 * math.Pi
+			dist := wantRNG.Float64() * propRadius
+			wantSpawn := wantRNG.Float64() < 1/float64(1+n)
+			wantPos := core.Vec2{X: mature.Pos.X + dist*math.Cos(angle), Y: mature.Pos.Y + dist*math.Sin(angle)}
+
+			s := flora.New([]flora.Plant{mature})
+			_, got := flora.Step(s, inputs1("p1", siteAt(n)), rulesLegacy, seqAlloc("c"), rng.New(seed))
+			if (len(got.Spawned) == 1) != wantSpawn {
+				t.Fatalf("legacy n=%d seed=%d: spawned=%v, want %v", n, seed, len(got.Spawned) == 1, wantSpawn)
+			}
+			if wantSpawn && got.Spawned[0].Pos != wantPos {
+				t.Fatalf("legacy n=%d seed=%d: child pos=%+v, want %+v", n, seed, got.Spawned[0].Pos, wantPos)
+			}
+		}
+	}
+}
+
 // ── AC-5: Death hysteresis ────────────────────────────────────────────────────
 
 func TestDeathHysteresis(t *testing.T) {

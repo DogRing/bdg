@@ -60,7 +60,7 @@ type Plant struct {
 // each flora step. Flora is a pure transform over VALUES — it does NOT import navmap or
 // climate (RESOLVED 1h: L1 leaf, core+expr+rng only). world reads navmap.TerrainAt /
 // climate Moisture/Temperature at the plant position and fills this. NeighborCount is the
-// count of same-or-any-species plants within the species' propagation/competition radius,
+// count of same-species plants within the species' propagation radius,
 // supplied by world's spatial query (D11 spatial hash) — flora does not hold a position index.
 type SiteInput struct {
     Terrain        core.Tag           // terrain type at Pos (drives suitability via Rules)
@@ -187,6 +187,9 @@ type SpeciesRule struct {
     PropagateStage int           // min derived stage for propagation (default 0)
     PropRadius     *expr.Program // propagation radius
     PropChance     *expr.Program // propagation chance
+    CarryingCapacity int         // K: target same-species neighbor count within PropRadius (1k).
+                                 // K>0 ⇒ density weight max(0,1−n/K) (local density control;
+                                 // not a global cap); K=0 ⇒ legacy 1/(1+n) (back-compat).
     DeathThreshold float64       // θ: suitability below this counts toward death (1b)
     DeathHysteresis int          // consecutive sub-θ steps before object-mortality (1b)
     Yields         []YieldRule   // yield table → Yield
@@ -299,6 +302,18 @@ type YieldItem struct {
   `Pos`; a child spawns with probability = propagation chance × child-site suitability × density
   weighting (NeighborCount). No parent-independent spontaneous spawn in P1 (RESOLVED 1a). New plants
   start at `Length ≈ 0`, `Width ≈ 0`, `DeathStreak = 0`, `Owner` empty (wild).
+- **Density weighting has a carrying capacity (1k, RESOLVED 2026-07-12)** — the density term is
+  `densityWeight(n) = max(0, 1 − n/K)` when the species' `CarryingCapacity` K > 0, so a patch's local
+  spawn rate falls to zero as `n` (same-species neighbours within the propagation radius) reaches K:
+  established patch interiors regulate toward density ≈ K. This is a local density control, not
+  a global population cap: frontier plants with `n < K` may still expand into suitable habitat. When K = 0
+  the legacy `densityWeight(n) = 1/(1+n)` is used (no equilibrium — back-compat for species/fixtures
+  that omit K; flora-off is unaffected). Within one `Step`, each eligible parent still consumes
+  angle+distance+test draws regardless of K. Different spawn outcomes can change later parent sets
+  and therefore later draw consumption; D12 guarantees repeatability for the same seed and config,
+  not an identical trajectory to the legacy rule.
+  `CarryingCapacity` is content data (D4/D10), a rule constant not per-plant state (D9). See
+  `docs/decisions/flora-carrying-capacity.md`.
 - **Death model is fixed (1b option a)** — a plant whose `Suitability < θ` increments `DeathStreak`;
   when `DeathStreak` reaches the species hysteresis span it is added to `Died` (object-mortality,
   §7). A step where `Suitability ≥ θ` resets `DeathStreak` to 0 (temporary bad weather does NOT
@@ -350,6 +365,12 @@ type YieldItem struct {
   an immature parent (Stage below propagate-stage) spawns nothing; `Spawned` plants start at
   `Length ≈ 0`, `Width ≈ 0`, `DeathStreak = 0`, `Owner` empty. Seeded — a fixed seed reproduces the
   exact child set + positions.
+- [ ] **Carrying-capacity density weight (1k)** — with `CarryingCapacity = K > 0`, a parent at
+  `NeighborCount ≥ K` spawns nothing (weight = 0), a parent at `NeighborCount = 0` uses full weight,
+  and spawn frequency decreases linearly in `NeighborCount` between them; with `CarryingCapacity = 0`
+  the legacy `1/(1+n)` weight is used (byte-identical to pre-1k behaviour). Changing K changes the
+  spawn-test outcome but NOT the RNG draw count (a parent still draws angle+dist+test regardless), so
+  a fixed seed reproduces the same child positions for whichever children do spawn. Table-driven.
 - [ ] **Death needs sustained unsuitability (1b hysteresis)** — a plant at `Suitability < θ` for
   fewer than the hysteresis span is NOT in `Died` (its `DeathStreak` increments); reaching the span
   adds it to `Died`; a step at `Suitability ≥ θ` resets `DeathStreak` to 0 (no flicker). Table-driven.

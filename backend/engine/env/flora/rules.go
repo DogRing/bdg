@@ -86,24 +86,48 @@ func evalNum(prog *expr.Program, ctx floraContext) float64 {
 	return prog.EvalNumber(ctx)
 }
 
+// densityWeight is the propagation density term (1k). With a carrying capacity K>0 it is the
+// logistic weight max(0, 1−n/K): a patch's spawn rate falls to zero as the same-species
+// neighbor count n reaches K, regulating established patch interiors toward density ≈K.
+// Frontier plants with n<K may still expand into suitable habitat; K is not a global cap.
+// K=0 keeps the legacy 1/(1+n) (no equilibrium; back-compat for species/fixtures that omit K).
+// n is clamped to ≥ 0. Pure and independent of RNG; Step's draw-count contract is documented
+// at the call site (D12).
+func densityWeight(n, k int) float64 {
+	if n < 0 {
+		n = 0
+	}
+	if k > 0 {
+		w := 1.0 - float64(n)/float64(k)
+		if w < nonNegativeFloor {
+			return nonNegativeFloor
+		}
+		return w
+	}
+	return densityWeightNumerator / float64(densityWeightBaseNeighbors+n)
+}
+
 // ── SpeciesRule & YieldRule ───────────────────────────────────────────────────
 
 // SpeciesRule is one species' compiled flora spec (the NewRules input).
 // All *expr.Program fields are compiled by platform/config via expr.Parse; flora only evaluates.
 type SpeciesRule struct {
-	Suitability     *expr.Program // → scalar ∈ [0,1]; suitability driver for both growth axes
-	LengthRate      *expr.Program // → height growth rate (world units per flora step)
-	WidthRate       *expr.Program // → canopy growth rate (world units per flora step)
-	ShadeRadius     *expr.Program // shade radius = §6(width) → ShadeOf
-	ShadeOpacity    *expr.Program // shade opacity = §6(width) → ShadeOf, clamped [0,1]
-	Stages          []float64     // strictly ascending Length thresholds; len+1 stage indices
-	YieldStage      int           // min derived stage for harvest yields (default 0)
-	PropagateStage  int           // min derived stage for propagation (default 0)
-	PropRadius      *expr.Program // propagation radius in world units
-	PropChance      *expr.Program // base propagation probability (scaled by suitability + density)
-	DeathThreshold  float64       // θ: suitability below this counts toward DeathStreak (1b)
-	DeathHysteresis int           // consecutive sub-θ steps before object-mortality (1b); 0 = no death
-	Yields          []YieldRule   // yield table → Yield
+	Suitability      *expr.Program // → scalar ∈ [0,1]; suitability driver for both growth axes
+	LengthRate       *expr.Program // → height growth rate (world units per flora step)
+	WidthRate        *expr.Program // → canopy growth rate (world units per flora step)
+	ShadeRadius      *expr.Program // shade radius = §6(width) → ShadeOf
+	ShadeOpacity     *expr.Program // shade opacity = §6(width) → ShadeOf, clamped [0,1]
+	Stages           []float64     // strictly ascending Length thresholds; len+1 stage indices
+	YieldStage       int           // min derived stage for harvest yields (default 0)
+	PropagateStage   int           // min derived stage for propagation (default 0)
+	PropRadius       *expr.Program // propagation radius in world units
+	PropChance       *expr.Program // base propagation probability (scaled by suitability + density)
+	CarryingCapacity int           // K: target same-species neighbors within PropRadius (1k).
+	//   K>0 → densityWeight(n)=max(0,1−n/K): established patch interiors stop spawning at n≥K.
+	//   K=0 → legacy densityWeight(n)=1/(1+n): no equilibrium (back-compat; flora-off unaffected).
+	DeathThreshold  float64     // θ: suitability below this counts toward DeathStreak (1b)
+	DeathHysteresis int         // consecutive sub-θ steps before object-mortality (1b); 0 = no death
+	Yields          []YieldRule // yield table → Yield
 }
 
 // YieldRule is one compiled yield-table row (flora 1e).
