@@ -222,3 +222,14 @@ dimensions (assets SPEC delta). Fauna needs only manifest frame-size/url edits (
   (b) `oak` hashes across all four sheets (max variety, species identity blurred);
   (c) `tree1` only, hold the rest.
   `RESOLVED: (a) oak→tree1 + willow/birch/conifer 예약 등록` (2026-07-13)
+- **P6-Q4 — wind-responsive grass vs the coverage wash** *(feat/wind-responsive-grass-asset)*.
+  The wind branch drew every grass plant as a bendable tuft sprite, dropping the FLORA_COVERAGE
+  wash — losing the "painted meadow" density reading and unbounding sprite cost on propagated
+  meadows. Options: (a) sprite-only (branch as authored); (b) wash-only (no wind motion);
+  (c) **hybrid** — keep the wash for every plant AND draw a deterministic `tuftDensity` fraction
+  of plants as wind-bent tuft sprites on top (density knob = manifest DATA on the coverage style;
+  pure id-hash sample, sway phase salted so sampled tufts don't sway in lockstep; unready sheet ⇒
+  sampled tuft draws nothing, the wash already marks it).
+  `RESOLVED: (c) hybrid, grass tuftDensity 0.3 초기값 — 사용자 방향("밀도를 설정") 반영` (2026-07-13)
+  Still open before merge: the grass art itself is a flat-vector SVG (plan Q1 resolved assets =
+  PNG; style clashes with the hand-drawn PNG set) — replace with matching PNG art or accept.

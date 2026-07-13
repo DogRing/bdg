@@ -17,16 +17,21 @@ const MAX_WIND_BEND = 0.42
 const easeOut = (t: number) => 1 - (1 - t) * (1 - t)
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 
-// Stable per-plant phase: neighbouring tufts do not sway in lockstep, while the
-// same frame remains deterministic for (plant id, climate, clockMs).
-function phaseFor(id: string): number {
+// Deterministic per-plant hash → [0,1): drives the tuft-density sampling and
+// (salted, so the two stay uncorrelated) the sway phase. Same id ⇒ same value
+// every frame (render purity); no Math.random.
+function hash01(id: string): number {
   let h = 2166136261
   for (let i = 0; i < id.length; i++) {
     h ^= id.charCodeAt(i)
     h = Math.imul(h, 16777619)
   }
-  return ((h >>> 0) / 0xffffffff) * Math.PI * 2
+  return (h >>> 0) / 0xffffffff
 }
+// Stable per-plant sway phase: neighbouring tufts do not move in lockstep. The
+// salt decorrelates it from the sampling hash — otherwise every SAMPLED tuft
+// (hash01 < tuftDensity) would share a narrow phase band and sway together.
+const phaseFor = (id: string): number => hash01(`~${id}`) * Math.PI * 2
 
 export function drawFlora(
   ctx: CanvasRenderingContext2D,
@@ -78,8 +83,12 @@ export function drawFlora(
   }
 
   // Pass 2 — per-plant sprites/glyphs (trees, bushes, wind-responsive grass, …).
+  // Coverage species join too, but only a deterministic `tuftDensity` sample of
+  // them (P6-Q4): the wash above carries the mass reading, the sampled tufts
+  // carry the motion, and the fraction bounds sprite cost on dense meadows.
   for (const plant of flora) {
-    if (FLORA_COVERAGE[plant.species]) continue
+    const cover = FLORA_COVERAGE[plant.species]
+    if (cover && hash01(plant.id) >= (cover.tuftDensity ?? 0)) continue
     const cx = wx(plant.pos.x, tr)
     const cy = wy(plant.pos.y, tr)
     let size = Math.max(MIN_PX, plant.width * tr.sx)
@@ -124,8 +133,10 @@ export function drawFlora(
           col * d.frameW, row * d.frameH, d.frameW, d.frameH,
           cx - size / 2, cy - size / 2, size, size)
       }
-    } else {
+    } else if (!cover) {
       // Fallback glyph: species-agnostic green circle (assets SPEC chain tail).
+      // Coverage species skip it — their wash already marks them; a glyph on top
+      // would double-mark the meadow while the tuft sheet is still loading.
       ctx.fillStyle = DEFAULT_FLORA_COLOR
       ctx.beginPath()
       ctx.arc(cx, cy, size / 2, 0, Math.PI * 2)

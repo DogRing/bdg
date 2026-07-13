@@ -84,8 +84,10 @@ const bushSheet: FloraSheetDef = Object.freeze({
   frameW: 362, frameH: 362, stageFrames: 4, variantRows: 1,
   seasonRows: Object.freeze({ leaf: 0, bare: 1, snow: 2 }),
 })
-// side-view grass tuft (SVG, 128×32 = 4 growth cols, one row): drawn per plant
-// as a bottom-anchored billboard so wind can visibly bend it.
+// side-view grass tuft (SVG, 128×32 = 4 growth cols, one row): a bottom-anchored
+// billboard bent by wind. Grass stays a coverage-wash species — only the
+// `tuftDensity` sample of plants (FLORA_COVERAGE below) draws this sheet, on top
+// of the wash (P6-Q4 hybrid).
 const grassSheet: FloraSheetDef = Object.freeze({
   url: '/assets/flora/grass.svg',
   frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1, windResponsive: true,
@@ -127,11 +129,29 @@ export function variantRow(plantId: string, rows: number): number {
 }
 
 // Ground-cover flora render as a density COVERAGE wash instead of a per-plant
-// sprite/dot. Grass is intentionally absent: it now uses a one-sided sprite so
-// the tuft can visibly bend with wind. Tall/dry ground cover keeps the cheaper
-// continuous wash until matching art exists.
-export interface FloraCoverageStyle { color: string; radiusUnits: number; alpha: number; plateau: number }
+// sprite/dot: overlapping soft stamps accumulate into a continuous meadow, so a
+// pasture reads as a painted area rather than dots pinned to the map. Membership
+// + tuning are DATA here (open content, D10) — render/ branches on the looked-up
+// style, never on a species string. `color` is rgb (draw applies alpha);
+// `radiusUnits` is the world-unit stamp radius (≈ grass propagation clump, so
+// neighbours overlap); `alpha` is the per-stamp peak (clusters build toward
+// opaque); `plateau` = fraction of the radius painted at full `alpha` before the
+// soft rim fades to 0 (near-solid cores merge adjacent stamps into one sheet).
+//
+// `tuftDensity` (P6-Q4) keeps the wash AND draws a deterministic FRACTION of the
+// species' plants as individual sprites on top of it — the wash carries the
+// mass/density reading, the sampled tufts carry visible motion (grass bends with
+// wind via its `windResponsive` sheet), and the fraction bounds sprite cost on
+// heavily propagated meadows. 0/absent ⇒ wash only.
+export interface FloraCoverageStyle {
+  color: string
+  radiusUnits: number
+  alpha: number
+  plateau: number
+  tuftDensity?: number   // [0,1] fraction of plants also drawn as sprites
+}
 export const FLORA_COVERAGE: Record<string, FloraCoverageStyle> = Object.freeze({
+  grass: Object.freeze({ color: '92,150,54', radiusUnits: 4.5, alpha: 0.30, plateau: 0.6, tuftDensity: 0.3 }),
   tall_grass: Object.freeze({ color: '60,110,40', radiusUnits: 6.0, alpha: 0.40, plateau: 0.7 }),
   dry_shrub: Object.freeze({ color: '180,160,100', radiusUnits: 3.5, alpha: 0.50, plateau: 0.5 }),
 })

@@ -67,7 +67,7 @@ const cache = (fauna: Record<string, SheetDef> = {}, ready = true): SpriteCache 
   fauna: (s) => (fauna[s] ? { image: {} as HTMLImageElement, def: fauna[s], ready } : null),
   flora: (s) => {
     const def = s === 'tree' ? FLORA_SHEET : s === 'bush' ? SEASON_SHEET : s === 'oak' ? VARIANT_SHEET
-      : s === 'grass' ? WIND_SHEET : null
+      : s === 'grass' || s === 'reed' ? WIND_SHEET : null
     return def ? { image: {} as HTMLImageElement, def, ready } : null
   },
   preload: async () => {},
@@ -216,7 +216,7 @@ describe('drawFlora', () => {
       windDir, windMag, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
     })
     const windy = ctxMock()
-    drawFlora(windy.ctx, [plant({ species: 'grass', width: 3 })], tr, cache(), 0, [], clim(1))
+    drawFlora(windy.ctx, [plant({ species: 'reed', width: 3 })], tr, cache(), 0, [], clim(1))
     // base pinned at the plant position: translate to (cx, cy + size/2)
     expect(windy.ops.find(o => o.op === 'translate')).toEqual({ op: 'translate', x: 400, y: 315 })
     // sheared toward +x wind: transform c = -bendX < 0 (top moves downwind)
@@ -227,13 +227,38 @@ describe('drawFlora', () => {
     expect(img.dw).toBe(30)
 
     const calm = ctxMock()
-    drawFlora(calm.ctx, [plant({ species: 'grass', width: 3 })], tr, cache(), 0, [], clim(0))
+    drawFlora(calm.ctx, [plant({ species: 'reed', width: 3 })], tr, cache(), 0, [], clim(0))
     expect((calm.ops.find(o => o.op === 'transform')!.c as number)).toBeCloseTo(0) // no wind, no bend
 
     // same inputs ⇒ same shear (deterministic gust from the id-hash phase)
     const again = ctxMock()
-    drawFlora(again.ctx, [plant({ species: 'grass', width: 3 })], tr, cache(), 0, [], clim(1))
+    drawFlora(again.ctx, [plant({ species: 'reed', width: 3 })], tr, cache(), 0, [], clim(1))
     expect(again.ops.find(o => o.op === 'transform')).toEqual(sheared)
+  })
+
+  it('tuftDensity hybrid: grass washes every plant and sprites only a deterministic sample', () => {
+    const meadow = Array.from({ length: 30 }, (_, i) =>
+      plant({ id: `g${i}`, species: 'grass', pos: { x: i, y: 0 }, width: 0.3 }))
+    const a = ctxMock()
+    drawFlora(a.ctx, meadow, tr, cache(), 0)
+    const washes = a.ops.filter(o => o.op === 'radialGradient').length
+    const tufts = a.ops.filter(o => o.op === 'drawImage').length
+    expect(washes).toBe(30)               // the wash still carries the whole meadow
+    expect(tufts).toBeGreaterThan(0)      // …while a tuftDensity sample of plants
+    expect(tufts).toBeLessThan(30)        //    draws as individual wind-bent sprites
+    // sampling is a pure id hash: the same frame replays op-for-op every time
+    // (compare a scalar signature — gradient mock objects are per-ctx closures)
+    const sig = (ops: Array<Record<string, unknown>>) =>
+      ops.map(o => `${o.op}:${o.x ?? ''}:${o.c ?? ''}:${o.sx ?? ''}:${o.dw ?? ''}`).join('|')
+    const b = ctxMock()
+    drawFlora(b.ctx, meadow, tr, cache(), 0)
+    expect(sig(b.ops)).toBe(sig(a.ops))
+    // sheet not ready → sampled tufts skip the glyph (the wash already marks them)
+    const c = ctxMock()
+    drawFlora(c.ctx, meadow, tr, cache({}, false), 0)
+    expect(c.ops.filter(o => o.op === 'drawImage').length).toBe(0)
+    expect(c.ops.filter(o => o.fillStyle === DEFAULT_FLORA_COLOR).length).toBe(0)
+    expect(c.ops.filter(o => o.op === 'radialGradient').length).toBe(30)
   })
 
   it('coverage stamps accumulate: a denser clump emits more wash ops than a lone tuft', () => {

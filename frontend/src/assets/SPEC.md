@@ -66,6 +66,9 @@ export interface FloraSheetDef {
   seasonRows?: Partial<Record<FloraSeason, number>>  // single-file seasons: season → row
                                     // (overrides variant rows — a sheet has one row scheme)
   seasonUrls?: Partial<Record<Exclude<FloraSeason, 'leaf'>, string>> // per-season files (trees)
+  windResponsive?: boolean          // one-sided billboard anchored at its bottom centre; the
+                                    // render layer shears its top downwind by climate windDir/
+                                    // windMag + a deterministic per-id gust (P6-Q4 — grass)
 }
 export const FLORA_SHEETS: Record<string, FloraSheetDef>
 export const DEFAULT_FLORA_COLOR: string                  // glyph fallback (circle, stage-scaled)
@@ -76,9 +79,15 @@ export const FLORA_SEASON_TEMP: { snowBelowC: number; bareBelowC: number }
 export function floraSeason(climate: { temperature: number } | null | undefined): FloraSeason
 // Deterministic per-plant shape pick: pure string hash of the plant id, stable across frames.
 export function variantRow(plantId: string, rows: number): number   // ∈ [0, rows)
-export interface FloraCoverageStyle { color: string; radiusUnits: number; alpha: number }
+export interface FloraCoverageStyle {
+  color: string; radiusUnits: number; alpha: number; plateau: number
+  tuftDensity?: number  // [0,1] (P6-Q4): fraction of the species' plants ALSO drawn as
+                        // individual sprites on top of the wash — picked by a pure id hash,
+                        // so the sample is stable per frame. 0/absent ⇒ wash only.
+}
 export const FLORA_COVERAGE: Record<string, FloraCoverageStyle>  // ground-cover species (grass) →
-  // density coverage wash instead of a sprite/dot; render branches on this style, not the species id
+  // density coverage wash instead of a per-plant sprite/dot (plus the optional tuftDensity
+  // sprite sample); render branches on this style, not the species id
 
 // Ordered first-match-wins ActionID→Pose rules (Q2). Patterns test the raw ActionID string.
 export const ACTION_POSE_RULES: ReadonlyArray<{ pattern: RegExp; pose: Pose }>
@@ -115,6 +124,8 @@ export function frameRect(def: SheetDef, pose: Pose, clockMs: number):
 2. Sheet declared but image not `ready` (still loading / 404) → category glyph.
 3. `frameRect` pose row absent → try `walk`, then `idle`, then glyph.
 4. Flora seasonal file absent/unready → the species' leaf sheet; leaf unready too → glyph.
+   Exception: a COVERAGE species' sampled tuft skips the glyph when its sheet is unready —
+   the wash already marks the plant; a glyph would double-mark the meadow.
 5. Unknown TerrainID → `TERRAIN_DEFAULT`; unknown flora species → `DEFAULT_FLORA_COLOR` circle.
 
 ## Invariants

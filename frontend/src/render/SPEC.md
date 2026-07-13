@@ -130,6 +130,15 @@ Two sub-passes over the plant slice (coverage drawn first so sprites occlude it)
   reads as a continuous meadow, an isolated tuft as a soft dab. Per-stamp alpha = `style.alpha ×
   maturity(stage)`, ramped by spawn fx and eased by grow fx. Membership + tuning are manifest DATA
   (open content) — the pass branches on the looked-up style, **never on a species string** (invariant).
+  A coverage style may additionally set **`tuftDensity` (P6-Q4)**: that fraction of the species'
+  plants — picked by a pure per-id hash, stable across frames — ALSO joins the sprite pass below,
+  drawn on top of the wash (the wash carries the mass/density reading; the sampled tufts carry
+  motion, and the fraction bounds sprite cost on propagated meadows). An unready sheet makes a
+  sampled tuft draw NOTHING (no glyph) — the wash already marks it.
+- **Wind-responsive sheets** (`windResponsive`, e.g. the sampled grass tufts): drawn as a
+  bottom-centre-anchored billboard whose top shears downwind — shear = `windDir/windMag` from the
+  `climate` argument, plus a deterministic gust (`sin` of `clockMs` with a salted per-id phase, so
+  neighbours don't sway in lockstep and the same inputs give the same frame). The base never moves.
 - **Other flora**: source col = `min(stage, stageFrames-1)`; source row = the season row
   (`seasonRows[floraSeason(climate)]`, single-file sheets) else the per-plant shape variant
   (`variantRow(plant.id, variantRows)` — deterministic id hash, so a stand of one species varies).
@@ -215,10 +224,16 @@ As specified in the parent SPEC §Ecosystem rendering: day-night tint from
 - [ ] **Flora seasons + variants** — a `seasonRows` sheet draws row 1 (`bare`) at 3 °C and row 2
   (`snow`) at −3 °C; a `variantRows:4` sheet draws the same row for the same plant id every frame
   and different rows across ids; `climate` omitted ⇒ leaf row/sheet.
-- [ ] **Flora coverage wash** — a ground-cover plant (`species:'grass'`) draws NO sprite and NO fixed
-  `MIN_PX` dot: it emits a `createRadialGradient` + `arc` of **world-scaled** radius (`radiusUnits×sx`,
-  not `MIN_PX`), with a non-glyph fill. Three overlapping grass emit more wash `fill`s than one (density
-  accumulates). Unknown non-cover species still falls back to the `DEFAULT_FLORA_COLOR` glyph.
+- [ ] **Flora coverage wash** — a ground-cover plant emits a `createRadialGradient` + `arc` of
+  **world-scaled** radius (`radiusUnits×sx`, not `MIN_PX`), with a non-glyph fill. Three overlapping
+  ground-cover plants emit more wash `fill`s than one (density accumulates). Unknown non-cover
+  species still falls back to the `DEFAULT_FLORA_COLOR` glyph.
+- [ ] **Tuft-density hybrid (P6-Q4)** — a meadow of N `grass` plants emits N wash stamps and
+  strictly between 0 and N tuft sprites; the sample is identical across repeated draws of the same
+  frame (pure id hash); with an unready sheet the sampled tufts draw neither sprite nor glyph.
+- [ ] **Wind bend** — a `windResponsive` sprite under wind translates to its base point and shears
+  (`transform` with a downwind horizontal coefficient), base fixed; no wind ⇒ zero shear; the same
+  (plants, climate, clockMs) reproduce the same shear (deterministic gust).
 - [ ] **Terrain raster (hex)** — a `cols×rows` grid with `water/plain/forest` fills that many flat-top
   **hexagon** paths (odd columns offset vertically); unknown TerrainID paints `TERRAIN_DEFAULT`; wear>0
   overlays trail alpha; `drawTerrain` performs no per-cell work when the grid object is unchanged
