@@ -52,7 +52,10 @@ export const DEFAULT_FAUNA: Record<'predator' | 'prey', SpeciesStyle> = Object.f
 // ── flora ────────────────────────────────────────────────────────────────────
 // Sheets are stage-column grids; rows are EITHER seasonal variants inside one
 // file (`seasonRows` — bush) OR per-plant shape variants (`variantRows` — trees,
-// whose seasons live in separate files via `seasonUrls`). See assets SPEC.
+// whose seasons live in separate files via `seasonUrls`). `windResponsive`
+// marks one-sided billboard art whose base is anchored at the plant position:
+// the renderer bends the whole tuft from that base using the climate wind
+// direction/magnitude; the source art itself stays deterministic. See assets SPEC.
 export type FloraSeason = 'leaf' | 'bare' | 'snow'
 export interface FloraSheetDef {
   url: string                       // leaf-season sheet
@@ -62,6 +65,7 @@ export interface FloraSheetDef {
   variantRows: number               // shape-variant rows; row = variantRow(plantId, variantRows)
   seasonRows?: Partial<Record<FloraSeason, number>>                  // single-file seasons: season → row
   seasonUrls?: Partial<Record<Exclude<FloraSeason, 'leaf'>, string>> // per-season files
+  windResponsive?: boolean          // bottom-anchored billboard, bent by wind in render
 }
 
 // tree1..4 real-art folders: 1254×1254 files, 4 growth cols × 4 shape-variant
@@ -80,8 +84,15 @@ const bushSheet: FloraSheetDef = Object.freeze({
   frameW: 362, frameH: 362, stageFrames: 4, variantRows: 1,
   seasonRows: Object.freeze({ leaf: 0, bare: 1, snow: 2 }),
 })
+// side-view grass tuft (SVG, 128×32 = 4 growth cols, one row): drawn per plant
+// as a bottom-anchored billboard so wind can visibly bend it.
+const grassSheet: FloraSheetDef = Object.freeze({
+  url: '/assets/flora/grass.svg',
+  frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1, windResponsive: true,
+})
 
 export const FLORA_SHEETS: Record<string, FloraSheetDef> = Object.freeze({
+  grass:       grassSheet,
   oak:         treeSheet(1),   // P6-Q3: the one live tree species
   willow:      treeSheet(2),   // reserved — future content species render with zero code edits
   birch:       treeSheet(3),
@@ -116,22 +127,13 @@ export function variantRow(plantId: string, rows: number): number {
 }
 
 // Ground-cover flora render as a density COVERAGE wash instead of a per-plant
-// sprite/dot: overlapping soft stamps accumulate into a continuous meadow, so a
-// pasture reads as a painted area rather than dots pinned to the map. Membership
-// + tuning are DATA here (open content, D10) — render/ branches on the looked-up
-// style, never on a species string. `color` is rgb (draw applies alpha);
-// `radiusUnits` is the world-unit stamp radius (≈ grass propagation clump, so
-// neighbours overlap); `alpha` is the per-stamp peak (clusters build toward opaque).
-// `plateau` = fraction of the radius painted at full `alpha` before the soft rim
-// fades to 0. A near-solid core (plateau ~0.6) is what lets adjacent stamps MERGE
-// into one filled sheet instead of reading as separate dabs when zoomed in — the
-// meadow stays a painted area at every zoom, while overlap still builds opacity
-// (density). Radius is world units so it tracks zoom.
+// sprite/dot. Grass is intentionally absent: it now uses a one-sided sprite so
+// the tuft can visibly bend with wind. Tall/dry ground cover keeps the cheaper
+// continuous wash until matching art exists.
 export interface FloraCoverageStyle { color: string; radiusUnits: number; alpha: number; plateau: number }
 export const FLORA_COVERAGE: Record<string, FloraCoverageStyle> = Object.freeze({
-  grass: Object.freeze({ color: '92,150,54', radiusUnits: 4.5, alpha: 0.30, plateau: 0.6 }),
-  tall_grass: Object.freeze({ color: '60,110,40', radiusUnits: 6.0, alpha: 0.40, plateau: 0.7 }), // 짙고 울창한 녹색
-  dry_shrub: Object.freeze({ color: '180,160,100', radiusUnits: 3.5, alpha: 0.50, plateau: 0.5 }), // 누런 마른 풀 색
+  tall_grass: Object.freeze({ color: '60,110,40', radiusUnits: 6.0, alpha: 0.40, plateau: 0.7 }),
+  dry_shrub: Object.freeze({ color: '180,160,100', radiusUnits: 3.5, alpha: 0.50, plateau: 0.5 }),
 })
 
 // ── ActionID → Pose (ordered, first match wins; ids are open content) ────────

@@ -166,14 +166,15 @@ describe('drawFlora', () => {
     expect(arc.fillStyle).toBe(DEFAULT_FLORA_COLOR)
   })
 
-  it('ground-cover (grass) paints a world-scaled density wash, not a fixed dot or sprite', () => {
+  it('ground-cover (tall_grass) paints a world-scaled density wash, not a fixed dot or sprite', () => {
     const { ctx, ops } = ctxMock()
-    // radiusUnits 4.5 × zoom 10 = 45 px stamp (scales with zoom, unlike the old 10px floor).
-    drawFlora(ctx, [plant({ species: 'grass', stage: 2, width: 0.3 })], tr, cache(), 0)
+    // radiusUnits 6.0 × zoom 10 = 60 px stamp (scales with zoom, unlike the old 10px floor).
+    // (grass left FLORA_COVERAGE for the wind-responsive billboard sprite.)
+    drawFlora(ctx, [plant({ species: 'tall_grass', stage: 2, width: 0.3 })], tr, cache(), 0)
     expect(ops.some(o => o.op === 'drawImage')).toBe(false)          // no sprite
     expect(ops.some(o => o.op === 'radialGradient')).toBe(true)      // gradient wash
     const arc = ops.find(o => o.op === 'arc')!
-    expect(arc.r).toBeCloseTo(45)                                    // world-scaled, not MIN_PX
+    expect(arc.r).toBeCloseTo(60)                                    // world-scaled, not MIN_PX
     expect(arc.fillStyle).not.toBe(DEFAULT_FLORA_COLOR)              // gradient, not the glyph colour
   })
 
@@ -207,12 +208,12 @@ describe('drawFlora', () => {
 
   it('coverage stamps accumulate: a denser clump emits more wash ops than a lone tuft', () => {
     const lone = ctxMock()
-    drawFlora(lone.ctx, [plant({ id: 'g1', species: 'grass', pos: { x: 0, y: 0 } })], tr, cache(), 0)
+    drawFlora(lone.ctx, [plant({ id: 'g1', species: 'tall_grass', pos: { x: 0, y: 0 } })], tr, cache(), 0)
     const clump = ctxMock()
     drawFlora(clump.ctx, [
-      plant({ id: 'g1', species: 'grass', pos: { x: 0, y: 0 } }),
-      plant({ id: 'g2', species: 'grass', pos: { x: 0.5, y: 0 } }),
-      plant({ id: 'g3', species: 'grass', pos: { x: 0, y: 0.5 } }),
+      plant({ id: 'g1', species: 'tall_grass', pos: { x: 0, y: 0 } }),
+      plant({ id: 'g2', species: 'tall_grass', pos: { x: 0.5, y: 0 } }),
+      plant({ id: 'g3', species: 'tall_grass', pos: { x: 0, y: 0.5 } }),
     ], tr, cache(), 0)
     const washes = (ops: Array<Record<string, unknown>>) => ops.filter(o => o.op === 'fill').length
     expect(washes(clump.ops)).toBeGreaterThan(washes(lone.ops)) // overlap builds density
