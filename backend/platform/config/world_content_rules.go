@@ -86,8 +86,21 @@ func buildFloraRules(doc objectsDoc, itemIDs map[core.Tag]bool, terrainAttrs map
 		if err != nil {
 			return nil, err
 		}
-		if obj.Flora.Propagation.CarryingCapacity < 0 {
-			return nil, fmt.Errorf("config: flora %s propagation.carrying_capacity must be >= 0 (0 = legacy density weight)", obj.ID)
+		// carrying_capacity (1k): scalar OR §6(terrain attrs, climate) → K. Absent → nil program
+		// (legacy 1/(1+n)). A literal negative scalar is a content error; a formula may dip ≤0 at a
+		// site (clamped to density 0 at runtime — e.g. water via (1−depth)).
+		var carryingCap *expr.Program
+		if raw := obj.Flora.Propagation.CarryingCapacity; raw != nil {
+			if f, ok := asNumber(raw); ok && f < 0 {
+				return nil, fmt.Errorf("config: flora %s propagation.carrying_capacity must be >= 0 (a formula may evaluate ≤0 per-site; a literal negative constant is disallowed)", obj.ID)
+			}
+			carryingCap, err = parseNum("propagation.carrying_capacity", raw)
+			if err != nil {
+				return nil, err
+			}
+			if containsTag(carryingCap.ReadsAttrs(), "neighbor_count") {
+				return nil, fmt.Errorf("config: flora %s propagation.carrying_capacity must not read neighbor_count (circular)", obj.ID)
+			}
 		}
 		if err := checkAscending("flora "+obj.ID+" stages", obj.Flora.Stages, false); err != nil {
 			return nil, err
@@ -103,7 +116,7 @@ func buildFloraRules(doc objectsDoc, itemIDs map[core.Tag]bool, terrainAttrs map
 			PropagateStage:   obj.Flora.PropagateStage,
 			PropRadius:       propRadius,
 			PropChance:       propChance,
-			CarryingCapacity: obj.Flora.Propagation.CarryingCapacity,
+			CarryingCapacity: carryingCap,
 			DeathThreshold:   obj.Flora.DeathThreshold,
 			DeathHysteresis:  obj.Flora.DeathHysteresis,
 		}

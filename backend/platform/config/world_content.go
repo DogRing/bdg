@@ -28,6 +28,7 @@ func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *a
 			return out, err
 		}
 		out.TerrainTypes = types
+		out.TerrainAttrs = buildTerrainAttrs(terrain)
 	}
 
 	var wd worldDoc
@@ -219,6 +220,25 @@ func buildTerrainTypes(td terrainDoc) (map[navmap.TerrainID]navmap.TerrainType, 
 		out[id] = navmap.TerrainType{BaseCost: t.BaseCost, Passable: t.Passable, RequiredTags: tags}
 	}
 	return out, nil
+}
+
+// buildTerrainAttrs collects the per-terrain §5 attribute vectors (grain_size/slope/depth/
+// salinity/moisture, …) from terrain.yaml so world can inject them into flora SiteInput
+// (suitability + carrying_capacity §6 read terrain via these). Keyed by TerrainID; a terrain
+// with no attrs is omitted (flora reads a missing operand as 0).
+func buildTerrainAttrs(td terrainDoc) map[navmap.TerrainID]map[core.Tag]float64 {
+	out := make(map[navmap.TerrainID]map[core.Tag]float64, len(td.Terrains))
+	for _, t := range td.Terrains {
+		if len(t.Attrs) == 0 {
+			continue
+		}
+		m := make(map[core.Tag]float64, len(t.Attrs))
+		for k, v := range t.Attrs {
+			m[core.Tag(k)] = v
+		}
+		out[navmap.TerrainID(t.ID)] = m
+	}
+	return out
 }
 
 type objectIDs struct {

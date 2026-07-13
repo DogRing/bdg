@@ -187,9 +187,11 @@ type SpeciesRule struct {
     PropagateStage int           // min derived stage for propagation (default 0)
     PropRadius     *expr.Program // propagation radius
     PropChance     *expr.Program // propagation chance
-    CarryingCapacity int         // K: target same-species neighbor count within PropRadius (1k).
-                                 // K>0 ⇒ density weight max(0,1−n/K) (local density control;
-                                 // not a global cap); K=0 ⇒ legacy 1/(1+n) (back-compat).
+    CarryingCapacity *expr.Program // K = §6(terrain attrs, climate) evaluated PER SITE (1k, terrain-
+                                 // dependent). K>0 ⇒ density weight max(0,1−n/K) (local density
+                                 // control, terrain-varying; not a global cap); K≤0 ⇒ density 0
+                                 // (no establishment, e.g. water via (1−depth)); nil ⇒ legacy
+                                 // 1/(1+n) (back-compat). Must not read neighbor_count (circular).
     DeathThreshold float64       // θ: suitability below this counts toward death (1b)
     DeathHysteresis int          // consecutive sub-θ steps before object-mortality (1b)
     Yields         []YieldRule   // yield table → Yield
@@ -302,18 +304,23 @@ type YieldItem struct {
   `Pos`; a child spawns with probability = propagation chance × child-site suitability × density
   weighting (NeighborCount). No parent-independent spontaneous spawn in P1 (RESOLVED 1a). New plants
   start at `Length ≈ 0`, `Width ≈ 0`, `DeathStreak = 0`, `Owner` empty (wild).
-- **Density weighting has a carrying capacity (1k, RESOLVED 2026-07-12)** — the density term is
-  `densityWeight(n) = max(0, 1 − n/K)` when the species' `CarryingCapacity` K > 0, so a patch's local
-  spawn rate falls to zero as `n` (same-species neighbours within the propagation radius) reaches K:
-  established patch interiors regulate toward density ≈ K. This is a local density control, not
-  a global population cap: frontier plants with `n < K` may still expand into suitable habitat. When K = 0
-  the legacy `densityWeight(n) = 1/(1+n)` is used (no equilibrium — back-compat for species/fixtures
-  that omit K; flora-off is unaffected). Within one `Step`, each eligible parent still consumes
+- **Density weighting has a terrain-dependent carrying capacity (1k, RESOLVED 2026-07-12; §6
+  extension 2026-07-13)** — `CarryingCapacity` is a §6 program `K` evaluated PER SITE from the
+  plant's `SiteInput` (terrain attrs + climate), so the equilibrium density VARIES BY TERRAIN.
+  The density term is `densityWeight(n) = max(0, 1 − n/K)` when `K > 0`, so a patch's local spawn
+  rate falls to zero as `n` (same-species neighbours within the propagation radius) reaches K:
+  established patch interiors regulate toward density ≈ K (a wetter/flatter site → larger K →
+  denser). This is a local density control, not a global population cap: frontier plants with
+  `n < K` may still expand into suitable habitat. When `K ≤ 0` at a site the weight is 0 — the
+  species does not establish there (e.g. deep water via a `(1 − depth)` factor). When
+  `CarryingCapacity` is nil (omitted) the legacy `densityWeight(n) = 1/(1+n)` is used (no
+  equilibrium — back-compat for species/fixtures that omit it; flora-off is unaffected). The `K`
+  formula must not read `neighbor_count` (circular — it divides `n`); `platform/config` rejects
+  that and a literal negative scalar. Within one `Step`, each eligible parent still consumes
   angle+distance+test draws regardless of K. Different spawn outcomes can change later parent sets
   and therefore later draw consumption; D12 guarantees repeatability for the same seed and config,
-  not an identical trajectory to the legacy rule.
-  `CarryingCapacity` is content data (D4/D10), a rule constant not per-plant state (D9). See
-  `docs/decisions/flora-carrying-capacity.md`.
+  not an identical trajectory to the legacy rule. `CarryingCapacity` is content data (D4/D10), a
+  rule program not per-plant state (D9). See `docs/decisions/flora-carrying-capacity.md`.
 - **Death model is fixed (1b option a)** — a plant whose `Suitability < θ` increments `DeathStreak`;
   when `DeathStreak` reaches the species hysteresis span it is added to `Died` (object-mortality,
   §7). A step where `Suitability ≥ θ` resets `DeathStreak` to 0 (temporary bad weather does NOT
@@ -365,12 +372,18 @@ type YieldItem struct {
   an immature parent (Stage below propagate-stage) spawns nothing; `Spawned` plants start at
   `Length ≈ 0`, `Width ≈ 0`, `DeathStreak = 0`, `Owner` empty. Seeded — a fixed seed reproduces the
   exact child set + positions.
-- [ ] **Carrying-capacity density weight (1k)** — with `CarryingCapacity = K > 0`, a parent at
-  `NeighborCount ≥ K` spawns nothing (weight = 0), a parent at `NeighborCount = 0` uses full weight,
-  and spawn frequency decreases linearly in `NeighborCount` between them; with `CarryingCapacity = 0`
-  the legacy `1/(1+n)` weight is used (byte-identical to pre-1k behaviour). Changing K changes the
-  spawn-test outcome but NOT the RNG draw count (a parent still draws angle+dist+test regardless), so
-  a fixed seed reproduces the same child positions for whichever children do spawn. Table-driven.
+- [ ] **Carrying-capacity density weight (1k)** — with a `CarryingCapacity` program evaluating to
+  `K > 0` at a site, a parent at `NeighborCount ≥ K` spawns nothing (weight = 0), a parent at
+  `NeighborCount = 0` uses full weight, and spawn frequency decreases linearly in `NeighborCount`
+  between them; with `CarryingCapacity` nil the legacy `1/(1+n)` weight is used (byte-identical to
+  pre-1k behaviour). Changing K changes the spawn-test outcome but NOT the RNG draw count (a parent
+  still draws angle+dist+test regardless), so a fixed seed reproduces the same child positions for
+  whichever children do spawn. Table-driven.
+- [ ] **Terrain-dependent carrying capacity (1k §6 extension)** — with `CarryingCapacity` a §6
+  formula over a terrain attr (e.g. `10·(1−depth)`), the SAME species reaches a HIGHER equilibrium
+  density on one terrain than another at equal `NeighborCount` (dry land out-spawns shallow water),
+  and a site where the formula evaluates ≤ 0 (e.g. deep water) never establishes (0 spawns at any
+  seed/neighbour count). Table-driven over `depth` (or another attr).
 - [ ] **Death needs sustained unsuitability (1b hysteresis)** — a plant at `Suitability < θ` for
   fewer than the hysteresis span is NOT in `Died` (its `DeathStreak` increments); reaching the span
   adds it to `Died`; a step at `Suitability ≥ θ` resets `DeathStreak` to 0 (no flicker). Table-driven.

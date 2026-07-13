@@ -33,3 +33,12 @@ func (w *World) ClimateCellAt(pos core.Vec2) (climate.CellState, bool) {
 	}
 	return w.climateState.CellAt(pos), true
 }
+
+// TerrainAt returns the terrain type at pos (override-aware via navmap) for headless
+// inspection/census; empty when navmap is not installed. Read-only, no mutation.
+func (w *World) TerrainAt(pos core.Vec2) core.Tag {
+	if w.nav == nil {
+		return ""
+	}
+	return core.Tag(w.nav.TerrainAt(w.nav.CellOf(pos)))
+}

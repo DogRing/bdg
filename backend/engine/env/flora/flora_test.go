@@ -457,7 +457,7 @@ func TestPropagationCarryingCapacity(t *testing.T) {
 		[]float64{0.5}, 0, 1, // yieldStage=0, propStage=1
 		propRadius, 1.0,
 		0.1, 10, "item_a", "Dexterity", 1, 1)
-	base.CarryingCapacity = K
+	base.CarryingCapacity = constNum(t, float64(K)) // §6 constant program; terrain-independent here
 	rules := flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{sp: base})
 
 	mature := plant("p1", sp, core.Vec2{X: 50, Y: 50}, 1.0, 0.0)
@@ -512,9 +512,9 @@ func TestPropagationCarryingCapacity(t *testing.T) {
 
 	// K does NOT shift the RNG draw sequence: a spawn that fires lands at the same position
 	// whether K is set or not (only the spawn-test threshold differs). Compare K=4 vs legacy
-	// (K=0) at n=0, where BOTH weights = 1 → both spawn → identical child position.
+	// (nil = absent) at n=0, where BOTH weights = 1 → both spawn → identical child position.
 	legacy := base
-	legacy.CarryingCapacity = 0
+	legacy.CarryingCapacity = nil
 	rulesLegacy := flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{sp: legacy})
 	sK := flora.New([]flora.Plant{mature})
 	_, dK := flora.Step(sK, inputs1("p1", siteAt(0)), rules, seqAlloc("c"), rng.New(123))
@@ -543,6 +543,54 @@ func TestPropagationCarryingCapacity(t *testing.T) {
 				t.Fatalf("legacy n=%d seed=%d: child pos=%+v, want %+v", n, seed, got.Spawned[0].Pos, wantPos)
 			}
 		}
+	}
+}
+
+// TestCarryingCapacityTerrainDependent verifies K = §6(terrain attrs): the SAME plant reaches a
+// DIFFERENT equilibrium density on different terrain, so density is terrain-controlled (1k, option B).
+// carrying_capacity = "10 * (1 - depth)": dry land (depth=0) → K=10 (dense), shallow water
+// (depth=0.5) → K=5, deep water (depth=1) → K=0 (no establishment).
+func TestCarryingCapacityTerrainDependent(t *testing.T) {
+	const sp = "terr_sp"
+	base := makeSpecies(t,
+		"1.0", "0", "0", // suitability=1 (survives everywhere) so ONLY K differs by terrain
+		"0", "0",
+		[]float64{0.5}, 0, 1,
+		10.0, 1.0, // propRadius, propChance=1
+		0.0, 0, "item_a", "Dexterity", 1, 1)
+	base.CarryingCapacity = mustNum(t, "10 * (1 - depth)", noStats{}) // §6 over the `depth` terrain attr
+	rules := flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{sp: base})
+	mature := plant("p1", sp, core.Vec2{X: 50, Y: 50}, 1.0, 0.0)
+
+	siteDepth := func(depth float64, n int) flora.SiteInput {
+		return flora.SiteInput{Terrain: "g", Moisture: 1.0, TerrainAttrs: map[core.Tag]float64{"depth": depth}, NeighborCount: n}
+	}
+
+	// Deep water (depth=1 → K=0): never spawns at any neighbor count, any seed.
+	for seed := int64(0); seed < 40; seed++ {
+		s := flora.New([]flora.Plant{mature})
+		_, d := flora.Step(s, inputs1("p1", siteDepth(1.0, 0)), rules, seqAlloc("c"), rng.New(seed))
+		if len(d.Spawned) != 0 {
+			t.Fatalf("depth=1 → K=0: must not establish, spawned %d at seed %d", len(d.Spawned), seed)
+		}
+	}
+
+	// Same neighbor count n=5: dry land (K=10 → weight 0.5) spawns MORE than shallow water
+	// (K=5 → weight 0), proving terrain sets the equilibrium density.
+	dry, wet := 0, 0
+	for seed := int64(0); seed < 300; seed++ {
+		sd := flora.New([]flora.Plant{mature})
+		_, dd := flora.Step(sd, inputs1("p1", siteDepth(0.0, 5)), rules, seqAlloc("c"), rng.New(seed))
+		dry += len(dd.Spawned)
+		sw := flora.New([]flora.Plant{mature})
+		_, dw := flora.Step(sw, inputs1("p1", siteDepth(0.5, 5)), rules, seqAlloc("c"), rng.New(seed))
+		wet += len(dw.Spawned)
+	}
+	if !(dry > wet) {
+		t.Errorf("terrain-dependent K: dry land (K=10) must out-spawn shallow water (K=5) at equal n: dry=%d wet=%d", dry, wet)
+	}
+	if wet != 0 {
+		t.Errorf("depth=0.5 → K=5, n=5 → weight 0: expected no spawns, got %d", wet)
 	}
 }
 

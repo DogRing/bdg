@@ -33,6 +33,24 @@ func parseNumericFormula(label string, v any, statReg *stats.Registry, allowedAt
 	return prog, nil
 }
 
+// asNumber reports whether v is a plain numeric scalar (not a formula string) and its value.
+// Used to reject a literal-negative constant while allowing §6 formula strings (which may
+// legitimately dip ≤0 per-site and are clamped at runtime).
+func asNumber(v any) (float64, bool) {
+	switch x := v.(type) {
+	case int:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	default:
+		return 0, false
+	}
+}
+
 func formulaText(v any) (string, error) {
 	switch x := v.(type) {
 	case string:

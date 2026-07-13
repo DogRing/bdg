@@ -98,9 +98,8 @@
         "radius": { "$ref": "#/$defs/scalarOrFormula" },
         "chance": { "$ref": "#/$defs/scalarOrFormula" },
         "carrying_capacity": {
-          "description": "K — target same-species neighbour count within `radius` (flora 1k). K>0 selects `max(0, 1 − n/K)`: established patch interiors stop spawning when neighbours reach K. This regulates local density; frontier plants with n<K may still expand, so K is not a global population cap. Omitted or 0 keeps the legacy `1/(1+n)` weight. Content tuning knob (D10); same seed/config remains deterministic (D12). See docs/decisions/flora-carrying-capacity.md.",
-          "type": "integer",
-          "minimum": 0
+          "description": "K — target same-species neighbour count within `radius` (flora 1k). Scalar OR a §6 Formula over terrain attrs + climate (moisture/temperature/depth/slope/salinity/grain_size), evaluated PER SITE → terrain-dependent density: `max(0, 1 − n/K)` regulates established patch interiors toward density ≈K (a wetter/flatter site → larger K → denser). Frontier plants with n<K may still expand, so K is not a global population cap. Evaluates ≤0 at a site → the species does not establish there (e.g. deep water via a `(1 − depth)` factor). OMITTED keeps the legacy `1/(1+n)` weight (no equilibrium). A literal negative constant is rejected by platform/config; the formula MUST NOT read `neighbor_count` (circular). Content tuning knob (D10); same seed/config remains deterministic (D12). See docs/decisions/flora-carrying-capacity.md.",
+          "$ref": "#/$defs/scalarOrFormula"
         }
       }
     },

@@ -54,6 +54,23 @@ func (w *World) SetTerrainElevation(elev []float64) {
 	w.terrainElev = append([]float64(nil), elev...)
 }
 
+// SetTerrainAttrs installs the per-terrain §5 attribute vectors (grain_size/slope/depth/
+// salinity/…) the config loader parsed from terrain.yaml. world injects the attrs at each
+// plant's terrain into flora SiteInput.TerrainAttrs, so flora's suitability + carrying_capacity
+// §6 formulas see the real terrain (until this is set, those operands read 0 — moisture-only).
+// Attrs are per-TYPE uniform (D11: static per terrain id), so no per-cell storage. Call after
+// InstallEnv. Copies the input; the caller keeps ownership.
+func (w *World) SetTerrainAttrs(attrs map[navmap.TerrainID]map[core.Tag]float64) {
+	w.terrainAttrs = make(map[navmap.TerrainID]map[core.Tag]float64, len(attrs))
+	for id, m := range attrs {
+		cp := make(map[core.Tag]float64, len(m))
+		for k, v := range m {
+			cp[k] = v
+		}
+		w.terrainAttrs[id] = cp
+	}
+}
+
 func (w *World) runEnvPhase() {
 	w.runClimateEnv()
 	w.runFloraEnv()

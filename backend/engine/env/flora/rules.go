@@ -86,25 +86,35 @@ func evalNum(prog *expr.Program, ctx floraContext) float64 {
 	return prog.EvalNumber(ctx)
 }
 
-// densityWeight is the propagation density term (1k). With a carrying capacity K>0 it is the
-// logistic weight max(0, 1−n/K): a patch's spawn rate falls to zero as the same-species
-// neighbor count n reaches K, regulating established patch interiors toward density ≈K.
-// Frontier plants with n<K may still expand into suitable habitat; K is not a global cap.
-// K=0 keeps the legacy 1/(1+n) (no equilibrium; back-compat for species/fixtures that omit K).
+// densityWeight is the propagation density term (1k). K is the per-site carrying capacity
+// (§6 over terrain attrs + climate, evaluated by the caller) — terrain-dependent density.
+//
+//	hasCapacity && K>0 : logistic weight max(0, 1−n/K); a patch's spawn rate falls to zero as
+//	                     the same-species neighbor count n reaches K, regulating established
+//	                     patch interiors toward density ≈K (a wetter/flatter site → larger K →
+//	                     denser). Frontier plants with n<K still expand; K is not a global cap.
+//	hasCapacity && K≤0 : density 0 — the species does not establish here (e.g. deep water when
+//	                     the formula carries a (1−depth) factor). NOT the legacy runaway.
+//	!hasCapacity       : legacy 1/(1+n) (no equilibrium; back-compat for species/fixtures that
+//	                     omit carrying_capacity).
+//
 // n is clamped to ≥ 0. Pure and independent of RNG; Step's draw-count contract is documented
 // at the call site (D12).
-func densityWeight(n, k int) float64 {
+func densityWeight(n int, k float64, hasCapacity bool) float64 {
 	if n < 0 {
 		n = 0
 	}
-	if k > 0 {
-		w := 1.0 - float64(n)/float64(k)
-		if w < nonNegativeFloor {
-			return nonNegativeFloor
-		}
-		return w
+	if !hasCapacity {
+		return densityWeightNumerator / float64(densityWeightBaseNeighbors+n)
 	}
-	return densityWeightNumerator / float64(densityWeightBaseNeighbors+n)
+	if k <= 0 {
+		return nonNegativeFloor
+	}
+	w := 1.0 - float64(n)/k
+	if w < nonNegativeFloor {
+		return nonNegativeFloor
+	}
+	return w
 }
 
 // ── SpeciesRule & YieldRule ───────────────────────────────────────────────────
@@ -122,9 +132,11 @@ type SpeciesRule struct {
 	PropagateStage   int           // min derived stage for propagation (default 0)
 	PropRadius       *expr.Program // propagation radius in world units
 	PropChance       *expr.Program // base propagation probability (scaled by suitability + density)
-	CarryingCapacity int           // K: target same-species neighbors within PropRadius (1k).
-	//   K>0 → densityWeight(n)=max(0,1−n/K): established patch interiors stop spawning at n≥K.
-	//   K=0 → legacy densityWeight(n)=1/(1+n): no equilibrium (back-compat; flora-off unaffected).
+	CarryingCapacity *expr.Program // K = §6(terrain attrs, climate) evaluated PER SITE (1k, terrain-
+	//   dependent): densityWeight(n)=max(0,1−n/K) → a patch saturates at n≈K (wetter/flatter → denser).
+	//   nil → legacy densityWeight(n)=1/(1+n) (no equilibrium; back-compat; flora-off unaffected).
+	//   Evaluates ≤0 at a site → density 0 there (species won't establish, e.g. water via (1−depth)).
+	//   MUST NOT read neighbor_count (circular — it is the divisor of n); platform/config rejects that.
 	DeathThreshold  float64     // θ: suitability below this counts toward DeathStreak (1b)
 	DeathHysteresis int         // consecutive sub-θ steps before object-mortality (1b); 0 = no death
 	Yields          []YieldRule // yield table → Yield

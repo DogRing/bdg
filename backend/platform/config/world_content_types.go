@@ -17,6 +17,7 @@ type worldContent struct {
 	ClimateRules     *climate.Rules
 	NavCfg           *navmap.Config
 	TerrainTypes     map[navmap.TerrainID]navmap.TerrainType
+	TerrainAttrs     map[navmap.TerrainID]map[core.Tag]float64
 	FloraRules       *flora.Rules
 	FaunaRules       *fauna.Rules
 	DecayRules       *decay.Rules
@@ -147,7 +148,7 @@ type objectKindDoc struct {
 		Propagation struct {
 			Radius           any `yaml:"radius"`
 			Chance           any `yaml:"chance"`
-			CarryingCapacity int `yaml:"carrying_capacity"` // K: 1k local-density target; 0/absent = legacy 1/(1+n)
+			CarryingCapacity any `yaml:"carrying_capacity"` // K: 1k density target — scalar OR §6(terrain attrs); absent = legacy 1/(1+n)
 		} `yaml:"propagation"`
 		DeathThreshold  float64 `yaml:"death_threshold"`
 		DeathHysteresis int     `yaml:"death_hysteresis"`

@@ -53,6 +53,7 @@ type LoadOutput struct {
 	ClimateRules     *climate.Rules
 	NavCfg           *navmap.Config
 	TerrainTypes     map[navmap.TerrainID]navmap.TerrainType
+	TerrainAttrs     map[navmap.TerrainID]map[core.Tag]float64 // §5 terrain attr vectors (grain_size/slope/depth/salinity/…) → world injects into flora SiteInput
 	FloraRules       *flora.Rules
 	FaunaRules       *fauna.Rules
 	DecayRules       *decay.Rules
@@ -419,6 +420,7 @@ func Load(contentDir string) (*LoadOutput, error) {
 		ClimateRules:     worldRegs.ClimateRules,
 		NavCfg:           worldRegs.NavCfg,
 		TerrainTypes:     worldRegs.TerrainTypes,
+		TerrainAttrs:     worldRegs.TerrainAttrs,
 		FloraRules:       worldRegs.FloraRules,
 		FaunaRules:       worldRegs.FaunaRules,
 		DecayRules:       worldRegs.DecayRules,

@@ -146,7 +146,7 @@ object_kinds:
       propagation:
         radius: 6.0                 # seed-dispersal radius around the parent Pos (1a)
         chance: 0.15                # base spawn probability · child_suitability · density_weight
-        carrying_capacity: 4        # 1k: target ~4 same-species neighbours within radius 6
+        carrying_capacity: "5 * moisture * (1 - slope) * (1 - salinity) * (1 - depth)"  # 1k: §6 per-site K — dense on fertile flat fresh dry-land, tapering on marginal/wet/steep ground; 0 on deep water
       death_threshold: 0.20         # θ: suitability below this counts toward death (1b)
       death_hysteresis: 4           # consecutive sub-θ flora steps before removal (no flicker, 1b)
     harvest:
@@ -179,7 +179,7 @@ object_kinds:
       propagation:
         radius: 12.0
         chance: 0.08
-        carrying_capacity: 3        # 1k: ~3 trees within radius 12 → a sparse, real forest (not a wall)
+        carrying_capacity: "4 * moisture * (1 - salinity) * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — sparse forest; denser on moist non-salty flat ground, 0 on water/steep rock
       death_threshold: 0.15
       death_hysteresis: 8           # trees are hardy — long hysteresis
     harvest:
@@ -209,7 +209,7 @@ object_kinds:
       propagation:
         radius: 3.0                 # spreads in tight clumps
         chance: 0.15                # moderate spread (was 0.30 — halved to keep pastures from carpeting the map)
-        carrying_capacity: 6        # 1k: established tuft interiors stop spawning at ~6 same-species
+        carrying_capacity: "12 * moisture * (1 - slope) * (1 - salinity) * (1 - depth)"  # 1k: §6 per-site K — thick tuft field on fertile flat fresh soil, thinning on dry/salty/steep, 0 on deep water (no grass on lakes)
                                     # neighbours within radius 3 (local density target, not global cap)
       death_threshold: 0.15         # weedy but prunes marginal sites (was 0.10 — raised to thin poor ground)
       death_hysteresis: 3
@@ -236,7 +236,7 @@ object_kinds:
       propagation:
         radius: 2.0
         chance: 0.10                # Spreads slower than normal grass
-        carrying_capacity: 5        # 1k: thick interior target of ~5 neighbours within radius 2
+        carrying_capacity: "10 * moisture * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — loves moisture: densest on wet flat ground (marsh edges), 0 on deep water/dry
       death_threshold: 0.40         # Dies easily if moisture drops
       death_hysteresis: 2
     harvest:
@@ -262,7 +262,7 @@ object_kinds:
       propagation:
         radius: 4.0
         chance: 0.05                # Very slow to spread
-        carrying_capacity: 4        # 1k: sparse desert scrub — ~4 shrubs within radius 4
+        carrying_capacity: "6 * (1 - moisture) * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — DRY-loving: densest on arid flat ground, sparse where wet, 0 on water/steep
       death_threshold: 0.10         # Very hardy, rarely dies
       death_hysteresis: 5
     harvest:
@@ -290,7 +290,7 @@ object_kinds:
       propagation:
         radius: 5.0
         chance: 0.20
-        carrying_capacity: 5        # 1k: scattered blooms — ~5 flowers within radius 5
+        carrying_capacity: "6 * moisture * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — scattered blooms on moist flat ground, 0 on deep water/steep
       death_threshold: 0.18
       death_hysteresis: 2           # flowers are short-lived / fragile
 

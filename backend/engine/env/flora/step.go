@@ -184,8 +184,8 @@ func Step(
 				Y: p.Pos.Y + dist*math.Sin(angle),
 			}
 
-			// Spawn probability: PropChance × suitability × densityWeight(NeighborCount).
-			// Documented density-weighting: 1/(1+n), monotone decreasing (see package doc).
+			// Spawn probability: PropChance × suitability × densityWeight(NeighborCount, K).
+			// K = CarryingCapacity §6 evaluated at THIS site (terrain-dependent, 1k); nil → legacy.
 			suit := evalNum(sr.Suitability, ctx)
 			if suit < probabilityMin {
 				suit = probabilityMin
@@ -193,7 +193,12 @@ func Step(
 				suit = probabilityMax
 			}
 			propChance := evalNum(sr.PropChance, ctx)
-			dw := densityWeight(in.NeighborCount, sr.CarryingCapacity)
+			hasCap := sr.CarryingCapacity != nil
+			capK := 0.0
+			if hasCap {
+				capK = evalNum(sr.CarryingCapacity, ctx)
+			}
+			dw := densityWeight(in.NeighborCount, capK, hasCap)
 			spawnProb := propChance * suit * dw
 			if spawnProb < probabilityMin {
 				spawnProb = probabilityMin

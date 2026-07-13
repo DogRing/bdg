@@ -74,3 +74,54 @@ sparser without touching engine code (D10).
   parent sets, so the new and legacy trajectories need not consume identical future streams.
 - This resolves the SPEC/plan density-model question for the ACTIVE (post-P_f4) flora only.
   Flora-off phases have no species and are untouched.
+
+## Follow-up (2026-07-13): terrain-dependent density — `carrying_capacity` as a §6 formula
+**Motivation.** A flat per-species `K` fills every survivable terrain to the *same* equilibrium
+density — terrain (suitability) only changes fill *speed* and death, not the final density. The
+user wants density to differ **by terrain** and to read the resulting count **per terrain**.
+
+**Options.** (A) an explicit per-terrain-type map `{terrain_id: K}` (literal, readable);
+(B) make `carrying_capacity` a **§6 formula over terrain attrs + climate**, evaluated per site
+(mirrors `PropRadius`, which is already a per-site §6 program; new terrains auto-covered);
+(C) couple density to the existing suitability (`effK = K·suitability`) — emergent, no authoring.
+
+**Decision — (B).** `carrying_capacity` accepts a scalar **or** a §6 formula. `world` already
+injects `SiteInput{TerrainAttrs, Moisture, Temperature}` at each plant; flora evaluates the
+formula there, so equilibrium density becomes a data-only function of terrain (D4/D10) with no
+new engine mechanism. Semantics: **absent → nil program → legacy `1/(1+n)`**; **present and >0 →
+`max(0,1−n/K)`**; **present and ≤0 → density 0** (the species does not establish there — e.g.
+deep water when the formula carries a `(1 − depth)` factor). The formula **must not read
+`neighbor_count`** (circular — it is the divisor of `n`); `platform/config` rejects that, and
+still rejects a **literal negative scalar** (a formula that merely dips ≤0 per-site is fine — it
+clamps to 0). expr's numeric context is arithmetic-only (`+ − * /`; comparisons yield Bool and
+cannot mix into a number), so per-terrain shaping uses smooth multiplicative penalties, not hard
+cutoffs.
+
+**Initial content formulas** (illustrative; tuning targets — operands are the terrain attrs
+`slope`/`salinity`/`depth` + climate `moisture`, all ∈ [0,1] so the product is non-negative):
+
+| species     | carrying_capacity formula                              | character                          |
+|-------------|--------------------------------------------------------|------------------------------------|
+| grass       | `12·moisture·(1−slope)·(1−salinity)·(1−depth)`         | thick on fertile flat fresh soil; 0 on deep water |
+| tall_grass  | `10·moisture·(1−slope)·(1−depth)`                      | densest on wet flat ground (marsh edges) |
+| dry_shrub   | `6·(1−moisture)·(1−slope)·(1−depth)`                   | dry-loving: dense on arid flats    |
+| berry_shrub | `5·moisture·(1−slope)·(1−salinity)·(1−depth)`          | spaced bushes on good ground       |
+| oak         | `4·moisture·(1−salinity)·(1−slope)·(1−depth)`          | sparse forest; 0 on water/steep    |
+| wildflower  | `6·moisture·(1−slope)·(1−depth)`                       | scattered blooms on moist flats    |
+
+`moisture` is climate-driven, so density now also breathes with weather (drought → sparser) —
+a free emergent property (D2). Total count per terrain type is an OBSERVATION deliverable
+(a per-terrain flora census over a long run), not a mechanism.
+
+**Prerequisite discovered + fixed: terrain attrs were unfed.** Implementing (B) surfaced that
+`world.terrainAttrs` was never populated (`engine/world/hazard.go` noted it as a follow-up), so
+`flora.SiteInput.TerrainAttrs` was always empty — every flora §6 that reads `slope`/`salinity`/
+`depth` (the existing `suitability` too, not just the new `carrying_capacity`) had silently seen
+0, i.e. flora was **moisture-only**. Fixed by carrying the terrain.yaml `attrs` through:
+`config.LoadOutput.TerrainAttrs` (built by `buildTerrainAttrs`) → `world.SetTerrainAttrs` (new
+setter, mirrors `SetTerrainElevation`) → injected per plant in `floraSiteInputs`. This is plumbing
+of an already-designed field (the flora SPEC lists `TerrainAttrs` as world-injected), not a new
+mechanism — but it means flora now also **dies/grows by terrain** (grass thins on steep mountain,
+etc.), a strict improvement over moisture-only. A per-terrain census
+(`worldgen.TestFloraDensityByTerrain`) confirms the gradient: soil densest → sand/river → lake/
+bare_rock → mountain → sea ≈ 0 (K→0 via `(1−salinity)·(1−depth)`).

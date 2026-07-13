@@ -203,6 +203,7 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	fl := flora.New(plants)
 	dec := decay.New(lots)
 	w.InstallEnv(envCfg, nav, clim, cfg.ClimateRules, fl, cfg.FloraRules, dec, cfg.DecayRules)
+	w.SetTerrainAttrs(cfg.TerrainAttrs) // §5 terrain attrs → flora SiteInput (suitability + carrying_capacity §6)
 	if fx.Terrain != nil && len(fx.Terrain.Elevation) > 0 {
 		w.SetTerrainElevation(fx.Terrain.Elevation) // render-only relief (3D hex height)
 	}
