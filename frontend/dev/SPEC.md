@@ -50,8 +50,9 @@ emission) does not exist yet:
     (optional `?seed=` pins it), rebuilds the terrain grid + scripted state from the new seed,
     **bumps `world_revision`** (the mock rebuild is synchronous, so published = servable) and
     responds `202 {"status":"regenerating"}`, mirroring the backend's new-seed world rebuild.
-- **Scripted scenario** (seeded PRNG from `--seed`; deterministic given seed): deer herd grazing →
-  a wolf hunts (action `hunt` → pose attack near contact) → one `AnimalDied` → respawn later via
+- **Scripted scenario** (seeded PRNG from `--seed`; deterministic given seed): a goat herd grazing
+  (FE-P6: `goat` — the herd exercises the real prey sheet; `deer` is glyph-only) → a wolf hunts
+  (action `hunt` → pose attack near contact) → one `AnimalDied` → respawn later via
   `AnimalBorn`; plants `PlantSpawned`, `stage` increments (grow FX), one `PlantDied`; a full
   day-night cycle + a rain spell; agents wander between objects. Exercises every motion/FX path.
 - **Invariants**: shapes/casing byte-match data-contracts §4 (a fixture test in `src` may import
@@ -62,7 +63,9 @@ emission) does not exist yet:
 ## `generate-spritesheets.mjs`
 
 - **Run**: `node dev/generate-spritesheets.mjs` → writes `frontend/public/assets/fauna/*.png` +
-  `frontend/public/assets/flora/*.png` per the assets-SPEC layout.
+  `frontend/public/assets/flora/*.png` per the assets-SPEC layout. **Never overwrites an existing
+  file** (FE-P6: those paths now carry real art — the generator logs and skips them; delete a file
+  first to regenerate its placeholder).
 - **Output** (placeholder pixel-art, top-down, facing +x at heading 0):
   - `fauna/deer.png`, `fauna/wolf.png` — 32×32 frames, 4 columns, 6 rows in pose order
     `idle, walk, run, eat, attack, dying` (matching the manifest's `PoseClip.row` values).

@@ -5,9 +5,9 @@
 //   node dev/mock-server.mjs [--port 8080] [--seed 42] [--tick-ms 500]
 //   node dev/mock-server.mjs --dump 50        # print the first N ticks' events and exit
 //
-// Scripted scenario (deterministic per seed): deer herd grazes → a wolf roams,
+// Scripted scenario (deterministic per seed): goat herd grazes → a wolf roams,
 // chases (walk/run by speed), strikes in range (action `hunt` → attack pose +
-// lunge) → AnimalDied → eats → deer respawns (AnimalBorn); a tree grows stage
+// lunge) → AnimalDied → eats → goat respawns (AnimalBorn); a tree grows stage
 // 0→3 (grow fx) then dies and reseeds; day-night cycle, rain spells, wind
 // random-walk; agents wander and wear desire paths into the terrain.
 
@@ -102,10 +102,10 @@ const waypoints = objects.map(o => o.pos)
 
 const agents = []
 const animals = new Map()
-const spawnDeer = (id, x, y) =>
-  animals.set(id, { id, pos: { x, y }, species: 'deer', action: 'graze', heading: 0 })
+const spawnGoat = (id, x, y) =>
+  animals.set(id, { id, pos: { x, y }, species: 'goat', action: 'graze', heading: 0 })
 const wolf = { state: 'roam', until: 40, target: null, holdTicks: 0 }
-let deerSerial = 3, respawnAt = -1
+let goatSerial = 3, respawnAt = -1
 
 const flora = new Map()
 const plant = (id, species, x, y, stage, width) => flora.set(id, { id, species, pos: { x, y }, stage, width })
@@ -128,16 +128,16 @@ function resetWorld() {
   )
 
   animals.clear()
-  spawnDeer('deer_1', 150, 320); spawnDeer('deer_2', 162, 335); spawnDeer('deer_3', 140, 342)
+  spawnGoat('goat_1', 150, 320); spawnGoat('goat_2', 162, 335); spawnGoat('goat_3', 140, 342)
   animals.set('wolf_1', { id: 'wolf_1', pos: { x: 400, y: 120 }, species: 'wolf', action: 'wander', heading: 0 })
   Object.assign(wolf, { state: 'roam', until: 40, target: null, holdTicks: 0 })
-  deerSerial = 3; respawnAt = -1
+  goatSerial = 3; respawnAt = -1
 
   flora.clear()
   plant('tree_1', 'tree', 380, 130, 1, 4); plant('tree_2', 'tree', 396, 118, 3, 6)
   plant('tree_3', 'tree', 370, 150, 2, 5); plant('tree_4', 'tree', 410, 140, 3, 6)
   plant('bush_1', 'berry_shrub', 298, 338, 2, 3); plant('bush_2', 'berry_shrub', 310, 348, 1, 2)
-  // grass pasture near the deer — exercises the FLORA_COVERAGE density wash (deterministic
+  // grass pasture near the goats — exercises the FLORA_COVERAGE density wash (deterministic
   // layout, no rng, so the scripted stream is unchanged): a 7×4 clump ~3u apart overlaps into a meadow.
   for (let i = 0; i < 28; i++) {
     const gx = 130 + (i % 7) * 4 + ((i * 5) % 3) - 1
@@ -187,10 +187,10 @@ function step() {
     else { stepToward(a, target, 2.2); a.action = 'move_to'; wearOn(a.pos) }
   }
 
-  // deer: graze-wander; flee the wolf inside 40 units
+  // goat: graze-wander; flee the wolf inside 40 units
   const w = animals.get('wolf_1')
   for (const d of animals.values()) {
-    if (d.species !== 'deer') continue
+    if (d.species !== 'goat') continue
     if (w && dist(d.pos, w.pos) < 40) {
       d.action = 'flee'
       const away = { x: d.pos.x + (d.pos.x - w.pos.x), y: d.pos.y + (d.pos.y - w.pos.y) }
@@ -211,7 +211,7 @@ function step() {
       stepToward(w, jitter(w.pos, 24), 1.6)
       if (wolf.until <= 0) {
         let best = null
-        for (const d of animals.values()) if (d.species === 'deer' && (!best || dist(w.pos, d.pos) < dist(w.pos, best.pos))) best = d
+        for (const d of animals.values()) if (d.species === 'goat' && (!best || dist(w.pos, d.pos) < dist(w.pos, best.pos))) best = d
         if (best) { wolf.state = 'chase'; wolf.target = best.id }
         else wolf.until = 20
       }
@@ -221,7 +221,7 @@ function step() {
         wolf.holdTicks++
         if (wolf.holdTicks >= 4) {
           animals.delete(prey.id)
-          emit('AnimalDied', null, { object_id: prey.id, species: 'deer', cause: 'hunted' })
+          emit('AnimalDied', null, { object_id: prey.id, species: 'goat', cause: 'hunted' })
           respawnAt = tick + 40
           wolf.state = 'eat'; wolf.until = 10; wolf.holdTicks = 0; wolf.target = null
         }
@@ -238,10 +238,10 @@ function step() {
     w.pos.x = Math.min(508, Math.max(4, w.pos.x)); w.pos.y = Math.min(508, Math.max(4, w.pos.y))
   }
   if (respawnAt === tick) {
-    const id = `deer_${++deerSerial}`
+    const id = `goat_${++goatSerial}`
     const pos = { x: 60 + rng() * 40, y: 420 + rng() * 60 } // wilds, out of the action
-    spawnDeer(id, pos.x, pos.y)
-    emit('AnimalBorn', null, { object_id: id, species: 'deer', pos: round(pos) })
+    spawnGoat(id, pos.x, pos.y)
+    emit('AnimalBorn', null, { object_id: id, species: 'goat', pos: round(pos) })
   }
 
   // flora: one tree grows a stage every 30 ticks; past 3 it dies + reseeds

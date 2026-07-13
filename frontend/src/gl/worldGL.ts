@@ -7,7 +7,8 @@
 // same view→curve→projection path as the shader). See src/gl/SPEC.md.
 
 import type { TerrainGrid, AgentState, AnimalState, WorldObject, RenderConfig, ClimateState } from '../types'
-import { FAUNA_SHEETS, DEFAULT_FAUNA } from '../assets/manifest'
+import { FAUNA_SHEETS, DEFAULT_FAUNA, poseFor } from '../assets/manifest'
+import { frameRect, type SpriteCache } from '../assets/sprites'
 import { hexCentre, pixelToOffset, neighbourOffset } from './hex'
 import { createAtmosphere, drawRainOverlay, drawWindArrow, LEGACY, type Atmo } from './atmosphere'
 import { TILE_VS, TILE_FS, SKY_VS, SKY_FS } from './shaders'
@@ -83,7 +84,7 @@ export interface WorldGL {
   dispose(): void
 }
 
-export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): WorldGL | { ok: false; error: string } {
+export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sprites: SpriteCache | null = null): WorldGL | { ok: false; error: string } {
   // Rebind the null-checked contexts to fresh consts: control-flow narrowing of the
   // original bindings does NOT carry into the nested draw/overlay closures, but a const
   // that captured the narrowed value keeps its non-null type everywhere.
@@ -305,12 +306,29 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement): W
       octx.fillRect(p.x - s / 2, p.y - s / 2, s, s)
       octx.lineWidth = 1; octx.strokeStyle = 'rgba(0,0,0,.4)'; octx.strokeRect(p.x - s / 2, p.y - s / 2, s, s)
     }
-    // animals
+    // animals — sprite billboards (FE-P6): the species' fauna sheet frame, bottom-anchored
+    // at the seated ground point, mirrored when the world heading points screen-left
+    // (sheets face +x; screen angle = world angle + camera yaw, same rule as the wind arrow).
+    // No sheet / not decoded yet → the glyph-colour dot exactly as before.
     for (const a of animals) {
       const ap = animPos(a, clockMs); const p = project3(ap.x, seat(ap.x, ap.y), ap.y); if (!p) continue
       const fade = 1 - smoothstep(fogN, fogF, p.depth); if (fade <= 0.02) continue
       const r = Math.max(2.5, 0.45 * cellSize * pscale / p.depth)
       octx.globalAlpha = fade * Math.max(0.35, a.stamina ?? 1)
+      const loaded = sprites?.fauna(a.species)
+      const rect = loaded?.ready
+        ? frameRect(loaded.def, poseFor(a.action), clockMs)
+          ?? frameRect(loaded.def, 'walk', clockMs) ?? frameRect(loaded.def, 'idle', clockMs)
+        : null
+      if (loaded && rect) {
+        const s = r * 4
+        octx.save()
+        octx.translate(p.x, p.y)
+        if (Math.cos(a.heading + yaw) < 0) octx.scale(-1, 1)
+        octx.drawImage(loaded.image, rect.sx, rect.sy, rect.sw, rect.sh, -s / 2, -s * 0.9, s, s)
+        octx.restore()
+        continue
+      }
       octx.beginPath(); octx.arc(p.x, p.y, r, 0, 7); octx.fillStyle = animalColor(a.species); octx.fill()
       octx.lineWidth = Math.max(1, r * 0.22); octx.strokeStyle = 'rgba(0,0,0,.45)'; octx.stroke()
     }

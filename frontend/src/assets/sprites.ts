@@ -1,6 +1,6 @@
 import {
   FAUNA_SHEETS, FLORA_SHEETS,
-  type SheetDef, type FloraSheetDef, type Pose,
+  type SheetDef, type FloraSheetDef, type FloraSeason, type Pose,
 } from './manifest'
 
 // Spritesheet loader/cache. A factory — the instance is created in App and
@@ -15,7 +15,9 @@ export interface LoadedSheet<D = SheetDef | FloraSheetDef> {
 
 export interface SpriteCache {
   fauna(species: string): LoadedSheet<SheetDef> | null   // null ⇒ glyph fallback
-  flora(species: string): LoadedSheet<FloraSheetDef> | null
+  flora(species: string, season?: FloraSeason): LoadedSheet<FloraSheetDef> | null
+    // seasonal FILE not loaded/ready → the leaf sheet; seasonRows species use one
+    // file for every season (the draw layer applies the season as a row)
   preload(): Promise<void>
 }
 
@@ -39,6 +41,8 @@ export function createSpriteCache(
     }
   }
 
+  const floraKey = (species: string, season: FloraSeason) => `${species}\u0000${season}`
+
   if (doc) {
     for (const [species, style] of Object.entries(FAUNA_SHEETS)) {
       if (style.sheet) {
@@ -47,14 +51,24 @@ export function createSpriteCache(
       }
     }
     for (const [species, def] of Object.entries(FLORA_SHEETS)) {
-      const s = load(def.url, def)
-      if (s) floraSheets.set(species, s)
+      const leaf = load(def.url, def)
+      if (leaf) floraSheets.set(floraKey(species, 'leaf'), leaf)
+      for (const [season, url] of Object.entries(def.seasonUrls ?? {})) {
+        const s = load(url, def)
+        if (s) floraSheets.set(floraKey(species, season as FloraSeason), s)
+      }
     }
   }
 
   return {
     fauna: (species) => faunaSheets.get(species) ?? null,
-    flora: (species) => floraSheets.get(species) ?? null,
+    flora: (species, season = 'leaf') => {
+      // Seasonal file when it exists AND decoded; otherwise the leaf sheet (the
+      // season degrades before the glyph — assets SPEC fallback chain step 4).
+      const seasonal = season !== 'leaf' ? floraSheets.get(floraKey(species, season)) : undefined
+      if (seasonal?.ready) return seasonal
+      return floraSheets.get(floraKey(species, 'leaf')) ?? seasonal ?? null
+    },
     preload: async () => {
       const decodes: Promise<unknown>[] = []
       for (const s of [...faunaSheets.values(), ...floraSheets.values()]) {

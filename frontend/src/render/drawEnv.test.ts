@@ -52,11 +52,20 @@ const SHEET: SheetDef = {
   },
 }
 const WALK_ONLY: SheetDef = { url: '/y.png', frameW: 32, frameH: 32, poses: { walk: { row: 1, frames: 4, fps: 8 } } }
-const FLORA_SHEET: FloraSheetDef = { url: '/t.png', frameW: 32, frameH: 32, stageFrames: 4 }
+const FLORA_SHEET: FloraSheetDef = { url: '/t.png', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1 }
+// FE-P6 layouts: single-file season rows (bush) and per-plant shape-variant rows (trees).
+const SEASON_SHEET: FloraSheetDef = {
+  url: '/b.png', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1,
+  seasonRows: { leaf: 0, bare: 1, snow: 2 },
+}
+const VARIANT_SHEET: FloraSheetDef = { url: '/v.png', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 4 }
 
 const cache = (fauna: Record<string, SheetDef> = {}, ready = true): SpriteCache => ({
   fauna: (s) => (fauna[s] ? { image: {} as HTMLImageElement, def: fauna[s], ready } : null),
-  flora: (s) => (s === 'tree' ? { image: {} as HTMLImageElement, def: FLORA_SHEET, ready } : null),
+  flora: (s) => {
+    const def = s === 'tree' ? FLORA_SHEET : s === 'bush' ? SEASON_SHEET : s === 'oak' ? VARIANT_SHEET : null
+    return def ? { image: {} as HTMLImageElement, def, ready } : null
+  },
   preload: async () => {},
 })
 
@@ -166,6 +175,34 @@ describe('drawFlora', () => {
     const arc = ops.find(o => o.op === 'arc')!
     expect(arc.r).toBeCloseTo(45)                                    // world-scaled, not MIN_PX
     expect(arc.fillStyle).not.toBe(DEFAULT_FLORA_COLOR)              // gradient, not the glyph colour
+  })
+
+  it('season rows: a single-file sheet picks the row from climate temperature', () => {
+    const clim = (temperature: number) => ({
+      temperature, apparentTemp: null, moisture: 0.5, raining: false,
+      windDir: 0, windMag: 0, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
+    })
+    const at = (temp: number | null) => {
+      const { ctx, ops } = ctxMock()
+      drawFlora(ctx, [plant({ species: 'bush', stage: 0 })], tr, cache(), 0, [],
+        temp === null ? null : clim(temp))
+      return ops.find(o => o.op === 'drawImage')!.sy
+    }
+    expect(at(null)).toBe(0)      // no climate → leaf row
+    expect(at(12)).toBe(0)        // warm → leaf
+    expect(at(3)).toBe(1 * 32)    // chilly → bare row
+    expect(at(-3)).toBe(2 * 32)   // freezing → snow row
+  })
+
+  it('variant rows: the row is a stable id hash, differing across ids', () => {
+    const rowOf = (id: string) => {
+      const { ctx, ops } = ctxMock()
+      drawFlora(ctx, [plant({ id, species: 'oak', stage: 0 })], tr, cache(), 0)
+      return ops.find(o => o.op === 'drawImage')!.sy as number
+    }
+    expect(rowOf('oak_1')).toBe(rowOf('oak_1')) // same id, same row (purity)
+    const distinct = new Set(['oak_1', 'oak_2', 'oak_3', 'oak_4', 'oak_5', 'oak_6'].map(rowOf))
+    expect(distinct.size).toBeGreaterThan(1)    // ids spread across shape rows
   })
 
   it('coverage stamps accumulate: a denser clump emits more wash ops than a lone tuft', () => {

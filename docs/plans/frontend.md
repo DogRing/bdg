@@ -184,3 +184,41 @@ it. It does not restate the SPECs; per-module detail lands in `frontend/SPEC.md`
 FE-P1 (split+camera) → FE-P2 (assets+static layers) → FE-P3 (motion/FX) → FE-P4 (terrain+ambient)
 → FE-P5 (fixture+acceptance). Backend WI-P4 (`WorldFrame` emission + Q5 endpoint) can land any time
 ≥ FE-P1; the viewer upgrades live without frontend changes thanks to env-off neutrality.
+
+## 8. FE-P6 — real-art asset refresh (2026-07-13 drop)
+
+Hand-drawn spritesheets replace the FE-P2 placeholders in `frontend/public/assets/`:
+- **fauna** `bear/goat/fish/rabbit/wolf.png` — 1024×1536, same 4-col × 6-pose-row grid as Q1
+  (frames now 256×256). The sheet formerly named `deer.png` depicts a goat → renamed `goat.png`,
+  mapped to the `goat` species; `deer` falls back to the prey glyph until deer art exists.
+- **flora** `bush.png` — 4 growth cols × **3 season rows** (leaf/bare/snow), 362×362.
+  `tree1..4/` — one folder per tree species (oak/willow/birch/conifer look), each with
+  `treeN.png` + `treeN_bare.png` + `treeN_snow.png` (season **files**), each file
+  4 growth cols × **4 shape-variant rows**, 313.5×313.5. `tree.png` (8 wind poses of one mature
+  tree) fits no schema and stays unused.
+The flora layouts exceed the FE-P2 single-row schema → `FloraSheetDef` grows season + variant-row
+dimensions (assets SPEC delta). Fauna needs only manifest frame-size/url edits (Q1 anticipated
+"real art replaces a file").
+
+### Open questions (FE-P6; only the human flips OPEN→RESOLVED)
+
+- **P6-Q1 — Scope: which renderer shows the new art** *(blocks all of FE-P6)*.
+  (a) 2D canvas only (3D keeps dots, no flora — current gl SPEC scope);
+  (b) 2D + 3D fauna billboards (gl overlay swaps animal dots for sprite frames; flora still 2D-only);
+  (c) 2D + 3D fauna & flora billboards (needs occlusion/depth care in gl — largest).
+  Note the app default view is **3D**. `RESOLVED: (b) — 2D 전체 + 3D fauna 빌보드; flora 빌보드는
+  후속(3D는 동물 스프라이트만, 나무/부시는 2D 뷰에서 확인)` (2026-07-13)
+- **P6-Q2 — Season signal for flora variants (leaf/bare/snow)** *(blocks flora)*.
+  (a) temperature thresholds (snow <0 °C, bare <5 °C — follows real heat/cold, but the daily ±swing
+  flips variants around the threshold in shoulder seasons);
+  (b) `yearFraction` calendar bands derived from the content annual sinusoid
+  (bare yf∈[0.57,0.93), snow yf∈[0.63,0.87) — stable, but ignores actual temperature);
+  (c) no seasons yet (always leaf row/file). Bands/thresholds are manifest DATA either way.
+  `RESOLVED: (a) 온도 임계값 — 셰이더/분위기와 같은 실제 기후 신호를 따른다; 일교차 깜빡임은
+  수용(추후 이력치(hysteresis) 폴리시 가능)` (2026-07-13)
+- **P6-Q3 — tree1..4 species mapping** *(blocks flora)*.
+  (a) `oak`→`tree1` only; register `willow`/`birch`/`conifer` manifest rows now so future content
+  species render with zero code edits (D10 mirror; per-plant variety comes from the 4 shape rows);
+  (b) `oak` hashes across all four sheets (max variety, species identity blurred);
+  (c) `tree1` only, hold the rest.
+  `RESOLVED: (a) oak→tree1 + willow/birch/conifer 예약 등록` (2026-07-13)

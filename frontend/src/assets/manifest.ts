@@ -20,8 +20,9 @@ export interface SpeciesStyle {
   glyphColor: string
 }
 
-// Standard placeholder sheet grid (dev/generate-spritesheets.mjs): 32×32 frames,
-// 4 columns, rows in pose order idle/walk/run/eat/attack/dying.
+// Real-art sheet grid (FE-P6, 2026-07-13 drop): 256×256 frames, 4 columns,
+// rows in pose order idle/walk/run/eat/attack/dying (same order the placeholder
+// generator used, so PoseClip rows carried over unchanged).
 const stdPoses = (): SheetDef['poses'] => ({
   idle:   { row: 0, frames: 4, fps: 3 },
   walk:   { row: 1, frames: 4, fps: 8 },
@@ -31,16 +32,16 @@ const stdPoses = (): SheetDef['poses'] => ({
   dying:  { row: 5, frames: 4, fps: 6 },
 })
 const sheet = (url: string): SheetDef =>
-  Object.freeze({ url, frameW: 32, frameH: 32, poses: Object.freeze(stdPoses()) })
+  Object.freeze({ url, frameW: 256, frameH: 256, poses: Object.freeze(stdPoses()) })
 
 export const FAUNA_SHEETS: Record<string, SpeciesStyle> = Object.freeze({
-  deer:   Object.freeze({ category: 'prey' as const,     glyphColor: '#d8b060', sheet: sheet('/assets/fauna/deer.png') }),
+  goat:   Object.freeze({ category: 'prey' as const,     glyphColor: '#b0a890', sheet: sheet('/assets/fauna/goat.png') }),
   wolf:   Object.freeze({ category: 'predator' as const, glyphColor: '#d44444', sheet: sheet('/assets/fauna/wolf.png') }),
-  // glyph-only until art exists (content/objects.yaml species)
-  rabbit: Object.freeze({ category: 'prey' as const,     glyphColor: '#c8b8a0' }),
-  goat:   Object.freeze({ category: 'prey' as const,     glyphColor: '#b0a890' }),
-  bear:   Object.freeze({ category: 'predator' as const, glyphColor: '#a05838' }),
-  fish:   Object.freeze({ category: 'prey' as const,     glyphColor: '#78a8c8' }),
+  rabbit: Object.freeze({ category: 'prey' as const,     glyphColor: '#c8b8a0', sheet: sheet('/assets/fauna/rabbit.png') }),
+  bear:   Object.freeze({ category: 'predator' as const, glyphColor: '#a05838', sheet: sheet('/assets/fauna/bear.png') }),
+  fish:   Object.freeze({ category: 'prey' as const,     glyphColor: '#78a8c8', sheet: sheet('/assets/fauna/fish.png') }),
+  // glyph-only until real deer art exists (the sheet once named deer.png depicts a goat — FE-P6)
+  deer:   Object.freeze({ category: 'prey' as const,     glyphColor: '#d8b060' }),
 })
 
 export const DEFAULT_FAUNA: Record<'predator' | 'prey', SpeciesStyle> = Object.freeze({
@@ -49,17 +50,70 @@ export const DEFAULT_FAUNA: Record<'predator' | 'prey', SpeciesStyle> = Object.f
 })
 
 // ── flora ────────────────────────────────────────────────────────────────────
-export interface FloraSheetDef { url: string; frameW: number; frameH: number; stageFrames: number }
+// Sheets are stage-column grids; rows are EITHER seasonal variants inside one
+// file (`seasonRows` — bush) OR per-plant shape variants (`variantRows` — trees,
+// whose seasons live in separate files via `seasonUrls`). See assets SPEC.
+export type FloraSeason = 'leaf' | 'bare' | 'snow'
+export interface FloraSheetDef {
+  url: string                       // leaf-season sheet
+  frameW: number
+  frameH: number
+  stageFrames: number               // columns; frame col = min(stage, stageFrames-1)
+  variantRows: number               // shape-variant rows; row = variantRow(plantId, variantRows)
+  seasonRows?: Partial<Record<FloraSeason, number>>                  // single-file seasons: season → row
+  seasonUrls?: Partial<Record<Exclude<FloraSeason, 'leaf'>, string>> // per-season files
+}
 
-const floraSheet = (url: string): FloraSheetDef =>
-  Object.freeze({ url, frameW: 32, frameH: 32, stageFrames: 4 })
+// tree1..4 real-art folders: 1254×1254 files, 4 growth cols × 4 shape-variant
+// rows (313.5 px frames — fractional source rects are fine), seasons as files.
+const treeSheet = (n: number): FloraSheetDef => Object.freeze({
+  url: `/assets/flora/tree${n}/tree${n}.png`,
+  frameW: 313.5, frameH: 313.5, stageFrames: 4, variantRows: 4,
+  seasonUrls: Object.freeze({
+    bare: `/assets/flora/tree${n}/tree${n}_bare.png`,
+    snow: `/assets/flora/tree${n}/tree${n}_snow.png`,
+  }),
+})
+// bush real art: 1448×1086, 4 growth cols × 3 season rows in ONE file.
+const bushSheet: FloraSheetDef = Object.freeze({
+  url: '/assets/flora/bush.png',
+  frameW: 362, frameH: 362, stageFrames: 4, variantRows: 1,
+  seasonRows: Object.freeze({ leaf: 0, bare: 1, snow: 2 }),
+})
 
 export const FLORA_SHEETS: Record<string, FloraSheetDef> = Object.freeze({
-  tree:        floraSheet('/assets/flora/tree.png'),
-  bush:        floraSheet('/assets/flora/bush.png'),
-  berry_shrub: floraSheet('/assets/flora/bush.png'), // shares the bush art
+  oak:         treeSheet(1),   // P6-Q3: the one live tree species
+  willow:      treeSheet(2),   // reserved — future content species render with zero code edits
+  birch:       treeSheet(3),
+  conifer:     treeSheet(4),
+  tree:        treeSheet(1),   // legacy fixture/mock species id — shares the oak art
+  bush:        bushSheet,
+  berry_shrub: bushSheet,      // shares the bush art
+  berry_bush:  bushSheet,      // legacy id
 })
 export const DEFAULT_FLORA_COLOR = '#4a8a2a' // glyph fallback (circle, width-scaled)
+
+// Season selection (P6-Q2 RESOLVED: temperature thresholds). DATA here — render/
+// only calls floraSeason. Climate unknown ⇒ leaf.
+export const FLORA_SEASON_TEMP = Object.freeze({ snowBelowC: 0, bareBelowC: 5 })
+export function floraSeason(climate: { temperature: number } | null | undefined): FloraSeason {
+  if (!climate) return 'leaf'
+  if (climate.temperature < FLORA_SEASON_TEMP.snowBelowC) return 'snow'
+  if (climate.temperature < FLORA_SEASON_TEMP.bareBelowC) return 'bare'
+  return 'leaf'
+}
+
+// Deterministic per-plant shape pick: FNV-1a over the plant id — same id, same
+// row, every frame (render purity); distinct ids spread across rows.
+export function variantRow(plantId: string, rows: number): number {
+  if (rows <= 1) return 0
+  let h = 0x811c9dc5
+  for (let i = 0; i < plantId.length; i++) {
+    h ^= plantId.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0) % rows
+}
 
 // Ground-cover flora render as a density COVERAGE wash instead of a per-plant
 // sprite/dot: overlapping soft stamps accumulate into a continuous meadow, so a

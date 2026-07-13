@@ -44,7 +44,10 @@ export interface WorldGL {
   pick(px, py): { kind: 'agent' | 'animal'; id: string } | null  // screen → nearest entity (last frame)
   dispose(): void
 }
-export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; error: string }
+export function createWorldGL(glCanvas, overlayCanvas, sprites?: SpriteCache | null):
+  WorldGL | { ok: false; error: string }
+  // sprites: the injected assets cache (same instance the 2D canvas uses) — drives the fauna
+  // billboards below; absent/null ⇒ every animal falls back to its glyph-colour dot
 ```
 
 ## Behaviour
@@ -68,9 +71,13 @@ export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; e
   and shimmer (a continuous loop drives `uTime`).
 - **Entities.** Agents/animals/objects are projected on the CPU (same view→curve→proj as the shader,
   seated on the sampled terrain elevation) and drawn on the 2D overlay: agent dots (+ selection ring),
-  animal dots (species glyph colour from the assets manifest, stamina alpha, position lerped from the
-  reducer's interpolation stamps), object markers; all fog-faded by depth. `pick` inverts this for
-  click-select (agents win ties, 16 px).
+  **animal sprite billboards** (FE-P6: the species' fauna sheet frame — pose via `poseFor(action)`,
+  frame via `frameRect` at `clockMs`, bottom-anchored at the seated ground point, screen-size ∝ the
+  old dot radius, **horizontally mirrored** when the world heading points screen-left
+  (`cos(heading + yaw) < 0` — sheets face +x; the 3D camera yaws, so mirroring replaces rotation),
+  stamina alpha; sheet absent/unready → the glyph-colour dot exactly as before), object markers;
+  all fog-faded by depth. Position lerped from the reducer's interpolation stamps. `pick` inverts
+  this for click-select (agents win ties, 16 px).
 - **Camera.** Orbit (`yaw`), tilt (`pitch` 8–85°), dolly (`dist`, clamped to a fit-relative range),
   pan (`focus`, clamped to world bounds). Wheel = zoom · Alt+wheel = tilt · Shift+wheel = rotate ·
   drag = pan (all in `WorldCanvas3D`). `fit` frames `RenderConfig.bounds` (else the terrain bbox).
@@ -112,8 +119,10 @@ export function createWorldGL(glCanvas, overlayCanvas): WorldGL | { ok: false; e
 
 ## Out of Scope (later phases)
 
-- Flora coverage, transition FX (spawn/death/attack/grow), camera-follow, animal sprite billboards
-  (pose × heading), agent cluster colours/labels — the 2D renderer still carries these; the 3D view
-  ports them in later phases. Atmosphere polish deferred by `docs/plans/gl-atmosphere.md` Q3/Q6:
-  world-space rain particles, temperature vignette, seasonal ground tint.
+- Flora (coverage wash + tree/bush billboards — needs occlusion/depth care against the prisms,
+  FE-P6 P6-Q1 deferred it), transition FX (spawn/death/attack/grow), camera-follow, agent cluster
+  colours/labels — the 2D renderer still carries these; the 3D view ports them in later phases.
+  (Animal sprite billboards shipped with FE-P6.) Atmosphere polish deferred by
+  `docs/plans/gl-atmosphere.md` Q3/Q6: world-space rain particles, temperature vignette, seasonal
+  ground tint.
 - Culling for very large grids (current build uploads all cells; starter grids are small).

@@ -1,5 +1,7 @@
-import type { PlantState, FxInstance } from '../types'
-import { DEFAULT_FLORA_COLOR, FLORA_COVERAGE, FX_DEFS } from '../assets/manifest'
+import type { PlantState, FxInstance, ClimateState } from '../types'
+import {
+  DEFAULT_FLORA_COLOR, FLORA_COVERAGE, FX_DEFS, floraSeason, variantRow,
+} from '../assets/manifest'
 import type { SpriteCache } from '../assets/sprites'
 import { fxProgress } from './animator'
 import { wx, wy, type Transform } from './transform'
@@ -20,7 +22,10 @@ export function drawFlora(
   sprites: SpriteCache,
   clockMs: number,
   fx: FxInstance[] = [],
+  climate: ClimateState | null = null,
 ) {
+  // One seasonal variant per frame for every plant (manifest thresholds, P6-Q2).
+  const season = floraSeason(climate)
   // Active per-plant fx this frame (spawn alpha ramp / grow scale tween).
   const spawnP = new Map<string, number>()
   const growP = new Map<string, number>()
@@ -74,12 +79,14 @@ export function drawFlora(
     const hasAlpha = spP !== undefined
     if (hasAlpha) { ctx.save(); ctx.globalAlpha = spP }
 
-    const loaded = sprites.flora(plant.species)
+    const loaded = sprites.flora(plant.species, season)
     if (loaded?.ready) {
       const d = loaded.def
-      const frame = Math.min(Math.max(Math.floor(plant.stage), 0), d.stageFrames - 1)
+      const col = Math.min(Math.max(Math.floor(plant.stage), 0), d.stageFrames - 1)
+      // Row = the season (single-file sheets) else a stable per-plant shape variant.
+      const row = d.seasonRows ? d.seasonRows[season] ?? 0 : variantRow(plant.id, d.variantRows)
       ctx.drawImage(loaded.image,
-        frame * d.frameW, 0, d.frameW, d.frameH,
+        col * d.frameW, row * d.frameH, d.frameW, d.frameH,
         cx - size / 2, cy - size / 2, size, size)
     } else {
       // Fallback glyph: species-agnostic green circle (assets SPEC chain tail).

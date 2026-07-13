@@ -5,7 +5,7 @@
 // Sprites face +x (east) at heading 0. Zero npm deps: node:zlib deflate + manual PNG chunks.
 
 import { deflateSync } from 'node:zlib'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -136,8 +136,14 @@ function floraFrame(img, species, stage, ox, oy) {
 }
 
 // ── assemble + write ─────────────────────────────────────────────────────────
+// Never overwrite an existing file: these paths carry real art since FE-P6 —
+// placeholders only fill gaps. Delete a file first to regenerate it.
 function writeSheet(rel, img) {
   const path = join(OUT, rel)
+  if (existsSync(path)) {
+    console.log(`skip ${rel}  (exists — real art is never overwritten)`)
+    return
+  }
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, encodePNG(img))
   console.log(`wrote ${rel}  ${img.w}x${img.h}`)

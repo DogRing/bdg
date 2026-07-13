@@ -151,7 +151,7 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
 │                follow camera) │  ┌─ AgentDetail (click) ──┐│
 │  ≈≈ river   ▒ forest          │  └────────────────────────┘│
 │  · farmer_1 (satiety)         │  EventLog                  │
-│  ▷ deer (walk→run, flee)      │  [filter: all ▾]           │
+│  ▷ goat (walk→run, flee)      │  [filter: all ▾]           │
 │  ▶ wolf (attack lunge)        │  ⚒ farmer_1 Crafted axe    │
 │  ♣ oak (stage 3, grow fx)     │  🐺 wolf_1 killed deer_2   │
 │  ~wind→  ☂rain   ◐dusk        │  🎯 farmer_1 → Satiety     │
@@ -368,7 +368,7 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 - [ ] **No `real_stats` leak** — snapshot/event carrying god-view fields never displays them.
 - [ ] **Env-off neutrality** — with no `WorldFrame`/terrain, canvas + Header byte-match the
   social-only render.
-- [ ] **Mock smoke** — against `dev/mock-server.mjs`: river/grass/forest terrain visible, deer
+- [ ] **Mock smoke** — against `dev/mock-server.mjs`: river/grass/forest terrain visible, goat
   walk→run→flee motion, wolf attack lunge, a death fade + corpse, a plant grow tween, day-night +
   rain ambient — with zero `src/` changes when later pointed at the real backend.
 

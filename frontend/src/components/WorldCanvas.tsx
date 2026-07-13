@@ -112,7 +112,7 @@ export function WorldCanvas({ agents, objects, animals, flora, climate, terrain,
 
       // Layer order (render SPEC): terrain → flora → objects → animals →
       // agents → fx → ambient.
-      drawFlora(ctx, p.flora, tr, p.sprites, clockMs, p.fx)
+      drawFlora(ctx, p.flora, tr, p.sprites, clockMs, p.fx, p.climate)
       drawObjects(ctx, p.objects, tr, p.t)
       drawFauna(ctx, p.animals.values(), tr, p.sprites, clockMs, p.fx)
       drawAgents(ctx, p.agents, p.selectedId, p.t, tr)

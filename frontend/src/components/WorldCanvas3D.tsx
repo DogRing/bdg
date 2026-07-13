@@ -8,8 +8,8 @@ import type { SpriteCache } from '../assets/sprites'
 import { createWorldGL, type WorldGL } from '../gl/worldGL'
 
 // Same prop shape as WorldCanvas so App can swap the two by a view toggle. Draws terrain +
-// agents + animals + objects + climate atmosphere (day/night, weather, wind — gl/atmosphere.ts);
-// flora/fx/sprites arrive in later phases.
+// agents + animal sprite billboards + objects + climate atmosphere (day/night, weather, wind —
+// gl/atmosphere.ts); flora/fx arrive in later phases.
 interface Props {
   agents: AgentState[]
   objects: WorldObject[]
@@ -43,7 +43,7 @@ export function WorldCanvas3D(props: Props) {
   useEffect(() => {
     const glc = glRef.current, ovc = ovRef.current
     if (!glc || !ovc) return
-    const h = createWorldGL(glc, ovc)
+    const h = createWorldGL(glc, ovc, propsRef.current.sprites)
     if (!h.ok) { setError(h.error); return }
     handleRef.current = h
     // seed with whatever we already have

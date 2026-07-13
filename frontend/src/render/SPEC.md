@@ -79,7 +79,9 @@ export function makeTerrainRaster(grid: TerrainGrid, doc?: DocLike): TerrainRast
   // its world placement { originX, originY, worldW, worldH }. Re-made on grid identity change; doc
   // injectable for tests. drawTerrain only blits it at wx(originX)/wy(originY) sized worldW·sx × worldH·sy.
 export function drawFlora(ctx, flora: PlantState[], tr, sprites: SpriteCache, clockMs,
-                          fx?: FxInstance[]): void   // fx: spawn alpha ramp + grow scale tween
+                          fx?: FxInstance[], climate?: ClimateState | null): void
+                          // fx: spawn alpha ramp + grow scale tween; climate drives the
+                          // seasonal sheet variant via assets.floraSeason (null ⇒ leaf)
 export function drawFauna(ctx, animals: Iterable<AnimalState>, tr, sprites: SpriteCache,
                           clockMs, fx?: FxInstance[]): void // fx: spawn alpha + attack lunge offset
                           // (glyph colours come from the assets manifest, not the theme)
@@ -128,8 +130,14 @@ Two sub-passes over the plant slice (coverage drawn first so sprites occlude it)
   reads as a continuous meadow, an isolated tuft as a soft dab. Per-stamp alpha = `style.alpha ×
   maturity(stage)`, ramped by spawn fx and eased by grow fx. Membership + tuning are manifest DATA
   (open content) — the pass branches on the looked-up style, **never on a species string** (invariant).
-- **Other flora**: frame = `min(stage, stageFrames-1)` of the flora sheet, drawn at world size ∝ `width`
-  (no rotation); glyph = species colour circle. Dense + static: no interpolation.
+- **Other flora**: source col = `min(stage, stageFrames-1)`; source row = the season row
+  (`seasonRows[floraSeason(climate)]`, single-file sheets) else the per-plant shape variant
+  (`variantRow(plant.id, variantRows)` — deterministic id hash, so a stand of one species varies).
+  Per-season FILES (trees) are resolved by the sprite cache (`sprites.flora(species, season)`,
+  unready seasonal file → leaf sheet). Drawn at world size ∝ `width` (no rotation); glyph =
+  species colour circle. Dense + static: no interpolation. Season choice is manifest DATA
+  (`FLORA_SEASON_TEMP` thresholds) — this layer never tests temperature values itself beyond
+  calling `floraSeason`.
 
 ### Transition FX (Q4 — reducer-owned queue, render evaluates by time)
 `FxInstance = { kind:'spawn'|'death'|'attack'|'grow', at:ms, pos:Vec2, species?, heading?, id }`
@@ -204,6 +212,9 @@ As specified in the parent SPEC §Ecosystem rendering: day-night tint from
   draws (fading); at +1500 ms `fxProgress` = null and nothing draws; a corpse mark is drawn in the
   final third. **Spawn FX** — alpha ramps 0→1 over 500 ms. **Attack FX** — sprite offset peaks at
   t=0.5 along heading. **Grow FX** — plant size eases old→new stage size.
+- [ ] **Flora seasons + variants** — a `seasonRows` sheet draws row 1 (`bare`) at 3 °C and row 2
+  (`snow`) at −3 °C; a `variantRows:4` sheet draws the same row for the same plant id every frame
+  and different rows across ids; `climate` omitted ⇒ leaf row/sheet.
 - [ ] **Flora coverage wash** — a ground-cover plant (`species:'grass'`) draws NO sprite and NO fixed
   `MIN_PX` dot: it emits a `createRadialGradient` + `arc` of **world-scaled** radius (`radiusUnits×sx`,
   not `MIN_PX`), with a non-glyph fill. Three overlapping grass emit more wash `fill`s than one (density
