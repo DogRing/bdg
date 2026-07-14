@@ -109,7 +109,7 @@ describe('drawTerrain', () => {
 
 const climate = (over: Partial<ClimateState>): ClimateState => ({
   temperature: 15, apparentTemp: null, moisture: 0, raining: false, snowCover: 0,
-  windDir: 0, windMag: 0, hourOfDay: 12, dayNight: 'day', yearFraction: 0, ...over,
+  windDir: 0, windMag: 0, hourOfDay: 12, minuteOfDay: 720, dayNight: 'day', dayOfRun: 0, yearFraction: 0, ...over,
 })
 
 describe('drawAmbient', () => {

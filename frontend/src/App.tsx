@@ -3,6 +3,7 @@ import { Header } from './components/Header'
 import { WorldCanvas } from './components/WorldCanvas'
 import { WorldCanvas3D } from './components/WorldCanvas3D'
 import { Sidebar } from './components/Sidebar'
+import { StatusHud } from './components/StatusHud'
 import { useSSE } from './hooks/useSSE'
 import { useWorld } from './hooks/useWorld'
 import { createSpriteCache } from './assets/sprites'
@@ -116,6 +117,7 @@ export default function App() {
           >
             {view === '3d' ? '2D map' : '3D view'}
           </button>
+          <StatusHud t={t} world={state} />
         </div>
 
         <Sidebar

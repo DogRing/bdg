@@ -199,7 +199,7 @@ describe('drawFlora', () => {
   it('season rows: a single-file sheet picks the row from climate temperature', () => {
     const clim = (temperature: number) => ({
       temperature, apparentTemp: null, moisture: 0.5, raining: false, snowCover: 0,
-      windDir: 0, windMag: 0, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
+      windDir: 0, windMag: 0, hourOfDay: 12, minuteOfDay: 720, dayNight: 'day' as const, dayOfRun: 0, yearFraction: 0,
     })
     const at = (temp: number | null) => {
       const { ctx, ops } = ctxMock()
@@ -216,7 +216,7 @@ describe('drawFlora', () => {
   it('season rows CS4: accumulated snowCover — not instantaneous temp — picks the snow row', () => {
     const clim = (temperature: number, snowCover: number) => ({
       temperature, snowCover, apparentTemp: null, moisture: 0.5, raining: false,
-      windDir: 0, windMag: 0, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
+      windDir: 0, windMag: 0, hourOfDay: 12, minuteOfDay: 720, dayNight: 'day' as const, dayOfRun: 0, yearFraction: 0,
     })
     const rowAt = (temperature: number, snowCover: number) => {
       const { ctx, ops } = ctxMock()
@@ -243,7 +243,7 @@ describe('drawFlora', () => {
   it('wind-responsive sprite: bottom-anchored billboard sheared downwind by climate', () => {
     const clim = (windMag: number, windDir = 0) => ({
       temperature: 15, apparentTemp: null, moisture: 0.5, raining: false, snowCover: 0,
-      windDir, windMag, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
+      windDir, windMag, hourOfDay: 12, minuteOfDay: 720, dayNight: 'day' as const, dayOfRun: 0, yearFraction: 0,
     })
     const windy = ctxMock()
     drawFlora(windy.ctx, [plant({ species: 'reed', width: 3 })], tr, cache(), 0, [], clim(1))

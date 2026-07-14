@@ -94,7 +94,9 @@ export interface ClimateState {
   windDir: number               // radians
   windMag: number               // [0,1]
   hourOfDay: number             // [0,24)
+  minuteOfDay: number           // [0,DayMinutes) game-minute within the day (HH:MM clock; DayMinutes=1440 ⇒ wall-clock)
   dayNight: 'day' | 'night'     // derived from hourOfDay
+  dayOfRun: number              // 0-based day index since run start (HUD shows dayOfRun+1)
   yearFraction: number          // [0,1) annual-cycle phase
 }
 
@@ -127,7 +129,9 @@ export interface TerrainGrid {
 // match the stream). God-view EXCLUDED. `day_night` derives from `hour_of_day`; `stage` from length.
 export interface WorldFramePayload {
   tick: number
+  day_of_run?: number           // 0-based day index since run start (WI-P4 date HUD); absent on pre-date frames ⇒ 0
   hour_of_day: number
+  minute_of_day?: number        // [0,DayMinutes) game-minute within the day (HH:MM); absent on pre-date frames ⇒ 0
   day_night: 'day' | 'night'
   temperature: number
   apparent_temp?: number

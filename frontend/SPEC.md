@@ -60,7 +60,7 @@ Once the env subsystem is installed backend-side, the world streams a periodic *
 the graphics frame carrying animal positions/actions, flora **stage** deltas, terrain
 deltas, and the ambient weather. Wire shape (snake_case; `WorldFramePayload` in `src/types.ts`):
 ```ts
-{ tick, hour_of_day, day_night:'day'|'night', temperature, apparent_temp?, raining,
+{ tick, day_of_run, hour_of_day, minute_of_day, day_night:'day'|'night', temperature, apparent_temp?, raining,
   wind:{dir, mag},
   animals:[{id, pos, species, action, heading}],
   flora_delta:[{id, pos, stage}],
@@ -71,7 +71,9 @@ The reducer stores it into `WorldState.animals` / `flora` / `climate` / `terrain
 prevFrameAtMs` so the render layer can interpolate between frames at any streaming cadence
 (`src/render/SPEC.md` §animator). **God-view (`real_stats`/`drives`/`stats`) is NEVER in a
 `WorldFrame`.** Derived display values arrive ready-to-render: `day_night`, `stage`,
-`apparent_temp`. When env is OFF no `WorldFrame` is emitted and the env slices stay empty.
+`apparent_temp`. The in-world calendar rides along too — `day_of_run` (0-based day index since run
+start) + `minute_of_day` ([0,DayMinutes)) — driving the top-right date/clock HUD (`StatusHud`) live
+each frame. When env is OFF no `WorldFrame` is emitted and the env slices stay empty.
 
 ### REST endpoints (initial load)
 - `GET /api/snapshot` — full world blob (`loadSnapshot` in `useWorld.ts`): tick,
@@ -178,6 +180,11 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
   wait: on timeout or POST failure an alert reports it and the current view stays usable
   (re-submission allowed; concurrent submissions coalesce behind a busy guard). Other
   connected viewers still reload manually — single-world contract, no resync signal.
+- **StatusHud** (`components/StatusHud.tsx`): a floating top-right overlay on the canvas showing the
+  in-world date + clock + temperature — `☀/🌙 Day N · HH:MM` over `T°C` (with ☂/❄ when raining /
+  snow lying). `Day N` = `climate.dayOfRun + 1` (dayOfRun is 0-based); `HH:MM` from
+  `climate.minuteOfDay` (÷60 / %60). Hidden when `climate === null` (env OFF / pre-first-frame).
+  Display-only (`pointerEvents:'none'`) so camera drag/wheel pass through to the canvas beneath.
 - **WorldCanvas** (`components/WorldCanvas.tsx`, left, flex-1): HTML5 Canvas, RAF render loop.
   Draws (back→front) terrain → flora → placed objects → animals → agents → fx → ambient. **Camera
   (plan Q6): wheel zoom (cursor-anchored), drag pan, click an entity to select + follow it**;
@@ -207,6 +214,7 @@ frontend/
       useWorld.ts         useReducer state machine (applyEvent + reducer) + loadSnapshot/loadTerrain
     components/
       Header.tsx          status strip
+      StatusHud.tsx       top-right canvas overlay: date (Day N) + clock (HH:MM) + temperature
       WorldCanvas.tsx     2D canvas + RAF + ResizeObserver + camera input (wheel/drag/click)
       WorldCanvas3D.tsx   WebGL curved-world view (opt-in toggle, same props)  → src/gl/SPEC.md
       Sidebar.tsx         AgentDetail + EventLog container
@@ -233,7 +241,8 @@ interface AnimalState  { id; pos; species; action; heading; stamina;
                          prevPos; prevHeading; frameAtMs; prevFrameAtMs }   // interpolation (Q3)
 interface PlantState   { id; pos; species; stage; width }
 interface ClimateState { temperature; apparentTemp|null; moisture; raining;
-                         windDir; windMag; hourOfDay; dayNight:'day'|'night'; yearFraction }
+                         windDir; windMag; hourOfDay; minuteOfDay; dayNight:'day'|'night';
+                         dayOfRun; yearFraction }   // dayOfRun 0-based, minuteOfDay ∈[0,DayMinutes) — date HUD
 interface TerrainGrid  { cellSize; cols; rows; terrain:string[]; wear?:Float32Array; elevation?:Float32Array; orientation:'flat' } // /api/terrain + deltas; flat-top hex, offset(col,row) array (hex-grid.md); elevation ∈[0,1] static (generated worlds — 3D per-cell height; absent ⇒ per-type heights)
 interface FxInstance   { kind:'spawn'|'death'|'attack'|'grow'; at:ms; pos; id; species?; heading? }
 interface RenderConfig { bounds:{min,max}; pixelsPerUnit }

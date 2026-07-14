@@ -267,6 +267,8 @@ function step() {
 
   // climate: 0.25 game-hour per tick (48 s day at 500 ms); rain spell each ~120 ticks
   const hour = (tick * 0.25) % 24
+  const dayOfRun = Math.floor((tick * 0.25) / 24) // 0-based day index (worldtime.DayOfRun)
+  const minuteOfDay = Math.round(hour * 60)       // [0,1440) game-minute within the day
   const dayNight = hour >= 6 && hour < 18 ? 'day' : 'night'
   const temperature = Math.round((12 + 10 * Math.sin(((hour - 9) / 24) * 2 * Math.PI)) * 10) / 10
   const raining = tick % 120 < 20
@@ -289,7 +291,9 @@ function step() {
   })
   emit('WorldFrame', null, {
     tick,
+    day_of_run: dayOfRun,
     hour_of_day: Math.round(hour * 100) / 100,
+    minute_of_day: minuteOfDay,
     day_night: dayNight,
     temperature,
     raining,

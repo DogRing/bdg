@@ -171,7 +171,9 @@ func (w *World) emitWorldFrame() {
 		Type:          "WorldFrame",
 		Payload: map[string]any{
 			"tick":          int64(w.tick),
+			"day_of_run":    w.clock.DayOfRun(w.tick),
 			"hour_of_day":   hour,
+			"minute_of_day": w.clock.MinuteOfDay(w.tick),
 			"day_night":     dayNightOf(hour),
 			"temperature":   temperature,
 			"raining":       raining,

@@ -237,7 +237,9 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
       windDir: Number(wind.dir ?? state.climate?.windDir ?? 0),
       windMag: Number(wind.mag ?? state.climate?.windMag ?? 0),
       hourOfDay: Number(p.hour_of_day ?? state.climate?.hourOfDay ?? 0),
+      minuteOfDay: Number(p.minute_of_day ?? state.climate?.minuteOfDay ?? 0),
       dayNight: p.day_night === 'night' ? 'night' : 'day',
+      dayOfRun: Number(p.day_of_run ?? state.climate?.dayOfRun ?? 0),
       yearFraction: state.climate?.yearFraction ?? 0,
     }
 
