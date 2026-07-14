@@ -63,6 +63,7 @@ func newEnvFixture(t *testing.T, seed int64) *testFixture {
 		EvapBaseRate: 0.1, AnnualMid: 12,
 	}
 	climState := climate.New(climCfg, func(core.Vec2) core.Tag { return "plain" })
+	climState = climate.Restore(climState, climState.Cells(), climState.Rain(), climState.Wind(), 0.375)
 	climRules := climate.NewRules(nil)
 
 	plant := flora.Plant{ID: "rf_plant_1", Species: "grass", Pos: core.Vec2{X: 5, Y: 5}, Length: 1, Width: 1}
@@ -104,12 +105,15 @@ func TestWorldFrameEmittedShapeAndGodViewExclusion(t *testing.T) {
 		t.Fatalf("WorldFrame payload is not a map: %T", frame.Payload)
 	}
 	for _, key := range []string{
-		"tick", "hour_of_day", "day_night", "temperature", "raining", "wind",
+		"tick", "hour_of_day", "day_night", "temperature", "raining", "snow_cover", "wind",
 		"animals", "flora_delta", "terrain_delta",
 	} {
 		if _, ok := payload[key]; !ok {
 			t.Errorf("WorldFrame payload missing key %q: %+v", key, payload)
 		}
+	}
+	if got := payload["snow_cover"]; got != 0.375 {
+		t.Errorf("WorldFrame snow_cover = %v, want 0.375", got)
 	}
 	if _, ok := payload["agents"]; ok {
 		t.Errorf("WorldFrame payload carries agents; agent render deltas belong to AgentFrame")
@@ -132,7 +136,7 @@ func TestWorldFrameEmittedShapeAndGodViewExclusion(t *testing.T) {
 		t.Fatalf("WorldFrame.animals missing/empty: %+v", payload["animals"])
 	}
 	a0 := animals[0]
-	for _, key := range []string{"id", "pos", "species", "action", "heading", "stamina"} {
+	for _, key := range []string{"id", "pos", "species", "action", "heading", "stamina", "cover_id"} {
 		if _, ok := a0[key]; !ok {
 			t.Errorf("WorldFrame.animals[0] missing key %q: %+v", key, a0)
 		}
@@ -149,7 +153,7 @@ func TestWorldFrameEmittedShapeAndGodViewExclusion(t *testing.T) {
 // silently reintroduce Stats/Drives/Vital onto the render-visible type (mirrors
 // persist.AgentView's structural god-view guard).
 func TestRenderViewStructuralGodViewGuard(t *testing.T) {
-	want := map[string]bool{"ID": true, "Species": true, "Pos": true, "Action": true, "Heading": true, "Stamina": true}
+	want := map[string]bool{"ID": true, "Species": true, "Pos": true, "Action": true, "Heading": true, "Stamina": true, "CoverID": true}
 	typ := reflect.TypeOf(AnimalRenderView{})
 	if typ.NumField() != len(want) {
 		t.Fatalf("AnimalRenderView has %d fields, want %d (%v)", typ.NumField(), len(want), want)

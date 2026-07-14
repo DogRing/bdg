@@ -63,6 +63,9 @@ type climateDigest struct {
 	Cells []climateCellDigest `json:"cells"`
 	Rain  climateRainDigest   `json:"rain"`
 	Wind  climateWindDigest   `json:"wind"`
+	// SnowCover is the world-uniform snowpack ∈ [0,1] (CS2b). Omitted on a snapshot from before the
+	// snow feature ⇒ 0 (a snowless resume), matching the pre-feature behaviour.
+	SnowCover float64 `json:"snow_cover"`
 }
 
 type climateCellDigest struct {
@@ -143,7 +146,8 @@ func (w *World) captureEnvState(ws *WorldState) {
 				Raining: rain.Raining, RainEndsAtHour: rain.RainEndsAtHour,
 				PRain: rain.PRain, HoursSinceRain: rain.HoursSinceRain,
 			},
-			Wind: climateWindDigest{Dir: wind.Dir, Mag: wind.Mag},
+			Wind:      climateWindDigest{Dir: wind.Dir, Mag: wind.Mag},
+			SnowCover: w.climateState.SnowCover(),
 		}
 	}
 }
@@ -215,7 +219,7 @@ func (w *World) restoreClimate(digest *climateDigest) {
 		PRain: digest.Rain.PRain, HoursSinceRain: digest.Rain.HoursSinceRain,
 	}
 	wind := climate.Wind{Dir: digest.Wind.Dir, Mag: digest.Wind.Mag}
-	w.climateState = climate.Restore(w.climateState, cells, rain, wind)
+	w.climateState = climate.Restore(w.climateState, cells, rain, wind, digest.SnowCover)
 }
 
 // rebuildScent replays ONE deposit(+conditional spread)+commit cycle against the

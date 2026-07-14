@@ -67,8 +67,8 @@ The frontend graphics projection — built from the live render keys, streamed b
 SSE (persist/world supply the render view; api owns the HTTP stream):
 ```
 AgentFrame { tick, agents[]{id, pos?, goal?, mood?, action?}, removed[] }
-WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag},
-             animals[]{id, pos, species, action, heading},
+WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining, snow_cover, wind{dir,mag},
+             animals[]{id, pos, species, action, heading, cover_id?},
              flora_delta[]{id, pos, stage}, terrain_delta[]{cell, terrain, wear} }
 ```
 - **God-view EXCLUDED** (no `real_stats`/`tom_digest`/raw drives) — the observation-mode boundary
@@ -103,8 +103,10 @@ WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining,
 - [ ] **Derived views on the render side** — `flora` live key + `WorldFrame.flora_delta` carry `stage`
   (= `Rules.Stage(length)`), `climate`/`WorldFrame` carry `day_night` (from `hour_of_day`); none is read
   from a stored field (recompute-on-write).
-- [ ] **Climate °C + wind round-trip** — `temperature` serializes as °C (sub-zero allowed, no clamp),
-  `moisture` ∈ [0,1], `wind{dir radians, mag [0,1]}`; rain process resumes via `rng_state`.
+- [ ] **Climate °C + wind + snow round-trip** — `temperature` serializes as °C (sub-zero allowed,
+  no clamp), `moisture` ∈ [0,1], `snow_cover` ∈ [0,1], `wind{dir radians, mag [0,1]}`; rain and
+  snow state resume via the snapshot alongside `rng_state`. The `WorldFrame` SSE payload and
+  `sim:{run}:climate` live hash both carry the same world-uniform `snow_cover` value.
 - [ ] **Determinism golden** — with env installed, a fixed `(seed, N ticks)` yields a byte-identical
   env-inclusive snapshot digest across runs/processes; a second run reproduces it.
 

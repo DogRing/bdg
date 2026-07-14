@@ -22,12 +22,13 @@ type RenderView struct {
 	DayNight     string // "day" | "night", derived from HourOfDay
 	YearFraction float64
 
-	ClimateOn   bool // false ⇒ Temperature/Moisture/Raining/Wind* below are zero (climate OFF)
+	ClimateOn   bool // false ⇒ Temperature/Moisture/Raining/Wind*/SnowCover below are zero (climate OFF)
 	Temperature float64
 	Moisture    float64
 	Raining     bool
 	WindDir     float64
 	WindMag     float64
+	SnowCover   float64 // world-uniform snowpack ∈ [0,1] (CS2b)
 
 	Animals []AnimalRenderView // sorted ObjectID (D12); empty when fauna OFF
 	Flora   []FloraRenderView  // sorted ObjectID (D12); empty when flora OFF
@@ -43,6 +44,7 @@ type AnimalRenderView struct {
 	Action  string
 	Heading float64
 	Stamina float64
+	CoverID core.ObjectID // occupied cover while hidden; empty otherwise (render-only rustle cue)
 }
 
 // FloraRenderView is one plant's render-visible state (data-contracts §2
@@ -100,6 +102,7 @@ func (w *World) RenderView() RenderView {
 		rv.Raining = w.climateState.Rain().Raining
 		wind := w.climateState.Wind()
 		rv.WindDir, rv.WindMag = wind.Dir, wind.Mag
+		rv.SnowCover = w.climateState.SnowCover()
 	}
 
 	for _, id := range w.animalIDs {
@@ -110,6 +113,7 @@ func (w *World) RenderView() RenderView {
 		rv.Animals = append(rv.Animals, AnimalRenderView{
 			ID: a.ID, Species: string(a.Species), Pos: a.Pos,
 			Action: string(a.CurrentAction), Heading: a.Heading, Stamina: a.Stamina,
+			CoverID: w.hiddenCoverID(a),
 		})
 	}
 
@@ -152,12 +156,13 @@ func (w *World) emitWorldFrame() {
 	hour := w.clock.HourOfDay(w.tick)
 	var temperature float64
 	var raining bool
-	var windDir, windMag float64
+	var windDir, windMag, snowCover float64
 	if w.climateState != nil {
 		temperature, _ = ambientClimate(w.climateState)
 		raining = w.climateState.Rain().Raining
 		wind := w.climateState.Wind()
 		windDir, windMag = wind.Dir, wind.Mag
+		snowCover = w.climateState.SnowCover()
 	}
 
 	w.emit.Emit(core.Event{
@@ -170,6 +175,7 @@ func (w *World) emitWorldFrame() {
 			"day_night":     dayNightOf(hour),
 			"temperature":   temperature,
 			"raining":       raining,
+			"snow_cover":    snowCover,
 			"wind":          map[string]any{"dir": windDir, "mag": windMag},
 			"animals":       w.frameAnimals(),
 			"flora_delta":   w.frameFloraDelta(),
@@ -194,6 +200,7 @@ func (w *World) frameAnimals() []map[string]any {
 		out = append(out, map[string]any{
 			"id": string(a.ID), "pos": a.Pos, "species": string(a.Species),
 			"action": string(a.CurrentAction), "heading": a.Heading, "stamina": a.Stamina,
+			"cover_id": string(w.hiddenCoverID(a)),
 		})
 	}
 	return out

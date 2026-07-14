@@ -59,6 +59,7 @@ const FLORA_SHEET: FloraSheetDef = { url: '/t.png', frameW: 32, frameH: 32, stag
 const SEASON_SHEET: FloraSheetDef = {
   url: '/b.png', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1,
   seasonRows: { leaf: 0, bare: 1, snow: 2 },
+  rustle: { periodMs: 3000, durationMs: 300, maxBend: 0.08 },
 }
 const VARIANT_SHEET: FloraSheetDef = { url: '/v.png', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 4 }
 const WIND_SHEET: FloraSheetDef = { url: '/g.svg', frameW: 32, frameH: 32, stageFrames: 4, variantRows: 1, windResponsive: true }
@@ -154,6 +155,19 @@ describe('drawFauna', () => {
 })
 
 describe('drawFlora', () => {
+	it('rustles only occupied bush cover briefly once per three seconds', () => {
+		const occupied = [animal({ id: 'rabbit', coverId: 'bush_1' })]
+		const plants = [plant({ id: 'bush_1', species: 'bush' })]
+		const at = (clockMs: number, animals: AnimalState[] = occupied) => {
+			const { ctx, ops } = ctxMock()
+			drawFlora(ctx, plants, tr, cache(), clockMs, [], null, animals)
+			return ops.filter(o => o.op === 'transform').map(o => o.c)
+		}
+		expect(at(75)).not.toEqual([0])
+		expect(at(500)).toEqual([0])
+		expect(at(3075)).not.toEqual([0])
+		expect(at(75, [])).toEqual([])
+	})
   it('picks the stage frame (clamped) and scales by width', () => {
     const { ctx, ops } = ctxMock()
     drawFlora(ctx, [plant({ stage: 7, width: 3 })], tr, cache(), 0)
@@ -184,7 +198,7 @@ describe('drawFlora', () => {
 
   it('season rows: a single-file sheet picks the row from climate temperature', () => {
     const clim = (temperature: number) => ({
-      temperature, apparentTemp: null, moisture: 0.5, raining: false,
+      temperature, apparentTemp: null, moisture: 0.5, raining: false, snowCover: 0,
       windDir: 0, windMag: 0, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
     })
     const at = (temp: number | null) => {
@@ -196,7 +210,23 @@ describe('drawFlora', () => {
     expect(at(null)).toBe(0)      // no climate → leaf row
     expect(at(12)).toBe(0)        // warm → leaf
     expect(at(3)).toBe(1 * 32)    // chilly → bare row
-    expect(at(-3)).toBe(2 * 32)   // freezing → snow row
+    expect(at(-3)).toBe(1 * 32)   // freezing but snowCover 0 → bare, NOT snow (CS4: sprite needs a pack)
+  })
+
+  it('season rows CS4: accumulated snowCover — not instantaneous temp — picks the snow row', () => {
+    const clim = (temperature: number, snowCover: number) => ({
+      temperature, snowCover, apparentTemp: null, moisture: 0.5, raining: false,
+      windDir: 0, windMag: 0, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
+    })
+    const rowAt = (temperature: number, snowCover: number) => {
+      const { ctx, ops } = ctxMock()
+      drawFlora(ctx, [plant({ species: 'bush', stage: 0 })], tr, cache(), 0, [], clim(temperature, snowCover))
+      return ops.find(o => o.op === 'drawImage')!.sy
+    }
+    expect(rowAt(-5, 0)).toBe(1 * 32)   // cold but no pack → bare row (no flicker on a sub-zero dip)
+    expect(rowAt(-5, 0.3)).toBe(2 * 32) // pack present → snow row
+    expect(rowAt(4, 0.3)).toBe(2 * 32)  // warm air, snow still lying → still snow row (melts gradually)
+    expect(rowAt(8, 0)).toBe(0)         // pack gone, mild → leaf row
   })
 
   it('variant rows: the row is a stable id hash, differing across ids', () => {
@@ -212,7 +242,7 @@ describe('drawFlora', () => {
 
   it('wind-responsive sprite: bottom-anchored billboard sheared downwind by climate', () => {
     const clim = (windMag: number, windDir = 0) => ({
-      temperature: 15, apparentTemp: null, moisture: 0.5, raining: false,
+      temperature: 15, apparentTemp: null, moisture: 0.5, raining: false, snowCover: 0,
       windDir, windMag, hourOfDay: 12, dayNight: 'day' as const, yearFraction: 0,
     })
     const windy = ctxMock()

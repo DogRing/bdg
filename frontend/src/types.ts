@@ -55,6 +55,7 @@ export interface AnimalState {
   action: string
   heading: number        // radians (facing / steering direction)
   stamina: number
+  coverId?: string | null // occupied cover while hidden; drives a sparse bush rustle cue
   prevPos?: AgentPos
   prevHeading?: number
   prevFrameAtMs?: number // tween start (arrival of the latest frame)
@@ -89,6 +90,7 @@ export interface ClimateState {
   apparentTemp: number | null   // °C, optional (fauna F40)
   moisture: number              // [0,1]
   raining: boolean
+  snowCover: number             // [0,1] world-uniform snowpack (CS2b) — drives the flora snow-sprite switch (CS4)
   windDir: number               // radians
   windMag: number               // [0,1]
   hourOfDay: number             // [0,24)
@@ -130,8 +132,9 @@ export interface WorldFramePayload {
   temperature: number
   apparent_temp?: number
   raining: boolean
+  snow_cover?: number           // [0,1] world-uniform snowpack (CS2b); absent on pre-snow frames ⇒ 0
   wind: { dir: number; mag: number }
-  animals: Array<{ id: string; pos: AgentPos; species: string; action: string; heading: number }>
+  animals: Array<{ id: string; pos: AgentPos; species: string; action: string; heading: number; cover_id?: string }>
   flora_delta: Array<{ id: string; pos: AgentPos; stage: number }>
   terrain_delta: TerrainDelta[]
 }

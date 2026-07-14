@@ -34,6 +34,7 @@ type AnimalView struct {
 	Action  string        `json:"action"`
 	Heading float64       `json:"heading"`
 	Stamina float64       `json:"stamina"`
+	CoverID core.ObjectID `json:"cover_id,omitempty"`
 }
 
 // FloraView is one live plant's render row within the sim:{run}:flora STRING
@@ -55,6 +56,7 @@ type ClimateView struct {
 	ApparentTemp *float64 `json:"apparent_temp,omitempty"`
 	Moisture     float64  `json:"moisture"`
 	Raining      bool     `json:"raining"`
+	SnowCover    float64  `json:"snow_cover"` // world-uniform snowpack ∈ [0,1] (CS2b) — drives the flora snow-sprite switch (CS4)
 	WindDir      float64  `json:"wind_dir"`
 	WindMag      float64  `json:"wind_mag"`
 	HourOfDay    int      `json:"hour_of_day"`

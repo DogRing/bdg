@@ -517,6 +517,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 	capturedCells := s1.Cells()
 	capturedRain := s1.Rain()
 	capturedWind := s1.Wind()
+	capturedSnow := s1.SnowCover()
 	savedRNG := r1.State()
 
 	// Uninterrupted continuation T → T+K.
@@ -529,7 +530,7 @@ func TestRestoreRoundTrip(t *testing.T) {
 
 	// Resume: fresh placeholder (same Config) + Restore from the captured shape.
 	placeholder := climate.New(cfg, fixedTerrainAt("x"))
-	resumed := climate.Restore(placeholder, capturedCells, capturedRain, capturedWind)
+	resumed := climate.Restore(placeholder, capturedCells, capturedRain, capturedWind, capturedSnow)
 
 	// Sanity: the resumed state's read API matches the captured shape exactly.
 	if !cellsEqual(resumed.Cells(), capturedCells) {
@@ -540,6 +541,9 @@ func TestRestoreRoundTrip(t *testing.T) {
 	}
 	if resumed.Wind() != capturedWind {
 		t.Fatalf("Restore: Wind() = %+v, want %+v", resumed.Wind(), capturedWind)
+	}
+	if resumed.SnowCover() != capturedSnow {
+		t.Fatalf("Restore: SnowCover() = %v, want %v", resumed.SnowCover(), capturedSnow)
 	}
 
 	r2 := rng.New(0)
@@ -566,6 +570,9 @@ func TestRestoreRoundTrip(t *testing.T) {
 	if resumed.Wind() != s1.Wind() {
 		t.Fatalf("resumed Wind() = %+v, want %+v", resumed.Wind(), s1.Wind())
 	}
+	if resumed.SnowCover() != s1.SnowCover() {
+		t.Fatalf("resumed SnowCover() = %v, want %v", resumed.SnowCover(), s1.SnowCover())
+	}
 }
 
 // TestRestorePanicsOnMissingCell verifies Restore rejects an incomplete cell set
@@ -580,7 +587,205 @@ func TestRestorePanicsOnMissingCell(t *testing.T) {
 	}()
 	climate.Restore(placeholder, []climate.GridCellState{
 		{Cell: climate.GridCell{X: 0, Y: 0}, State: climate.CellState{Terrain: "x"}},
-	}, climate.RainProcess{}, climate.Wind{})
+	}, climate.RainProcess{}, climate.Wind{}, 0)
+}
+
+// TestSnowAccumulatesWhenFreezingRain verifies CS3: sub-zero temperature + raining
+// builds SnowCover (world-uniform, no RNG term in the snow update).
+func TestSnowAccumulatesWhenFreezingRain(t *testing.T) {
+	cfg := testCfg()
+	cfg.RainProbPerHour = 0
+	cfg.RainHardCapHours = 1 // force rain on the first step (HoursSinceRain reaches the cap)
+	cfg.SnowFreezeC = 0
+	cfg.SnowAccumRate = 0.1
+	cfg.SnowMeltRate = 0.02
+	r := rng.New(1)
+
+	// Winter trough (YF=0 ⇒ annualT=-5) + pre-dawn (HourOfDay=2 ⇒ daily≈-3) ⇒ well below 0 °C.
+	s := climate.New(cfg, fixedTerrainAt("g"))
+	s, _ = climate.Step(s, climate.Forcing{AbsHour: 1, HourOfDay: 2, YearFraction: 0}, emptyRules(), r)
+
+	if !s.Rain().Raining {
+		t.Fatalf("expected forced rain (hard cap = 1)")
+	}
+	if s.Cells()[0].State.Temperature >= 0 {
+		t.Fatalf("expected sub-zero temperature, got %v", s.Cells()[0].State.Temperature)
+	}
+	if got := s.SnowCover(); got != cfg.SnowAccumRate {
+		t.Fatalf("freezing rain should accumulate one step of snow: SnowCover = %v, want %v", got, cfg.SnowAccumRate)
+	}
+}
+
+// TestSnowMeltsWhenWarm verifies CS3: above freezing, an existing pack melts ∝ °C
+// over the freeze point (warmer ⇒ faster), and the pack is floored at 0.
+func TestSnowMeltsWhenWarm(t *testing.T) {
+	cfg := testCfg()
+	cfg.RainProbPerHour = 0 // stay dry (no accumulation)
+	cfg.SnowFreezeC = 0
+	cfg.SnowMeltRate = 0.02
+	r := rng.New(2)
+
+	// Resume with a half pack, then step through summer noon (YF=0.5 ⇒ annualT=30, warm).
+	base := climate.New(cfg, fixedTerrainAt("g"))
+	s := climate.Restore(base, base.Cells(), climate.RainProcess{}, base.Wind(), 0.5)
+	s, _ = climate.Step(s, climate.Forcing{AbsHour: 1, HourOfDay: 14, YearFraction: 0.5}, emptyRules(), r)
+
+	if s.Rain().Raining {
+		t.Fatalf("expected dry weather")
+	}
+	if got := s.SnowCover(); got >= 0.5 {
+		t.Fatalf("warm dry weather should melt the pack: SnowCover = %v, want < 0.5", got)
+	}
+	if got := s.SnowCover(); got < 0 {
+		t.Fatalf("SnowCover must be floored at 0, got %v", got)
+	}
+}
+
+// TestSnowHoldsInMeltButNoAccumBand verifies the "눈이지만 녹고" band (0 < temp): precipitation
+// still falls (raining) but never ACCUMULATES above the freeze point — the pack only ever melts.
+func TestSnowHoldsInMeltBand(t *testing.T) {
+	cfg := testCfg()
+	cfg.RainProbPerHour = 0
+	cfg.RainHardCapHours = 1 // force rain
+	cfg.SnowFreezeC = 0
+	cfg.SnowAccumRate = 0.1
+	cfg.SnowMeltRate = 0.02
+	r := rng.New(3)
+
+	// A mild rainy hour ABOVE freezing: annualT≈12.5 (YF=0.25) minus a small night dip, still > 0 after
+	// the rain drop — raining yet temperature > 0, so no accumulation despite the storm.
+	base := climate.New(cfg, fixedTerrainAt("g"))
+	s := climate.Restore(base, base.Cells(), climate.RainProcess{}, base.Wind(), 0.3)
+	s, _ = climate.Step(s, climate.Forcing{AbsHour: 1, HourOfDay: 12, YearFraction: 0.25}, emptyRules(), r)
+
+	if !s.Rain().Raining {
+		t.Fatalf("expected forced rain")
+	}
+	if s.Cells()[0].State.Temperature <= 0 {
+		t.Fatalf("this band needs temperature > 0, got %v", s.Cells()[0].State.Temperature)
+	}
+	if got := s.SnowCover(); got >= 0.3 {
+		t.Fatalf("above freezing the pack must not grow even while raining: SnowCover = %v, want < 0.3", got)
+	}
+}
+
+func TestSnowpackBoundariesAndClamping(t *testing.T) {
+	tests := []struct {
+		name        string
+		temperature float64
+		raining     bool
+		initial     float64
+		want        float64
+	}{
+		{name: "below freezing accumulates", temperature: -1, raining: true, initial: 0.2, want: 0.3},
+		{name: "exactly freezing accumulates", temperature: 0, raining: true, initial: 0.2, want: 0.3},
+		{name: "below freezing dry holds", temperature: -1, initial: 0.2, want: 0.2},
+		{name: "warm rain melts", temperature: 2, raining: true, initial: 0.3, want: 0.26},
+		{name: "warm dry melts", temperature: 4, initial: 0.3, want: 0.22},
+		{name: "accumulation clamps high", temperature: -1, raining: true, initial: 0.95, want: 1},
+		{name: "melting clamps low", temperature: 20, initial: 0.3, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testCfg()
+			cfg.AnnualMid = tt.temperature
+			cfg.AnnualAmp = 0
+			cfg.TempDayPeak = 0
+			cfg.TempNightLow = 0
+			cfg.TempRainDrop = 0
+			cfg.SnowFreezeC = 0
+			cfg.SnowAccumRate = 0.1
+			cfg.SnowMeltRate = 0.02
+			cfg.RainProbPerHour = 0
+			if tt.raining {
+				cfg.RainHardCapHours = 1
+			}
+
+			base := climate.New(cfg, fixedTerrainAt("g"))
+			s := climate.Restore(base, base.Cells(), climate.RainProcess{}, base.Wind(), tt.initial)
+			s, _ = climate.Step(s, climate.Forcing{AbsHour: 1}, emptyRules(), rng.New(91))
+
+			if s.Rain().Raining != tt.raining {
+				t.Fatalf("Raining = %v, want %v", s.Rain().Raining, tt.raining)
+			}
+			if got := s.SnowCover(); math.Abs(got-tt.want) > 1e-12 {
+				t.Fatalf("SnowCover = %.12f, want %.12f", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSnowUpdateConsumesNoRNG(t *testing.T) {
+	cfg := testCfg()
+	cfg.AnnualMid = -1
+	cfg.AnnualAmp = 0
+	cfg.TempDayPeak = 0
+	cfg.TempNightLow = 0
+	cfg.TempRainDrop = 0
+	cfg.RainHardCapHours = 1
+	cfg.SnowFreezeC = 0
+	cfg.SnowAccumRate = 0.1
+	cfg.SnowMeltRate = 0.02
+
+	withSnow := rng.New(42)
+	withoutSnow := rng.New(42)
+	base := climate.New(cfg, fixedTerrainAt("g"))
+	climate.Step(base, climate.Forcing{AbsHour: 1}, emptyRules(), withSnow)
+	cfg.SnowAccumRate = 0
+	cfg.SnowMeltRate = 0
+	baseWithoutSnow := climate.New(cfg, fixedTerrainAt("g"))
+	climate.Step(baseWithoutSnow, climate.Forcing{AbsHour: 1}, emptyRules(), withoutSnow)
+
+	if got, want := withSnow.State(), withoutSnow.State(); got != want {
+		t.Fatalf("snow update changed RNG state: got %+v, want %+v", got, want)
+	}
+}
+
+func TestSnowResumeStableWithNonZeroPack(t *testing.T) {
+	cfg := testCfg()
+	cfg.AnnualMid = -1
+	cfg.AnnualAmp = 0
+	cfg.TempDayPeak = 0
+	cfg.TempNightLow = 0
+	cfg.TempRainDrop = 0
+	cfg.RainHardCapHours = 1
+	cfg.RainDurMinHours = 12
+	cfg.RainDurMaxHours = 12
+	cfg.SnowFreezeC = 0
+	cfg.SnowAccumRate = 0.1
+	cfg.SnowMeltRate = 0.02
+
+	runRNG := rng.New(73)
+	s := climate.New(cfg, fixedTerrainAt("g"))
+	for hour := int64(1); hour <= 3; hour++ {
+		s, _ = climate.Step(s, climate.Forcing{AbsHour: hour}, emptyRules(), runRNG)
+	}
+	if s.SnowCover() == 0 {
+		t.Fatal("test setup did not create a non-zero snowpack")
+	}
+	cells, rain, wind, snow := s.Cells(), s.Rain(), s.Wind(), s.SnowCover()
+	savedRNG := runRNG.State()
+
+	uninterrupted := s
+	for hour := int64(4); hour <= 6; hour++ {
+		uninterrupted, _ = climate.Step(uninterrupted, climate.Forcing{AbsHour: hour}, emptyRules(), runRNG)
+	}
+
+	placeholder := climate.New(cfg, fixedTerrainAt("g"))
+	resumed := climate.Restore(placeholder, cells, rain, wind, snow)
+	resumeRNG := rng.New(0)
+	resumeRNG.Restore(savedRNG)
+	for hour := int64(4); hour <= 6; hour++ {
+		resumed, _ = climate.Step(resumed, climate.Forcing{AbsHour: hour}, emptyRules(), resumeRNG)
+	}
+
+	if got, want := resumed.SnowCover(), uninterrupted.SnowCover(); got != want {
+		t.Fatalf("resumed SnowCover = %v, want uninterrupted %v", got, want)
+	}
+	if got, want := resumeRNG.State(), runRNG.State(); got != want {
+		t.Fatalf("resumed RNG state = %+v, want %+v", got, want)
+	}
 }
 
 func cellsEqual(a, b []climate.GridCellState) bool {

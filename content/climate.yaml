@@ -67,3 +67,10 @@ balance:
   wind_dir_reversion:  0.05        # fraction Dir is pulled back toward prevailing each step [0,1]
   wind_mag_mean:       0.30        # mean wind magnitude [0,1]
   wind_mag_noise:      0.10        # seeded per-step magnitude noise (resulting Mag clamped [0,1])
+
+  # World-uniform snowpack (CS3, plan §1d) — freezing precipitation builds SnowCover∈[0,1]; above
+  # freezing it melts ∝ °C over the freeze point (warmer ⇒ faster). 0…freeze precip shows as snow
+  # (frontend) yet never accumulates → "눈이지만 녹고". Drives the flora snow-sprite switch (CS4). UNTUNED.
+  snow_freeze_c:   0.0             # °C at/below which precipitation accumulates as snow
+  snow_accum_rate: 0.06            # SnowCover gained per game-hour of freezing precipitation
+  snow_melt_rate:  0.006           # SnowCover lost per game-hour per +°C above snow_freeze_c

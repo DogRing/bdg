@@ -142,6 +142,25 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 		}
 	}
 
+	// ── 3b. Snowpack (CS3; world-uniform accumulate/melt — plan §1d) ──────────
+	// Deterministic function of the per-step (world-uniform) temperature + raining — NO RNG draw
+	// (keeps the fixed rain→wind draw order byte-stable). Freezing precipitation accumulates;
+	// above freezing the pack melts ∝ how far above freezing (warmer ⇒ faster), so 0…SnowFreezeC
+	// precipitation still shows as snow (frontend CS1) yet never builds. Clamped [0,1].
+	snow := prev.snowCover
+	switch {
+	case temperature <= cfg.SnowFreezeC && isRaining:
+		snow += cfg.SnowAccumRate
+	case temperature > cfg.SnowFreezeC:
+		snow -= cfg.SnowMeltRate * (temperature - cfg.SnowFreezeC)
+	}
+	if snow < snowMin {
+		snow = snowMin
+	} else if snow > snowMax {
+		snow = snowMax
+	}
+	next.snowCover = snow
+
 	// ── 4. Transition evaluation (sorted GridCell order: Y-major then X, D12) ─
 	// Transitions fire AFTER moisture/temperature updates (rules see the new state).
 	// Each cell is evaluated independently; Terrain update is applied in-order.

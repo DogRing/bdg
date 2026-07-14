@@ -286,6 +286,28 @@ func TestAnimalHidingEntryRollNearCover(t *testing.T) {
 	}
 }
 
+func TestHiddenAnimalFrameCarriesNearestCoverID(t *testing.T) {
+	fx := newFixtureSeeded(t, 82)
+	cfg := testEnvConfig()
+	cfg.ScentCellSize = 5
+	cfg.FaunaCombat.HideCoverFactor = 2
+	fx.world.PlaceObject("shrub_far", "berry_shrub", core.Vec2{X: 4}, nil)
+	fx.world.PlaceObject("shrub_near", "berry_shrub", core.Vec2{X: 1}, nil)
+	fx.world.InstallFauna(cfg, testHideFaunaRules(t), testScentEmitters(), map[core.Tag]bool{"berry_shrub": true}, []fauna.Animal{
+		testAnimal("an:deer", "deer", core.Vec2{}),
+	})
+	fx.world.animals["an:deer"].HiddenUntil = 10
+
+	frames := fx.world.frameAnimals()
+	if len(frames) != 1 || frames[0]["cover_id"] != "shrub_near" {
+		t.Fatalf("hidden animal cover_id = %+v, want shrub_near", frames)
+	}
+	fx.world.tick = 11
+	if got := fx.world.frameAnimals()[0]["cover_id"]; got != "" {
+		t.Fatalf("expired hidden animal cover_id = %v, want empty", got)
+	}
+}
+
 func TestAnimalHidingIneligibleDoesNotSetOrDraw(t *testing.T) {
 	tests := []struct {
 		name       string

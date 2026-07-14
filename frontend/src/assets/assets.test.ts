@@ -116,18 +116,19 @@ describe('createSpriteCache (factory, no singleton)', () => {
     expect(c.flora('bush', 'snow')).toBe(c.flora('bush', 'leaf'))
   })
 
-  it('grass declares normal/snow rows and paired concealment-rustle frames', () => {
+  it('grass declares normal/snow rows while bush owns the 3-second concealment rustle', () => {
     const grass = FLORA_SHEETS.grass
     expect(grass.url).toBe('/assets/flora/grass.png')
     expect(grass.frameW).toBe(313.5)
     expect(grass.frameH).toBe(313.5)
     expect(grass.seasonRows).toEqual({ leaf: 0, bare: 0, snow: 1 })
-    expect(grass.rustleRows).toEqual([2, 3])
     expect(grass.windResponsive).toBe(true)
+	const bush = FLORA_SHEETS.berry_shrub
+	expect(bush.rustle).toEqual({ periodMs: 3000, durationMs: 300, maxBend: 0.08 })
   })
 })
 
-describe('floraSeason (P6-Q2: temperature thresholds — manifest data)', () => {
+describe('floraSeason (temperature fallback when snowCover absent — P6-Q2)', () => {
   it.each([
     [null, 'leaf'],
     [{ temperature: -3 }, 'snow'],
@@ -135,6 +136,22 @@ describe('floraSeason (P6-Q2: temperature thresholds — manifest data)', () => 
     [{ temperature: 3 }, 'bare'],
     [{ temperature: 5 }, 'leaf'],   // bare strictly below 5
     [{ temperature: 12 }, 'leaf'],
+  ] as const)('%o → %s', (climate, season) => {
+    expect(floraSeason(climate)).toBe(season)
+  })
+})
+
+describe('floraSeason (CS4: accumulated snowCover drives the snow variant, not instantaneous temp)', () => {
+  it.each([
+    // Cold but no accumulated pack → NOT snow (fixes the daily-swing flicker): it is bare, not snow,
+    // even at −5 °C, until snow actually builds up.
+    [{ temperature: -5, snowCover: 0 }, 'bare'],
+    [{ temperature: -5, snowCover: 0.05 }, 'bare'],  // below the 0.1 accumulation threshold
+    [{ temperature: -5, snowCover: 0.1 }, 'snow'],   // pack crossed the threshold
+    // Warm air but snow still lying on the ground → STILL snow (melts gradually, sprite follows the pack).
+    [{ temperature: 4, snowCover: 0.5 }, 'snow'],
+    // Pack melted away while warm → leaf.
+    [{ temperature: 8, snowCover: 0 }, 'leaf'],
   ] as const)('%o → %s', (climate, season) => {
     expect(floraSeason(climate)).toBe(season)
   })

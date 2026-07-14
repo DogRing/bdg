@@ -801,7 +801,7 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 	for _, a := range rv.Animals {
 		if err := live.WriteAnimal(ctx, runID, persist.AnimalView{
 			ID: a.ID, Pos: a.Pos, Species: a.Species,
-			Action: a.Action, Heading: a.Heading, Stamina: a.Stamina,
+			Action: a.Action, Heading: a.Heading, Stamina: a.Stamina, CoverID: a.CoverID,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteAnimal(%s): %v\n", a.ID, err)
 		}
@@ -822,7 +822,7 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 	if rv.ClimateOn {
 		if err := live.WriteClimate(ctx, runID, persist.ClimateView{
 			Temperature: rv.Temperature, Moisture: rv.Moisture, Raining: rv.Raining,
-			WindDir: rv.WindDir, WindMag: rv.WindMag,
+			SnowCover: rv.SnowCover, WindDir: rv.WindDir, WindMag: rv.WindMag,
 			HourOfDay: rv.HourOfDay, DayNight: rv.DayNight, YearFraction: rv.YearFraction,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteClimate: %v\n", err)

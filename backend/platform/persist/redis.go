@@ -83,6 +83,7 @@ func (r *RedisLiveStore) WriteAnimal(ctx context.Context, run core.RunID, v Anim
 		"action", v.Action,
 		"heading", fmt.Sprintf("%.6f", v.Heading),
 		"stamina", fmt.Sprintf("%.4f", v.Stamina),
+		"cover_id", string(v.CoverID),
 	); err != nil {
 		return fmt.Errorf("redis.WriteAnimal: %w", err)
 	}
@@ -117,6 +118,7 @@ func (r *RedisLiveStore) WriteClimate(ctx context.Context, run core.RunID, v Cli
 		"temperature", fmt.Sprintf("%.4f", v.Temperature),
 		"moisture", fmt.Sprintf("%.4f", v.Moisture),
 		"raining", fmt.Sprintf("%t", v.Raining),
+		"snow_cover", fmt.Sprintf("%.4f", v.SnowCover),
 		"wind_dir", fmt.Sprintf("%.6f", v.WindDir),
 		"wind_mag", fmt.Sprintf("%.4f", v.WindMag),
 		"hour_of_day", fmt.Sprintf("%d", v.HourOfDay),

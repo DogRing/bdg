@@ -158,20 +158,40 @@ func (w *World) nearForageFlora(a *fauna.Animal) bool {
 }
 
 func (w *World) nearCoverFlora(a *fauna.Animal) bool {
+	return w.nearestCoverFloraID(a) != ""
+}
+
+// nearestCoverFloraID returns the first nearest cover flora in deterministic
+// object-ID order on distance ties. It is also the render cue for a hidden
+// animal's occupied bush; no species name is hardcoded (D4/D10).
+func (w *World) nearestCoverFloraID(a *fauna.Animal) core.ObjectID {
+	if a == nil {
+		return ""
+	}
 	reach := w.envCfg.FaunaCombat.HideCoverFactor * w.envCfg.ScentCellSize
 	if reach <= 0 {
-		return false
+		return ""
 	}
+	var nearest core.ObjectID
+	nearestDistance := reach
 	for _, id := range w.objectIDs {
 		obj, ok := w.objects[id]
 		if !ok || !w.kindIsCover(obj.Kind) {
 			continue
 		}
-		if a.Pos.Distance(obj.Pos) <= reach {
-			return true
+		distance := a.Pos.Distance(obj.Pos)
+		if distance <= nearestDistance && (nearest == "" || distance < nearestDistance) {
+			nearest, nearestDistance = id, distance
 		}
 	}
-	return false
+	return nearest
+}
+
+func (w *World) hiddenCoverID(a *fauna.Animal) core.ObjectID {
+	if a == nil || a.HiddenUntil == 0 || a.HiddenUntil < w.tick {
+		return ""
+	}
+	return w.nearestCoverFloraID(a)
 }
 
 // coverResistance is the M4-b movement drag at p for a species (>= 1; 1 = no

@@ -64,9 +64,10 @@ type Wind struct {
 type navTerrainID = core.Tag
 
 // State is the whole climate field for one run: the coarse grid of CellState, the rain-process
-// accumulator, AND the current world-uniform Wind (CA2). Snapshot-serializable (data-contracts §6).
-// Bounds + cell size come from Config; world maps GridCell → []navmap.Cell when applying transitions.
-type State struct{ /* opaque; see Owned Data. Holds the CellState grid + RainProcess + Wind. */ }
+// accumulator, the current world-uniform Wind (CA2), AND the world-uniform snowpack SnowCover ∈ [0,1]
+// (CS2b). Snapshot-serializable (data-contracts §6). Bounds + cell size come from Config; world maps
+// GridCell → []navmap.Cell when applying transitions.
+type State struct{ /* opaque; see Owned Data. Holds the CellState grid + RainProcess + Wind + SnowCover. */ }
 
 // RainProcess is the seeded stochastic rain accumulator (1a). Captured in the snapshot so
 // resume is byte-identical (D12). Exposed read-only for serialization + observability.
@@ -126,6 +127,15 @@ type Config struct {
     WindDirReversion  float64 // [0,1] — fraction Dir is pulled back toward WindPrevailingDir each step (mean-reverting)
     WindMagMean       float64 // [0,1] — mean magnitude
     WindMagNoise      float64 // seeded per-step magnitude-noise amplitude; resulting Mag clamped [0,1]
+
+    // ── Snow model (CS3; world-uniform snowpack accumulate/melt — plan §1d "Phase-1 reopened #3") ──
+    // A DETERMINISTIC function of the per-step world-uniform Temperature + raining (NO RNG draw — keeps
+    // the fixed rain→wind draw order byte-stable). Freezing precipitation builds SnowCover; above the
+    // freeze point it melts ∝ °C over that point (warmer ⇒ faster), so the 0…freeze band still shows as
+    // snow in the renderer (frontend CS1) yet never accumulates ("눈이지만 녹고").
+    SnowFreezeC   float64 // °C at/below which precipitation accumulates as snow (design value = 0)
+    SnowAccumRate float64 // SnowCover ∈[0,1] gained per game-hour of freezing precipitation
+    SnowMeltRate  float64 // SnowCover lost per game-hour PER °C above SnowFreezeC (temperature-proportional melt)
 }
 
 // New builds the initial climate State: every climate cell seeded from terrainAt + the Init*
@@ -145,8 +155,9 @@ func New(cfg Config, terrainAt func(core.Vec2) navTerrainID) *State
 // cell panics (persist-contract bug, mirrors flora/decay unknown-id panics). Added WI-P4: prior
 // to this, engine/world.WorldState could not round-trip Cells()/Rain()/Wind() through the
 // opaque State type (no exported constructor accepted arbitrary per-cell state) — this closes
-// that gap so climate resume is byte-identical (§ Invariants). Pure; no RNG draw.
-func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind) *State
+// that gap so climate resume is byte-identical (§ Invariants). snow is the world-uniform snowpack
+// ∈ [0,1] (CS2b) captured alongside cells/rain/wind. Pure; no RNG draw.
+func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind, snow float64) *State
 
 // ── Forcing (time-derived; D12 — derived from worldtime, never wall-clock) ─────────
 
@@ -170,8 +181,9 @@ type Forcing struct {
 // (CA2) — so the draw sequence is byte-stable. Temperature (1b/CA1, °C) =
 //   AnnualMid + AnnualAmp·sin(2π·f.YearFraction + AnnualPhase) + dailyDelta(f.HourOfDay) − TempRainDrop·raining
 // (dailyDelta interpolates TempNightLow..TempDayPeak over the day; NOT clamped). Moisture integrates
-// rain/evaporation; the world-uniform Wind drifts; threshold transitions (rules, sorted-GridCell order)
-// fire last.
+// rain/evaporation; the world-uniform Wind drifts; the world-uniform SnowCover integrates (CS3, no RNG:
+// += SnowAccumRate while Temperature <= SnowFreezeC && raining, else −= SnowMeltRate·max(0, Temperature −
+// SnowFreezeC); clamped [0,1]); threshold transitions (rules, sorted-GridCell order) fire last.
 func Step(prev *State, f Forcing, rules *Rules, rng *rng.RNG) (next *State, transitions []Transition)
 
 // Transition is one climate cell crossing a terrain threshold this step. world maps
@@ -228,6 +240,12 @@ func (s *State) Rain() RainProcess
 // apparent_temp). Read-only copy.
 func (s *State) Wind() Wind
 
+// SnowCover exposes the world-uniform snowpack ∈ [0,1] (CS2b) for snapshot/resume, the WorldFrame
+// stream (RenderView.SnowCover → WorldFrame `snow_cover` + the sim:{run}:climate ClimateView), and the
+// frontend flora-season driver (CS4 — sprites switch to their snow variant when the pack ACCUMULATES,
+// not on an instantaneous sub-zero reading). Read-only scalar.
+func (s *State) SnowCover() float64
+
 // DailyMeanTemperature is the world-uniform temperature the diurnal swing oscillates around this step
 // (annualT + the daily delta's average, rain excluded). The shelter layer buffers a covered cell's
 // felt temperature toward it (SH3 Q-S5). A pure read (no state mutation) — derived, NOT serialized;
@@ -266,10 +284,11 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
 
 ## Owned Data
 - The **coarse climate grid** (`CellState` per `GridCell`: `Moisture`, `Temperature` °C, `Terrain`),
-  the **`RainProcess`** accumulator, and the **world-uniform `Wind`** (CA2) — all held in `State`, all
-  snapshot-serialized (data-contracts §6). `State` is owned by `engine/world` (one per run);
-  `climate.Step` returns a fresh `next` and never mutates `prev` (so the plan-phase snapshot and the
-  apply-phase write don't alias, mirroring `navmap.Snapshot`).
+  the **`RainProcess`** accumulator, the **world-uniform `Wind`** (CA2), and the **world-uniform
+  `SnowCover`** ∈ [0,1] (CS2b) — all held in `State`, all snapshot-serialized (data-contracts §6).
+  `State` is owned by `engine/world` (one per run); `climate.Step` returns a fresh `next` and never
+  mutates `prev` (so the plan-phase snapshot and the apply-phase write don't alias, mirroring
+  `navmap.Snapshot`).
 - The **`Rules`** table is owned by `platform/config` (built from `content/climate.yaml`), injected
   read-only; this module never parses or mutates it.
 - This module owns **no** navmap state and writes **no** navmap data — it only emits `[]Transition`.
@@ -307,9 +326,16 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
   `WindPrevailingDir` by `WindDirReversion`, wrapped to `[0,2π)`; `Mag` = `WindMagMean` plus seeded
   noise (`WindMagNoise`), clamped `[0,1]`. Stored in `State` (resume byte-identical, D12). climate
   GENERATES + EXPOSES only.
+- **Snow model (CS3, plan §1d)** — `SnowCover ∈ [0,1]` is world-uniform (temperature is world-uniform,
+  so snow is too — a single scalar, not per-cell). Integrated each climate step as a DETERMINISTIC
+  function of the step's Temperature + raining (NO RNG draw, so the fixed rain→wind fork order is
+  untouched): `+= SnowAccumRate` when `Temperature <= SnowFreezeC && raining`, else `−= SnowMeltRate ·
+  max(0, Temperature − SnowFreezeC)`, clamped `[0,1]`. The 0…`SnowFreezeC` band shows as falling snow in
+  the renderer (frontend CS1) yet never accumulates. Stored in `State` (resume byte-identical, D12);
+  climate GENERATES + EXPOSES only (the falling-snow FORM and the sprite switch are the frontend's, CS1/CS4).
 - **Bounds** — `Moisture ∈ [0,1]` (clamped); `Temperature` is unbounded °C (**no clamp**, CA3);
-  `Wind.Dir ∈ [0,2π)`, `Wind.Mag ∈ [0,1]` (clamped); `PRain ∈ [0,1]`; every `GridCell` in
-  `[0,GridCols)×[0,GridRows)`.
+  `Wind.Dir ∈ [0,2π)`, `Wind.Mag ∈ [0,1]` (clamped); `SnowCover ∈ [0,1]` (clamped); `PRain ∈ [0,1]`;
+  every `GridCell` in `[0,GridCols)×[0,GridRows)`.
 - **Outcome-neutral until activated** — the introduction phases ship with `Rules` empty so `Step`
   emits **no** transitions and existing world/navmap goldens hold; the °C + wind golden re-baseline
   (annual/daily °C, wind digest, climate.yaml thresholds in °C) is the deliberate later climate M-phase
@@ -345,6 +371,14 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
 - [ ] **`CellAt` sampling (CA3)** — `CellAt(pos)` returns the `CellState` of the coarse cell containing
   `pos` (consistent with `Cells()` indexing); positions outside `[WorldMin,WorldMax]` clamp to the edge
   cell; two positions in the same coarse cell return the same `CellState`. Pure (no mutation).
+- [ ] **Snowpack accumulate/melt (CS3)** — with `SnowFreezeC=0`: a raining step at or below freezing raises
+  `SnowCover()` by `SnowAccumRate`; a warm dry step lowers an existing pack by `SnowMeltRate·max(0,T)`
+  (a hotter step melts faster) and the pack is floored at 0; a raining step ABOVE freezing does NOT grow
+  the pack (the 0…freeze "snow but melts" band). No RNG draw is consumed by the snow update (the
+  rain→wind fork order is unchanged). `SnowCover ∈ [0,1]`. Table-driven.
+- [ ] **Snow resume-stable (CS2b)** — capturing `State` (incl. `SnowCover()`) at step T and resuming via
+  `Restore(base, cells, rain, wind, snow)` reproduces the same step-T+k `SnowCover()` as an
+  uninterrupted run.
 - [ ] **Operand exposure incl. wind (CA2/CA3)** — the values feeding the §6 operand set are reachable:
   `temperature`(°C) + `moisture` via `CellAt`/`Cells`, `wind.dir` + `wind.mag` via `Wind()`. A test
   asserts the operand names/units match the shared climate/flora/decay/fauna vocabulary
@@ -360,7 +394,7 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
   the state evolution (rain/moisture/temp/wind) does not panic; world/navmap goldens unaffected
   (RESOLVED #10).
 - [ ] **Determinism golden** — a fixed `(Config, seed, Forcing sequence, Rules)` over N steps yields a
-  byte-identical digest of `Cells()` + `Rain()` + **`Wind()`** + the per-step `[]Transition` (D12). A
+  byte-identical digest of `Cells()` + `Rain()` + **`Wind()`** + **`SnowCover()`** + the per-step `[]Transition` (D12). A
   second run from a fresh registry built from the same `content/climate.yaml` reproduces it.
 - [ ] **Resume invariant** — capturing `State` (incl. `RainProcess` + `Wind`) at step T and resuming
   yields the same step-T+k state + transitions as running 0→T+k uninterrupted (data-contracts §5).

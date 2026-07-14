@@ -69,16 +69,21 @@ export interface FloraSheetDef {
   windResponsive?: boolean          // one-sided billboard anchored at its bottom centre; the
                                     // render layer shears its top downwind by climate windDir/
                                     // windMag + a deterministic per-id gust (P6-Q4 — grass)
-  rustleRows?: readonly [number, number] // paired hidden-creature disturbance frames; reserved
-                                    // until the render frame identifies which cover holds an animal
+  rustle?: { periodMs: number; durationMs: number; maxBend: number } // occupied-cover disturbance
 }
 export const FLORA_SHEETS: Record<string, FloraSheetDef>
 export const DEFAULT_FLORA_COLOR: string                  // glyph fallback (circle, stage-scaled)
 
-// Season selection (FE-P6 P6-Q2 RESOLVED: temperature thresholds — DATA here, never in render/):
-// snow below 0 °C, bare below 5 °C, else leaf; climate null/absent ⇒ leaf.
-export const FLORA_SEASON_TEMP: { snowBelowC: number; bareBelowC: number }
-export function floraSeason(climate: { temperature: number } | null | undefined): FloraSeason
+// Season selection (DATA here, never in render/). snow is driven by the ACCUMULATED snowpack
+// `snowCover` (CS4, plan §1d): 'snow' when snowCover ≥ snowCoverThresh — sprites switch once snow has
+// BUILT UP and revert as it melts, so a daily temp swing across 0 °C no longer flickers them. When
+// snowCover is absent (pre-snow frames/fixtures) it falls back to the freeze threshold (P6-Q2:
+// snow < 0 °C). 'bare' below bareBelowC (5 °C); else 'leaf'. climate null/absent ⇒ leaf.
+export const FLORA_SEASON_TEMP: { snowBelowC: number; bareBelowC: number; snowCoverThresh: number }
+export function floraSeason(climate: { temperature: number; snowCover?: number } | null | undefined): FloraSeason
+// Precipitation FORM (CS1, plan §1d): falling precip renders as SNOW (not rain) at/below this °C — a
+// pure function of the streamed temperature + raining (no backend field; the accumulating snowCover is separate).
+export const PRECIP_SNOW_BELOW_C: number
 // Deterministic per-plant shape pick: pure string hash of the plant id, stable across frames.
 export function variantRow(plantId: string, rows: number): number   // ∈ [0, rows)
 export interface FloraCoverageStyle {
@@ -146,8 +151,10 @@ export function frameRect(def: SheetDef, pose: Pose, clockMs: number):
 - **URL discipline.** Asset urls are root-relative `'/assets/...'` (Vite `public/` contract); the
   manifest never imports image modules (Q1: sheets live in `public/`, not `src/`).
 - **Grass sheet layout.** `flora/grass.png` is a 4×4 grid with 313.5 px frames: columns are four
-  growth stages; rows are normal, snow, rustle-left, rustle-right. `seasonRows` maps leaf/bare to
-  normal and snow to snow; `rustleRows:[2,3]` reserves the paired concealment animation frames.
+  growth stages; rows 0/1 are normal/snow. Grass remains wind-responsive but is not hiding cover.
+- **Occupied bush rustle.** `berry_shrub` uses the existing seasonal `bush.png`. While an animal's
+  `coverId` names that plant, manifest `rustle` applies a 300 ms bottom-anchored left/right bend at
+  the start of each 3000 ms period; the bush is completely still for the remaining 2700 ms.
 
 ## Acceptance Criteria (Vitest)
 
@@ -158,9 +165,12 @@ export function frameRect(def: SheetDef, pose: Pose, clockMs: number):
 - [ ] **Fallback chain** — `fauna('unknown_beast')` yields `null` from the cache and the manifest
   resolves a `prey` glyph style; a sheet with only `walk` serves `frameRect(_, 'attack')→null` and
   the documented fallback order lands on `walk`.
-- [ ] **Season selection** — `floraSeason(null)→'leaf'`, `−3 °C→'snow'`, `3 °C→'bare'`,
-  `12 °C→'leaf'`; `flora(sp,'snow')` returns the snow sheet when ready, the leaf sheet when the
-  snow file is not ready, and the single file for `seasonRows` species.
+- [ ] **Season selection** — fallback (no snowCover): `floraSeason(null)→'leaf'`, `−3 °C→'snow'`,
+  `3 °C→'bare'`, `12 °C→'leaf'`. With snowCover (CS4): `{−5 °C, cover 0}→'bare'` (cold but no pack —
+  no flicker), `{−5 °C, cover ≥ thresh}→'snow'`, `{4 °C, cover ≥ thresh}→'snow'` (warm air, snow still
+  lying), `{≥5 °C, cover 0}→'leaf'`. `flora(sp,'snow')` returns the snow sheet when ready, the leaf
+  sheet when the snow file is not ready, and the single file for `seasonRows` species.
+- [ ] **Precip form (CS1)** — `PRECIP_SNOW_BELOW_C` gates the falling-precip form: rain above it, snow at/below.
 - [ ] **Variant rows** — `variantRow(id, n)` is deterministic, ∈ [0,n), spreads distinct ids
   across rows, and returns 0 for n≤1.
 - [ ] **Terrain style totality** — every TerrainID in `content/terrain.yaml` examples

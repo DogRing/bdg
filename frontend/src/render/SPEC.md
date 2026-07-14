@@ -139,6 +139,9 @@ Two sub-passes over the plant slice (coverage drawn first so sprites occlude it)
   bottom-centre-anchored billboard whose top shears downwind — shear = `windDir/windMag` from the
   `climate` argument, plus a deterministic gust (`sin` of `clockMs` with a salted per-id phase, so
   neighbours don't sway in lockstep and the same inputs give the same frame). The base never moves.
+- **Occupied-cover rustle** — a sheet with manifest `rustle` bends only when a live animal's optional
+  `coverId` equals that plant ID. The cue runs for 300 ms once per 3000 ms and is still otherwise;
+  cadence and amplitude are manifest data, with no species-name branch in the renderer.
 - **Other flora**: source col = `min(stage, stageFrames-1)`; source row = the season row
   (`seasonRows[floraSeason(climate)]`, single-file sheets) else the per-plant shape variant
   (`variantRow(plant.id, variantRows)` — deterministic id hash, so a stand of one species varies).
@@ -177,8 +180,11 @@ map is **deleted**).
 
 ### Ambient
 As specified in the parent SPEC §Ecosystem rendering: day-night tint from
-`dayNight`+`hourOfDay`, temperature vignette, animated rain streaks when `raining`, wind HUD arrow
-(`windDir`/`windMag`). `climate === null` → no-op.
+`dayNight`+`hourOfDay`, temperature vignette, animated **precipitation** when `raining` — rain streaks
+above `PRECIP_SNOW_BELOW_C` °C, drifting snow flakes at/below it (CS1, plan §1d) — and the wind HUD
+arrow (`windDir`/`windMag`). The precip FORM is a pure function of the streamed `temperature`+`raining`
+(no snow field on the frame); the accumulating snowpack that switches flora sprites is the separate
+backend-owned `snowCover` (CS4, consumed by flora via `floraSeason`). `climate === null` → no-op.
 
 ## Invariants
 

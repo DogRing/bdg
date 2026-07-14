@@ -165,6 +165,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
           action,
           heading,
           stamina: Number(raw.stamina ?? prev?.stamina ?? 1),
+          coverId: typeof raw.cover_id === 'string' && raw.cover_id !== '' ? raw.cover_id : null,
         }
         if (prev) {
           // Shift the old target into prev* and stamp the tween window with the
@@ -232,6 +233,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
       apparentTemp: typeof p.apparent_temp === 'number' ? p.apparent_temp : (state.climate?.apparentTemp ?? null),
       moisture: state.climate?.moisture ?? 0,
       raining: Boolean(p.raining),
+      snowCover: Number(p.snow_cover ?? state.climate?.snowCover ?? 0),
       windDir: Number(wind.dir ?? state.climate?.windDir ?? 0),
       windMag: Number(wind.mag ?? state.climate?.windMag ?? 0),
       hourOfDay: Number(p.hour_of_day ?? state.climate?.hourOfDay ?? 0),
@@ -256,7 +258,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
         case 'AnimalBorn': {
           const pos = parsePos(p.pos)
           animals = new Map(animals)
-          animals.set(id, { id, pos, species, action: '', heading: 0, stamina: 1 })
+          animals.set(id, { id, pos, species, action: '', heading: 0, stamina: 1, coverId: null })
           fx = [...fx, { kind: 'spawn', at: atMs, pos, id, species }]
           break
         }

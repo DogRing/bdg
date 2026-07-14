@@ -66,7 +66,7 @@ export interface FloraSheetDef {
   seasonRows?: Partial<Record<FloraSeason, number>>                  // single-file seasons: season → row
   seasonUrls?: Partial<Record<Exclude<FloraSeason, 'leaf'>, string>> // per-season files
   windResponsive?: boolean          // bottom-anchored billboard, bent by wind in render
-  rustleRows?: readonly [number, number] // paired concealment-rustle animation rows
+  rustle?: { periodMs: number; durationMs: number; maxBend: number }
 }
 
 // tree1..4 real-art folders: 1254×1254 files, 4 growth cols × 4 shape-variant
@@ -84,17 +84,17 @@ const bushSheet: FloraSheetDef = Object.freeze({
   url: '/assets/flora/bush.png',
   frameW: 362, frameH: 362, stageFrames: 4, variantRows: 1,
   seasonRows: Object.freeze({ leaf: 0, bare: 1, snow: 2 }),
+  rustle: Object.freeze({ periodMs: 3000, durationMs: 300, maxBend: 0.08 }),
 })
 // Grass art: 1254×1254, 4 growth columns × 4 state rows (normal, snow,
 // concealment rustle-left, concealment rustle-right), 313.5 px frames. The
-// renderer uses normal/snow now; rustleRows reserves the paired hidden-creature
-// animation until render state identifies which cover contains an animal.
+// renderer uses normal/snow; hiding rustle belongs to occupied berry_shrub,
+// while grass keeps only its continuous wind response.
 const grassSheet: FloraSheetDef = Object.freeze({
   url: '/assets/flora/grass.png',
   frameW: 313.5, frameH: 313.5, stageFrames: 4, variantRows: 1,
   seasonRows: Object.freeze({ leaf: 0, bare: 0, snow: 1 }),
   windResponsive: true,
-  rustleRows: Object.freeze([2, 3] as const),
 })
 
 export const FLORA_SHEETS: Record<string, FloraSheetDef> = Object.freeze({
@@ -110,15 +110,29 @@ export const FLORA_SHEETS: Record<string, FloraSheetDef> = Object.freeze({
 })
 export const DEFAULT_FLORA_COLOR = '#4a8a2a' // glyph fallback (circle, width-scaled)
 
-// Season selection (P6-Q2 RESOLVED: temperature thresholds). DATA here — render/
-// only calls floraSeason. Climate unknown ⇒ leaf.
-export const FLORA_SEASON_TEMP = Object.freeze({ snowBelowC: 0, bareBelowC: 5 })
-export function floraSeason(climate: { temperature: number } | null | undefined): FloraSeason {
+// Season selection. DATA here — render/ only calls floraSeason. Climate unknown ⇒ leaf.
+//   • snow  — driven by the ACCUMULATED snowpack `snowCover` (CS4, plan §1d), NOT the instantaneous
+//             temperature: sprites switch to their snow variant once snow has BUILT UP and revert as it
+//             melts, so a daily temp swing across 0 °C no longer flickers them. When `snowCover` is absent
+//             (pre-snow frames/fixtures) fall back to the old freeze threshold (P6-Q2) for compatibility.
+//   • bare  — cold-but-snowless defoliation below `bareBelowC` °C.
+export const FLORA_SEASON_TEMP = Object.freeze({ snowBelowC: 0, bareBelowC: 5, snowCoverThresh: 0.1 })
+export function floraSeason(
+  climate: { temperature: number; snowCover?: number } | null | undefined,
+): FloraSeason {
   if (!climate) return 'leaf'
-  if (climate.temperature < FLORA_SEASON_TEMP.snowBelowC) return 'snow'
+  const snowy = climate.snowCover !== undefined
+    ? climate.snowCover >= FLORA_SEASON_TEMP.snowCoverThresh
+    : climate.temperature < FLORA_SEASON_TEMP.snowBelowC
+  if (snowy) return 'snow'
   if (climate.temperature < FLORA_SEASON_TEMP.bareBelowC) return 'bare'
   return 'leaf'
 }
+
+// Precipitation FORM (CS1, plan §1d): falling precip renders as SNOW (not rain) at/below this °C.
+// A pure function of the already-streamed temperature + raining — no backend field (CS1a). The
+// snowpack that ACCUMULATES from it (snowCover, CS2b) is a separate, backend-owned scalar.
+export const PRECIP_SNOW_BELOW_C = 2
 
 // Deterministic per-plant shape pick: FNV-1a over the plant id — same id, same
 // row, every frame (render purity); distinct ids spread across rows.

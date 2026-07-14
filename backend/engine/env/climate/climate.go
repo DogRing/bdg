@@ -23,6 +23,8 @@ const (
 	moistureMax      = 1.0
 	windMin          = 0.0
 	windMax          = 1.0
+	snowMin          = 0.0
+	snowMax          = 1.0
 	cellCenterOffset = 0.5
 )
 
@@ -104,6 +106,13 @@ type Config struct {
 	WindDirReversion  float64 // [0,1] — fraction Dir is pulled back toward WindPrevailingDir each step
 	WindMagMean       float64 // [0,1] — mean magnitude
 	WindMagNoise      float64 // Gaussian per-step magnitude-noise amplitude; resulting Mag clamped [0,1]
+
+	// Snow model (CS3; world-uniform snowpack accumulate/melt — Phase-1 reopened #3, plan §1d).
+	// Deterministic function of the per-step temperature + raining (no RNG). Freezing precipitation
+	// builds SnowCover; above freezing it melts ∝ how far above freezing (warmer ⇒ faster).
+	SnowFreezeC   float64 // °C at/below which precipitation accumulates as snow (design value = 0)
+	SnowAccumRate float64 // SnowCover ∈[0,1] gained per game-hour of freezing precipitation
+	SnowMeltRate  float64 // SnowCover lost per game-hour per °C above SnowFreezeC (temperature-proportional melt)
 }
 
 // Forcing is the per-step exogenous input. world builds it from the current Tick (live) or
@@ -136,7 +145,12 @@ type State struct {
 	cells [][]CellState // [row=y][col=x], iterated in Y-major then X order (D12)
 	rain  RainProcess
 	wind  Wind
-	cfg   Config
+	// snowCover is the world-uniform snowpack ∈ [0,1] (CS2b): a single scalar (not per-cell —
+	// temperature is world-uniform, so snow is too). Freezing precipitation raises it, warmth melts
+	// it (step.go §3b). Held in State so resume is byte-identical (D12); streamed + drives the
+	// frontend flora-season sprite switch (CS4). Read via SnowCover().
+	snowCover float64
+	cfg       Config
 	// dailyMeanTemp is the world-uniform temperature the diurnal swing oscillates around this step:
 	// annualT + (TempNightLow+TempDayPeak)/2, EXCLUDING the daily delta and the rain drop. It is the
 	// §0-safe read the shelter layer buffers a covered cell's felt temperature toward (SH3 Q-S5).
@@ -196,8 +210,8 @@ func New(cfg Config, terrainAt func(core.Vec2) navTerrainID) *State {
 // a freshly-`New`-constructed placeholder built from the SAME Config as the captured run. cells
 // must cover every GridCell in [0,GridCols)×[0,GridRows) exactly once — a missing, duplicate, or
 // out-of-bounds cell panics (a persist-contract bug, mirrors flora/decay unknown-id panics).
-// Pure; no RNG draw.
-func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind) *State {
+// snow is the world-uniform snowpack ∈ [0,1] captured alongside (CS2b). Pure; no RNG draw.
+func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind, snow float64) *State {
 	cfg := base.cfg
 	grid := make([][]CellState, cfg.GridRows)
 	filled := make([][]bool, cfg.GridRows)
@@ -223,7 +237,7 @@ func Restore(base *State, cells []GridCellState, rain RainProcess, wind Wind) *S
 			}
 		}
 	}
-	return &State{cells: grid, rain: rain, wind: wind, cfg: cfg, dailyMeanTemp: base.dailyMeanTemp}
+	return &State{cells: grid, rain: rain, wind: wind, snowCover: snow, cfg: cfg, dailyMeanTemp: base.dailyMeanTemp}
 }
 
 // ── Snapshot / read API ───────────────────────────────────────────────────────
@@ -249,6 +263,11 @@ func (s *State) Rain() RainProcess { return s.rain }
 // Wind exposes the current world-uniform Wind for snapshot/resume + as the source of §6 operands
 // "wind.dir"/"wind.mag" that world adapts into consumer Contexts (fauna F33/F40). Read-only copy.
 func (s *State) Wind() Wind { return s.wind }
+
+// SnowCover exposes the world-uniform snowpack ∈ [0,1] (CS2b) for snapshot/resume, the WorldFrame
+// stream, and the frontend flora-season driver (CS4 — sprites switch to their snow variant when the
+// pack accumulates, not on an instantaneous sub-zero reading). Read-only scalar.
+func (s *State) SnowCover() float64 { return s.snowCover }
 
 // DailyMeanTemperature is the world-uniform temperature the diurnal swing oscillates around this
 // step (annualT + the daily delta's average; rain excluded). The shelter layer buffers a covered

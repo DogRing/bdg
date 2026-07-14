@@ -26,6 +26,7 @@ function ctxMock() {
     fill: () => ops.push({ op: 'fill', fillStyle: ctx.fillStyle }),
     fillRect: (x: number, y: number, w: number, h: number) =>
       ops.push({ op: 'fillRect', x, y, w, h, fillStyle: ctx.fillStyle }),
+    arc: (x: number, y: number, r: number) => ops.push({ op: 'arc', x, y, r, fillStyle: ctx.fillStyle }),
     drawImage: (...a: unknown[]) =>
       ops.push({ op: 'drawImage', x: a[1], y: a[2], w: a[3], h: a[4] }),
     createRadialGradient: () => {
@@ -107,7 +108,7 @@ describe('drawTerrain', () => {
 })
 
 const climate = (over: Partial<ClimateState>): ClimateState => ({
-  temperature: 15, apparentTemp: null, moisture: 0, raining: false,
+  temperature: 15, apparentTemp: null, moisture: 0, raining: false, snowCover: 0,
   windDir: 0, windMag: 0, hourOfDay: 12, dayNight: 'day', yearFraction: 0, ...over,
 })
 
@@ -146,5 +147,29 @@ describe('drawAmbient', () => {
     drawAmbient(ctx, climate({ windMag: 0.8, windDir: 1.1 }), 800, 600, 0)
     expect(ops.find(o => o.op === 'rotate')!.a).toBe(1.1)
     expect(ops.some(o => o.op === 'stroke')).toBe(true)
+  })
+
+  it('precip FORM follows temperature (CS1): rain streaks above freezing, snow flakes below', () => {
+    // Rain streaks are 1×9 fillRects — distinct from the full-screen temperature-vignette fillRect.
+    const streaks = (o: Array<Record<string, unknown>>) => o.filter(f => f.op === 'fillRect' && f.w === 1)
+    const flakes = (o: Array<Record<string, unknown>>) => o.filter(f => f.op === 'arc')
+
+    // Above the snow-fall threshold → fast vertical streaks, no flakes.
+    const warm = ctxMock()
+    drawAmbient(warm.ctx, climate({ raining: true, temperature: 15 }), 800, 600, 0)
+    expect(streaks(warm.ops).length).toBeGreaterThan(50)
+    expect(flakes(warm.ops)).toHaveLength(0)
+
+    // Below it → soft flakes, no rain streaks (the only fillRect is the cold vignette, not a streak).
+    const cold = ctxMock()
+    drawAmbient(cold.ctx, climate({ raining: true, temperature: -3 }), 800, 600, 0)
+    expect(flakes(cold.ops).length).toBeGreaterThan(50)
+    expect(streaks(cold.ops)).toHaveLength(0)
+
+    // Snow flakes animate with the clock, deterministically (render purity).
+    const later = ctxMock()
+    drawAmbient(later.ctx, climate({ raining: true, temperature: -3 }), 800, 600, 500)
+    const at = (o: Array<Record<string, unknown>>) => flakes(o).map(f => [f.x, f.y])
+    expect(at(cold.ops)).not.toEqual(at(later.ops))
   })
 })

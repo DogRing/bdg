@@ -1,4 +1,4 @@
-import type { PlantState, FxInstance, ClimateState } from '../types'
+import type { PlantState, FxInstance, ClimateState, AnimalState } from '../types'
 import {
   DEFAULT_FLORA_COLOR, FLORA_COVERAGE, FX_DEFS, floraSeason, variantRow,
 } from '../assets/manifest'
@@ -41,9 +41,12 @@ export function drawFlora(
   clockMs: number,
   fx: FxInstance[] = [],
   climate: ClimateState | null = null,
+  animals: Iterable<AnimalState> = [],
 ) {
   // One seasonal variant per frame for every plant (manifest thresholds, P6-Q2).
   const season = floraSeason(climate)
+  const occupiedCover = new Set<string>()
+  for (const animal of animals) if (animal.coverId) occupiedCover.add(animal.coverId)
   // Active per-plant fx this frame (spawn alpha ramp / grow scale tween).
   const spawnP = new Map<string, number>()
   const growP = new Map<string, number>()
@@ -107,7 +110,22 @@ export function drawFlora(
       const col = Math.min(Math.max(Math.floor(plant.stage), 0), d.stageFrames - 1)
       // Row = the season (single-file sheets) else a stable per-plant shape variant.
       const row = d.seasonRows ? d.seasonRows[season] ?? 0 : variantRow(plant.id, d.variantRows)
-      if (d.windResponsive) {
+      if (d.rustle && occupiedCover.has(plant.id)) {
+        // A hidden animal disturbs its occupied bush only briefly: one 300 ms
+        // left-right rustle at the start of each 3 s period, then complete rest.
+        const phase = clockMs % d.rustle.periodMs
+        const active = phase < d.rustle.durationMs
+        const bend = active
+          ? Math.sin((phase / d.rustle.durationMs) * Math.PI * 2) * d.rustle.maxBend
+          : 0
+        ctx.save()
+        ctx.translate(cx, cy + size / 2)
+        ctx.transform(1, 0, active ? -bend : 0, 1, 0, 0)
+        ctx.drawImage(loaded.image,
+          col * d.frameW, row * d.frameH, d.frameW, d.frameH,
+          -size / 2, -size, size, size)
+        ctx.restore()
+      } else if (d.windResponsive) {
         // The sprite is a side-view billboard anchored at its bottom centre. Wind
         // displaces its top in screen-space: direction chooses the bend vector,
         // magnitude chooses bend amount, and a deterministic gust adds life.

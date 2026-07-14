@@ -1,4 +1,5 @@
 import type { ClimateState } from '../types'
+import { PRECIP_SNOW_BELOW_C } from '../assets/manifest'
 
 // Weather/atmosphere overlay (parent SPEC §Ecosystem rendering): day-night
 // tint, temperature vignette, animated rain, wind HUD arrow. Pure function of
@@ -44,15 +45,31 @@ export function drawAmbient(
     ctx.fillRect(0, 0, viewW, viewH)
   }
 
-  // Rain: falling streaks; per-streak phase from the index hash, position
-  // drifted by the clock so the shower animates.
+  // Precipitation: rain streaks OR snow flakes depending on temperature (CS1). Per-particle phase
+  // from the index hash, position drifted by the clock so it animates — deterministic (no Math.random).
   if (climate.raining) {
-    ctx.fillStyle = 'rgba(150,200,255,0.45)'
-    for (let i = 0; i < RAIN_STREAKS; i++) {
-      const speed = 0.25 + hash(i, 7) * 0.2 // px/ms, per-streak
-      const x = fract(hash(i, 1) + clockMs * 0.00003 * (1 + hash(i, 3))) * viewW
-      const y = fract(hash(i, 2) + (clockMs * speed) / viewH) * viewH
-      ctx.fillRect(x, y, 1, 9)
+    if (climate.temperature < PRECIP_SNOW_BELOW_C) {
+      // Snow: slow, wind-drifted flakes (soft white dots) instead of fast vertical streaks.
+      const drift = Math.cos(climate.windDir) * climate.windMag
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'
+      for (let i = 0; i < RAIN_STREAKS; i++) {
+        const speed = 0.03 + hash(i, 7) * 0.03 // px/ms — much slower than rain
+        const sway = Math.sin(clockMs * 0.0012 + hash(i, 4) * 6.283) * 12
+        const x = fract(hash(i, 1) + clockMs * (0.00002 + drift * 0.00008)) * viewW + sway
+        const y = fract(hash(i, 2) + (clockMs * speed) / viewH) * viewH
+        const r = 1.1 + hash(i, 5) * 1.4
+        ctx.beginPath()
+        ctx.arc(x, y, r, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    } else {
+      ctx.fillStyle = 'rgba(150,200,255,0.45)'
+      for (let i = 0; i < RAIN_STREAKS; i++) {
+        const speed = 0.25 + hash(i, 7) * 0.2 // px/ms, per-streak
+        const x = fract(hash(i, 1) + clockMs * 0.00003 * (1 + hash(i, 3))) * viewW
+        const y = fract(hash(i, 2) + (clockMs * speed) / viewH) * viewH
+        ctx.fillRect(x, y, 1, 9)
+      }
     }
   }
 

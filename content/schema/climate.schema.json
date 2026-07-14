@@ -31,7 +31,8 @@
         "moisture_rain_rate", "evap_base_rate", "evap_temp_scale",
         "annual_mid", "annual_amp", "annual_phase",
         "temp_day_peak", "temp_night_low", "temp_rain_drop",
-        "wind_prevailing_dir", "wind_dir_drift", "wind_dir_reversion", "wind_mag_mean", "wind_mag_noise"
+        "wind_prevailing_dir", "wind_dir_drift", "wind_dir_reversion", "wind_mag_mean", "wind_mag_noise",
+        "snow_freeze_c", "snow_accum_rate", "snow_melt_rate"
       ],
       "properties": {
         "rain_prob_per_hour":  { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Per-game-hour increment to PRain, calibrated so E[first rain] ≈ 10 days = 240 game-hours (1a)." },
@@ -54,7 +55,11 @@
         "wind_dir_drift":      { "type": "number", "minimum": 0, "description": "Per-step seeded random-walk step scale for wind Dir, radians (CA2)." },
         "wind_dir_reversion":  { "type": "number", "minimum": 0, "maximum": 1, "description": "Fraction Dir is pulled back toward wind_prevailing_dir each step — mean-reverting [0,1] (CA2)." },
         "wind_mag_mean":       { "type": "number", "minimum": 0, "maximum": 1, "description": "Mean wind magnitude [0,1] (CA2)." },
-        "wind_mag_noise":      { "type": "number", "minimum": 0, "description": "Seeded per-step magnitude-noise amplitude; resulting Mag clamped [0,1] (CA2)." }
+        "wind_mag_noise":      { "type": "number", "minimum": 0, "description": "Seeded per-step magnitude-noise amplitude; resulting Mag clamped [0,1] (CA2)." },
+
+        "snow_freeze_c":   { "type": "number", "description": "°C at/below which precipitation accumulates as snow (CS3, plan §1d; design value 0)." },
+        "snow_accum_rate": { "type": "number", "minimum": 0, "description": "SnowCover ∈[0,1] gained per game-hour of freezing precipitation (CS3)." },
+        "snow_melt_rate":  { "type": "number", "minimum": 0, "description": "SnowCover lost per game-hour PER °C above snow_freeze_c — temperature-proportional melt (CS3)." }
       }
     }
   },

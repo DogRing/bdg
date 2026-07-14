@@ -24,7 +24,9 @@ gl/
   shaders.ts     GLSL source: tile (instanced curved prisms + walls + water + light + cloud shadow) ·
                  sky (ray-based gradient + procedural sun/moon disc + night stars)
   atmosphere.ts  climate → atmosphere values: day/night colour ramp, sun/moon arc, overcast/rain/wind
-                 targets, wrap-aware eased state (τ≈3 s), overlay rain-streak + wind-arrow drawing
+                 targets, wrap-aware eased state (τ≈3 s), overlay precip drawing — rain streaks OR
+                 (temperature < PRECIP_SNOW_BELOW_C, CS1) snow flakes — + wind-arrow. Atmo carries
+                 both `rain` and `snow` (0..1); the temp gate routes the eased precip density to one.
   worldGL.ts     createWorldGL(glCanvas, overlayCanvas) → the stateful renderer handle
 ```
 The React wrapper is [`components/WorldCanvas3D.tsx`](../components/WorldCanvas3D.tsx) (same prop shape

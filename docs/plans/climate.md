@@ -114,6 +114,80 @@ operand 로 노출하는지 확인(apparent_temp 식 자체는 fauna F40 소관)
 > + §6) · D11(world-uniform 스칼라 바람 → 동물 칸 스냅 무관) — 직접 위반 없음. 단 **CA3 단위 fork 는 cross-doc operand 의미(climate↔fauna)
 > 를 흔들므로** 조율 리스크로 표기(위반 아님): `temperature`/`wind.mag` 의 단위·정규화가 두 문서에서 **반드시 동일**해야 한다.
 
+## 1d. Phase-1 reopened #3 — 겨울 눈 (강수 형태 + 적설/용해)  [ALL RESOLVED 2026-07-14]
+
+> **Resolutions — 사람 확정 (2026-07-14):** **CS2 = (b) 백엔드 world-uniform 스칼라** `SnowCover∈[0,1]` (climate.State,
+> 결정적 적분, WorldFrame/snapshot 스트림). **CS5 = (a) 낙하 눈 + 식생 스프라이트만** (지면/지형 백화 없음 — (b)(c) frontier).
+> **CS1 = (a) frontend 파생 + `snowFallC=2°C`.** **CS3 = 온도비례 선형 용해** (0°C 이하 축적 / 영상 (temp−0) 비례 용해;
+> 율은 climate.yaml balance). **CS4 = (a) `snowCover` 로 season 구동** (CS2(b) 채택으로 함의 — `snow` = `snowCover ≥
+> snowSpriteThresh`). 근거·기각안 상세 = `docs/decisions/climate-winter-snow.md` (재논쟁 금지). 활성화 staging = §CS-M.
+
+> **3차 게이트 (re-open) 2026-07-14.** 사람이 명시한 겨울 눈 모델: **0~3°C 에선 눈이 내리되 녹고(적설 안 됨),
+> 0°C 이하에서 눈이 쌓여 식생 스프라이트가 눈 변형으로 바뀐다.** 현 구현은 (a) 강수가 온도 무관 항상 '비'
+> (`raining` bool; ambient.ts/atmosphere.ts 빗줄기만·눈 없음), (b) 적설 상태 자체가 climate·계약에 부재,
+> (c) frontend `floraSeason(temperature)` 이 **순간 기온** <0°C 에 즉시 눈 스프라이트 → 일교차로 0°C 를 오르내리면
+> 눈나무가 하루에 두 번 껌뻑임(사람이 원하는 "쌓여서" 축적 개념 없음). ⇒ **강수 형태(비↔눈)** 와 **적설 상태(축적↔용해)**
+> 두 축을 여기서 OPEN 으로 연다. **아무것도 결정하지 않는다(메커니즘 발명 = 결함).** 옵션은 §0·§1·§1c·design.md §5
+> 안에서만 고르며 **CA3 의 °C 재기준을 상속**(freezeC/snowFallC 는 °C).
+>
+> **필드 명칭(고정 후보):** `snow_cover`(적설, 정규화 [0,1]; world-uniform 스칼라) — glossary 신규 coin 후보.
+> 강수 형태는 별도 필드 없이 `raining`+`temperature` 파생 가능(CS1).
+> **불변 플래그:** D12(적설 적분 = climate step 결정적·고정순서; wall-clock 금지) · D10(신규 상태/임계 =
+> content/climate.yaml balance + §6, 신규 Go 함수 최소) · 렌더 순수성(적설 렌더는 스트림된 `snow_cover` 만; frontend
+> 모듈-mutable 금지). **교차참조(중복 금지):** `docs/plans/gl-atmosphere.md`(강설 파티클), `docs/plans/frontend.md` §8
+> (스프라이트 season 드라이버 CS4·현 P6-Q2 supersede), fauna F40(apparent_temp 는 눈과 무관 — 건드리지 않음),
+> `data-contracts.md` §2/§4/§6(스트림 필드).
+
+### CS1 — 강수 형태 (내리는 비 ↔ 눈, 시각)  [RESOLVED: (a) frontend 파생, snowFallC=2°C]
+낙하 강수의 **시각 형태**. `raining`+`temperature` 는 이미 스트림되므로 순수 파생 가능. 남은 것 = (i) 결정 위치 (ii) 임계.
+- 위치 options: (a) **frontend 파생** — 렌더가 `raining && temperature < snowFallC` 면 빗줄기 대신 눈송이. 계약 무변경,
+  ambient.ts(2D)/atmosphere.ts(3D) 분기만. (b) 백엔드 필드 `precip: 'rain'|'snow'|'none'` 추가 — authoritative 하나
+  계약 확장(renderframe/types/persist). **rec: (a) frontend 파생** — 형태는 이미 스트림된 두 값의 순수 함수, sim 거동·직렬화 무영향.
+- 임계 `snowFallC`: 사람 "0~3°C 눈" 과 정합하게 ≈ **2°C**(frontend 상수 or manifest). **rec: 2°C.**
+
+### CS2 — 적설 상태 위치 (축적/용해 상태를 어디에)  [RESOLVED: (b) 백엔드 world-uniform 스칼라]
+"쌓인 눈 / 바뀐 스프라이트" 를 낳는 지속 상태.
+- (a) **frontend 적분** — useWorld 리듀서가 climate 프레임마다 `snowCover∈[0,1]` 적분(영하+강수 →↑, 영상 →↓). 빠르고 백엔드
+  무변경. **✗ 클라이언트별 불일치**(스냅샷에 없음 → 새 접속자엔 눈 없음, 리로드=리셋), 결정성·persist 원칙([[persist-consistency-upgrade]])과 충돌.
+- (b) **백엔드 world-uniform 스칼라** — climate.State 에 `SnowCover float64` 추가, climate step 에서 적분(CS3),
+  WorldFrame/`sim:{run}:climate` 로 스트림, snapshot resume 바이트동일. 결정적·전 클라이언트 일관·지속. **신규 sim 메커니즘**
+  (계약 확장: renderframe.go·types.ts·persist SPEC·data-contracts). §0 "periodic full + sparse delta" 패턴 그대로. **rec.**
+- (c) **백엔드 per-climate-cell 적설** — coarse climate grid 셀별 depth(지형·고도별 패치 용해, 눈 덮인 지형 렌더 가능).
+  §1 RESOLVED (b) coarse grid 재사용하나 무겁고 scent 스텐실↑ → **frontier(park).**
+- **rec: (b) world-uniform 스칼라(P1); (c) frontier.**
+
+### CS3 — 적축/용해 동역학 (식)  [RESOLVED: 온도비례 선형 용해]
+사람 스펙 직역: 영하+강수 → 쌓이고, 영상 → 녹음(따뜻할수록 빨리). 0~3°C 강수는 눈으로 *보이지만*(CS1) temp>0 이라 안 쌓이고 녹음 = "눈이지만 녹고".
+- 식(rec): 매 climate step(1게임시간, `tick%60`) —
+  `if temperature <= freezeC && raining: snowCover += SnowAccumRate`
+  `else if temperature > freezeC:      snowCover -= SnowMeltRate·max(0, temperature-freezeC)`
+  `snowCover` clamp [0,1]. `freezeC=0`, 상수는 `content/climate.yaml` balance 블록(rate only, D9 정신). 용해 ∝ (temp−0)
+  이 사람의 "0~3 녹음 / 저온일수록 유지" 를 자동 충족.
+- 대안: 상수 용해율(온도 무관) — 단순하나 "따뜻할수록 빨리" 미충족. **rec: 온도비례 선형.**
+- 적축률: 상수 `SnowAccumRate`(P1) vs 강수 세기(`MoistureRainRate`) 연동. **rec: 상수(P1); 세기 연동 park.** (상수값 = balance 튜닝).
+
+### CS4 — 스프라이트 season 드라이버 전환 (frontend)  [RESOLVED: (a) snowCover 구동]
+현 `floraSeason(temperature)` 는 **순간 기온** <0°C → 즉시 눈(껌뻑임). 사람 "쌓여서 스프라이트가 변하고" = 적설 기준이어야.
+- (a) **`snow` season 을 `snowCover` 로 구동** — `snowCover ≥ snowSpriteThresh`(예 0.1) 면 'snow', 아니면 기존 온도 기반
+  ('bare' <5°C / 'leaf'). 일교차 껌뻑임 해소, 축적/용해에 스프라이트가 따라옴. **CS2(b) 의 `snow_cover` 스트림 필드 필요**
+  → types.ts `ClimateState.snowCover` + `floraSeason` 시그니처 확장(climate 전체 수신, snowCover 우선·temperature fallback). **rec.**
+- (b) 현행 온도-only 유지 — 사람 요구 미충족. **✗.**
+- **rec: (a).** ⚠ `docs/plans/frontend.md` §8 P6-Q2(현 `snowBelowC=0`) 를 이 결정이 **supersede** — frontend 플랜·`assets.test.ts`
+  floraSeason 케이스 재기준 필요.
+
+### CS5 — 지면 눈 레이어 (지형 백화)  [RESOLVED: (a) 지면 레이어 없음 — P1]
+쌓인 눈이 **지형/지면**도 하얗게 하나(식생 스프라이트뿐 아니라)?
+- (a) **P1 = 지면 레이어 없음** — 낙하 눈(CS1) + 식생 스프라이트(CS4)만. 사람이 명시한 범위("스프라이트가 변하고")와 정합. **rec.**
+- (b) world-uniform 백색 워시 ∝ `snowCover`(지형 위 반투명) — 저렴, "눈 세계" 가독성↑. 원하면 소규모 추가.
+- (c) per-cell 백화 — CS2(c) 필요. frontier.
+- **rec: (a)(P1); (b)는 사람 원하면 추가; (c) frontier.**
+
+### CS 통합 seam / phase (RESOLVE 후 staging)
+- **CS-M(활성화):** CS2(b) `SnowCover` → climate.State + step 적분(CS3) + renderframe/persist/data-contracts 스트림 +
+  types.ts + `floraSeason`(CS4) + ambient.ts/atmosphere.ts 강설(CS1). CA3 처럼 climate 골든 의도적 재기준(눈 상태 추가).
+  frontend.md §8 P6-Q2 supersede. staging 양식은 M4/flora 동형.
+- **불변 재확인:** D12(적분 결정적·per-step fork)·D10(임계/율 = climate.yaml)·렌더 순수성(스트림값만). CA3 °C 상속.
+
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `map-plan.md M1~M5` 양식)
 > 빌드순서: `engine/env/climate`는 L1 leaf(core+rng)라 `engine/space/navmap`과 같은 stage 2에서 독립적으로 만들 수 있다.
 > 와이어링(주기·SetTerrain 브리지)은 `world`(stage 7)에서, 콘텐츠 로드는 `platform/config`(stage 8)에서 합류한다.

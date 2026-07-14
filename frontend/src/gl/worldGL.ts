@@ -10,7 +10,7 @@ import type { TerrainGrid, AgentState, AnimalState, WorldObject, RenderConfig, C
 import { FAUNA_SHEETS, DEFAULT_FAUNA, poseFor } from '../assets/manifest'
 import { frameRect, type SpriteCache } from '../assets/sprites'
 import { hexCentre, pixelToOffset, neighbourOffset } from './hex'
-import { createAtmosphere, drawRainOverlay, drawWindArrow, LEGACY, type Atmo } from './atmosphere'
+import { createAtmosphere, drawRainOverlay, drawSnowOverlay, drawWindArrow, LEGACY, type Atmo } from './atmosphere'
 import { TILE_VS, TILE_FS, SKY_VS, SKY_FS } from './shaders'
 
 const FOV = 50 * Math.PI / 180, TANF = Math.tan(FOV / 2)
@@ -343,9 +343,11 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
       if (sel) { octx.beginPath(); octx.arc(p.x, p.y, r + 4, 0, 7); octx.lineWidth = 2; octx.strokeStyle = '#ffd24a'; octx.stroke() }
     }
     octx.globalAlpha = 1
-    // atmosphere overlays: rain streaks slanted downwind (screen-space) + wind HUD arrow.
-    // Screen wind angle = world windDir + camera yaw (world +x → screen-right at yaw 0).
-    drawRainOverlay(octx, cssW, cssH, atm.rain, Math.cos(atm.windDir + yaw) * atm.windMag * 0.9, clockMs)
+    // atmosphere overlays: rain streaks OR snow flakes drifted downwind (screen-space, CS1) + wind
+    // HUD arrow. Screen wind angle = world windDir + camera yaw (world +x → screen-right at yaw 0).
+    const screenDrift = Math.cos(atm.windDir + yaw) * atm.windMag * 0.9
+    drawRainOverlay(octx, cssW, cssH, atm.rain, screenDrift, clockMs)
+    drawSnowOverlay(octx, cssW, cssH, atm.snow, screenDrift, clockMs)
     drawWindArrow(octx, atm.windDir + yaw, atm.windMag)
   }
 

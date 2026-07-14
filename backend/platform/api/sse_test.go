@@ -25,7 +25,9 @@ func TestSSE_HeadersAndFlush(t *testing.T) {
 		close(done)
 	}()
 
-	payload := `{"schema_version":1,"tick":42,"seq":0,"agent_id":"farmer_1","type":"ActionDone","payload":{"action":"idle"}}`
+	// WorldFrame is forwarded verbatim: additive ambient fields such as snow_cover
+	// must survive the events stream and SSE transport without a whitelist.
+	payload := `{"schema_version":1,"tick":42,"seq":0,"agent_id":null,"type":"WorldFrame","payload":{"temperature":-2.5,"raining":true,"snow_cover":0.375}}`
 	rds.eventsCh <- StreamEntry{
 		ID:     "123456789-0",
 		Fields: map[string]string{"payload": payload},

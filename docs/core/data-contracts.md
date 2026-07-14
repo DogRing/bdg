@@ -41,7 +41,7 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
     shelters?  { interiors[]{id, bounds, portals[]{id, kind, exterior_pos, interior_pos}, occupants[]},
                  active_spaces[]{object_id, space_kind, space_id?, pos} } // SH2 cave/interior state; absent ⇒ shelter OFF
     climate    { cells[]{cell, moisture, temperature, terrain}, rain{raining, rain_ends_at_hour,
-                 p_rain, hours_since_rain}, wind{dir, mag} }          // climate field (§10, WI-P4); periodic-full
+                 p_rain, hours_since_rain}, wind{dir, mag}, snow_cover } // climate field (§10, WI-P4); periodic-full
     emerged_roles[] { function, holder }         // P6 (D2-derived)
     tom_digest {                                 // cross-agent ToM, god-view projection (D6/D8)
       <observerID>: { <subjectID>: { est_stats: { StatID: { mean, variance } }, rely_on: { Function: float } } }
@@ -96,8 +96,9 @@ sim:{run}:snapshot      STRING  latest Snapshot (serialized)  // or chunked
 sim:{run}:agent:{id}    HASH     live agent summary (render): pos, goal, action, mood
 sim:{run}:animal:{id}   HASH     live animal summary (render): pos, species, action, heading, stamina (WI-P4)
 sim:{run}:flora         STRING   live plant render set: [{object_id, species, pos, stage, width}] (WI-P4)
-sim:{run}:climate       HASH     ambient: temperature, apparent_temp?, moisture, raining, wind_dir, wind_mag,
-                                 hour_of_day, day_night, year_fraction (WI-P4 — frontend ambient FX)
+sim:{run}:climate       HASH     ambient: temperature, apparent_temp?, moisture, raining, snow_cover,
+                                 wind_dir, wind_mag, hour_of_day, day_night, year_fraction (WI-P4 — frontend
+                                 ambient FX; snow_cover ∈[0,1] world-uniform snowpack CS2b, plan §1d)
 sim:{run}:terrain       STRING   render terrain: base layout + overrides (climate transitions) + wear (trails)
                                  + optional per-cell elevation[] ∈[0,1] (generated worlds; render-only relief)
                                  + world_revision (below) (WI-P4)
@@ -234,7 +235,7 @@ Representative `type`s (payload gist):
 | `AnimalBorn` / `AnimalDied` | object_id, species, pos / cause (WI-P4; fauna spawn + object-mortality §7) |
 | `PlantSpawned` / `PlantDied` | object_id, species, pos (WI-P4; flora propagation + object-mortality) |
 | `AgentFrame` | tick, agents[]{id,pos?,goal?,mood?,action?}, removed[] (sparse changed-agent fields for the frontend; snapshot is the late-join baseline; god-view EXCLUDED) |
-| `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, wind{dir,mag}, animals[]{id,pos,species,action,heading}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain?,wear?} (cell = offset index `i=row·cols+col` into the flat-top hex grid, `docs/plans/hex-grid.md`; WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
+| `WorldFrame` | tick, hour_of_day, day_night, temperature, apparent_temp?, raining, snow_cover, wind{dir,mag}, animals[]{id,pos,species,action,heading,cover_id?}, flora_delta[]{id,pos,stage}, terrain_delta[]{cell,terrain?,wear?} (cell = offset index `i=row·cols+col` into the flat-top hex grid, `docs/plans/hex-grid.md`; snow_cover ∈[0,1] world-uniform snowpack, CS2b/plan §1d; `cover_id` is the occupied cover flora while hidden, empty otherwise; WI-P4 — the frontend graphics frame; god-view EXCLUDED) |
 | `EnteredShelter` / `ExitedShelter` | actor_id, portal_id, interior_id, pos (SH2; active-space transition) |
 
 - **why-trace** = NFR-3. Put the *selection rationale* (competing candidates, gates, costs) into `GoalSelected` / `PlanBuilt` so "why did it do this" is reconstructable.
@@ -255,7 +256,7 @@ Representative `type`s (payload gist):
   entries is NOT a gap (nothing after it was lost) and old-world entries (all deleted, all
   smaller IDs) can never replay over a new-world snapshot.
 - **`AgentFrame`** is the sparse SSE delta for agent render/status fields. It carries only changed `pos`/`goal`/`mood`/`action` fields plus `removed[]`; the REST snapshot (an AUTHORITATIVE roster: agents absent from it are gone) plus replay-after-`stream_cursor` is the lossless late-join baseline.
-- **`WorldFrame`** (WI-P4) is the periodic env graphics frame the frontend renders: animal positions/actions, flora stage deltas, terrain deltas, and the ambient weather (hour/day-night, temperature/apparent_temp, rain, wind). It is the SSE projection of the live render keys (§2); it carries NO god-view (`real_stats`/`tom_digest`) and NO raw drive/stat vectors. `day_night` derives from `hour_of_day`; `stage` from `length`. Static terrain is loaded via `/api/terrain`; `terrain_delta` carries only changed cells after that baseline. Emitted only when env is installed.
+- **`WorldFrame`** (WI-P4) is the periodic env graphics frame the frontend renders: animal positions/actions, flora stage deltas, terrain deltas, and the ambient weather (hour/day-night, temperature/apparent_temp, rain, snow_cover, wind). It is the SSE projection of the live render keys (§2); it carries NO god-view (`real_stats`/`tom_digest`) and NO raw drive/stat vectors. `day_night` derives from `hour_of_day`; `stage` from `length`. Static terrain is loaded via `/api/terrain`; `terrain_delta` carries only changed cells after that baseline. Emitted only when env is installed.
 
 ## 5. Determinism & versioning
 - Resuming from a snapshot must be **byte-identical** to running from the start (test: `docs/core/testing.md`).
@@ -399,8 +400,10 @@ Representative `type`s (payload gist):
   sorted by `object_id` (world emits `AnimalBorn`/`AnimalDied`, §4). The legacy `prey` timer-respawn
   object stays an `objects[]` row until fauna activation migrates it (W7).
 - **Climate (`climate` in §1, periodic-full):** `{ cells[]{cell, moisture, temperature, terrain},
-  rain{raining, rain_ends_at_hour, p_rain, hours_since_rain}, wind{dir, mag} }` — the coarse
-  `climate.State` (`Cells()`/`Rain()`/`Wind()`) in sorted `GridCell` (Y-major then X) order.
+  rain{raining, rain_ends_at_hour, p_rain, hours_since_rain}, wind{dir, mag}, snow_cover }` — the coarse
+  `climate.State` (`Cells()`/`Rain()`/`Wind()`/`SnowCover()`) in sorted `GridCell` (Y-major then X) order.
+  `snow_cover` ∈ [0,1] is the world-uniform snowpack (CS2b, plan §1d; a single scalar, resumed via
+  `Restore(…, snow)` — absent on a pre-snow snapshot ⇒ 0, a snowless resume).
   `terrain` per cell IS serialized here: `CellState.Terrain` is climate's own authoritative input to
   `Rules.Eval` on every subsequent `Step` (transition source state), not merely a navmap mirror —
   omitting it would silently stop terrain transitions from firing after a resume. `temperature` is **°C**

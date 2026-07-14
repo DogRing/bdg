@@ -199,6 +199,9 @@ func buildClimateConfig(wd worldDoc, cd climateDoc) *climate.Config {
 		WindDirReversion:  cd.Balance.WindDirReversion,
 		WindMagMean:       cd.Balance.WindMagMean,
 		WindMagNoise:      cd.Balance.WindMagNoise,
+		SnowFreezeC:       cd.Balance.SnowFreezeC,
+		SnowAccumRate:     cd.Balance.SnowAccumRate,
+		SnowMeltRate:      cd.Balance.SnowMeltRate,
 	}
 }
 

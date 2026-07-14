@@ -110,6 +110,9 @@ type climateDoc struct {
 		WindDirReversion  float64 `yaml:"wind_dir_reversion"`
 		WindMagMean       float64 `yaml:"wind_mag_mean"`
 		WindMagNoise      float64 `yaml:"wind_mag_noise"`
+		SnowFreezeC       float64 `yaml:"snow_freeze_c"`
+		SnowAccumRate     float64 `yaml:"snow_accum_rate"`
+		SnowMeltRate      float64 `yaml:"snow_melt_rate"`
 	} `yaml:"balance"`
 }
 

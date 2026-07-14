@@ -266,7 +266,7 @@ func TestRedisLiveStoreWriteAnimal(t *testing.T) {
 	run := core.RunID("live-animal")
 
 	v := AnimalView{ID: "an:d1", Pos: core.Vec2{X: 1.5, Y: -2.25}, Species: "deer",
-		Action: "Graze", Heading: 0.5, Stamina: 0.875}
+		Action: "Graze", Heading: 0.5, Stamina: 0.875, CoverID: "shrub_3"}
 	if err := store.WriteAnimal(ctx, run, v); err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestRedisLiveStoreWriteAnimal(t *testing.T) {
 	want := map[string]string{
 		"pos_x": "1.5000", "pos_y": "-2.2500",
 		"species": "deer", "action": "Graze",
-		"heading": "0.500000", "stamina": "0.8750",
+		"heading": "0.500000", "stamina": "0.8750", "cover_id": "shrub_3",
 	}
 	for f, w := range want {
 		if h[f] != w {
@@ -334,7 +334,7 @@ func TestRedisLiveStoreWriteClimate(t *testing.T) {
 	ctx := context.Background()
 	run := core.RunID("live-climate")
 
-	v := ClimateView{Temperature: 18.5, Moisture: 0.4, Raining: true,
+	v := ClimateView{Temperature: 18.5, Moisture: 0.4, Raining: true, SnowCover: 0.375,
 		WindDir: 1.5, WindMag: 0.6, HourOfDay: 10, DayNight: "day", YearFraction: 0.25}
 	if err := store.WriteClimate(ctx, run, v); err != nil {
 		t.Fatal(err)
@@ -345,7 +345,7 @@ func TestRedisLiveStoreWriteClimate(t *testing.T) {
 		t.Fatal("climate hash not written")
 	}
 	want := map[string]string{
-		"temperature": "18.5000", "moisture": "0.4000", "raining": "true",
+		"temperature": "18.5000", "moisture": "0.4000", "raining": "true", "snow_cover": "0.3750",
 		"wind_dir": "1.500000", "wind_mag": "0.6000",
 		"hour_of_day": "10", "day_night": "day", "year_fraction": "0.250000",
 	}

@@ -223,7 +223,7 @@ type RenderView struct {
     Flora   []FloraRenderView   // sorted ObjectID; empty when flora OFF
     Terrain *TerrainRenderView  // nil when navmap OFF
 }
-type AnimalRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Action string; Heading, Stamina float64 }
+type AnimalRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Action string; Heading, Stamina float64; CoverID core.ObjectID }
 type FloraRenderView struct{ ID core.ObjectID; Species string; Pos core.Vec2; Stage int; Width float64 }
 type TerrainRenderView struct{ CellSize float64; Cols, Rows int; Orientation string; Terrain []string; Wear []float64; Elevation []float64 } // flat-top hex, offset(col,row) i=row*Cols+col (hex-grid.md); Elevation ∈[0,1] len Cols*Rows or nil (render-only relief — engine behavior never reads it)
 

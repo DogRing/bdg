@@ -6,6 +6,7 @@
 // Streak patterns are index-hash based (no Math.random), mirroring render/ambient.ts.
 
 import type { ClimateState } from '../types'
+import { PRECIP_SNOW_BELOW_C } from '../assets/manifest'
 
 type V3 = [number, number, number]
 
@@ -19,8 +20,9 @@ export interface Atmo {
   star: number                    // night-star brightness (hidden by cloud)
   cloud: number; cloudOff: [number, number] // cloud-shadow amount + downwind drift offset
   rippleDir: [number, number]; rippleSpd: number // water ripple travel (wind cue)
-  rain: number                    // eased rain amount 0..1 (streak density/alpha)
-  fogMul: number                  // fog distance multiplier (rain pulls fog closer)
+  rain: number                    // eased precip amount 0..1 as RAIN (0 when the precip falls as snow, CS1)
+  snow: number                    // eased precip amount 0..1 as SNOW (0 when it falls as rain) — temp-gated form
+  fogMul: number                  // fog distance multiplier (precip pulls fog closer)
   windDir: number; windMag: number // eased wind (screen arrow angle = windDir + camera yaw)
 }
 
@@ -52,7 +54,7 @@ export const LEGACY: Atmo = {
   zen: L_ZEN, hor: L_HOR, light: L_LIGHT, tint: [1, 1, 1], ambI: 0.42, diffI: 0.58,
   sunDir: [0, 1, 0], sunCol: [0, 0, 0], moonDir: [0, -1, 0], moonCol: [0, 0, 0],
   star: 0, cloud: 0, cloudOff: [0, 0], rippleDir: L_RIPPLE, rippleSpd: 1.7,
-  rain: 0, fogMul: 1, windDir: 0, windMag: 0,
+  rain: 0, snow: 0, fogMul: 1, windDir: 0, windMag: 0,
 }
 
 // Day-cycle keyframes (cyclic over 24 h). Noon == the legacy daylight constants.
@@ -95,6 +97,7 @@ export function createAtmosphere() {
     const dt = lastMs == null ? 0 : clamp(clockMs - lastMs, 0, 250)
     lastMs = clockMs
     const rT = climate.raining ? 1 : 0
+    const isSnow = climate.raining && climate.temperature < PRECIP_SNOW_BELOW_C
     const cT = clamp(0.35 * climate.moisture + 0.8 * rT, 0, 1)
     if (!inited) {
       inited = true
@@ -146,7 +149,10 @@ export function createAtmosphere() {
       star: r.star * (1 - cloudE),
       cloud: cloudE, cloudOff: [cloudOff[0], cloudOff[1]],
       rippleDir: [rd[0], rd[1]], rippleSpd: 1.7 * (1 + 1.6 * windMagE),
-      rain: rainE, fogMul: 1 - 0.45 * rainE,
+      // Precipitation form (CS1): the eased density rainE is drawn as snow below the freeze-fall
+      // threshold, as rain above it. The form gate uses the live temperature (not eased) — a rare,
+      // acceptable hard flip at the threshold; the density itself stays eased either way.
+      rain: isSnow ? 0 : rainE, snow: isSnow ? rainE : 0, fogMul: 1 - 0.45 * rainE,
       windDir: windDirE, windMag: windMagE,
     }
   }
@@ -176,6 +182,26 @@ export function drawRainOverlay(octx: CanvasRenderingContext2D, w: number, h: nu
     octx.lineTo(x + slant * len, y + len)
   }
   octx.stroke()
+  octx.restore()
+}
+
+// Screen-space snow flakes (CS1): slow, wind-drifted soft dots instead of slanted streaks.
+// drift = the wind's screen-right component; per-flake phase + size from the index hash.
+export function drawSnowOverlay(octx: CanvasRenderingContext2D, w: number, h: number, snow: number, drift: number, clockMs: number) {
+  if (snow <= 0.02) return
+  const n = Math.ceil(RAIN_STREAKS * snow)
+  octx.save()
+  octx.fillStyle = `rgba(255,255,255,${(0.8 * snow).toFixed(3)})`
+  for (let i = 0; i < n; i++) {
+    const speed = 0.03 + hash(i, 7) * 0.03 // px/ms — much slower than rain
+    const sway = Math.sin(clockMs * 0.0012 + hash(i, 4) * 6.283) * 12
+    const x = fract(hash(i, 1) + clockMs * 0.00002 + drift * (clockMs * speed) / h / (w / h)) * w + sway
+    const y = fract(hash(i, 2) + (clockMs * speed) / h) * h
+    const r = 1.1 + hash(i, 5) * 1.4
+    octx.beginPath()
+    octx.arc(x, y, r, 0, Math.PI * 2)
+    octx.fill()
+  }
   octx.restore()
 }
 

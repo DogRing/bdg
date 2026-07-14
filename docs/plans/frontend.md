@@ -216,6 +216,12 @@ dimensions (assets SPEC delta). Fauna needs only manifest frame-size/url edits (
   (c) no seasons yet (always leaf row/file). Bands/thresholds are manifest DATA either way.
   `RESOLVED: (a) 온도 임계값 — 셰이더/분위기와 같은 실제 기후 신호를 따른다; 일교차 깜빡임은
   수용(추후 이력치(hysteresis) 폴리시 가능)` (2026-07-13)
+  **⚠ SUPERSEDED (2026-07-14) by climate CS4** (`docs/plans/climate.md §1d`): the **snow** variant is
+  now driven by the streamed **accumulated `snowCover`** (`snowCover ≥ 0.1`), not the instantaneous
+  temperature — which resolves the very daily-swing flicker this option accepted. `bare` (<5 °C) still
+  follows temperature; the temperature-only path remains as the fallback when `snowCover` is absent.
+  `floraSeason` signature + `FLORA_SEASON_TEMP` gained `snowCover`/`snowCoverThresh`; falling-precip
+  form (rain↔snow at 2 °C) added via `PRECIP_SNOW_BELOW_C` (CS1).
 - **P6-Q3 — tree1..4 species mapping** *(blocks flora)*.
   (a) `oak`→`tree1` only; register `willow`/`birch`/`conifer` manifest rows now so future content
   species render with zero code edits (D10 mirror; per-plant variety comes from the 4 shape rows);
@@ -233,5 +239,7 @@ dimensions (assets SPEC delta). Fauna needs only manifest frame-size/url edits (
   `RESOLVED: (c) hybrid, grass tuftDensity 0.3 초기값 — 사용자 방향("밀도를 설정") 반영` (2026-07-13)
   Art follow-up `RESOLVED` (2026-07-14, user): the flat-vector `grass.svg` is replaced by a
   hand-drawn `grass.png` sheet: 4 growth columns × normal/snow/rustle-left/rustle-right rows.
-  Normal/snow are wired through `seasonRows`; the paired `rustleRows` are manifest metadata for
-  the future cover-occupancy render seam. The sheet remains `windResponsive` for sampled tufts.
+  Normal/snow are wired through `seasonRows`; grass remains `windResponsive` for sampled tufts.
+  **Superseded 2026-07-14 (human decision):** concealment rustle belongs to occupied `berry_shrub`
+  (`bush.png`), not grass. `WorldFrame.animals[].cover_id` identifies the occupied cover; the bush
+  bends for 300 ms once per 3 seconds and stays still between cues.
