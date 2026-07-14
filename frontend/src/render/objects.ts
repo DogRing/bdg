@@ -1,5 +1,6 @@
 import type { WorldObject } from '../types'
 import type { ThemeTokens } from '../theme'
+import { isFloraSpecies } from '../assets/manifest'
 import { wx, wy, type Transform } from './transform'
 
 // Visual style per object kind (matches content/objects.yaml kinds).
@@ -18,14 +19,20 @@ export function drawObjects(
   t: ThemeTokens,
 ) {
   for (const o of objects) {
+    const style = OBJ_STYLE[o.kind]
+    // Plants live in the object list too (grazing/forage supply) but are drawn by
+    // the flora pass; skip any styleless plant so its tuft sprite isn't buried
+    // under a generic muted-circle marker. A plant with an explicit style
+    // (berry_bush) keeps its resource marker.
+    if (!style && isFloraSpecies(o.kind)) continue
     const cx = wx(o.pos.x, tr)
     const cy = wy(o.pos.y, tr)
-    const style = OBJ_STYLE[o.kind] ?? { color: t.textMuted, label: o.kind, shape: 'circle' as const }
+    const resolved = style ?? { color: t.textMuted, label: o.kind, shape: 'circle' as const }
 
     ctx.save()
-    if (t.glow) { ctx.shadowColor = style.color; ctx.shadowBlur = 8 }
-    ctx.fillStyle = style.color
-    if (style.shape === 'square') {
+    if (t.glow) { ctx.shadowColor = resolved.color; ctx.shadowBlur = 8 }
+    ctx.fillStyle = resolved.color
+    if (resolved.shape === 'square') {
       ctx.fillRect(cx - 7, cy - 7, 14, 14)
       ctx.restore()
       ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1
@@ -40,6 +47,6 @@ export function drawObjects(
     ctx.fillStyle = t.textMuted
     ctx.font = `9px ${t.fontMono}`
     ctx.textAlign = 'center'
-    ctx.fillText(style.label, cx, cy + 19)
+    ctx.fillText(resolved.label, cx, cy + 19)
   }
 }

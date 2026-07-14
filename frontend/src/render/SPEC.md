@@ -21,7 +21,10 @@ render/
   camera.ts      CameraState + pure camera reducers (zoom / pan / follow / init)
   animator.ts    adaptive lerp (Q3): displayPos/displayHeading, walk↔run refinement, FX progress
   terrain.ts     terrain grid → offscreen raster + blit; wear trail overlay
-  objects.ts     placed resource objects (berry/water/shelter): kind-styled markers + labels
+  objects.ts     placed resource objects (berry/water/shelter): kind-styled markers + labels.
+                 A plant KIND (grass/tree/…) in the object list is drawn by the flora pass, NOT
+                 as a generic marker — the backend object list includes plants (grazing supply),
+                 so a styleless flora kind is skipped here to avoid burying its tuft sprite.
   flora.ts       plants: stage-frame sprite scaled by width (glyph fallback);
                  ground-cover species (grass) → density coverage wash instead of a dot
   fauna.ts       animals: pose→frame sprite, heading rotation, stamina dim (glyph fallback),

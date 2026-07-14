@@ -174,6 +174,14 @@ export const FLORA_COVERAGE: Record<string, FloraCoverageStyle> = Object.freeze(
   dry_shrub: Object.freeze({ color: '180,160,100', radiusUnits: 3.5, alpha: 0.50, plateau: 0.5 }),
 })
 
+// A world object whose kind is a plant species is drawn by the flora pass
+// (sprite/coverage wash), NOT as a generic object marker. The backend's object
+// list includes plants (they carry grazing/forage supply, D9) alongside placed
+// resources; without this guard drawObjects paints a muted circle + kind label on
+// top of every grass tuft — the plant reads as a dot, not its sprite.
+export const isFloraSpecies = (kind: string): boolean =>
+  kind in FLORA_SHEETS || kind in FLORA_COVERAGE
+
 // ── ActionID → Pose (ordered, first match wins; ids are open content) ────────
 export const ACTION_POSE_RULES: ReadonlyArray<{ pattern: RegExp; pose: Pose }> = Object.freeze([
   Object.freeze({ pattern: /hunt|attack/i,                        pose: 'attack' as const }),
