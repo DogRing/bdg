@@ -6,8 +6,8 @@
 // canvas for the terrain, and a 2D overlay for entity markers/labels (projected through the
 // same view→curve→projection path as the shader). See src/gl/SPEC.md.
 
-import type { TerrainGrid, AgentState, AnimalState, WorldObject, RenderConfig, ClimateState } from '../types'
-import { FAUNA_SHEETS, DEFAULT_FAUNA, poseFor } from '../assets/manifest'
+import type { TerrainGrid, AgentState, AnimalState, WorldObject, PlantState, RenderConfig, ClimateState } from '../types'
+import { FAUNA_SHEETS, DEFAULT_FAUNA, poseFor, floraSeason, variantRow, isFloraSpecies, type FloraSeason } from '../assets/manifest'
 import { frameRect, type SpriteCache } from '../assets/sprites'
 import { hexCentre, pixelToOffset, neighbourOffset } from './hex'
 import { createAtmosphere, drawRainOverlay, drawSnowOverlay, drawWindArrow, LEGACY, type Atmo } from './atmosphere'
@@ -75,7 +75,7 @@ export interface WorldGL {
   ok: true
   setTerrain(grid: TerrainGrid | null): void
   fit(render: RenderConfig | null): void
-  draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number, climate: ClimateState | null): void
+  draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], flora: PlantState[], selectedId: string | null, clockMs: number, climate: ClimateState | null): void
   zoomBy(f: number): void
   tiltBy(dRad: number): void
   orbitBy(dRad: number): void
@@ -238,7 +238,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
     return { x: (cx / cw * 0.5 + 0.5) * cssW, y: (1 - (cyy / cw * 0.5 + 0.5)) * cssH, depth: -vz }
   }
 
-  function draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number, climate: ClimateState | null) {
+  function draw(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], flora: PlantState[], selectedId: string | null, clockMs: number, climate: ClimateState | null) {
     lastAgents = agents; lastAnimals = Array.from(animals)
     cssW = glc.clientWidth || 800; cssH = glc.clientHeight || 480
     const dprPix = Math.min(window.devicePixelRatio || 1, 2)
@@ -285,7 +285,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
       va(T.iCenter, 2, 40, 0, 1); va(T.iType, 1, 40, 8, 1); va(T.iElev, 1, 40, 12, 1); va(T.iNbrA, 3, 40, 16, 1); va(T.iNbrB, 3, 40, 28, 1)
       ext.drawArraysInstancedANGLE(gl.TRIANGLES, 0, TPL_VERTS, instCount)
     }
-    drawOverlay(agents, lastAnimals, objects, selectedId, clockMs, dprPix, atm, fogN, fogF)
+    drawOverlay(agents, lastAnimals, objects, flora, floraSeason(climate), selectedId, clockMs, dprPix, atm, fogN, fogF)
   }
 
   function va(loc: number, size: number, stride: number, offset: number, div: number) {
@@ -293,18 +293,37 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
     gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset); ext.vertexAttribDivisorANGLE(loc, div)
   }
 
-  function drawOverlay(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], selectedId: string | null, clockMs: number, dprPix: number, atm: Atmo, fogN: number, fogF: number) {
+  function drawOverlay(agents: AgentState[], animals: Iterable<AnimalState>, objects: WorldObject[], flora: PlantState[], season: FloraSeason, selectedId: string | null, clockMs: number, dprPix: number, atm: Atmo, fogN: number, fogF: number) {
     octx.setTransform(dprPix, 0, 0, dprPix, 0, 0); octx.clearRect(0, 0, cssW, cssH)
     const pscale = cssH / (2 * TANF), lift = 0.3 * cellSize
     const seat = (x: number, y: number) => elevWorldAt(x, y) * relief + lift
-    // objects (static resource markers)
+    // objects (static resource markers) — a plant kind carries no marker here: it is drawn as a
+    // billboard below (the backend object list includes plants; a styleless plant would otherwise
+    // render as a bare tan square on top of nothing, since 3D has no 2D coverage wash).
     for (const o of objects) {
+      if (isFloraSpecies(o.kind) && !OBJECT_COLOR[o.kind]) continue
       const p = project3(o.pos.x, seat(o.pos.x, o.pos.y), o.pos.y); if (!p) continue
       const fade = 1 - smoothstep(fogN, fogF, p.depth); if (fade <= 0.02) continue
       const s = Math.max(3, 0.4 * cellSize * pscale / p.depth)
       octx.globalAlpha = fade; octx.fillStyle = OBJECT_COLOR[o.kind] ?? '#b09060'
       octx.fillRect(p.x - s / 2, p.y - s / 2, s, s)
       octx.lineWidth = 1; octx.strokeStyle = 'rgba(0,0,0,.4)'; octx.strokeRect(p.x - s / 2, p.y - s / 2, s, s)
+    }
+    // flora — sprite billboards (grass tufts / trees), bottom-anchored on the seated ground point.
+    // 3D has no coverage wash: each plant draws its own stage-column / season-row frame, scaled by a
+    // world height from stage + width. An undecoded sheet simply waits (no glyph) — the ground shows.
+    for (const plant of flora) {
+      const loaded = sprites?.flora(plant.species, season)
+      if (!loaded?.ready) continue
+      const p = project3(plant.pos.x, seat(plant.pos.x, plant.pos.y), plant.pos.y); if (!p) continue
+      const fade = 1 - smoothstep(fogN, fogF, p.depth); if (fade <= 0.02) continue
+      const def = loaded.def
+      const col = clamp(Math.floor(plant.stage), 0, def.stageFrames - 1)
+      const row = def.seasonRows ? (def.seasonRows[season] ?? 0) : variantRow(plant.id, def.variantRows)
+      const worldH = Math.min(6, 0.8 + 0.6 * col + 0.8 * plant.width)
+      const s = Math.max(6, worldH * pscale / p.depth)
+      octx.globalAlpha = fade
+      octx.drawImage(loaded.image, col * def.frameW, row * def.frameH, def.frameW, def.frameH, p.x - s / 2, p.y - s, s, s)
     }
     // animals — sprite billboards (FE-P6): the species' fauna sheet frame, bottom-anchored
     // at the seated ground point, mirrored when the world heading points screen-left

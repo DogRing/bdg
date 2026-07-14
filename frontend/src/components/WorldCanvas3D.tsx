@@ -8,8 +8,8 @@ import type { SpriteCache } from '../assets/sprites'
 import { createWorldGL, type WorldGL } from '../gl/worldGL'
 
 // Same prop shape as WorldCanvas so App can swap the two by a view toggle. Draws terrain +
-// agents + animal sprite billboards + objects + climate atmosphere (day/night, weather, wind —
-// gl/atmosphere.ts); flora/fx arrive in later phases.
+// agents + animal & flora sprite billboards + objects + climate atmosphere (day/night, weather,
+// wind — gl/atmosphere.ts); fx arrive in a later phase.
 interface Props {
   agents: AgentState[]
   objects: WorldObject[]
@@ -53,7 +53,7 @@ export function WorldCanvas3D(props: Props) {
     const frame = () => {
       rafRef.current = requestAnimationFrame(frame)
       const p = propsRef.current
-      h.draw(p.agents, p.animals.values(), p.objects, p.selectedId, performance.now(), p.climate)
+      h.draw(p.agents, p.animals.values(), p.objects, p.flora, p.selectedId, performance.now(), p.climate)
     }
     rafRef.current = requestAnimationFrame(frame)
     return () => { cancelAnimationFrame(rafRef.current); h.dispose(); handleRef.current = null }

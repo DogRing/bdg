@@ -41,7 +41,7 @@ export interface WorldGL {
   ok: true
   setTerrain(grid: TerrainGrid | null): void   // rebuild the instanced prism buffer + elevation sampler
   fit(render: RenderConfig | null): void        // frame the world: focus = bounds/terrain centre, dist fits
-  draw(agents, animals, objects, selectedId, clockMs, climate): void  // one frame: GL terrain + overlay markers + atmosphere
+  draw(agents, animals, objects, flora, selectedId, clockMs, climate): void  // one frame: GL terrain + overlay markers/billboards + atmosphere
   zoomBy(f): void; tiltBy(dRad): void; orbitBy(dRad): void; panBy(dxPx, dyPx): void  // camera reducers
   pick(px, py): { kind: 'agent' | 'animal'; id: string } | null  // screen → nearest entity (last frame)
   dispose(): void
@@ -77,7 +77,11 @@ export function createWorldGL(glCanvas, overlayCanvas, sprites?: SpriteCache | n
   frame via `frameRect` at `clockMs`, bottom-anchored at the seated ground point, screen-size ∝ the
   old dot radius, **horizontally mirrored** when the world heading points screen-left
   (`cos(heading + yaw) < 0` — sheets face +x; the 3D camera yaws, so mirroring replaces rotation),
-  stamina alpha; sheet absent/unready → the glyph-colour dot exactly as before), object markers;
+  stamina alpha; sheet absent/unready → the glyph-colour dot exactly as before), object markers,
+  **flora sprite billboards** (grass tufts / trees / bushes: `sprites.flora(species, season)`, stage
+  column = `stage`, row = season/variant, bottom-anchored, world height from stage+width; no 2D
+  coverage wash in 3D — each plant is its own tuft; a PLANT KIND in the object list is skipped there
+  and billboarded here instead of drawing a bare marker square; unready sheet → nothing);
   all fog-faded by depth. Position lerped from the reducer's interpolation stamps. `pick` inverts
   this for click-select (agents win ties, 16 px).
 - **Camera.** Orbit (`yaw`), tilt (`pitch` 8–85°), dolly (`dist`, clamped to a fit-relative range),
@@ -121,8 +125,10 @@ export function createWorldGL(glCanvas, overlayCanvas, sprites?: SpriteCache | n
 
 ## Out of Scope (later phases)
 
-- Flora (coverage wash + tree/bush billboards — needs occlusion/depth care against the prisms,
-  FE-P6 P6-Q1 deferred it), transition FX (spawn/death/attack/grow), camera-follow, agent cluster
+- Flora as billboards SHIPPED (grass tufts + tree/bush sheets on the overlay; no coverage wash — the
+  2D-only ground effect). Depth is painter-ordered on the overlay (drawn under animals/agents), not
+  occluded against the GL prisms — acceptable at ground scale. Remaining: transition FX
+  (spawn/death/attack/grow), camera-follow, agent cluster
   colours/labels — the 2D renderer still carries these; the 3D view ports them in later phases.
   (Animal sprite billboards shipped with FE-P6.) Atmosphere polish deferred by
   `docs/plans/gl-atmosphere.md` Q3/Q6: world-space rain particles, temperature vignette, seasonal
