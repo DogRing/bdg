@@ -2,6 +2,7 @@ package worldgen
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/dogring/bdg/engine/fauna"
@@ -88,6 +89,12 @@ func materialize(fx Fixture, navCfg navmap.Config) (Fixture, []float64, error) {
 				return fx, nil, err
 			}
 			animals[i].Pos = p
+			// A pos-less spawn has no authored facing; leaving Heading at its zero
+			// value points every animal due-east, so the dormant ballistic steer
+			// (cheap.go, no wander) marches them all right into the east wall on a
+			// fresh world. Give each a seeded random heading so they scatter and the
+			// reflect-at-bounds bounce (FM13) keeps them mixed instead of pinned.
+			animals[i].Heading = r.Float64() * 2 * math.Pi
 		}
 		fx.Animals = animals
 	}

@@ -1,6 +1,7 @@
 package worldgen
 
 import (
+	"math"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -205,13 +206,31 @@ func TestRabbitMeadowRandomFixture(t *testing.T) {
 		w.Tick()
 	}
 	rabbits := 0
+	headings := []float64{}
 	for _, a := range w.Animals() {
 		if a.Species == "rabbit" {
 			rabbits++
+			headings = append(headings, a.Heading)
 		}
 	}
 	if rabbits != 10 {
 		t.Fatalf("rabbits after one respawn cadence = %d, want 10 (fixture override)", rabbits)
+	}
+
+	// Anti-east-march: initial + respawned rabbits must face random directions, not
+	// all share the zero (due-east) heading that funnelled the whole cohort into the
+	// east wall. Independent uniform draws ⇒ distinct values spanning a wide arc.
+	minH, maxH := math.Inf(1), math.Inf(-1)
+	distinct := map[float64]bool{}
+	for _, h := range headings {
+		distinct[h] = true
+		minH, maxH = math.Min(minH, h), math.Max(maxH, h)
+	}
+	if len(distinct) < 8 {
+		t.Fatalf("rabbit headings not varied (%d distinct of 10): %v", len(distinct), headings)
+	}
+	if maxH-minH < 1.0 {
+		t.Fatalf("rabbit headings span only %.2f rad — clustered (east-march regression): %v", maxH-minH, headings)
 	}
 }
 
@@ -278,6 +297,57 @@ func TestRabbitMeadowSeedDeterminism(t *testing.T) {
 	c := terrainOf(2)
 	if reflect.DeepEqual(a, c) {
 		t.Fatalf("different fixture seeds materialized identical terrain (suspicious)")
+	}
+}
+
+// A pos-less spawn must get a seeded, varied, in-range heading — not the zero
+// value. Leaving Heading at 0 pointed every animal due-east so the dormant
+// ballistic steer marched them all right into the east wall on a fresh world.
+func TestMaterializeRandomizesAnimalHeading(t *testing.T) {
+	navCfg := genTestCfg()
+	mk := func(seed int64) []AnimalPlacement {
+		fx := Fixture{
+			SchemaVersion: 1,
+			Seed:          seed,
+			Terrain:       &TerrainLayout{Random: true},
+			Animals: []AnimalPlacement{
+				{ID: "a1", Species: "rabbit"}, {ID: "a2", Species: "rabbit"},
+				{ID: "a3", Species: "rabbit"}, {ID: "a4", Species: "rabbit"},
+				{ID: "a5", Species: "rabbit"}, {ID: "a6", Species: "rabbit"},
+			},
+		}
+		m, _, err := materialize(fx, navCfg)
+		if err != nil {
+			t.Fatalf("materialize(seed %d): %v", seed, err)
+		}
+		return m.Animals
+	}
+
+	a := mk(42)
+	allZero := true
+	distinct := map[float64]bool{}
+	for _, ap := range a {
+		if ap.Heading != 0 {
+			allZero = false
+		}
+		if ap.Heading < 0 || ap.Heading >= 2*math.Pi {
+			t.Fatalf("animal %s heading %v outside [0,2π)", ap.ID, ap.Heading)
+		}
+		distinct[ap.Heading] = true
+	}
+	if allZero {
+		t.Fatalf("every spawned heading is 0 — not randomized (the east-march bug)")
+	}
+	if len(distinct) < 2 {
+		t.Fatalf("spawned headings not varied: %+v", a)
+	}
+
+	// Determinism: same seed ⇒ same headings (D12).
+	b := mk(42)
+	for i := range a {
+		if a[i].Heading != b[i].Heading {
+			t.Fatalf("heading non-deterministic for %s: %v vs %v", a[i].ID, a[i].Heading, b[i].Heading)
+		}
 	}
 }
 

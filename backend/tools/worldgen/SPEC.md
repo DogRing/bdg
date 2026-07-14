@@ -69,6 +69,9 @@ type FloraPlacement  struct{ ID core.ObjectID; Species core.Tag; Pos *core.Vec2;
 // Animal/Flora Pos is OPTIONAL (nil): Load places a pos-less entity uniformly at random on a `soil` hex
 // (rejection sampling over bounds with the fx.Seed-derived rng, sorted-ID order — deterministic, D12).
 // A pos-less placement REQUIRES a terrain layout (explicit or random); otherwise Load errors.
+// A pos-less ANIMAL also gets a seeded random Heading ∈ [0,2π): the dormant steer (fauna/cheap.go) is
+// ballistic with no wander, so leaving Heading at its zero value points the whole cohort due-east and
+// marches them all into the east wall on a fresh world — random facings scatter them (mirrors respawn).
 type LotPlacement    struct{ ID core.ObjectID; Kind core.Tag; Qty int; DecayAge float64; Location string }
 
 // ShelterLayout is the SH2 cave/interior fixture block. It carries portal-linked continuous interior

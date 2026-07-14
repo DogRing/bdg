@@ -62,6 +62,11 @@ func (w *World) runRespawn() {
 			a := cloneAnimal(tpl)
 			a.ID = w.allocAnimalID()
 			a.Pos = w.respawnPos(sp, members[sp], fork)
+			// The species template carries no facing (zero ⇒ due-east); give each
+			// respawn a seeded random heading so a repopulated species scatters
+			// instead of the whole cohort steering right into the same wall. Mirrors
+			// the pos-less spawn heading in worldgen.materialize.
+			a.Heading = fork.Float64() * 2 * math.Pi
 			a.Species = fauna.SpeciesID(sp)
 			if a.Vital <= 0 {
 				a.Vital = defaultFreshAnimalVital
