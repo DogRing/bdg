@@ -231,6 +231,7 @@ dimensions (assets SPEC delta). Fauna needs only manifest frame-size/url edits (
   pure id-hash sample, sway phase salted so sampled tufts don't sway in lockstep; unready sheet ⇒
   sampled tuft draws nothing, the wash already marks it).
   `RESOLVED: (c) hybrid, grass tuftDensity 0.3 초기값 — 사용자 방향("밀도를 설정") 반영` (2026-07-13)
-  Art follow-up `RESOLVED` (2026-07-13, user): the flat-vector `grass.svg` is dropped; grass
-  tufts reuse the hand-drawn `bush.png` sheet (same growth×season grid, `windResponsive` flag) —
-  Q1's PNG-only asset rule holds and tufts gain leaf/bare/snow seasons for free.
+  Art follow-up `RESOLVED` (2026-07-14, user): the flat-vector `grass.svg` is replaced by a
+  hand-drawn `grass.png` sheet: 4 growth columns × normal/snow/rustle-left/rustle-right rows.
+  Normal/snow are wired through `seasonRows`; the paired `rustleRows` are manifest metadata for
+  the future cover-occupancy render seam. The sheet remains `windResponsive` for sampled tufts.

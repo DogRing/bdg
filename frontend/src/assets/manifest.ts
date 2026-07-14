@@ -66,6 +66,7 @@ export interface FloraSheetDef {
   seasonRows?: Partial<Record<FloraSeason, number>>                  // single-file seasons: season → row
   seasonUrls?: Partial<Record<Exclude<FloraSeason, 'leaf'>, string>> // per-season files
   windResponsive?: boolean          // bottom-anchored billboard, bent by wind in render
+  rustleRows?: readonly [number, number] // paired concealment-rustle animation rows
 }
 
 // tree1..4 real-art folders: 1254×1254 files, 4 growth cols × 4 shape-variant
@@ -84,12 +85,17 @@ const bushSheet: FloraSheetDef = Object.freeze({
   frameW: 362, frameH: 362, stageFrames: 4, variantRows: 1,
   seasonRows: Object.freeze({ leaf: 0, bare: 1, snow: 2 }),
 })
-// grass tufts share the hand-drawn bush art (P6-Q4): same growth×season grid,
-// ground-anchored at the frame bottom, drawn as a wind-bent billboard. Grass
-// stays a coverage-wash species — only the `tuftDensity` sample of plants
-// (FLORA_COVERAGE below) draws this sheet, on top of the wash; tufts inherit
-// the seasonal rows (leaf/bare/snow) for free.
-const grassSheet: FloraSheetDef = Object.freeze({ ...bushSheet, windResponsive: true })
+// Grass art: 1254×1254, 4 growth columns × 4 state rows (normal, snow,
+// concealment rustle-left, concealment rustle-right), 313.5 px frames. The
+// renderer uses normal/snow now; rustleRows reserves the paired hidden-creature
+// animation until render state identifies which cover contains an animal.
+const grassSheet: FloraSheetDef = Object.freeze({
+  url: '/assets/flora/grass.png',
+  frameW: 313.5, frameH: 313.5, stageFrames: 4, variantRows: 1,
+  seasonRows: Object.freeze({ leaf: 0, bare: 0, snow: 1 }),
+  windResponsive: true,
+  rustleRows: Object.freeze([2, 3] as const),
+})
 
 export const FLORA_SHEETS: Record<string, FloraSheetDef> = Object.freeze({
   grass:       grassSheet,

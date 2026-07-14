@@ -115,6 +115,16 @@ describe('createSpriteCache (factory, no singleton)', () => {
     // single-file season sheets (bush seasonRows) use one file for every season
     expect(c.flora('bush', 'snow')).toBe(c.flora('bush', 'leaf'))
   })
+
+  it('grass declares normal/snow rows and paired concealment-rustle frames', () => {
+    const grass = FLORA_SHEETS.grass
+    expect(grass.url).toBe('/assets/flora/grass.png')
+    expect(grass.frameW).toBe(313.5)
+    expect(grass.frameH).toBe(313.5)
+    expect(grass.seasonRows).toEqual({ leaf: 0, bare: 0, snow: 1 })
+    expect(grass.rustleRows).toEqual([2, 3])
+    expect(grass.windResponsive).toBe(true)
+  })
 })
 
 describe('floraSeason (P6-Q2: temperature thresholds — manifest data)', () => {

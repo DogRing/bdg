@@ -69,6 +69,8 @@ export interface FloraSheetDef {
   windResponsive?: boolean          // one-sided billboard anchored at its bottom centre; the
                                     // render layer shears its top downwind by climate windDir/
                                     // windMag + a deterministic per-id gust (P6-Q4 — grass)
+  rustleRows?: readonly [number, number] // paired hidden-creature disturbance frames; reserved
+                                    // until the render frame identifies which cover holds an animal
 }
 export const FLORA_SHEETS: Record<string, FloraSheetDef>
 export const DEFAULT_FLORA_COLOR: string                  // glyph fallback (circle, stage-scaled)
@@ -143,6 +145,9 @@ export function frameRect(def: SheetDef, pose: Pose, clockMs: number):
   degrade visually, never crash and never draw nothing-at-all for a live entity.
 - **URL discipline.** Asset urls are root-relative `'/assets/...'` (Vite `public/` contract); the
   manifest never imports image modules (Q1: sheets live in `public/`, not `src/`).
+- **Grass sheet layout.** `flora/grass.png` is a 4×4 grid with 313.5 px frames: columns are four
+  growth stages; rows are normal, snow, rustle-left, rustle-right. `seasonRows` maps leaf/bare to
+  normal and snow to snow; `rustleRows:[2,3]` reserves the paired concealment animation frames.
 
 ## Acceptance Criteria (Vitest)
 
