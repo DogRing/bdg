@@ -92,6 +92,7 @@ type climateDoc struct {
 		When string `yaml:"when"`
 	} `yaml:"transitions"`
 	Balance struct {
+		IceType           string  `yaml:"ice_type"`
 		RainProbPerHour   float64 `yaml:"rain_prob_per_hour"`
 		RainHardCapHours  int64   `yaml:"rain_hard_cap_hours"`
 		RainDurMinHours   int64   `yaml:"rain_dur_min_hours"`

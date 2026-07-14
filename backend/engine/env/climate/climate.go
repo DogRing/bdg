@@ -39,10 +39,12 @@ type GridCell struct{ X, Y int }
 //   - Moisture    is normalized [0,1] (clamped). Rain raises it; evaporation (∝ Temperature°C) lowers it.
 //   - Temperature is ACTUAL °C (CA3 RESOLVED option ii) and is NOT clamped — winter nights can be sub-zero.
 //   - Terrain     is the current terrain type of this climate cell (drives transitions).
+//   - FrozenFrom  is the pre-freeze terrain type for an ice cell; empty otherwise.
 type CellState struct {
 	Moisture    float64      // wetness ∈ [0,1] (clamped)
 	Temperature float64      // °C (CA3) — NOT clamped; f(annual,daily,rain)
 	Terrain     navTerrainID // current terrain type
+	FrozenFrom  navTerrainID // terrain immediately before freezing into Config.IceType; "" when not frozen
 }
 
 // Wind is the world-uniform prevailing wind (CA2 RESOLVED option a) — a single scalar pair.
@@ -55,6 +57,10 @@ type Wind struct {
 // navTerrainID is the terrain-type identifier. Declared as core.Tag so climate does NOT import
 // engine/space/navmap (one-way wiring; world bridges climate→navmap, RESOLVED #6).
 type navTerrainID = core.Tag
+
+// OriginTerrain is the reserved thaw-rule target. It is not a real terrain id: Step resolves it
+// to the cell's FrozenFrom before changing state or emitting a Transition.
+const OriginTerrain navTerrainID = "__origin__"
 
 // RainProcess is the seeded stochastic rain accumulator (1a). Captured in the snapshot so
 // resume is byte-identical (D12). Exposed read-only for serialization + observability.
@@ -113,6 +119,10 @@ type Config struct {
 	SnowFreezeC   float64 // °C at/below which precipitation accumulates as snow (design value = 0)
 	SnowAccumRate float64 // SnowCover ∈[0,1] gained per game-hour of freezing precipitation
 	SnowMeltRate  float64 // SnowCover lost per game-hour per °C above SnowFreezeC (temperature-proportional melt)
+
+	// Ice model (ICE, plan §1e). Empty disables origin capture; thresholds remain data-defined
+	// literals in transition-rule expressions.
+	IceType navTerrainID // terrain id water freezes into; "" disables ice modelling
 }
 
 // Forcing is the per-step exogenous input. world builds it from the current Tick (live) or

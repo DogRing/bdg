@@ -5,7 +5,8 @@
 #                 engine/env/climate.Rules. ORDER is significant: for a given `from`, the FIRST rule
 #                 whose `when` §6 boolean is true wins (deterministic, D12). An EMPTY array = climate-off
 #                 (outcome-neutral introduction phase). Every from/to MUST be a terrain id in
-#                 content/terrain.yaml (platform/config cross-checks; an undefined id is a load failure).
+#                 content/terrain.yaml (platform/config cross-checks), except the reserved thaw target
+#                 __origin__, which engine/env/climate.Step resolves before storing or emitting.
 #   balance     — rates + the annual-°C cycle + the world-uniform wind random-walk (D9 spirit: rates are
 #                 content; the rain SHAPE — 10d-expected / 30d-forced / 2-12h-duration — is fixed design
 #                 in engine code, only its rates appear here so engine stays literal-free, D10).
@@ -29,10 +30,12 @@ init:
   initial_temperature: 12.5        # °C starting Temperature (≈ annual_mid; sub-zero allowed, no clamp)
 
 # ── Dynamic-terrain transitions (CA, D4/D10) ────────────────────────────────────────────
-# Illustrative placeholders demonstrating the §6 condition DSL over moisture/temperature (°C).
-# First-match-wins per `from` (D12). A richer table (river-freeze needs an `ice` terrain type, etc.) is a
-# later content+terrain addition; these two show sustained drought baking soil → sand and wet recovery.
+# First-match-wins per `from` (D12). Water freezes below 0°C and thaws above 2°C; the hysteresis
+# gap prevents threshold flicker. The moisture rules cover drought and wet recovery.
 transitions:
+  - { from: lake, to: ice, when: "temperature < 0" }
+  - { from: river, to: ice, when: "temperature < 0" }
+  - { from: ice, to: __origin__, when: "temperature > 2" }
   - { from: soil, to: dry_dirt, when: "moisture < 0.15" } # 비옥한 흙이 가뭄으로 마르면 마른 흙(dry_dirt)이 됨
   - { from: dry_dirt, to: soil, when: "moisture > 0.40" } # 마른 흙에 수분이 차면 다시 비옥한 흙이 됨
   - { from: lake, to: dry_dirt, when: "moisture < 0.20" } # 호수가 증발하면 마른 흙이 됨
@@ -41,6 +44,9 @@ transitions:
 
 # ── Tuning injected into climate.Config (D9 spirit; the rain SHAPE is fixed design) ──────
 balance:
+  # Ice terrain id (ICE, plan §1e). Empty/absent disables ice origin capture.
+  ice_type: ice
+
   # Rain process (1a) — the 10d-expected / 30d-forced / 2-12h-duration SHAPE is fixed; rates tunable.
   rain_prob_per_hour:  0.0042      # per-game-hour PRain increment, calibrated so E[first rain] ≈ 240h (10 days). UNTUNED
   rain_hard_cap_hours: 720         # forced rain after 720 dry game-hours (30 days) — FIXED DESIGN

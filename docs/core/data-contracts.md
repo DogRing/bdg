@@ -40,7 +40,7 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
                  hidden_until?, concealment? }  // fauna incl. Phase-6 combat/hiding fields (§10, WI-P4); periodic-full
     shelters?  { interiors[]{id, bounds, portals[]{id, kind, exterior_pos, interior_pos}, occupants[]},
                  active_spaces[]{object_id, space_kind, space_id?, pos} } // SH2 cave/interior state; absent ⇒ shelter OFF
-    climate    { cells[]{cell, moisture, temperature, terrain}, rain{raining, rain_ends_at_hour,
+    climate    { cells[]{cell, moisture, temperature, terrain, frozen_from}, rain{raining, rain_ends_at_hour,
                  p_rain, hours_since_rain}, wind{dir, mag}, snow_cover } // climate field (§10, WI-P4); periodic-full
     emerged_roles[] { function, holder }         // P6 (D2-derived)
     tom_digest {                                 // cross-agent ToM, god-view projection (D6/D8)
@@ -399,11 +399,13 @@ Representative `type`s (payload gist):
   `updated[]{object_id, drives, stamina, vital, current_action, active_until}` / `died[]{object_id}`,
   sorted by `object_id` (world emits `AnimalBorn`/`AnimalDied`, §4). The legacy `prey` timer-respawn
   object stays an `objects[]` row until fauna activation migrates it (W7).
-- **Climate (`climate` in §1, periodic-full):** `{ cells[]{cell, moisture, temperature, terrain},
-  rain{raining, rain_ends_at_hour, p_rain, hours_since_rain}, wind{dir, mag}, snow_cover }` — the coarse
-  `climate.State` (`Cells()`/`Rain()`/`Wind()`/`SnowCover()`) in sorted `GridCell` (Y-major then X) order.
-  `snow_cover` ∈ [0,1] is the world-uniform snowpack (CS2b, plan §1d; a single scalar, resumed via
-  `Restore(…, snow)` — absent on a pre-snow snapshot ⇒ 0, a snowless resume).
+- **Climate (`climate` in §1, periodic-full):** `{ cells[]{cell, moisture, temperature, terrain,
+  frozen_from}, rain{raining, rain_ends_at_hour, p_rain, hours_since_rain}, wind{dir, mag}, snow_cover }`
+  — the coarse `climate.State` (`Cells()`/`Rain()`/`Wind()`/`SnowCover()`) in sorted `GridCell`
+  (Y-major then X) order. `snow_cover` ∈ [0,1] is the world-uniform snowpack (CS2b, plan §1d; a single
+  scalar, resumed via `Restore(…, snow)` — absent on a pre-snow snapshot ⇒ 0, a snowless resume).
+  `frozen_from` is the per-cell pre-freeze terrain id for `ice` cells (ICE, plan §1e; `""`/absent on
+  every non-ice cell and pre-ice snapshot) — resumed so a frozen river thaws back to river, not a guess.
   `terrain` per cell IS serialized here: `CellState.Terrain` is climate's own authoritative input to
   `Rules.Eval` on every subsequent `Step` (transition source state), not merely a navmap mirror —
   omitting it would silently stop terrain transitions from firing after a resume. `temperature` is **°C**

@@ -88,8 +88,8 @@ type Registries struct {
 - `world.EnvConfig{NavmapCellSize, ClimateGridCols/Rows, ClimateStep/FloraStep/DecayStep,
   ScentCellSize, ScentSpread, FaunaDT, FaunaCadence, MaxSpeed}` ← `world.yaml grids/cadence/motion`.
 - `climate.Config{GridCols/Rows, WorldMin/Max}` ← `world.yaml grids + bounds` (so climate's grid and
-  navmap's agree, climate SPEC §New); `climate.Config{rates, AnnualMid/Amp/Phase, Wind*}` ←
-  `climate.yaml balance` (post CA1-3 update).
+  navmap's agree, climate SPEC §New); `climate.Config{rates, AnnualMid/Amp/Phase, Wind*, Snow*, IceType}`
+  ← `climate.yaml balance` (post CA1-3 update; `IceType` ← `balance.ice_type`, ICE plan §1e).
 - `navmap.Config{CellSize, MinX/Y, MaxX/Y, Wear*}` ← `world.yaml grids.navmap_cell_size + bounds` +
   `balance.yaml` wear knobs.
 
@@ -108,8 +108,22 @@ load error that builds NO partial registry (SPEC.md invariant):
    (fauna SPEC AC parity). A typo Attr (silently 0 in expr) is a LOAD failure.
 3. **flora operand cross-check** — flora program operands ⊆ the flora operand set (suitability
    moisture/temperature/terrain attrs); yield `item`s ⊆ item_kind ids (flora SPEC).
-4. **climate cross-check** — every transition `from`/`to` ⊆ `terrain.yaml` ids; `when:` operands ⊆
-   `{moisture, temperature}` (+ permitted); the transition table compiles (climate SPEC).
+4. **climate cross-check** — every transition `from`/`to` ⊆ `terrain.yaml` ids **EXCEPT** the reserved
+   thaw sentinel `climate.OriginTerrain` (`"__origin__"`), which is a valid `to` yet NOT a terrain id —
+   exempt it from the cross-check (ICE3b). `when:` operands ⊆ `{moisture, temperature}` (+ permitted);
+   the transition table compiles (climate SPEC). **Ice (ICE, plan §1e):** `climate.yaml balance.ice_type`
+   is loaded into `climate.Config.IceType`. It is **OPTIONAL with NO auto-default: absent ⇒ `""` ⇒ ice
+   disabled** (the loader does NOT substitute `"ice"` — auto-defaulting would fail worlds that have no
+   `ice` terrain type; our `content/climate.yaml` sets it explicitly). When non-empty, `ice_type` MUST be
+   a `terrain.yaml` id; and if any transition uses `to: __origin__`, `ice_type` MUST be set AND at least
+   one rule must freeze INTO it (a `to: <ice_type>` rule) — else the sentinel could never resolve. The
+   freeze/thaw °C thresholds are ordinary `when:` **literals** (`temperature < 0`, `temperature > 2` —
+   **non-negative only**: the §6 expr grammar has no unary minus / negative literals, OQ-C RESOLVED) inside
+   the freeze/thaw transition rules — NOT config/balance fields (identical to the existing `moisture < …`
+   transitions); `ice_type` is the ONLY new `balance` field. `climate.schema.json`
+   `balance` gains an **optional** `ice_type` (string; absent ⇒ no ice); the transition `to` schema
+   already accepts any string so `__origin__` validates, and the referential check above (not the
+   schema) enforces the terrain-id / sentinel distinction.
 5. **scent-cell floor (W3)** — `world.yaml grids.scent_cell_size ≥ motion.max_speed ×
    cadence.scent_spread` — a determinism-protecting check (the scent cell-skip invariant). Reject with
    a descriptive error naming the three values.

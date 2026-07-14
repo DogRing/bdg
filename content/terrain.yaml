@@ -55,6 +55,12 @@ terrains:
     required_tags: []
     attrs: { grain_size: 0.4, moisture: 1.0, depth: 0.7, slope: 0.0, salinity: 0.0 }
 
+  - id: ice                        # frozen lake/river surface; FrozenFrom preserves the exact water origin
+    base_cost: 1.2
+    passable: true
+    required_tags: []              # crossed on foot; no Swim capability required
+    attrs: { grain_size: 0.3, moisture: 0.6, depth: 0.0, slope: 0.0, salinity: 0.0 }
+
   - id: mountain                   # steep rock — high traversal cost, mineral-bearing (resources R7)
     base_cost: 2.5
     passable: true

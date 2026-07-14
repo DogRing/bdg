@@ -169,12 +169,38 @@ func Step(prev *State, f Forcing, rules *Rules, r *rng.RNG) (*State, []Transitio
 		for x := 0; x < cfg.GridCols; x++ {
 			cell := &next.cells[y][x]
 			if to, fired := rules.Eval(cell.Terrain, *cell); fired {
-				transitions = append(transitions, Transition{
-					Cell: GridCell{X: x, Y: y},
-					From: cell.Terrain,
-					To:   to,
-				})
-				cell.Terrain = to
+				from := cell.Terrain
+				switch {
+				case to == OriginTerrain:
+					// An origin-less ice cell cannot resolve the sentinel, so the rule does
+					// not fire and no sentinel enters state or the transition stream.
+					if cell.FrozenFrom == "" {
+						continue
+					}
+					resolved := cell.FrozenFrom
+					transitions = append(transitions, Transition{
+						Cell: GridCell{X: x, Y: y},
+						From: from,
+						To:   resolved,
+					})
+					cell.Terrain = resolved
+					cell.FrozenFrom = ""
+				case cfg.IceType != "" && to == cfg.IceType:
+					cell.FrozenFrom = from
+					transitions = append(transitions, Transition{
+						Cell: GridCell{X: x, Y: y},
+						From: from,
+						To:   to,
+					})
+					cell.Terrain = to
+				default:
+					transitions = append(transitions, Transition{
+						Cell: GridCell{X: x, Y: y},
+						From: from,
+						To:   to,
+					})
+					cell.Terrain = to
+				}
 			}
 		}
 	}

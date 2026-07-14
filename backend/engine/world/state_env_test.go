@@ -11,6 +11,7 @@ import (
 	"github.com/dogring/bdg/engine/env/flora"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
+	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/space/scent"
 )
 
@@ -71,8 +72,15 @@ func buildResumeEnvPieces(t *testing.T) envPieces {
 		AnnualMid: 10, AnnualAmp: 5, TempDayPeak: 2, TempNightLow: -2,
 		WindPrevailingDir: 1, WindMagMean: 0.3, WindMagNoise: 0.05,
 		WindDirDrift: 0.05, WindDirReversion: 0.1,
+		IceType: "ice",
 	}
 	climState := climate.New(climCfg, func(core.Vec2) core.Tag { return "plain" })
+	// Include an already-frozen cell in every snapshot/resume fixture. The climate digest must
+	// preserve its exact water origin even though the ordinary fixture has transitions disabled.
+	climCells := climState.Cells()
+	climCells[0].State.Terrain = "ice"
+	climCells[0].State.FrozenFrom = "lake"
+	climState = climate.Restore(climState, climCells, climState.Rain(), climState.Wind(), climState.SnowCover())
 	climRules := climate.NewRules(nil)
 
 	plant := flora.Plant{ID: "resume_plant", Species: "moss", Pos: core.Vec2{X: 5, Y: 5}, Length: 0.1, Width: 0.1}
@@ -138,8 +146,8 @@ func envDigest(w *World) string {
 
 	if ws.Climate != nil {
 		for _, c := range ws.Climate.Cells {
-			fmt.Fprintf(&b, "cell %d,%d moist=%.6f temp=%.6f terrain=%s\n",
-				c.Cell.X, c.Cell.Y, c.Moisture, c.Temperature, c.Terrain)
+			fmt.Fprintf(&b, "cell %d,%d moist=%.6f temp=%.6f terrain=%s frozen_from=%s\n",
+				c.Cell.X, c.Cell.Y, c.Moisture, c.Temperature, c.Terrain, c.FrozenFrom)
 		}
 		fmt.Fprintf(&b, "rain=%v ends=%d prain=%.6f sincerain=%d\n",
 			ws.Climate.Rain.Raining, ws.Climate.Rain.RainEndsAtHour, ws.Climate.Rain.PRain, ws.Climate.Rain.HoursSinceRain)
@@ -204,6 +212,23 @@ func TestWorldStateEnvRoundTrip(t *testing.T) {
 	if got.Climate.Rain != ws.Climate.Rain || got.Climate.Wind != ws.Climate.Wind {
 		t.Errorf("Climate rain/wind round-trip mismatch: got %+v/%+v want %+v/%+v",
 			got.Climate.Rain, got.Climate.Wind, ws.Climate.Rain, ws.Climate.Wind)
+	}
+
+	// The restored frozen cell must still resolve __origin__ to lake, never to the sentinel.
+	thawRules := climate.NewRules([]climate.TransitionRule{
+		{From: "ice", When: testBoolProgram(t, "temperature > 2"), To: climate.OriginTerrain},
+	})
+	thawed, transitions := climate.Step(
+		fx2.world.climateState,
+		climate.Forcing{HourOfDay: 14},
+		thawRules,
+		rng.New(999),
+	)
+	if len(transitions) != 1 || transitions[0].From != "ice" || transitions[0].To != "lake" {
+		t.Fatalf("restored frozen cell thaw transitions = %+v, want ice->lake", transitions)
+	}
+	if cell := thawed.Cells()[0].State; cell.Terrain != "lake" || cell.FrozenFrom != "" {
+		t.Fatalf("restored frozen cell after thaw = %+v, want lake with empty FrozenFrom", cell)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/dogring/bdg/engine/kernel/expr"
 	"github.com/dogring/bdg/engine/kernel/rng"
 	"github.com/dogring/bdg/engine/space/navmap"
+	"github.com/dogring/bdg/engine/space/pathfind"
 )
 
 type envTestStats struct{}
@@ -163,6 +164,127 @@ func TestClimateCadenceAndBridgeUpdatesNavmap(t *testing.T) {
 	fx.world.Tick()
 	if got := nav.TerrainAt(navmap.Cell{Q: 0, R: 0}); got != "plain" {
 		t.Fatalf("tick 1 should skip climate cadence, terrain=%s", got)
+	}
+}
+
+func TestIceEndToEndBridgeRerouteDeltaAndThawOrigin(t *testing.T) {
+	fx := newFixtureSeeded(t, 130)
+	cfg := testEnvConfig()
+	cfg.Max = core.Vec2{X: 40, Y: 50}
+	cfg.ClimateGridCols = 4
+	cfg.ClimateGridRows = 5
+	cfg.ClimateStep = 1
+
+	terrainAt := func(p core.Vec2) core.Tag {
+		if p.Y >= 10 && p.Y < 40 {
+			switch {
+			case p.X >= 10 && p.X < 20:
+				return "lake"
+			case p.X >= 20 && p.X < 30:
+				return "river"
+			}
+		}
+		return "plain"
+	}
+	navCfg := navmap.Config{
+		CellSize: 5, MinX: 0, MinY: 0, MaxX: 40, MaxY: 50,
+		WearCostMin: 0.5, WearMax: 1,
+	}
+	types := map[navmap.TerrainID]navmap.TerrainType{
+		"plain": {BaseCost: 1, Passable: true},
+		"lake":  {BaseCost: 3, Passable: true},
+		"river": {BaseCost: 3, Passable: true},
+		"ice":   {BaseCost: 1.2, Passable: true},
+	}
+	nav := navmap.New(navCfg, func(p core.Vec2) navmap.TerrainID { return navmap.TerrainID(terrainAt(p)) }, types)
+	climCfg := climate.Config{
+		GridCols: 4, GridRows: 5, WorldMin: cfg.Min, WorldMax: cfg.Max,
+		InitMoisture: 0.5, InitTemperature: -3,
+		RainHardCapHours: 1000, RainDurMinHours: 1, RainDurMaxHours: 1,
+		AnnualMid: -3, IceType: "ice",
+	}
+	state := climate.New(climCfg, terrainAt)
+	rules := climate.NewRules([]climate.TransitionRule{
+		{From: "lake", When: testBoolProgram(t, "temperature < 0"), To: "ice"},
+		{From: "river", When: testBoolProgram(t, "temperature < 0"), To: "ice"},
+		{From: "ice", When: testBoolProgram(t, "temperature > 2"), To: climate.OriginTerrain},
+	})
+	fx.world.InstallEnv(cfg, nav, state, rules, nil, nil, nil, nil)
+
+	start := core.Vec2{X: 5, Y: 25}
+	goal := core.Vec2{X: 35, Y: 25}
+	beforePath, beforeCost, ok := pathfind.Path(nav, start, goal, pathfind.Caps{})
+	if !ok {
+		t.Fatal("expected a pre-freeze route around high-cost water")
+	}
+
+	fx.world.Tick() // -3°C: lake + river -> ice through the existing bridge.
+	afterPath, afterCost, ok := pathfind.Path(nav, start, goal, pathfind.Caps{})
+	if !ok {
+		t.Fatal("expected a route over frozen water")
+	}
+	if afterCost >= beforeCost {
+		t.Fatalf("freeze did not reroute path: before cost=%v path=%v; after cost=%v path=%v",
+			beforeCost, beforePath, afterCost, afterPath)
+	}
+
+	frozenOrigins := map[core.Tag]bool{}
+	for _, gcs := range fx.world.climateState.Cells() {
+		if gcs.State.Terrain == "ice" {
+			frozenOrigins[gcs.State.FrozenFrom] = true
+		}
+	}
+	if !frozenOrigins["lake"] || !frozenOrigins["river"] {
+		t.Fatalf("frozen cells did not capture both origins: %v", frozenOrigins)
+	}
+	freezeDelta := fx.world.frameTerrainDelta()
+	if len(freezeDelta) == 0 {
+		t.Fatal("freeze emitted no terrain_delta entries")
+	}
+	for _, entry := range freezeDelta {
+		terrain, ok := entry["terrain"].(string)
+		if !ok || terrain != "ice" {
+			t.Fatalf("freeze terrain_delta entry not ice: %v", entry)
+		}
+	}
+
+	// Swap only the content-derived temperature config, preserving the captured dynamic cells.
+	warmCfg := climCfg
+	warmCfg.InitTemperature = 3
+	warmCfg.AnnualMid = 3
+	warmBase := climate.New(warmCfg, terrainAt)
+	current := fx.world.climateState
+	fx.world.climateState = climate.Restore(warmBase, current.Cells(), current.Rain(), current.Wind(), current.SnowCover())
+	fx.world.Tick() // +3°C: __origin__ resolves to each cell's exact water type.
+
+	thawedOrigins := map[core.Tag]bool{}
+	for _, gcs := range fx.world.climateState.Cells() {
+		if gcs.State.FrozenFrom != "" || gcs.State.Terrain == climate.OriginTerrain {
+			t.Fatalf("thaw left origin/sentinel in state: %+v", gcs)
+		}
+		if gcs.State.Terrain == "lake" || gcs.State.Terrain == "river" {
+			thawedOrigins[gcs.State.Terrain] = true
+		}
+	}
+	if !thawedOrigins["lake"] || !thawedOrigins["river"] {
+		t.Fatalf("thaw did not restore both water types: %v", thawedOrigins)
+	}
+	thawDelta := fx.world.frameTerrainDelta()
+	deltaTerrains := map[string]bool{}
+	for _, entry := range thawDelta {
+		if terrain, ok := entry["terrain"].(string); ok {
+			deltaTerrains[terrain] = true
+			if terrain == string(climate.OriginTerrain) {
+				t.Fatalf("sentinel escaped into terrain_delta: %v", entry)
+			}
+		}
+	}
+	if !deltaTerrains["lake"] || !deltaTerrains["river"] {
+		t.Fatalf("thaw terrain_delta missing exact origins: %v", deltaTerrains)
+	}
+	_, thawCost, ok := pathfind.Path(nav, start, goal, pathfind.Caps{})
+	if !ok || thawCost != beforeCost {
+		t.Fatalf("thawed path cost=%v ok=%v, want original cost=%v", thawCost, ok, beforeCost)
 	}
 }
 

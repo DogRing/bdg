@@ -19,13 +19,28 @@ import (
 func buildClimateRules(cd climateDoc, terrain map[navmap.TerrainID]navmap.TerrainType, statReg *stats.Registry) (*climate.Rules, error) {
 	allowed := tagSet("moisture", "temperature")
 	rules := make([]climate.TransitionRule, 0, len(cd.Transitions))
+	iceType := core.Tag(cd.Balance.IceType)
+	if iceType != "" {
+		if _, ok := terrain[navmap.TerrainID(iceType)]; !ok {
+			return nil, fmt.Errorf("config: climate ice_type %q is not a terrain id", iceType)
+		}
+	}
+	hasOriginRule := false
+	hasFreezeRule := false
 	for i, tr := range cd.Transitions {
 		from, to := core.Tag(tr.From), core.Tag(tr.To)
 		if _, ok := terrain[navmap.TerrainID(from)]; !ok {
 			return nil, fmt.Errorf("config: climate transition %d unknown from terrain %q", i, from)
 		}
-		if _, ok := terrain[navmap.TerrainID(to)]; !ok {
-			return nil, fmt.Errorf("config: climate transition %d unknown to terrain %q", i, to)
+		if to != climate.OriginTerrain {
+			if _, ok := terrain[navmap.TerrainID(to)]; !ok {
+				return nil, fmt.Errorf("config: climate transition %d unknown to terrain %q", i, to)
+			}
+		} else {
+			hasOriginRule = true
+		}
+		if iceType != "" && to == iceType {
+			hasFreezeRule = true
 		}
 		prog, err := expr.Parse(tr.When, expr.KindBool, statSet{statReg}, expr.BasePreds())
 		if err != nil {
@@ -38,6 +53,12 @@ func buildClimateRules(cd climateDoc, terrain map[navmap.TerrainID]navmap.Terrai
 			return nil, fmt.Errorf("config: climate transition %d predicates are not allowed", i)
 		}
 		rules = append(rules, climate.TransitionRule{From: from, When: prog, To: to})
+	}
+	if hasOriginRule && iceType == "" {
+		return nil, fmt.Errorf("config: climate transition to %q requires balance.ice_type", climate.OriginTerrain)
+	}
+	if hasOriginRule && !hasFreezeRule {
+		return nil, fmt.Errorf("config: climate transition to %q requires a freeze rule targeting ice_type %q", climate.OriginTerrain, iceType)
 	}
 	return climate.NewRules(rules), nil
 }

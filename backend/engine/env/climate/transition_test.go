@@ -169,8 +169,9 @@ func TestFirstMatchWinsSortedOrder(t *testing.T) {
 func digestStep(cells []climate.GridCellState, rain climate.RainProcess, wind climate.Wind, trans []climate.Transition) string {
 	var sb strings.Builder
 	for _, gcs := range cells {
-		fmt.Fprintf(&sb, "G{%d,%d}M%.15f T%.15f R:%s\n",
-			gcs.Cell.X, gcs.Cell.Y, gcs.State.Moisture, gcs.State.Temperature, gcs.State.Terrain)
+		fmt.Fprintf(&sb, "G{%d,%d}M%.15f T%.15f R:%s F:%s\n",
+			gcs.Cell.X, gcs.Cell.Y, gcs.State.Moisture, gcs.State.Temperature,
+			gcs.State.Terrain, gcs.State.FrozenFrom)
 	}
 	fmt.Fprintf(&sb, "Rain{%v %d %.15f %d}\n", rain.Raining, rain.RainEndsAtHour, rain.PRain, rain.HoursSinceRain)
 	fmt.Fprintf(&sb, "Wind{%.15f %.15f}\n", wind.Dir, wind.Mag)

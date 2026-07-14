@@ -188,6 +188,123 @@ operand 로 노출하는지 확인(apparent_temp 식 자체는 fauna F40 소관)
   frontend.md §8 P6-Q2 supersede. staging 양식은 M4/flora 동형.
 - **불변 재확인:** D12(적분 결정적·per-step fork)·D10(임계/율 = climate.yaml)·렌더 순수성(스트림값만). CA3 °C 상속.
 
+## 1e. Phase-1 reopened #4 — 얼음 (눈→얼음 크러스트 + 물→얼음 지형)  [RESOLVED 2026-07-14]
+
+> **Resolutions — 사람 확정 (2026-07-14):** **ICE1 = (b) 물→얼음 지형**(path A 눈 크러스트·ICE2 는 park).
+> **ICE3 = lake+river 결빙, per-cell `FrozenFrom` 원본 저장**(단일 `ice` 타입, 해빙 시 정확 복원), `ice` = passable·
+> `base_cost≈1.2`·`Swim` 해제. **ICE3b = 표 sentinel `__origin__`**(결빙·해빙 규칙이 climate.yaml 표에 남고, 엔진은
+> `to==IceType` origin 자동캡처 + `__origin__` resolve 만). **ICE4/ICE5(b)/ICE6(b) = rec 확정**(데이터 임계·terrain
+> 색 렌더·기존 델타 스트림 + `FrozenFrom` per-cell 직렬화). 근거·기각안 = `docs/decisions/climate-ice.md`(재논쟁 금지).
+> 활성화 staging = §ICE-M.
+
+> **4차 게이트 (re-open) 2026-07-14.** CS(눈) 후속 질문: "눈이 얼음이 될 수 있나 / 어떻게 실제처럼."
+> 현실의 **'얼음'은 두 갈래** — **(A) 눈이 굳어 얼음**(melt-refreeze 크러스트 / 압밀) · **(B) 물(호수·강·바다)이
+> 얼어 얼음 지형**. 둘은 완전히 다른 메커니즘이다. **아무것도 결정 안 함(발명=결함).** 옵션은 §0·§1·§1c·§1d·
+> design.md §5 안에서만 고르고 CA3 °C 를 상속. **불변 플래그:** D12(전이·적분 결정적·전역동기·wall-clock 금지) ·
+> D10(임계/타입 = content) · D4(비용 = Tag/base-cost 파생). **교차참조:** §1 "river-freeze needs an `ice`
+> terrain type"(이미 예견) · navmap `SetTerrain`(M1 완료)·`TerrainOverrides` 델타(M5, data-contracts §6) ·
+> §1d CS(눈) 스칼라 방식.
+
+### ICE1 — '얼음'이 모델에서 무엇인가  ⚠ 핵심 fork  [RESOLVED: (b) 물→얼음 지형 (P1); (a) 눈 크러스트는 후행]
+> **사람 확정 (2026-07-14):** path **(b) 물→얼음 지형** — 기존 climate 전이표 + navmap `SetTerrain`/`TerrainOverrides`
+> 재사용, 거의 content-only. path (a) 눈 크러스트 + (c) 는 후행(따라서 **ICE2·ICE5(a)·ICE6(a) 는 이번 phase 비적용**,
+> park). 남은 OPEN = **ICE3**(대상·해빙 정체성·지형 속성) + ICE4/ICE5(b)/ICE6(b) 확정.
+- (a) **눈 상태(snowpack)가 얼음화** — `SnowCover` 가 melt-refreeze/압밀로 '얼음/크러스트' 성질 획득. world-uniform
+  스칼라 1개 추가(`IceCover`, `SnowCover`와 동형, CS2b 재현). 시각 = 지면/식생 스프라이트 변형; 이동(미끄러움)은
+  후행. **"눈→얼음" 직역에 부합**하나 시각 임팩트 작고 CS5(지면 레이어 없음)와 상충 → 스프라이트 필요.
+- (b) **물→얼음 지형** — `river`/`lake`/(`sea`)가 추울 때 `ice*` TerrainID 로 전이(**기존 §1d/§1 전이표 재사용**),
+  따뜻하면 해빙. per-cell 공간적, `navmap.SetTerrain`(M1 완료) + `TerrainOverrides` 델타로 스트림 → **신규 계약 0**.
+  얼어붙은 호수/강 위를 걷는 = **가장 상징적 '얼음'**. **거의 content-only**(terrain.yaml 신규 타입 + climate.yaml 규칙).
+- (c) **둘 다** — 눈 크러스트(a) + 물 결빙(b). 최대 현실성, 두 메커니즘.
+- **rec:** 아키텍처 적합도·임팩트로 **(b) 물→얼음 지형을 P1 우선**(전이표가 이미 이걸 예견했고 신규 엔진코드 거의 0);
+  (a) 눈 크러스트는 후행 refinement. 단 사용자 직역이 (a)라 **최종 path 는 사람 선택**.
+
+### ICE2 — (path A) 눈이 얼음이 되는 물리  [OPEN]
+- (a) **melt-refreeze 크러스트** — `temperature>0` 로 부분 용해된 눈이 이후 `temperature<0`(신설 강수 없이) 재동결하면
+  얼음화(용해분의 일부를 `SnowCover`→`IceCover` 로 이동). 우리 일주기 °C 곡선에 자연 발생 = **가장 사실적**("녹았다 얼면 얼음").
+- (b) **압밀/노화** — 오래·두껍게 쌓인 눈이 느리게 얼음화(용해 무관). age 추적 or 지속 고-`SnowCover` 에 rate.
+- (c) 둘 다.
+- **rec: (a) melt-refreeze.**
+
+### ICE3 — (path B) 어느 물이 어는가 + 해빙 정체성 + `ice` 지형 속성  [RESOLVED 2026-07-14]
+> **사람 확정:** 대상 = **lake + river**(sea 제외). 해빙 정체성 = **per-cell 원본 타입 저장** — 단일 `ice`
+> 타입 + `CellState` 에 신규 `FrozenFrom navTerrainID`(결빙 전 물타입; 비결빙=""); 해빙 시 `Terrain = FrozenFrom`
+> 로 정확히 복원(언 강→강, 언 호수→호수). ⇒ **ICE6(b) 재평가:** "신규 계약 0" 아님 — `FrozenFrom` 이 per-cell
+> 직렬화 필드로 추가됨(climate digest `cells[]` + data-contracts §10). `ice` 속성 = **passable**, `base_cost≈1.2`,
+> 물의 `Swim` required_tag 제거, terrain.yaml 신규 `ice` 타입 + `TERRAIN_STYLE` 청백색. **⚠ 파생 OPEN = ICE3b.**
+
+### ICE3b — (path B) 결빙 origin 캡처 + 해빙 복원의 표현  [RESOLVED: (b) 표 sentinel `__origin__`]
+per-cell `FrozenFrom` 채택의 결과: 정적 `from×when→to` 표는 (1) 결빙 시 원본을 `FrozenFrom` 으로 **캡처**하는 것과
+(2) 해빙 시 `to` 가 셀별 `FrozenFrom` 이라 **동적 복원**하는 것을 그대로 표현 못 함. 표현 방식 =
+- (a) **엔진 special-case + config** — climate.Config 에 `IceType`+`ThawWhen`(§6 bool). Step: 어떤 전이든 `To==IceType`
+  면 `FrozenFrom=From` 캡처; `Terrain==IceType && ThawWhen` 이면 `Terrain=FrozenFrom` 복원(표 밖 분기). 최소 content,
+  단 해빙 로직이 엔진에(약한 D4 텐션 — 분기 1개).
+- (b) **표 sentinel `to: __origin__`** — 결빙 규칙 `{from: lake/river, to: ice, when: "temperature < freezeC"}`(엔진이
+  `to==ice` 시 origin 자동 캡처) + 해빙 규칙 `{from: ice, to: __origin__, when: "temperature > thawC"}` 에서 `__origin__`
+  = 엔진이 `FrozenFrom` 으로 resolve 하는 예약 토큰. **freeze+thaw 가 climate.yaml 표에 그대로 남음(D10/D4 정신)**,
+  엔진은 예약 토큰 1개 + origin 자동캡처만 학습.
+- (c) **terrain attr 파생** — terrain.yaml 물타입에 `frozen_as: ice`/`freezable: true` 부여; 엔진이 freezable 셀을
+  temp<freezeC 에 얼리고 되돌림. 가장 data-driven 이나 terrain 스키마 신규 필드 + 조건 위치가 표 밖.
+- **rec: (b) sentinel `__origin__`** — 결빙·해빙 규칙이 데이터 표에 남고(비대칭 freezeC/thawC 히스테리시스도 표에서),
+  엔진 변경은 예약 토큰 resolve + `to==IceType` origin 캡처로 국소.
+- **대상 options:** (i) 정지수만(`lake`) (ii) `lake`+`river` (iii) +`sea` (iv) +포화 `soil`(빙판). sea 결빙은 느리고
+  염분 영향 → **P1 제외 rec**. **rec: (ii) lake+river.**
+- **⚠ 해빙 정체성 문제(진짜 fork):** 전이표는 stateless(from→to). 단일 `ice` 로 얼리면 해빙 시 **원래 물타입(강/호수)을
+  잃음** → 언 강이 호수로 복원되는 오류. options: (i) **분리 결빙 타입** `ice_lake`/`ice_river`(해빙 `ice_lake→lake`
+  명확, 타입 수↑, 기존 first-match 표와 정합) (ii) 단일 `ice` + 정규 물타입으로 lossy 복원 (iii) pre-freeze 타입을
+  per-cell 상태로 저장(무거움, 신규 필드). **rec: (i) 분리 결빙 타입.**
+- **해빙 히스테리시스:** freeze `temperature < 0` / thaw `temperature > 2` **비대칭 임계**(⚠ **non-negative 리터럴만** —
+  §6 expr 에 단항 마이너스·음수 리터럴 없음, OQ-C RESOLVED; 0°C = 물의 어는점이라 문제없음)로
+  깜빡임 방지(전이는 매스텝 즉시라 임계 gap 이 곧 히스테리시스; 신규 상태 불필요). **rec: 비대칭 °C 임계.**
+- **`ice*` 지형 속성(D4):** `base_cost`·`passable`·`required_tags`·`attrs`. 언 호수/강 = **passable**(걸어감), 비용
+  modest, 물의 `Swim` 게이트 제거; '미끄러움'은 tag 로 후행. **rec: passable, base_cost≈1.2, Swim 해제.**
+
+### ICE4 — 임계/율 출처  [RESOLVED: 데이터(climate.yaml/terrain.yaml)]
+- **freezeC/thawC 임계**는 별도 Config/balance 필드가 **아니라** 결빙·해빙 전이규칙 `when` 안의 **숫자 리터럴**
+  (`temperature < 0` / `temperature > 2`)이다 — 기존 `moisture < 0.15` 전이와 동일(D10). °C(CA3 상속).
+  **⚠ non-negative 리터럴만** 가능(§6 expr = 단항 마이너스·음수 리터럴 없음, OQ-C RESOLVED) → 결빙점은 `< 0`
+  으로 표현(0°C = 물의 어는점). 음수 임계가 필요하면 `0 - N` 뺄셈형을 써야 하나 P1 은 불필요.
+- **`ice_type`** 만 유일한 신규 `balance` 필드(→ `climate.Config.IceType`); **누락 시 "" = 얼음 비활성**(자동 default 없음).
+- **`ice` 지형 속성**(passable·base_cost·attrs)은 `content/terrain.yaml`, 색은 frontend `TERRAIN_STYLE`.
+- (IceAccumRate 등 율은 path-A 눈 크러스트 소관 = 후행 park.) **rec: 확정(데이터).**
+
+### ICE5 — 렌더  [RESOLVED: (b) terrain 색 경로; (a) 눈 크러스트=park]
+- **물→얼음(b):** `ice_lake`/`ice_river` = `TERRAIN_STYLE` 창백한 청백색 → **기존 terrain 색 경로로 렌더**(신규 렌더
+  메커니즘 0; 3D hex 색도 자동). **rec.**
+- **눈→얼음(a):** `IceCover` 용 스프라이트/워시 변형 필요(CS5 "지면 레이어 없음"과 상충 → 재검토). 후행.
+
+### ICE6 — 결정성/직렬화  [RESOLVED: 기존 델타 + FrozenFrom per-cell 직렬화]
+- **(b) 물결빙** = 기존 `Transition`/`TerrainOverrides` 델타 스트림(이미 구축, **신규 계약 0**); freeze/thaw 타이밍 결정적.
+- **(a) `IceCover`** = `SnowCover` 와 동형 신규 스칼라(climate.State + renderframe + persist + types.ts, CS2b 방식 재현).
+
+### ICE-M — 빌드 순서 (leaf-first; Codex 실행용. 각 단계 독립 테스트, SPEC 조항이 정본)
+> **교차검증 완료(2026-07-14):** contract 체인 = climate.Step 이 sentinel 을 resolve → `Transition.To` 는 항상 실제
+> id → world `env.go runClimateEnv` 의 **기존** `nav.SetTerrain(To)` + `pendingTerrainFrame`(terrain_delta) 경로가
+> **무변경으로 동작**(단, To 가 sentinel 이면 `navmap.TerrainID("__origin__")` → SetTerrain **panic**, 그래서 Step resolve
+> 가 필수·AC 로 가드). world 의 유일한 얼음 변경 = digest `FrozenFrom`. config 타입 정합: `TransitionRule.To`=`core.Tag`,
+> `climate.OriginTerrain`=`core.Tag`(alias) → 비교 OK. frozen_from 은 **snapshot digest(§10) 전용** — `ClimateView`(§2 ambient
+> hash)·`WorldFrame`(§4) 엔 안 나감(얼음 렌더는 기존 `terrain_delta` 의 terrain 타입 변화로).
+
+1. **`engine/env/climate` (L1 leaf, 무의존) — 메커니즘.** `climate.go`: `CellState.FrozenFrom`·`Config.IceType`·
+   `const OriginTerrain navTerrainID="__origin__"`(export). `step.go`: 전이 루프에 freeze/thaw 3분기(climate SPEC §Step).
+   단위테스트 = climate SPEC AC(freeze 캡처 / thaw resolve / 빈 FrozenFrom 무발화 / 히스테리시스 / resume / sentinel 미저장).
+   **climate 골든 재기준**(Cells digest 에 FrozenFrom). `go test ./engine/env/climate/`. **他모듈 불요.**
+2. **content + schema (데이터).** `content/terrain.yaml`: `ice`(passable, base_cost≈1.2, `required_tags:[]`, attrs).
+   `content/climate.yaml`: `{lake→ice, river→ice when "temperature < 0"}` + `{ice→__origin__ when "temperature > 2"}`
+   (freeze < thaw 비대칭; **non-negative 리터럴만** — OQ-C) + `balance.ice_type: ice`. `content/schema/climate.schema.json`: `balance.ice_type` **optional**.
+3. **`platform/config` — 로드·검증.** `world_content_types.go`: `Balance.IceType string yaml:"ice_type"`. `world_content.go`:
+   `climate.Config{…, IceType: core.Tag(cd.Balance.IceType)}`. `world_content_rules.go buildClimateRules`: `to==climate.OriginTerrain`
+   면 terrain 교차검증 **skip**; sentinel 사용 시 `ice_type` set + freeze(`to==ice`) 규칙 존재 검증. `go test ./platform/config/`.
+   **의존: 1(OriginTerrain/IceType) + 2(content).**
+4. **`engine/world` persist digest.** `state_env.go` `climateCellDigest`: `FrozenFrom navTerrainID json:"frozen_from"` +
+   capture(`gcs.State.FrozenFrom`)/restore(`CellState{…, FrozenFrom}`) — **기존 Moisture/Temperature/Terrain 패턴 그대로 미러**.
+   resume round-trip 테스트에 언 셀 포함. `go test ./engine/world/`. **의존: 1. runClimateEnv 브리지는 무변경.**
+5. **frontend — 색 한 줄.** `manifest.ts TERRAIN_STYLE.ice`(청백색). `npx vitest run`+`npm run build`. **독립**(누락돼도 TERRAIN_DEFAULT).
+6. **활성화 + 골든(통합).** 한랭기 fixture 로 lake/river 결빙→navmap 리루트→terrain_delta `ice`→해빙 origin 복원 검증.
+   **의도적 골든 재기준**: 언 물=passable 로 바뀐 world/pathfind 골든(map M4 동형). full `go test ./...`+`npm run build`.
+- **불변 재확인:** D12(전이 결정적·고정순서)·D10(규칙·타입=content)·D4(비용=base-cost). navmap `SetTerrain`(M1)·`TerrainOverrides`(M5)
+  재사용, 신규 IO 0. (a) 눈 크러스트(ICE2/ICE5a/ICE6a) 는 별도 후행 phase.
+
 ## 2. Phases — (각 phase 독립 shippable + 테스트 + 결정성 골든; `map-plan.md M1~M5` 양식)
 > 빌드순서: `engine/env/climate`는 L1 leaf(core+rng)라 `engine/space/navmap`과 같은 stage 2에서 독립적으로 만들 수 있다.
 > 와이어링(주기·SetTerrain 브리지)은 `world`(stage 7)에서, 콘텐츠 로드는 `platform/config`(stage 8)에서 합류한다.

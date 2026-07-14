@@ -73,6 +73,7 @@ type climateCellDigest struct {
 	Moisture    float64               `json:"moisture"`
 	Temperature float64               `json:"temperature"`
 	Terrain     core.Tag              `json:"terrain"`
+	FrozenFrom  core.Tag              `json:"frozen_from"`
 }
 
 type climateGridCellDigest struct {
@@ -136,6 +137,7 @@ func (w *World) captureEnvState(ws *WorldState) {
 				Moisture:    gcs.State.Moisture,
 				Temperature: gcs.State.Temperature,
 				Terrain:     gcs.State.Terrain,
+				FrozenFrom:  gcs.State.FrozenFrom,
 			})
 		}
 		rain := w.climateState.Rain()
@@ -211,6 +213,7 @@ func (w *World) restoreClimate(digest *climateDigest) {
 			Cell: climate.GridCell{X: c.Cell.X, Y: c.Cell.Y},
 			State: climate.CellState{
 				Moisture: c.Moisture, Temperature: c.Temperature, Terrain: c.Terrain,
+				FrozenFrom: c.FrozenFrom,
 			},
 		})
 	}

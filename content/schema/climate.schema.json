@@ -19,7 +19,7 @@
     },
     "transitions": {
       "type": "array",
-      "description": "The from-type × condition → to-type transition table (D4/D10). Order is SIGNIFICANT: for a given `from`, the FIRST rule whose `when` Formula is true wins (deterministic, D12). An empty array = climate-off (outcome-neutral introduction phase, RESOLVED #10). Every `from`/`to` MUST be a terrain id defined in content/terrain.yaml (platform/config validates).",
+      "description": "The from-type × condition → to-type transition table (D4/D10). Order is SIGNIFICANT: for a given `from`, the FIRST rule whose `when` Formula is true wins (deterministic, D12). An empty array = climate-off (outcome-neutral introduction phase, RESOLVED #10). Every `from` and ordinary `to` MUST be a terrain id defined in content/terrain.yaml; the reserved thaw target `__origin__` is exempt (platform/config validates).",
       "items": { "$ref": "#/$defs/transition" }
     },
     "balance": {
@@ -35,6 +35,7 @@
         "snow_freeze_c", "snow_accum_rate", "snow_melt_rate"
       ],
       "properties": {
+        "ice_type": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$", "description": "Optional terrain id water freezes into (ICE). When present platform/config cross-checks it against terrain.yaml; absence means ice modelling is disabled." },
         "rain_prob_per_hour":  { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Per-game-hour increment to PRain, calibrated so E[first rain] ≈ 10 days = 240 game-hours (1a)." },
         "rain_hard_cap_hours": { "type": "integer", "minimum": 1, "description": "Forced rain after this many dry game-hours. FIXED DESIGN = 720 (30 days); injected to keep engine literal-free (D10)." },
         "rain_dur_min_hours":  { "type": "integer", "minimum": 1, "description": "Rain duration lower bound in game-hours. FIXED DESIGN = 2 (1a)." },
@@ -75,7 +76,13 @@
       "required": ["from", "to", "when"],
       "properties": {
         "from": { "$ref": "#/$defs/terrainId" },
-        "to":   { "$ref": "#/$defs/terrainId" },
+        "to": {
+          "description": "A terrain id, or the reserved ICE thaw sentinel __origin__. platform/config performs the referential/sentinel cross-check.",
+          "oneOf": [
+            { "$ref": "#/$defs/terrainId" },
+            { "const": "__origin__" }
+          ]
+        },
         "when": {
           "type": "string",
           "minLength": 1,

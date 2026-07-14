@@ -479,7 +479,11 @@ init:
   initial_temperature: 12.5
 transitions:
   - { from: soil, to: sand, when: "moisture < 0.15" }
+  - { from: lake, to: ice, when: "temperature < 0" }
+  - { from: river, to: ice, when: "temperature < 0" }
+  - { from: ice, to: __origin__, when: "temperature > 2" }
 balance:
+  ice_type: ice
   rain_prob_per_hour: 0.0042
   rain_hard_cap_hours: 720
   rain_dur_min_hours: 2
@@ -510,6 +514,15 @@ terrains:
     base_cost: 1.3
     passable: true
     attrs: { moisture: 0.2, slope: 0.1, salinity: 0.1 }
+  - id: lake
+    base_cost: 3.0
+    passable: true
+  - id: river
+    base_cost: 3.0
+    passable: true
+  - id: ice
+    base_cost: 1.2
+    passable: true
 `
 
 const validObjectsWorldYAML = `schema_version: 1
@@ -811,13 +824,16 @@ func TestLoadWorldContentBuildsEnvAndRules(t *testing.T) {
 	if out.ClimateCfg.GridCols != 4 || out.ClimateCfg.InitTemperature != 12.5 {
 		t.Fatalf("ClimateCfg mapping wrong: %+v", *out.ClimateCfg)
 	}
+	if out.ClimateCfg.IceType != "ice" {
+		t.Fatalf("ClimateCfg.IceType = %q, want ice", out.ClimateCfg.IceType)
+	}
 	if out.NavCfg.CellSize != 8.0 || out.NavCfg.MaxY != 64 {
 		t.Fatalf("NavCfg mapping wrong: %+v", *out.NavCfg)
 	}
 	if out.ClimateRules == nil || out.FloraRules == nil || out.FaunaRules == nil || out.DecayRules == nil {
 		t.Fatalf("compiled rules missing: climate=%v flora=%v fauna=%v decay=%v", out.ClimateRules, out.FloraRules, out.FaunaRules, out.DecayRules)
 	}
-	if len(out.TerrainTypes) != 2 || !out.TerrainTypes["soil"].Passable {
+	if len(out.TerrainTypes) != 5 || !out.TerrainTypes["soil"].Passable || !out.TerrainTypes["ice"].Passable {
 		t.Fatalf("terrain types not built: %#v", out.TerrainTypes)
 	}
 	if len(out.ScentEmitters) != 3 ||
@@ -1137,6 +1153,28 @@ cadence:
 			file:    "climate.yaml",
 			data:    strings.Replace(validClimateYAML, "to: sand", "to: bog", 1),
 			wantErr: "unknown to terrain",
+		},
+		{
+			name:    "climate origin without ice type",
+			file:    "climate.yaml",
+			data:    strings.Replace(validClimateYAML, "  ice_type: ice\n", "", 1),
+			wantErr: "requires balance.ice_type",
+		},
+		{
+			name: "climate origin without freeze rule",
+			file: "climate.yaml",
+			data: strings.ReplaceAll(
+				validClimateYAML,
+				"to: ice",
+				"to: sand",
+			),
+			wantErr: "requires a freeze rule",
+		},
+		{
+			name:    "climate unknown ice type",
+			file:    "climate.yaml",
+			data:    strings.Replace(validClimateYAML, "ice_type: ice", "ice_type: glacier", 1),
+			wantErr: "ice_type \"glacier\" is not a terrain id",
 		},
 	}
 

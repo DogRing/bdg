@@ -202,6 +202,7 @@ func buildClimateConfig(wd worldDoc, cd climateDoc) *climate.Config {
 		SnowFreezeC:       cd.Balance.SnowFreezeC,
 		SnowAccumRate:     cd.Balance.SnowAccumRate,
 		SnowMeltRate:      cd.Balance.SnowMeltRate,
+		IceType:           core.Tag(cd.Balance.IceType),
 	}
 }
 

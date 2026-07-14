@@ -44,6 +44,13 @@ type CellState struct {
     Moisture    float64      // wetness ∈ [0,1] (clamped)
     Temperature float64      // °C (CA3) — NOT clamped; f(annual YearFraction, daily HourOfDay, rain) (1b/CA1)
     Terrain     navTerrainID // current terrain type of this climate cell (drives transitions)
+    // FrozenFrom is the terrain type this cell held immediately BEFORE it froze into Config.IceType
+    // (ICE3, plan §1e): "" when the cell is not frozen. Set by Step when a transition's To == IceType
+    // (origin capture); consumed when the thaw rule's To is the OriginTerrain sentinel — Step restores
+    // Terrain = FrozenFrom (an ice cell that froze from `river` thaws back to `river`, not a canonical
+    // guess) and clears it. Per-cell state (serialized in Cells(), data-contracts §10). Empty on every
+    // non-ice cell and on a pre-ice snapshot.
+    FrozenFrom  navTerrainID
 }
 
 // Wind is the run's WORLD-UNIFORM prevailing wind (CA2 RESOLVED option a) — a single scalar pair, NOT
@@ -136,7 +143,26 @@ type Config struct {
     SnowFreezeC   float64 // °C at/below which precipitation accumulates as snow (design value = 0)
     SnowAccumRate float64 // SnowCover ∈[0,1] gained per game-hour of freezing precipitation
     SnowMeltRate  float64 // SnowCover lost per game-hour PER °C above SnowFreezeC (temperature-proportional melt)
+
+    // ── Ice model (ICE, plan §1e "Phase-1 reopened #4" — water→ice terrain) ──
+    // IceType is the terrain id that a water cell freezes INTO (content: content/climate.yaml
+    // `ice_type: ice`, which MUST be a content/terrain.yaml id — platform/config cross-checks). It is
+    // the ONLY signal Step needs to recognise a freeze: when a fired transition's To == IceType, Step
+    // captures the cell's prior Terrain into FrozenFrom (origin capture). "" ⇒ no ice modelling (the
+    // capture branch never triggers, since Eval only returns a non-empty To). The freeze/thaw °C
+    // THRESHOLDS are NOT Config fields — they live as literals in the transition rules' `when`
+    // conditions (e.g. `temperature < 0` freeze / `temperature > 2` thaw — **non-negative literals only**:
+    // the §6 expr grammar has NO unary minus / no negative literals, OQ-C RESOLVED, so a sub-zero freeze
+    // point is not expressible; 0°C is the physical freezing point anyway. The asymmetric gap is the
+    // anti-flicker hysteresis), exactly like the existing moisture-threshold transitions.
+    IceType navTerrainID
 }
+
+// OriginTerrain is the reserved transition-target SENTINEL (ICE3b, plan §1e): a thaw rule's To
+// (content/climate.yaml `{from: ice, to: __origin__, when: "temperature > thawC"}`). It is NOT a real
+// terrain id and is NEVER stored as a cell's Terrain nor emitted on a Transition — Step resolves it to
+// the cell's FrozenFrom. platform/config MUST exempt it from the from/to ⊆ terrain.yaml cross-check.
+const OriginTerrain navTerrainID = "__origin__"
 
 // New builds the initial climate State: every climate cell seeded from terrainAt + the Init*
 // Moisture/Temperature (°C), a fresh dry RainProcess, and the initial world-uniform Wind =
@@ -184,10 +210,22 @@ type Forcing struct {
 // rain/evaporation; the world-uniform Wind drifts; the world-uniform SnowCover integrates (CS3, no RNG:
 // += SnowAccumRate while Temperature <= SnowFreezeC && raining, else −= SnowMeltRate·max(0, Temperature −
 // SnowFreezeC); clamped [0,1]); threshold transitions (rules, sorted-GridCell order) fire last.
+//
+// Ice freeze/thaw interpretation of a fired transition (ICE, plan §1e) — applied where Step sets the
+// cell's new Terrain, still in sorted-GridCell order, NO RNG:
+//   • To == Config.IceType (a FREEZE, e.g. `lake→ice`): set FrozenFrom = <the cell's current Terrain>
+//     BEFORE overwriting it, then Terrain = IceType. The emitted Transition.To = IceType (real id).
+//   • To == OriginTerrain sentinel (a THAW, `ice→__origin__`): if FrozenFrom == "" the rule does NOT
+//     fire (a cell with no recorded origin — e.g. worldgen-placed ice — stays put; no Transition); else
+//     set Terrain = FrozenFrom, clear FrozenFrom = "", and emit the Transition with To = the RESOLVED
+//     FrozenFrom (NEVER the sentinel — world.SetTerrain must receive a real terrain id, else it panics).
+//   • Any other To: unchanged (Terrain = To; FrozenFrom untouched).
+// FrozenFrom is thus meaningful only on IceType cells; every other cell carries "".
 func Step(prev *State, f Forcing, rules *Rules, rng *rng.RNG) (next *State, transitions []Transition)
 
 // Transition is one climate cell crossing a terrain threshold this step. world maps
-// Cell → []navmap.Cell and calls navmap.SetTerrain(those, To) in the apply phase.
+// Cell → []navmap.Cell and calls navmap.SetTerrain(those, To) in the apply phase. To is ALWAYS a real
+// terrain id — a thaw's OriginTerrain sentinel is resolved to FrozenFrom before the Transition is built.
 type Transition struct {
     Cell GridCell
     From navTerrainID
@@ -223,12 +261,17 @@ type TransitionRule struct {
 // `temperature` (**now °C**, CA3; thresholds in content/climate.yaml are °C). Evaluated by the shared
 // §6 evaluator (engine/kernel/expr, the boolean subset; glossary "one shared evaluator"). No RNG
 // inside a condition. The FIRST matching rule for the from-type wins (ordered table → deterministic, D12).
+// Eval is GENERIC: `to` may be the OriginTerrain sentinel (a thaw rule's target) — Eval returns it
+// verbatim; interpreting the sentinel (and the IceType origin capture) is Step's job, NOT Eval's, so
+// Rules stays a pure from×when→to table (ICE3b). A cell whose Terrain is IceType uses the `ice` rules.
 func (r *Rules) Eval(from navTerrainID, s CellState) (to navTerrainID, fired bool)
 
 // ── Snapshot / serialization + read API (data-contracts §6; CA2/CA3 read path) ─────
 
 // Cells returns the coarse-grid CellState in D12-sorted (Y-major then X) GridCell order, for the
-// periodic-full serialization channel (data-contracts §6: periodic full + deltas).
+// periodic-full serialization channel (data-contracts §6: periodic full + deltas). The CellState
+// now carries FrozenFrom (ICE), so the periodic-full digest round-trips it — resume restores a frozen
+// cell's origin so it thaws back correctly. Restore takes it via the GridCellState it already accepts.
 func (s *State) Cells() []GridCellState
 type GridCellState struct{ Cell GridCell; State CellState }
 
@@ -283,9 +326,10 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
   lives in `expr`, not `gates`, so no DAG break.
 
 ## Owned Data
-- The **coarse climate grid** (`CellState` per `GridCell`: `Moisture`, `Temperature` °C, `Terrain`),
-  the **`RainProcess`** accumulator, the **world-uniform `Wind`** (CA2), and the **world-uniform
-  `SnowCover`** ∈ [0,1] (CS2b) — all held in `State`, all snapshot-serialized (data-contracts §6).
+- The **coarse climate grid** (`CellState` per `GridCell`: `Moisture`, `Temperature` °C, `Terrain`,
+  `FrozenFrom` — the pre-freeze origin for ice cells, ICE), the **`RainProcess`** accumulator, the
+  **world-uniform `Wind`** (CA2), and the **world-uniform `SnowCover`** ∈ [0,1] (CS2b) — all held in
+  `State`, all snapshot-serialized (data-contracts §6).
   `State` is owned by `engine/world` (one per run); `climate.Step` returns a fresh `next` and never
   mutates `prev` (so the plan-phase snapshot and the apply-phase write don't alias, mirroring
   `navmap.Snapshot`).
@@ -333,9 +377,22 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
   max(0, Temperature − SnowFreezeC)`, clamped `[0,1]`. The 0…`SnowFreezeC` band shows as falling snow in
   the renderer (frontend CS1) yet never accumulates. Stored in `State` (resume byte-identical, D12);
   climate GENERATES + EXPOSES only (the falling-snow FORM and the sprite switch are the frontend's, CS1/CS4).
+- **Ice model (ICE, plan §1e — water→ice terrain)** — a per-cell TERRAIN transition, NOT a world scalar.
+  Freeze/thaw are ordinary `content/climate.yaml` rules (`lake|river → ice when temperature < freezeC`;
+  `ice → __origin__ when temperature > thawC`; asymmetric `freezeC`/`thawC` literals = anti-flicker
+  hysteresis). Step adds only two interpretations of a fired transition (still data-driven, no RNG):
+  when `To == Config.IceType` it captures the pre-freeze terrain into the cell's `FrozenFrom`; when
+  `To == OriginTerrain` (the thaw sentinel) it resolves the target to `FrozenFrom` (so a frozen river
+  thaws back to river, not a guess) and emits the Transition with that REAL id. A thaw with empty
+  `FrozenFrom` does not fire. The emitted `[]Transition` bridges to `navmap.SetTerrain` exactly as the
+  moisture transitions do (world is the sole navmap mutator); the `ice` terrain's cost/passability (walk
+  on frozen water) come from its `content/terrain.yaml` base-cost + tags (D4), and its render colour
+  from the frontend `TERRAIN_STYLE.ice` — no new engine/render mechanism, only the `FrozenFrom` field.
 - **Bounds** — `Moisture ∈ [0,1]` (clamped); `Temperature` is unbounded °C (**no clamp**, CA3);
   `Wind.Dir ∈ [0,2π)`, `Wind.Mag ∈ [0,1]` (clamped); `SnowCover ∈ [0,1]` (clamped); `PRain ∈ [0,1]`;
-  every `GridCell` in `[0,GridCols)×[0,GridRows)`.
+  `Terrain` + `FrozenFrom` are `content/terrain.yaml` ids (`FrozenFrom` also `""`; never the
+  `OriginTerrain` sentinel — that is a transition target only, never stored); every `GridCell` in
+  `[0,GridCols)×[0,GridRows)`.
 - **Outcome-neutral until activated** — the introduction phases ship with `Rules` empty so `Step`
   emits **no** transitions and existing world/navmap goldens hold; the °C + wind golden re-baseline
   (annual/daily °C, wind digest, climate.yaml thresholds in °C) is the deliberate later climate M-phase
@@ -379,6 +436,23 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
 - [ ] **Snow resume-stable (CS2b)** — capturing `State` (incl. `SnowCover()`) at step T and resuming via
   `Restore(base, cells, rain, wind, snow)` reproduces the same step-T+k `SnowCover()` as an
   uninterrupted run.
+- [ ] **Water freezes, capturing origin (ICE)** — with `IceType="ice"` and rules `{lake→ice when
+  temperature < τf}`, `{river→ice when temperature < τf}`: a `lake` cell whose `Temperature` drops below
+  `τf` emits `Transition{cell, lake→ice}`, sets `Terrain=ice` and `FrozenFrom=lake`; a `river` cell
+  likewise records `FrozenFrom=river`. Table-driven for both origins.
+- [ ] **Thaw restores the exact origin via the sentinel (ICE3/ICE3b)** — with `{ice→__origin__ when
+  temperature > τt}` (τt > τf): a frozen-from-`lake` cell warming past `τt` emits `Transition{cell,
+  ice→lake}` (the sentinel resolved to `FrozenFrom`, **never** `__origin__`), sets `Terrain=lake`,
+  clears `FrozenFrom=""`; a frozen-from-`river` cell thaws to `river`. The emitted `To` is a real
+  terrain id in every case.
+- [ ] **Thaw with no recorded origin does not fire** — a cell whose `Terrain==ice` but `FrozenFrom==""`
+  (e.g. seeded as ice at `New`) does NOT thaw on the `__origin__` rule: no Transition, `Terrain` stays ice.
+- [ ] **Freeze/thaw hysteresis (ICE3)** — with `τf < τt` a cell held at a temperature in `(τf, τt]`
+  neither freezes nor thaws (no flicker); freezing needs `< τf`, thawing needs `> τt`.
+- [ ] **Ice resume-stable (ICE6)** — `Cells()` round-trips `FrozenFrom`; a `State` captured with frozen
+  cells and resumed via `Restore` thaws each cell back to the SAME origin as an uninterrupted run.
+- [ ] **Sentinel is never a stored/emitted terrain** — over any run, no `CellState.Terrain`,
+  `CellState.FrozenFrom`, nor `Transition.To/From` ever equals `OriginTerrain`.
 - [ ] **Operand exposure incl. wind (CA2/CA3)** — the values feeding the §6 operand set are reachable:
   `temperature`(°C) + `moisture` via `CellAt`/`Cells`, `wind.dir` + `wind.mag` via `Wind()`. A test
   asserts the operand names/units match the shared climate/flora/decay/fauna vocabulary
@@ -394,8 +468,9 @@ func (s *State) BaselineMoistureAt(pos core.Vec2) float64
   the state evolution (rain/moisture/temp/wind) does not panic; world/navmap goldens unaffected
   (RESOLVED #10).
 - [ ] **Determinism golden** — a fixed `(Config, seed, Forcing sequence, Rules)` over N steps yields a
-  byte-identical digest of `Cells()` + `Rain()` + **`Wind()`** + **`SnowCover()`** + the per-step `[]Transition` (D12). A
-  second run from a fresh registry built from the same `content/climate.yaml` reproduces it.
+  byte-identical digest of `Cells()` (incl. per-cell `FrozenFrom`) + `Rain()` + **`Wind()`** +
+  **`SnowCover()`** + the per-step `[]Transition` (D12). A second run from a fresh registry built from
+  the same `content/climate.yaml` reproduces it.
 - [ ] **Resume invariant** — capturing `State` (incl. `RainProcess` + `Wind`) at step T and resuming
   yields the same step-T+k state + transitions as running 0→T+k uninterrupted (data-contracts §5).
 - [ ] **No wall-clock / no global rand (D12 guard)** — grep guard: no `time` import for logic, no
