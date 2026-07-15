@@ -1,5 +1,12 @@
 # Diorama Render — Implementation Plan (2.5D pseudo-3D frontend, "Don't Starve"-like)
 
+> **⚠ SUPERSEDED / PARKED (2026-07-15).** This plan restyles the **flat 2D** `WorldCanvas`/`src/render`
+> layer into a 2.5D billboard diorama. That aesthetic goal is now delivered directly by the **real 3D
+> curved-world renderer** (`src/gl`, `docs/plans/hex-grid.md` + `docs/plans/gl-atmosphere.md`), which is
+> the app's **primary and only exposed viewer** (`docs/plans/frontend.md` §10). The 2D layer this plan
+> targets is retained only as a dormant future-minimap base. This file is kept as design history (Why),
+> **not an active roadmap** — do not start its phases without re-opening the decision.
+
 Concept & rationale: this file. Sits beside `docs/plans/frontend.md` (that plan built the flat top-down
 viewer; this one restyles the **rendered** scene into a 2.5D billboard diorama for aesthetics) and
 `docs/plans/hex-grid.md` (a parallel visual migration of the same terrain layer — see §6 coordination). It is

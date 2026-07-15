@@ -19,6 +19,7 @@ func TestFlora_ReturnsStoredBytesVerbatim(t *testing.T) {
 	rds := newFakeRedisReader()
 	stored, _ := json.Marshal(persist.FloraDoc{
 		WorldRevision: 42,
+		StreamCursor:  "100-0",
 		Flora: []persist.FloraView{
 			{ID: "grass_1", Species: "grass", Pos: core.Vec2{X: 129, Y: 87}, Stage: 2, Width: 0.35},
 		},
@@ -44,7 +45,8 @@ func TestFlora_ReturnsStoredBytesVerbatim(t *testing.T) {
 	// rows {object_id, species, pos, stage, width}; no god-view field (length,
 	// death_streak) leaks through.
 	var doc struct {
-		WorldRevision int64 `json:"world_revision"`
+		WorldRevision int64  `json:"world_revision"`
+		StreamCursor  string `json:"stream_cursor"`
 		Flora         []struct {
 			ID      string  `json:"object_id"`
 			Species string  `json:"species"`
@@ -55,7 +57,7 @@ func TestFlora_ReturnsStoredBytesVerbatim(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("response not JSON: %v", err)
 	}
-	if doc.WorldRevision != 42 || len(doc.Flora) != 1 ||
+	if doc.WorldRevision != 42 || doc.StreamCursor != "100-0" || len(doc.Flora) != 1 ||
 		doc.Flora[0].ID != "grass_1" || doc.Flora[0].Species != "grass" ||
 		doc.Flora[0].Stage != 2 || doc.Flora[0].Width != 0.35 {
 		t.Fatalf("shape mismatch: %+v", doc)

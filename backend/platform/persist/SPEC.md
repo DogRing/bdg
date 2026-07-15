@@ -118,7 +118,7 @@ type LiveStore interface {
     // Stats/Drives/Vital (god-view guard). Called only when fauna is installed.
     WriteAnimal(ctx context.Context, run core.RunID, v AnimalView) error
     // WriteFlora replaces sim:{run}:flora with the full live plant render set,
-    // wrapped in a FloraDoc {world_revision, flora:[…]} (revision-tagged like the
+    // wrapped in a FloraDoc {world_revision, stream_cursor, flora:[…]} (revision-tagged like the
     // terrain blob; nil plants ⇒ flora:[]). Called only when flora is installed.
     WriteFlora(ctx context.Context, run core.RunID, v FloraDoc) error
     // WriteClimate upserts the sim:{run}:climate ambient hash. Called only when

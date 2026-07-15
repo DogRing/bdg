@@ -50,13 +50,14 @@ type FloraView struct {
 
 // FloraDoc is the sim:{run}:flora STRING payload AND the byte-identical GET
 // /api/flora response (§2): the full live plant render set tagged with the
-// publishing world_revision (mirrors TerrainView.WorldRevision). A reader
-// verifies WorldRevision against the snapshot's so a mid-regen fetch pair can't
-// mix revisions. Written whenever flora is INSTALLED — an empty Flora is
+// publishing world_revision and the stream cursor captured with that render view.
+// A reader verifies revision equality and requires StreamCursor at/after the
+// accepted snapshot cursor before reconciling buffered SSE ops. Written whenever flora is INSTALLED — an empty Flora is
 // "installed, no plants" (200 with flora:[]), distinct from flora-not-installed
 // (key absent ⇒ 404). platform/api forwards the stored bytes verbatim.
 type FloraDoc struct {
 	WorldRevision int64       `json:"world_revision"`
+	StreamCursor  string      `json:"stream_cursor,omitempty"`
 	Flora         []FloraView `json:"flora"`
 }
 

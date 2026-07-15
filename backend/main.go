@@ -726,7 +726,7 @@ func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID, pub *w
 	}
 	tick := w.CurrentTick()
 
-	baselineOK = writeLive(ctx, w, rv, runID, pub.rev(), live, liveBlob)
+	baselineOK = writeLive(ctx, w, rv, runID, pub.rev(), pub.cursor(), live, liveBlob)
 
 	if backup != nil {
 		// One transaction: the drained why-trace batch + the snapshot row stamped
@@ -765,7 +765,7 @@ func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID, pub *w
 // serve /api/terrain and /api/flora, fix #4). Per-agent/animal/climate failures
 // are logged but self-heal on the per-flush overwrite and do not gate publication.
 func writeLive(ctx context.Context, w *world.World, rv world.RenderView, runID core.RunID,
-	rev int64, live persist.LiveStore, blob []byte) bool {
+	rev int64, cursor string, live persist.LiveStore, blob []byte) bool {
 	if live == nil {
 		return true
 	}
@@ -786,7 +786,7 @@ func writeLive(ctx context.Context, w *world.World, rv world.RenderView, runID c
 		}
 	}
 
-	if !writeEnvLive(ctx, rv, runID, rev, live) {
+	if !writeEnvLive(ctx, rv, runID, rev, cursor, live) {
 		ok = false
 	}
 	return ok
@@ -804,7 +804,7 @@ func writeLive(ctx context.Context, w *world.World, rv world.RenderView, runID c
 // failed terrain OR flora baseline write holds the revision (fix #4). Animal/
 // climate failures are logged and self-heal on the next flush.
 func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
-	rev int64, live persist.LiveStore) bool {
+	rev int64, cursor string, live persist.LiveStore) bool {
 	ok := true
 	for _, a := range rv.Animals {
 		if err := live.WriteAnimal(ctx, runID, persist.AnimalView{
@@ -817,7 +817,7 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 
 	if rv.FloraOn {
 		// Written whenever flora is installed, even with zero plants: the empty
-		// baseline ({world_revision, flora:[]}) is a servable 200 that the frontend
+		// baseline ({world_revision,stream_cursor,flora:[]}) is a servable 200 that the frontend
 		// applies as an authoritative-empty replacement — distinct from
 		// flora-not-installed (key absent ⇒ 404). Tagged with the publishing
 		// world_revision so a mid-regen fetch pair can't mix revisions.
@@ -827,7 +827,7 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 				ID: p.ID, Species: p.Species, Pos: p.Pos, Stage: p.Stage, Width: p.Width,
 			})
 		}
-		if err := live.WriteFlora(ctx, runID, persist.FloraDoc{WorldRevision: rev, Flora: plants}); err != nil {
+		if err := live.WriteFlora(ctx, runID, persist.FloraDoc{WorldRevision: rev, StreamCursor: cursor, Flora: plants}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteFlora: %v\n", err)
 			ok = false // gate publication: a published 'on' revision must serve /api/flora (fix #4)
 		}

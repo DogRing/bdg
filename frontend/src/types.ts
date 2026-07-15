@@ -93,18 +93,20 @@ export interface PlantState {
 // snapshot's (like TerrainGrid): null ⇒ legacy backend without revisions.
 export interface FloraBaseline {
   worldRevision: number | null
+  // Redis stream entry id through which this full flora set is authoritative.
+  streamCursor: string
   flora: PlantState[]
 }
 
 // A buffered flora render-state operation. Post-cursor SSE flora mutations that
 // arrive BEFORE the /api/flora baseline (FLORA_LOADED) are queued as these ops
-// and replayed on top of the baseline (mirrors pendingTerrainDeltas) — so an
+// and replayed on top of the baseline only when streamId is strictly newer — so an
 // as-of-cursor baseline can never clobber a newer spawn/death (a dead plant
 // would otherwise resurrect, a new plant vanish). 'upsert' = a full flora_delta
-// row; 'remove' = a PlantDied.
+// row; 'remove' = a PlantDied; streamId is the SSE transport cursor.
 export type FloraOp =
-  | { op: 'upsert'; plant: PlantState }
-  | { op: 'remove'; id: string }
+  | { op: 'upsert'; plant: PlantState; streamId: string }
+  | { op: 'remove'; id: string; streamId: string }
 
 // Mirrors the climate ambient hash (Redis sim:{run}:climate; data-contracts §2).
 export interface ClimateState {

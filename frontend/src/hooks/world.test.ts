@@ -20,7 +20,7 @@ const ready = (): WorldState =>
 // A world PAST the flora baseline (floraLoaded), so flora_delta applies live
 // instead of buffering into pendingFloraOps (fix #1).
 const liveFlora = (): WorldState =>
-  worldReducer(ready(), { type: 'FLORA_LOADED', payload: { worldRevision: null, flora: [] } })
+  worldReducer(ready(), { type: 'FLORA_LOADED', payload: { worldRevision: null, streamCursor: '', flora: [] } })
 
 const deer = (over: Record<string, unknown> = {}) =>
   ({ id: 'd1', pos: { x: 0, y: 0 }, species: 'deer', action: 'graze', heading: 0, ...over })
@@ -255,12 +255,12 @@ describe('stream cursor, authoritative roster, revision (SPEC §Bootstrap)', () 
     expect(next.agents.get('b1')!.pos).toEqual({ x: 2, y: 2 })
   })
 
-  it('StreamGap forces baseline reacquisition and changes nothing else', () => {
+  it('StreamGap closes SSE until the fresh baseline is accepted', () => {
     const s = baseline()
     const gapped = dispatch(s, ev('StreamGap', { reason: 'cursor_trimmed' }, 0), 0, '')
     expect(gapped.baselineRetries).toBe(1)
     expect(gapped.agents.size).toBe(s.agents.size)
-    expect(gapped.snapshotLoaded).toBe(true)
+    expect(gapped.snapshotLoaded).toBe(false)
     expect(gapped.lastAppliedStreamId).toBe('100-0') // no id line on the control frame
   })
 
@@ -331,7 +331,7 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     s = { ...s, flora: [{ id: 'ghost', pos: { x: 9, y: 9 }, species: 'weed', stage: 3, width: 2 }] }
     const loaded = worldReducer(s, {
       type: 'FLORA_LOADED',
-      payload: { worldRevision: 1, flora: [
+      payload: { worldRevision: 1, streamCursor: '100-0', flora: [
         { id: 'grass_1', pos: { x: 1, y: 1 }, species: 'grass', stage: 2, width: 0.35 },
       ] },
     })
@@ -345,7 +345,7 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     const s = onRev(2)
     const ignored = worldReducer(s, {
       type: 'FLORA_LOADED',
-      payload: { worldRevision: 1, flora: [{ id: 'stale', pos: { x: 0, y: 0 }, species: 'oak', stage: 1, width: 1 }] },
+      payload: { worldRevision: 1, streamCursor: '100-0', flora: [{ id: 'stale', pos: { x: 0, y: 0 }, species: 'oak', stage: 1, width: 1 }] },
     })
     expect(ignored.floraLoaded).toBe(false)
     expect(ignored.flora).toHaveLength(0)
@@ -362,7 +362,7 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
 
     const loaded = worldReducer(s, {
       type: 'FLORA_LOADED',
-      payload: { worldRevision: 1, flora: [{ id: 'fixture', pos: { x: 0, y: 0 }, species: 'grass', stage: 2, width: 0.3 }] },
+      payload: { worldRevision: 1, streamCursor: '100-0', flora: [{ id: 'fixture', pos: { x: 0, y: 0 }, species: 'grass', stage: 2, width: 0.3 }] },
     })
     // Baseline fixture AND the buffered post-cursor spawn both present; buffer cleared.
     expect(loaded.flora.find(f => f.id === 'fixture')).toBeTruthy()
@@ -375,12 +375,12 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     // baseline still lists the plant — the buffered remove must win.
     let s = onRev()
     s = dispatch(s, ev('PlantDied', { object_id: 'doomed', species: 'oak', pos: { x: 1, y: 1 } }), 50, '101-0')
-    expect(s.pendingFloraOps).toEqual([{ op: 'remove', id: 'doomed' }])
+    expect(s.pendingFloraOps).toEqual([{ op: 'remove', id: 'doomed', streamId: '101-0' }])
     expect(s.fx.find(f => f.kind === 'death' && f.id === 'doomed')).toBeTruthy()   // FX fires immediately
 
     const loaded = worldReducer(s, {
       type: 'FLORA_LOADED',
-      payload: { worldRevision: 1, flora: [{ id: 'doomed', pos: { x: 1, y: 1 }, species: 'oak', stage: 2, width: 1 }] },
+      payload: { worldRevision: 1, streamCursor: '100-0', flora: [{ id: 'doomed', pos: { x: 1, y: 1 }, species: 'oak', stage: 2, width: 1 }] },
     })
     expect(loaded.flora.find(f => f.id === 'doomed')).toBeUndefined()   // stays dead — no resurrection
   })
@@ -389,7 +389,7 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     let s = onRev(1, '100-0')
     s = worldReducer(s, {
       type: 'FLORA_LOADED',
-      payload: { worldRevision: 1, flora: [{ id: 'oldworld', pos: { x: 2, y: 2 }, species: 'grass', stage: 1, width: 0.2 }] },
+      payload: { worldRevision: 1, streamCursor: '100-0', flora: [{ id: 'oldworld', pos: { x: 2, y: 2 }, species: 'grass', stage: 1, width: 0.2 }] },
     })
     expect(s.floraLoaded).toBe(true)
 
@@ -406,7 +406,7 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     let s = onRev(1, '100-0')
     s = worldReducer(s, {
       type: 'FLORA_LOADED',
-      payload: { worldRevision: 1, flora: [{ id: 'p1', pos: { x: 0, y: 0 }, species: 'grass', stage: 1, width: 0.2 }] },
+      payload: { worldRevision: 1, streamCursor: '100-0', flora: [{ id: 'p1', pos: { x: 0, y: 0 }, species: 'grass', stage: 1, width: 0.2 }] },
     })
     expect(s.floraLoaded).toBe(true)
 
@@ -418,12 +418,11 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     expect(gapped.floraLoaded).toBe(false)                 // re-armed → loadFlora refires
   })
 
-  it('fix #2: a StreamGap MID-BOOTSTRAP clears buffered ops so they cannot regress the new baseline', () => {
+  it('a StreamGap keeps cursor-tagged ops until a sufficiently new baseline classifies them', () => {
     // The gap lands while flora is still bootstrapping (floraLoaded=false) with
     // pre-gap ops buffered. Those ops are as-of the OLD cursor; the refetched
-    // baseline will be as-of the NEW post-gap cursor and already includes them,
-    // so replaying them would REGRESS state (e.g. snap a grown plant back). The
-    // re-arm must DROP them (mirrors the revision-switch reset).
+    // replacement baseline may or may not include them, so they stay tagged by
+    // stream id until the baseline cursor can classify them safely.
     let s = onRev()
     s = dispatch(s, frame([], [{ id: 'p1', species: 'oak', pos: { x: 4, y: 5 }, stage: 1, width: 0.4 }]), 50, '101-0')
     expect(s.floraLoaded).toBe(false)
@@ -431,13 +430,14 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
 
     const gapped = dispatch(s, ev('StreamGap', { reason: 'cursor_trimmed' }, 0), 0, '')
     expect(gapped.floraLoaded).toBe(false)
-    expect(gapped.pendingFloraOps).toHaveLength(0)          // dropped — refetch supersedes them
+    expect(gapped.snapshotLoaded).toBe(false)               // closes SSE until fresh snapshot
+    expect(gapped.pendingFloraOps).toHaveLength(1)          // retained until baseline cursor proves it folded in
 
     // The fresh (post-gap) baseline already carries p1 grown to stage 3; the stale
     // buffered stage-1 op is gone, so it is NOT regressed back.
     const loaded = worldReducer(gapped, {
       type: 'FLORA_LOADED',
-      payload: { worldRevision: 1, flora: [{ id: 'p1', pos: { x: 4, y: 5 }, species: 'oak', stage: 3, width: 1.2 }] },
+      payload: { worldRevision: 1, streamCursor: '200-0', flora: [{ id: 'p1', pos: { x: 4, y: 5 }, species: 'oak', stage: 3, width: 1.2 }] },
     })
     expect(loaded.flora.find(f => f.id === 'p1')).toMatchObject({ stage: 3, width: 1.2 })
   })

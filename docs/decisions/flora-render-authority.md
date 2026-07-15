@@ -14,7 +14,7 @@ squares and drew an (always-empty) `state.flora`, so plants vanished entirely.
 Fixture + already-propagated plants are replayed by no SSE event, so they need a REST baseline.
 
 - **(a) — separate `GET /api/flora`, mirroring `/api/terrain`** — expose the existing
-  `sim:{run}:flora` key (now a `FloraDoc {world_revision, flora:[…]}`), revision-tagged;
+  `sim:{run}:flora` key (now a `FloraDoc {world_revision, stream_cursor, flora:[…]}`), revision/cursor-tagged;
   the frontend fetches it once per revision after the snapshot and applies it as an
   authoritative replacement. **← RESOLVED (human).**
 - (b) — fold flora into `/api/snapshot` — **REJECTED.**
@@ -69,7 +69,7 @@ both the 2D (`Math.max(MIN_PX, width·sx)`) and 3D paths reflect real plant size
 
 ## Consequences
 
-- `sim:{run}:flora` shape: bare array → `FloraDoc {world_revision, flora:[…]}`
+- `sim:{run}:flora` shape: bare array → `FloraDoc {world_revision, stream_cursor, flora:[…]}`
   (`persist.WriteFlora(ctx, run, FloraDoc)`), written whenever flora is INSTALLED (empty
   `flora:[]` ⇒ installed-but-empty 200, key absent ⇒ 404). `RenderView.FloraOn` gates the write.
 - `GET /api/flora` route (writer server only, not `NewSSE`) forwards the bytes verbatim.
@@ -92,8 +92,10 @@ Q2/Q3 are UNCHANGED; the following hardening was added (human-approved, all on t
   `FLORA_LOADED` (mirrors the existing `pendingTerrainDeltas`), so the newer post-cursor live state
   wins. Spawn/death FX still fire immediately (FX carry no state). **This is the real fix for the
   Q1 window.**
-- **② StreamGap / stale-snapshot re-arm.** Both now reset `floraLoaded:false` (+ clear
-  `pendingFloraOps`) so the baseline re-fetches for the new cursor (previously flora went stale
+- **② StreamGap / stale-snapshot re-arm.** Gap recovery closes SSE until a fresh snapshot is accepted,
+  then fetches a `FloraDoc` whose `stream_cursor` is at least that snapshot cursor. Buffered ops carry
+  their own stream IDs: ops at/before the flora baseline are discarded and only newer ops replay
+  (previously clearing them before a newer baseline was proven could lose state; flora also went stale
   after a gap — symmetric with terrain now).
 - **③ Explicit flora availability flag.** A `flora:"on"|"off"` flag is published in `sim:{run}:meta`
   (via `PublishWorldRevision(…, terrainOn, floraOn)`) and carried in the snapshot wrapper, mirroring

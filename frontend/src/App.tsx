@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Header } from './components/Header'
-import { WorldCanvas } from './components/WorldCanvas'
 import { WorldCanvas3D } from './components/WorldCanvas3D'
+import { Minimap } from './components/Minimap'
 import { Sidebar } from './components/Sidebar'
 import { StatusHud } from './components/StatusHud'
 import { useSSE } from './hooks/useSSE'
@@ -10,11 +10,11 @@ import { createSpriteCache } from './assets/sprites'
 import { LIGHT, DARK } from './theme'
 import { API_BASE } from './config'
 import { fetchPublishedRevision, waitForRegenReady } from './utils/regenReady'
+import type { CameraFocus } from './gl/worldGL'
 import type { Theme } from './types'
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>('light')
-  const [view, setView] = useState<'2d' | '3d'>('3d')
   const t = theme === 'dark' ? DARK : LIGHT
   const isLight = theme === 'light'
 
@@ -77,6 +77,10 @@ export default function App() {
     }
   }, [])
 
+  // The 3D renderer writes its ground-plane camera focus here each frame; the Minimap reads it to
+  // draw the "where the camera looks" marker. A contained ref channel — no reducer/global state.
+  const cameraFocusRef = useRef<CameraFocus | null>(null)
+
   const agentList = Array.from(state.agents.values())
   const canvasProps = {
     agents: agentList, objects: state.objects, animals: state.animals, flora: state.flora,
@@ -104,19 +108,16 @@ export default function App() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, position: 'relative', display: 'flex', minWidth: 0 }}>
-          {view === '3d' ? <WorldCanvas3D {...canvasProps} /> : <WorldCanvas {...canvasProps} />}
-          <button
-            onClick={() => setView(v => (v === '3d' ? '2d' : '3d'))}
-            aria-label={view === '3d' ? 'switch to 2D map' : 'switch to 3D view'}
-            style={{
-              position: 'absolute', top: 10, left: 12, zIndex: 5, padding: '4px 10px',
-              background: t.glow ? 'rgba(20,18,16,0.88)' : 'rgba(240,227,192,0.88)',
-              border: `1px solid ${t.panelBorder}`, borderRadius: t.glow ? 0 : 2,
-              color: t.textMuted, fontFamily: t.fontMono, fontSize: 11, cursor: 'pointer',
-            }}
-          >
-            {view === '3d' ? '2D map' : '3D view'}
-          </button>
+          <WorldCanvas3D {...canvasProps} focusOut={cameraFocusRef} />
+          <Minimap
+            agents={agentList}
+            animals={state.animals}
+            terrain={state.terrain}
+            render={state.render}
+            selectedId={state.selectedAgentId}
+            t={t}
+            focusRef={cameraFocusRef}
+          />
           <StatusHud t={t} world={state} />
         </div>
 

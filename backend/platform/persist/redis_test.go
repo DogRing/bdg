@@ -324,6 +324,7 @@ func TestRedisLiveStoreWriteFlora(t *testing.T) {
 
 	doc := FloraDoc{
 		WorldRevision: 7,
+		StreamCursor:  "100-0",
 		Flora: []FloraView{
 			{ID: "pl:1", Species: "oak", Pos: core.Vec2{X: 3, Y: 4}, Stage: 2, Width: 1.5},
 		},
@@ -340,7 +341,7 @@ func TestRedisLiveStoreWriteFlora(t *testing.T) {
 	if err := json.Unmarshal([]byte(blob), &got); err != nil {
 		t.Fatalf("flora key not a FloraDoc: %v", err)
 	}
-	if got.WorldRevision != 7 || len(got.Flora) != 1 || got.Flora[0] != doc.Flora[0] {
+	if got.WorldRevision != 7 || got.StreamCursor != "100-0" || len(got.Flora) != 1 || got.Flora[0] != doc.Flora[0] {
 		t.Errorf("flora round-trip = %+v, want %+v", got, doc)
 	}
 

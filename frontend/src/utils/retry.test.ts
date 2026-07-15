@@ -139,6 +139,7 @@ describe('baseline loaders survive transient failures (SPEC §Bootstrap)', () =>
   it('flora: 404 then success (FloraDoc wrapper parsed to a baseline)', async () => {
     const doc = {
       world_revision: 4,
+      stream_cursor: '100-0',
       flora: [{ object_id: 'grass_1', species: 'grass', pos: { x: 12, y: 7 }, stage: 2, width: 0.35 }],
     }
     const responses = [notFound(), okJson(doc)]
@@ -151,7 +152,7 @@ describe('baseline loaders survive transient failures (SPEC §Bootstrap)', () =>
   })
 
   it('flora: a baseline from ANOTHER revision is retried until the matching one is published', async () => {
-    const doc = (rev: number) => ({ world_revision: rev, flora: [] })
+    const doc = (rev: number) => ({ world_revision: rev, stream_cursor: '100-0', flora: [] })
     const responses = [okJson(doc(4)), okJson(doc(5))] // stale revision, then the match
     const result = await fetchFloraWithRetry({
       fetchFn: () => responses.shift() ?? okJson(doc(5)),
@@ -159,6 +160,18 @@ describe('baseline loaders survive transient failures (SPEC §Bootstrap)', () =>
       expectedRevision: 5,
     })
     expect(result).toMatchObject({ worldRevision: 5, flora: [] })
+  })
+
+  it('flora: a baseline behind the accepted snapshot cursor is retried', async () => {
+    const doc = (cursor: string) => ({ world_revision: 5, stream_cursor: cursor, flora: [] })
+    const responses = [okJson(doc('100-0')), okJson(doc('120-0'))]
+    const result = await fetchFloraWithRetry({
+      fetchFn: () => responses.shift() ?? okJson(doc('120-0')),
+      sleep: () => Promise.resolve(),
+      expectedRevision: 5,
+      expectedCursor: '110-0',
+    })
+    expect(result).toMatchObject({ worldRevision: 5, streamCursor: '120-0', flora: [] })
   })
 
   it('flora: a legacy bare array (no wrapper) is tolerated with revision null', async () => {

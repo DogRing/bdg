@@ -262,7 +262,7 @@ sprite. This phase gives flora a proper baseline + a self-sufficient delta.
 
 ### Open questions (all RESOLVED by the human, 2026-07-14; deliberation → `docs/decisions/flora-render-authority.md`)
 - **P7-Q1 — Flora baseline transport.** (a) separate `GET /api/flora` mirroring `/api/terrain`
-  (`FloraDoc {world_revision, flora:[…]}`, revision-gated); (b) fold into `/api/snapshot` (one
+  (`FloraDoc {world_revision, stream_cursor, flora:[…]}`, revision/cursor-gated); (b) fold into `/api/snapshot` (one
   atomic cursor-consistent read — the reviewer's recommendation). `RESOLVED: (a)`. Why (b) was
   argued (cursor-consistency / spurious-FX micro-race) and why (a) won anyway (intra-flush
   ordering makes the window unhittable; flora is snapshot-like; reuses terrain machinery) →
@@ -292,7 +292,8 @@ or **resurrected** (post-cursor death undone). Fixes, all on `fix/flora-render-b
 - **① Pre-baseline buffering (mirrors `pendingTerrainDeltas`).** While `!floraLoaded`, SSE flora
   mutations buffer into `pendingFloraOps` (`upsert`/`remove`) and replay ON TOP of the baseline at
   `FLORA_LOADED`, so post-cursor live state wins. Spawn/death FX still fire immediately.
-- **② StreamGap / stale-snapshot re-arm.** Both reset `floraLoaded:false` (+ clear `pendingFloraOps`)
+- **② StreamGap / stale-snapshot re-arm.** Gap closes SSE until a fresh snapshot arrives; the flora
+  baseline must be at/after its cursor, and cursor-tagged pending ops replay only when strictly newer.
   so the baseline re-fetches for the new cursor — flora was previously left stale after a gap.
 - **③ Explicit `flora` availability flag** (`"on"`/`"off"`) in `/api/meta` + the snapshot wrapper
   (`RESOLVED: (a)`, human 2026-07-15) — `floraStatus` gates the loader INDEPENDENTLY of terrain,
@@ -301,3 +302,80 @@ or **resurrected** (post-cursor death undone). Fixes, all on `fix/flora-render-b
 - **④ Flora write gates publication.** `writeEnvLive` returns false on a `FloraOn` `WriteFlora`
   failure (was silently ignored), so a published revision always serves `/api/flora` — symmetric
   with terrain.
+
+## 10. Viewer consolidation — 3D primary, 2D retained (2026-07-15, human decision)
+
+> **Advanced by §11 (same day):** §10 was the docs-only pivot (keep the 2D full view dormant behind a
+> toggle). §11 then repurposed the 2D layer into a **Minimap** — the toggle + full-screen `WorldCanvas`
+> are now gone. Read §11 for the shipped state; §10 remains as the reasoning that led there.
+
+
+The frontend carried **two full renderers** of the same reduced `WorldState`: the flat top-down 2D
+canvas (`components/WorldCanvas.tsx` + `src/render/*`, this plan FE-P1…P7) and the WebGL curved-world
+3D view (`components/WorldCanvas3D.tsx` + `src/gl/*`, built by `docs/plans/hex-grid.md` +
+`docs/plans/gl-atmosphere.md`). App already **defaults to 3D** (`App.tsx: view='3d'`).
+
+**Decision locked:** the **3D curved-world is the primary and only exposed full viewer**. The docs and
+SPECs now describe 3D as primary; the 2D layer is **demoted, not deleted**.
+
+- **Why keep the 2D code.** `src/render/*` is cleanly isolated (nothing outside `WorldCanvas.tsx`
+  imports it; `src/gl` shares only `types.ts`/`theme.ts`/`assets/`, never `render/`), fully tested,
+  and already maps world→screen through its own transform — i.e. a ready-made base for a possible
+  future **minimap**. Deleting it now would only mean rebuilding it later. It stays green in the tree,
+  dormant, reachable behind the existing dev toggle. A later pass may physically remove it **or**
+  repurpose it as the minimap — that is a separate decision, not this one.
+- **Scope of this pass = docs/SPEC only.** No code deleted, no toggle removed. Updated: `frontend/SPEC.md`
+  (primary=3D, `src/gl/SPEC.md` added to children, 2D bullet/module-map demoted), `src/gl/SPEC.md`
+  (stale "default 2d" → primary/default 3d), `src/render/SPEC.md` (RETAINED/DORMANT banner),
+  `docs/plans/render-diorama.md` (parked — see below).
+- **Parity backlog carried by the primary 3D view** (features the 2D renderer still implements, not yet
+  ported to `src/gl`): transition FX (spawn/death/attack/grow), camera-follow on click, agent cluster
+  colours/labels. Tracked in `src/gl/SPEC.md` §Out of Scope. Retaining the 2D layer keeps these
+  behaviours available (and is a second reason to keep it).
+- **`docs/plans/render-diorama.md` is superseded/parked.** That plan's goal — restyle the *flat 2D*
+  canvas into a 2.5D "Don't Starve" diorama — is delivered by the actual 3D renderer instead. It is not
+  deleted (Why-history), but is not an active roadmap.
+
+Historical phases FE-P1…P7 above are unchanged as a build record; they described building the 2D layer
+that is now the minimap base (§11).
+
+## 11. Minimap — repurpose the 2D layer as a bottom-right overview (2026-07-15, human decision)
+
+Following §10, the human chose to **turn the retained 2D renderer into a minimap** rather than leave it
+dormant or delete it. The full-screen 2D `WorldCanvas` view + the 2D/3D toggle are removed; 3D is the
+sole full-window view; the 2D render library now backs a small overview overlay.
+
+**Decisions locked (human, 2026-07-15; AskUserQuestion):**
+- **Capability = camera-marker (display-only).** The minimap shows the whole world + entities + a
+  marker for where the 3D camera is looking. No click-to-navigate (deferred; would need a `focusAt(x,z)`
+  setter on `WorldGL` — the read-only `getFocus()` was enough for the marker).
+- **Placement = bottom-right** overlay on the 3D canvas. The 3D `+/−` zoom buttons moved to bottom-left
+  to clear the corner.
+- **Detail = simplified.** Terrain colours + agent/animal **dots** + selection ring, fit to the whole
+  world. Skips flora sprites / fx / ambient (kept legible at ~190 px; the full draws stay in the library).
+
+**Per-module deltas (How lives in the SPECs):**
+- `frontend/src/gl/worldGL.ts` — new `getFocus(): CameraFocus {x,z,yaw,dist,fitDist}` (ground-plane
+  camera focus). No other GL change. `src/gl/SPEC.md` Public Interface updated.
+- `frontend/src/components/WorldCanvas3D.tsx` — new optional `focusOut` ref, written `getFocus()` each
+  RAF frame; zoom buttons → bottom-left; the WebGL-unavailable notice reworded (no 2D fallback view).
+- `frontend/src/components/Minimap.tsx` — **new** display-only overlay: reuses `initialCamera` +
+  `buildTransform` + `makeTerrainRaster`/`drawTerrain` for a whole-world fit; draws dots + selection +
+  the camera cone from `focusRef`; own RAF; size follows world aspect.
+- `frontend/src/components/minimapGeom.ts` (+ `minimapGeom.test.ts`) — **new** pure geometry:
+  `minimapSize(worldW,worldH)` and `cameraCone(focus,mmW,mmH)` (yaw→screen direction, dist/fitDist→
+  radius). 13 unit tests (direction per quadrant, radius floor/cap/scale, aspect sizing).
+- `frontend/src/App.tsx` — dropped the `view` state + toggle button; always mounts `WorldCanvas3D` +
+  `Minimap`; owns the shared `cameraFocusRef`.
+- **Deleted:** `frontend/src/components/WorldCanvas.tsx` (the full-screen 2D view — superseded).
+- `frontend/SPEC.md` (§Purpose viewer note, UI layout, Minimap bullet, module map) + `src/render/SPEC.md`
+  banner (now "the 2D library behind the Minimap") updated.
+
+**Verification.** `tsc -b` + `vite build` clean; vitest 151 passed (11 files, +13 for `minimapGeom`).
+Browser screenshot verification was **not possible in the build env** (no working headless Chrome —
+puppeteer not installed, cached Chrome dirs empty), so the pixel-level look (cone direction on screen,
+overlap-free placement) is covered by the `minimapGeom` unit tests + the clean build, not a live capture.
+
+**Deferred (open, not built):** click/drag-to-navigate on the minimap (needs `WorldGL.focusAt`); a
+show/hide toggle; richer detail (sprites/fx) if wanted; the §10 parity backlog (FX / follow / cluster
+colours) still applies to the 3D view.

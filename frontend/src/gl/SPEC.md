@@ -2,8 +2,11 @@
 
 > Status: `DRAFT` (plans: `docs/plans/hex-grid.md` H-frontend-3d; atmosphere: `docs/plans/gl-atmosphere.md`).
 > Parent: [`frontend/SPEC.md`](../../SPEC.md).
-> Sibling of the pure-2D [`src/render`](../render/SPEC.md); the two are **alternative views** of the
-> same reduced world data, chosen by a runtime toggle in `App` (default `2d`).
+> **This is the MAIN viewer** (the only full-window view — `frontend/SPEC.md` §Purpose · Viewer note,
+> 2026-07-15). The pure-2D [`src/render`](../render/SPEC.md) is no longer a co-equal full view; its
+> library now powers the small bottom-right **`Minimap`** overlay (`components/Minimap.tsx`). There is
+> no 2D/3D toggle — `App` always mounts `<WorldCanvas3D/>`, and this renderer publishes its camera
+> focus (`getFocus()`) for the Minimap's camera marker.
 
 ## Purpose
 
@@ -19,6 +22,9 @@ network or reducer surface. Terrain is drawn as lit, curved **hex prisms** in We
 
 ```
 gl/
+  cameraGeom.ts  PURE ground-plane camera geometry (no React/DOM/WebGL): groundForward(yaw) +
+                 cameraGroundOffset(yaw, planarRadius). THE single yaw→ground-direction convention,
+                 shared by worldGL's eye + sky basis AND the minimap cone (components/minimapGeom.ts)
   hex.ts         flat-top odd-q hex math mirroring navmap hex.go: hexCentre (offset→world, ==render/terrain.ts),
                  pixelToOffset (world→cell inverse, for seating entities on terrain), neighbour steps
   shaders.ts     GLSL source: tile (instanced curved prisms + walls + water + light + cloud shadow) ·
@@ -29,9 +35,10 @@ gl/
                  both `rain` and `snow` (0..1); the temp gate routes the eased precip density to one.
   worldGL.ts     createWorldGL(glCanvas, overlayCanvas) → the stateful renderer handle
 ```
-The React wrapper is [`components/WorldCanvas3D.tsx`](../components/WorldCanvas3D.tsx) (same prop shape
-as `WorldCanvas`), so `App` swaps `<WorldCanvas/>` ⟷ `<WorldCanvas3D/>` behind the `2D map`/`3D view`
-toggle with zero data-pipeline changes.
+The React wrapper is [`components/WorldCanvas3D.tsx`](../components/WorldCanvas3D.tsx); `App` always
+mounts it as the full-window view and passes a `focusOut` ref it writes `getFocus()` into each frame
+for the sibling `Minimap`. WebGL unavailable ⇒ the wrapper shows an in-place "WebGL required" notice
+(there is no 2D full-view fallback).
 
 ## Public Interface
 
@@ -44,12 +51,25 @@ export interface WorldGL {
   draw(agents, animals, objects, flora, selectedId, clockMs, climate): void  // one frame: GL terrain + overlay markers/billboards + atmosphere
   zoomBy(f): void; tiltBy(dRad): void; orbitBy(dRad): void; panBy(dxPx, dyPx): void  // camera reducers
   pick(px, py): { kind: 'agent' | 'animal'; id: string } | null  // screen → nearest entity (last frame)
+  getFocus(): CameraFocus   // ground-plane camera focus {x, z, yaw, dist, fitDist} — read by the Minimap marker
   dispose(): void
 }
+// CameraFocus: x==world x, z==world y (GL ground plane is x,z); dist/fitDist give the zoom-relative span.
+export interface CameraFocus { x: number; z: number; yaw: number; dist: number; fitDist: number }
 export function createWorldGL(glCanvas, overlayCanvas, sprites?: SpriteCache | null):
   WorldGL | { ok: false; error: string }
   // sprites: the injected assets cache (same instance the 2D canvas uses) — drives the fauna
   // billboards below; absent/null ⇒ every animal falls back to its glyph-colour dot
+
+// cameraGeom.ts — PURE, dependency-free (no React/DOM/WebGL). The one place the yaw→ground-direction
+// convention lives; worldGL (eye + sky basis) and the minimap cone both import it, so they can never
+// drift to different sign conventions. Coords: GL ground plane is (x, z); world +y maps to GL +z.
+export interface GroundVec { x: number; z: number }
+// Unit ground vector the camera looks ALONG (from eye through focus), as a function of yaw.
+export function groundForward(yaw: number): GroundVec        // = (-sin yaw, -cos yaw)
+// The eye's ground-plane offset from the focus at a given yaw + planar radius (= dist·cosPitch);
+// exactly -planarRadius·groundForward — the shared-sign contract worldGL's lookAt eye relies on.
+export function cameraGroundOffset(yaw: number, planarRadius: number): GroundVec
 ```
 
 ## Behaviour
@@ -86,7 +106,10 @@ export function createWorldGL(glCanvas, overlayCanvas, sprites?: SpriteCache | n
   this for click-select (agents win ties, 16 px).
 - **Camera.** Orbit (`yaw`), tilt (`pitch` 8–85°), dolly (`dist`, clamped to a fit-relative range),
   pan (`focus`, clamped to world bounds). Wheel = zoom · Alt+wheel = tilt · Shift+wheel = rotate ·
-  drag = pan (all in `WorldCanvas3D`). `fit` frames `RenderConfig.bounds` (else the terrain bbox).
+  drag = pan (all in `WorldCanvas3D`). `fit` frames `RenderConfig.bounds` (else the terrain bbox). The
+  `yaw`→ground-direction math (lookAt eye offset + the ray-sky camera basis) comes from
+  `cameraGeom.groundForward`/`cameraGroundOffset` — the SAME functions the minimap cone uses, so the
+  two views can never encode a different heading sign.
 - **Atmosphere** (`atmosphere.ts`, plan `docs/plans/gl-atmosphere.md`; drivers = the reducer's
   `ClimateState`, passed per-frame through `draw`; `climate == null` ⇒ the fixed-daylight LEGACY
   constants — same colours/light as pre-atmosphere; the sky gradient itself is ray-based in both
@@ -112,14 +135,15 @@ export function createWorldGL(glCanvas, overlayCanvas, sprites?: SpriteCache | n
 
 ## Invariants
 
-- **Additive, not a replacement.** `src/render` + its 71 tests are untouched; 3D is opt-in (toggle,
-  default 2D). WebGL unavailable ⇒ `createWorldGL` returns `{ok:false}` and the wrapper shows a
-  "switch to 2D" notice — never throws.
+- **Main full-window view; the 2D library lives on in the Minimap.** This is the only full view;
+  `src/render` + its tests stay green as the pure library powering `components/Minimap.tsx`. WebGL
+  unavailable ⇒ `createWorldGL` returns `{ok:false}` and the wrapper shows an in-place "WebGL required"
+  notice (no 2D full-view fallback) — never throws.
 - **Open content renders via DATA.** terrain-id→tile/elevation and species→colour are lookup tables
   with fallbacks (grass / prey glyph); no id string conditionals in draw paths; unknown ids never throw.
-- **Same data contract.** Reads only the reducer-owned `WorldState` slices already passed to
-  `WorldCanvas`; adds no network, no reducer fields. Coordinates stay continuous (D11) — entities are
-  seated on terrain height, never snapped to cells.
+- **Same data contract.** Reads only the reducer-owned `WorldState` slices (the shared `canvasProps`);
+  adds no network, no reducer fields — only the presentational `getFocus()` readout for the Minimap.
+  Coordinates stay continuous (D11) — entities are seated on terrain height, never snapped to cells.
 - **Navmap is the hex authority.** `hex.ts` mirrors `hexCentre` from `render/terrain.ts` (== engine
   `hex.go`); `orientation`/`cellSize` come from the payload.
 
@@ -127,9 +151,11 @@ export function createWorldGL(glCanvas, overlayCanvas, sprites?: SpriteCache | n
 
 - Flora as billboards SHIPPED (grass tufts + tree/bush sheets on the overlay; no coverage wash — the
   2D-only ground effect). Depth is painter-ordered on the overlay (drawn under animals/agents), not
-  occluded against the GL prisms — acceptable at ground scale. Remaining: transition FX
-  (spawn/death/attack/grow), camera-follow, agent cluster
-  colours/labels — the 2D renderer still carries these; the 3D view ports them in later phases.
+  occluded against the GL prisms — acceptable at ground scale. **Parity backlog** (the main view —
+  `docs/plans/frontend.md` §10–§11): transition FX (spawn/death/attack/grow), camera-follow, agent
+  cluster colours/labels exist as functions in the `src/render` library (previously wired to the
+  deleted 2D full view; the simplified Minimap does not draw them) and are not yet ported here — the 3D
+  view gains them in later phases.
   (Animal sprite billboards shipped with FE-P6.) Atmosphere polish deferred by
   `docs/plans/gl-atmosphere.md` Q3/Q6: world-space rain particles, temperature vignette, seasonal
   ground tint.

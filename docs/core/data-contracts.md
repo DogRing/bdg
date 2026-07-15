@@ -97,7 +97,7 @@ sim:{run}:tick          STRING  current tick (fast read)
 sim:{run}:snapshot      STRING  latest Snapshot (serialized)  // or chunked
 sim:{run}:agent:{id}    HASH     live agent summary (render): pos, goal, action, mood
 sim:{run}:animal:{id}   HASH     live animal summary (render): pos, species, action, heading, stamina (WI-P4)
-sim:{run}:flora         STRING   live plant render baseline: {world_revision, flora:[{object_id, species, pos, stage, width}]} (WI-P4; GET /api/flora — revision-tagged like :terrain; empty flora:[] ⇒ installed-but-no-plants, key absent ⇒ flora-off; the meta `flora` flag ("on"/"off") is the frontend-facing availability signal, mirroring `terrain`)
+sim:{run}:flora         STRING   live plant render baseline: {world_revision, stream_cursor, flora:[{object_id, species, pos, stage, width}]} (WI-P4; cursor is captured with the snapshot/render view and lets the frontend replay only strictly-newer buffered ops; empty flora:[] ⇒ installed-but-no-plants, key absent ⇒ flora-off; meta `flora` is the availability signal)
 sim:{run}:climate       HASH     ambient: temperature, apparent_temp?, moisture, raining, snow_cover,
                                  wind_dir, wind_mag, hour_of_day, day_night, year_fraction (WI-P4 — frontend
                                  ambient FX; snow_cover ∈[0,1] world-uniform snowpack CS2b, plan §1d)

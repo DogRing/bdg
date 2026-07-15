@@ -40,9 +40,10 @@ encodes the periodic-full rows; `RestoreInto` round-trips them for byte-identica
 Written each render cadence from the live world; **god-view excluded** (`stats`/`drives`/`vital` are
 NOT in the live keys, only the snapshot blob):
 - `sim:{run}:animal:{id}` HASH — `pos, species, action, heading, stamina`
-- `sim:{run}:flora` STRING — `FloraDoc` `{world_revision, flora:[{object_id, species, pos, stage, width}]}`
-  (`stage` DERIVED from `length`). Wrapped + `world_revision`-tagged like `:terrain` so a reader verifies
-  it belongs to the same published revision as the snapshot (GET /api/flora — the frontend flora baseline).
+- `sim:{run}:flora` STRING — `FloraDoc` `{world_revision, stream_cursor, flora:[{object_id, species, pos, stage, width}]}`
+  (`stage` DERIVED from `length`). `world_revision` prevents cross-world mixing; `stream_cursor` is
+  captured with the same flush's snapshot/render view so the frontend can discard buffered ops at or
+  before the baseline and replay only strictly-newer SSE flora mutations.
   Written whenever flora is INSTALLED (even 0 plants ⇒ `flora:[]`, an "installed-but-empty" 200 the client
   applies as an authoritative-empty replacement) — distinct from flora-not-installed (key absent ⇒ 404).
   A FloraOn flora-write FAILURE gates publication exactly as terrain does: `writeEnvLive` returns false, so

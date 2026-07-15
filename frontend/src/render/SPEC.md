@@ -1,6 +1,14 @@
 # SPEC — `frontend/src/render`
 
-> Status: `APPROVED` (plan: `docs/plans/frontend.md`, Q2/Q3/Q4/Q5/Q6/Q8 RESOLVED 2026-07-02)
+> Status: `APPROVED` — **now the 2D library behind the Minimap** (2026-07-15). This flat top-down 2D
+> layer is no longer a full-window view (the **3D curved-world** `src/gl/SPEC.md` is the only full view).
+> Its pure helpers power the bottom-right **`Minimap`** overlay (`components/Minimap.tsx`,
+> `docs/plans/frontend.md` §11): the Minimap uses a SUBSET — bounds-fit camera (`initialCamera`), the
+> shared `Transform` (`buildTransform`/`wx`/`wy`), and the terrain raster (`makeTerrainRaster`/
+> `drawTerrain`) — drawing simplified dots. The rest (flora/fauna/fx/ambient draws, `hitTest`, camera
+> follow/zoom/pan reducers, animator) remains as tested library code, unwired to any view but ready for
+> richer minimap detail or a 3D-parity port; do not delete without a decision.
+> Plan: `docs/plans/frontend.md`, Q2/Q3/Q4/Q5/Q6/Q8 RESOLVED 2026-07-02.
 > Layer: pure render — imports `src/types.ts` + [`src/assets`](../assets/SPEC.md) only. No hooks,
 > no DOM state, no network. Parent: [`frontend/SPEC.md`](../../SPEC.md).
 > Split of the former `src/utils/canvasRenderer.ts` (522 lines > ~400 rule); that file is deleted.
@@ -205,8 +213,13 @@ backend-owned `snowCover` (CS4, consumed by flora via `floraSeason`). `climate =
 - **Reducer owns state; render owns nothing.** Fx entries, interpolation fields, and the terrain
   grid live in `WorldState` (written only by `useWorld`); render reads. The only render-side cache
   is the derived terrain raster + sprite cache, both injected and rebuilt from state.
-- **Camera is the only view state** and lives in one `CameraState` (component state in
-  `WorldCanvas`/`App`); reducers are pure; zoom is always clamped.
+- **Camera ownership (post-Minimap).** This library's `CameraState` + its pure reducers
+  (`cameraZoom`/`cameraPan`/`cameraFollow`/`cameraTick`) are retained but **no component holds a
+  persistent 2D camera** anymore. The app's live camera is the **3D camera, internal to `WorldGL`**
+  (`src/gl`); the `Minimap` derives a `CameraState` **per frame** via `initialCamera` (whole-world fit)
+  — a derived value, not user-manipulated state — and `App` owns no camera state (it only wires the
+  read-only `CameraFocus` ref from `WorldCanvas3D` to the `Minimap`). Reducers stay pure; zoom is
+  always clamped (for any future interactive consumer).
 
 ## Acceptance Criteria (Vitest; canvas ops assertable via a 2D-context mock)
 

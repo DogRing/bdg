@@ -104,7 +104,7 @@ func (s *Server) handleTerrain(w http.ResponseWriter, r *http.Request) {
 
 // handleFlora forwards the sim:{run}:flora bytes verbatim (WI-P4,
 // data-contracts §2): persist.FloraDoc is written to the key already shaped
-// exactly as this route's response ({world_revision, flora:[{object_id,species,
+// exactly as this route's response ({world_revision,stream_cursor,flora:[{object_id,species,
 // pos,stage,width}]} — the frontend flora baseline), so no reshaping happens
 // here. The key exists only when flora is installed; absence is served as 404,
 // which the frontend treats as "no flora layer" for this revision (env-off

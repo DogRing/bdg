@@ -117,17 +117,20 @@ function applyTerrainDeltas(terrain: TerrainGrid, deltas: TerrainDelta[]): Terra
 // state as of the snapshot cursor; these ops are strictly newer, so they win —
 // a dead plant stays dead, a newly-spawned plant survives (fix: an authoritative
 // baseline replace must not clobber post-cursor SSE mutations that raced it).
-function applyFloraOps(base: PlantState[], ops: FloraOp[]): PlantState[] {
-  if (ops.length === 0) return base
+function applyFloraOps(base: PlantState[], ops: FloraOp[], baselineCursor: string): PlantState[] {
+  const newer = baselineCursor === ''
+    ? ops
+    : ops.filter(op => op.streamId === '' || compareStreamIds(op.streamId, baselineCursor) > 0)
+  if (newer.length === 0) return base
   const byId = new Map(base.map((f): [string, PlantState] => [f.id, f]))
-  for (const op of ops) {
+  for (const op of newer) {
     if (op.op === 'upsert') byId.set(op.plant.id, op.plant)
     else byId.delete(op.id)
   }
   return Array.from(byId.values())
 }
 
-function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
+function applyEvent(state: WorldState, ev: SimEvent, atMs: number, streamId: string): WorldState {
   if (state.paused) return state
 
   const agents = new Map(state.agents)
@@ -249,6 +252,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
               id, pos: parsePos(raw.pos), species: String(raw.species ?? ''),
               stage: Number(raw.stage ?? 0), width: Number(raw.width ?? 0),
             },
+            streamId,
           })
         }
         if (ops.length > 0) pendingFloraOps = [...pendingFloraOps, ...ops]
@@ -337,7 +341,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
             // Pre-baseline: buffer the removal so the as-of-cursor baseline (which
             // may still list this plant) does NOT resurrect it. Death FX fires now
             // (the payload carries species+pos, no state lookup needed).
-            pendingFloraOps = [...pendingFloraOps, { op: 'remove', id }]
+            pendingFloraOps = [...pendingFloraOps, { op: 'remove', id, streamId }]
             fx = [...fx, { kind: 'death', at: atMs, pos: parsePos(p.pos), id, species }]
           }
           break
@@ -437,7 +441,7 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
         // baseline is as-of the NEW cursor, so any ops buffered against the old
         // cursor are already folded into it and would REGRESS state if replayed.
         // Drop them (matches the revision-switch reset below).
-        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false, pendingFloraOps: [] }
+        return { ...state, baselineRetries: state.baselineRetries + 1 }
       }
 
       // AUTHORITATIVE roster (SPEC §Bootstrap step 4): the snapshot's agents
@@ -512,11 +516,15 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
         // history; the server closed the stream, so nothing arrives meanwhile.
         // Re-arm the flora baseline too (fix #2): a trim may have dropped
         // PlantSpawned/PlantDied, so flora must re-fetch to re-converge. Clear any
-        // buffered ops — the refetched baseline is as-of the NEW post-gap cursor,
-        // so pre-gap ops are already folded in and replaying them would regress
-        // state (floraStatus 'off' is skipped by the loader). New post-gap frames
-        // rebuffer against the fresh baseline.
-        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false, pendingFloraOps: [] }
+        // buffered ops until a cursor-tagged baseline proves which ones it already
+        // includes. snapshotLoaded=false closes SSE; after the fresh snapshot,
+        // /api/flora must reach at least that cursor before it is accepted.
+        return {
+          ...state,
+          baselineRetries: state.baselineRetries + 1,
+          snapshotLoaded: false,
+          floraLoaded: false,
+        }
       }
       // SSE is enabled only after the snapshot baseline (App wiring), so a
       // pre-baseline event can only be a mis-ordered straggler — drop it
@@ -533,7 +541,7 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
         compareStreamIds(streamId, state.lastAppliedStreamId) <= 0) {
         return state
       }
-      const next = applyEvent(state, ev, action.atMs ?? 0)
+      const next = applyEvent(state, ev, action.atMs ?? 0, streamId)
       if (streamId === '') return next
       return next === state
         ? { ...state, lastAppliedStreamId: streamId }
@@ -578,7 +586,7 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
       }
       return {
         ...state,
-        flora: applyFloraOps(b.flora, state.pendingFloraOps),
+        flora: applyFloraOps(b.flora, state.pendingFloraOps, b.streamCursor),
         pendingFloraOps: [],
         floraLoaded: true,
       }
@@ -656,19 +664,20 @@ export function useWorld() {
   // StreamGap reacquire resets floraLoaded, re-arming this. The baseline write is
   // same-flush with the snapshot and gates publication (backend fix #4), so a
   // published 'on' revision always has the key; a transient 404 is retried.
-  const loadFlora = useCallback(async (expectedRevision: number | null) => {
+  const loadFlora = useCallback(async (expectedRevision: number | null, expectedCursor: string) => {
     const gen = ++floraGen.current
     const baseline = await fetchFloraWithRetry({
       isCancelled: () => gen !== floraGen.current,
       expectedRevision,
+      expectedCursor,
     })
     if (baseline) dispatch({ type: 'FLORA_LOADED', payload: baseline })
   }, [])
 
   useEffect(() => {
     if (!state.snapshotLoaded || state.floraStatus === 'off' || state.floraLoaded) return
-    void loadFlora(state.worldRevision)
-  }, [state.snapshotLoaded, state.floraStatus, state.floraLoaded, state.worldRevision, loadFlora])
+    void loadFlora(state.worldRevision, state.snapshotCursor)
+  }, [state.snapshotLoaded, state.floraStatus, state.floraLoaded, state.worldRevision, state.snapshotCursor, loadFlora])
 
   // Baseline reacquisition (SPEC §Bootstrap step 5): a StreamGap control frame
   // or a stale snapshot rejection asks for a fresh snapshot/cursor pair —
@@ -698,6 +707,7 @@ export interface TerrainLoaderOptions extends BaselineLoaderOptions {
   // between the two reads) counts as not-ready and is retried. null/undefined
   // ⇒ legacy backend without revision tags: accept any grid.
   expectedRevision?: number | null
+  expectedCursor?: string
 }
 
 // parseSnapshotDoc maps the /api/snapshot blob to the SNAPSHOT_LOADED payload,
@@ -774,7 +784,7 @@ export function parseTerrainDoc(doc: unknown): TerrainGrid | null {
 }
 
 // parseFloraDoc maps the /api/flora response (persist.FloraDoc:
-// {world_revision, flora:[{object_id,species,pos,stage,width}]}) to a
+// {world_revision,stream_cursor,flora:[{object_id,species,pos,stage,width}]}) to a
 // FloraBaseline, or null on a non-object document (retried as transient). Rows
 // missing an id are skipped; a bare legacy array (no wrapper) is tolerated with
 // worldRevision null.
@@ -786,6 +796,7 @@ export function parseFloraDoc(doc: unknown): FloraBaseline | null {
   if (rawArr === null) return null
   const worldRevision = typeof root.world_revision === 'number' && Number.isFinite(root.world_revision)
     ? root.world_revision : null
+  const streamCursor = typeof root.stream_cursor === 'string' ? root.stream_cursor : ''
   const flora: PlantState[] = []
   for (const item of rawArr as Array<Record<string, unknown>>) {
     const id = String(item.object_id ?? item.id ?? '')
@@ -798,7 +809,7 @@ export function parseFloraDoc(doc: unknown): FloraBaseline | null {
       width: Number(item.width ?? 0),
     })
   }
-  return { worldRevision, flora }
+  return { worldRevision, streamCursor, flora }
 }
 
 // fetchFloraWithRetry — same policy as the terrain loader (capped backoff on
@@ -810,6 +821,7 @@ export function parseFloraDoc(doc: unknown): FloraBaseline | null {
 export function fetchFloraWithRetry(opts: TerrainLoaderOptions = {}): Promise<FloraBaseline | null> {
   const fetchFn: FetchLike = opts.fetchFn ?? (url => fetch(url))
   const expected = opts.expectedRevision ?? null
+  const expectedCursor = opts.expectedCursor ?? ''
   return retryUntil(async () => {
     try {
       const res = await fetchFn(`${API_BASE}/api/flora`)
@@ -819,7 +831,11 @@ export function fetchFloraWithRetry(opts: TerrainLoaderOptions = {}): Promise<Fl
         Number((doc as Record<string, unknown>).world_revision) !== expected)) {
         return null // baseline belongs to another published revision — retry
       }
-      return parseFloraDoc(doc)
+      const parsed = parseFloraDoc(doc)
+      if (!parsed) return null
+      if (expectedCursor !== '' && (parsed.streamCursor === '' ||
+        compareStreamIds(parsed.streamCursor, expectedCursor) < 0)) return null
+      return parsed
     } catch {
       return null
     }

@@ -10,6 +10,7 @@ import type { TerrainGrid, AgentState, AnimalState, WorldObject, PlantState, Ren
 import { FAUNA_SHEETS, DEFAULT_FAUNA, poseFor, floraSeason, variantRow, isFloraSpecies, type FloraSeason } from '../assets/manifest'
 import { frameRect, type SpriteCache } from '../assets/sprites'
 import { hexCentre, pixelToOffset, neighbourOffset } from './hex'
+import { groundForward, cameraGroundOffset } from './cameraGeom'
 import { createAtmosphere, drawRainOverlay, drawSnowOverlay, drawWindArrow, LEGACY, type Atmo } from './atmosphere'
 import { TILE_VS, TILE_FS, SKY_VS, SKY_FS } from './shaders'
 
@@ -71,6 +72,11 @@ function animPos(a: AnimalState, clockMs: number): { x: number; y: number } {
 }
 const animalColor = (species: string) => FAUNA_SHEETS[species]?.glyphColor ?? DEFAULT_FAUNA.prey.glyphColor
 
+// The 3D camera's ground-plane focus + framing, read each frame by the 2D Minimap overlay
+// (components/Minimap.tsx) to draw the "where the camera looks" marker. World coords: x == world x,
+// z == world y (the GL ground plane is x,z). `dist`/`fitDist` give the zoom-relative view span.
+export interface CameraFocus { x: number; z: number; yaw: number; dist: number; fitDist: number }
+
 export interface WorldGL {
   ok: true
   setTerrain(grid: TerrainGrid | null): void
@@ -81,6 +87,7 @@ export interface WorldGL {
   orbitBy(dRad: number): void
   panBy(dxPx: number, dyPx: number): void
   pick(px: number, py: number): { kind: 'agent' | 'animal'; id: string } | null
+  getFocus(): CameraFocus
   dispose(): void
 }
 
@@ -249,17 +256,21 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
     const atm: Atmo = climate ? atmo.update(climate, clockMs) : LEGACY
     gl.clearColor(atm.hor[0], atm.hor[1], atm.hor[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-    // camera (basis needed by the ray-based sky, matrices by the terrain pass)
+    // camera (basis needed by the ray-based sky, matrices by the terrain pass). The yaw→ground
+    // direction comes from cameraGeom.groundForward — the SAME convention the minimap cone uses.
     perspective(proj, FOV, bw / bh, Math.max(0.5, dist * 0.02), dist * 6)
-    const cp = Math.cos(pitch), sp = Math.sin(pitch), cy = Math.cos(yaw), sy = Math.sin(yaw)
-    lookAt(view, [fx + dist * cp * sy, dist * sp, fz + dist * cp * cy], [fx, 0, fz], [0, 1, 0])
+    const cp = Math.cos(pitch), sp = Math.sin(pitch)
+    const gf = groundForward(yaw)                       // (x,z) ground-forward; z == world y
+    const eye = cameraGroundOffset(yaw, dist * cp)      // = −dist·cp·groundForward
+    lookAt(view, [fx + eye.x, dist * sp, fz + eye.z], [fx, 0, fz], [0, 1, 0])
     relief = RELIEF_MIN + RELIEF_GAIN * smoothstep(12 * DEG, 52 * DEG, pitch)
 
     // sky (no depth): gradient + sun/moon discs + stars, all keyed to the atmosphere
     gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.useProgram(skyP)
     gl.bindBuffer(gl.ARRAY_BUFFER, skyBuf); gl.enableVertexAttribArray(S.aP); gl.vertexAttribPointer(S.aP, 2, gl.FLOAT, false, 0, 0)
     gl.uniform3fv(S.uZen, atm.zen); gl.uniform3fv(S.uHor, atm.hor)
-    gl.uniform3f(S.uCamF, -cp * sy, -sp, -cp * cy); gl.uniform3f(S.uCamR, cy, 0, -sy); gl.uniform3f(S.uCamU, -sp * sy, cp, -sp * cy)
+    // camera basis (== the old -cp·sy / cy / -sp·sy … form, re-expressed through groundForward: gf.x=-sin yaw, gf.z=-cos yaw)
+    gl.uniform3f(S.uCamF, cp * gf.x, -sp, cp * gf.z); gl.uniform3f(S.uCamR, -gf.z, 0, gf.x); gl.uniform3f(S.uCamU, sp * gf.x, cp, sp * gf.z)
     gl.uniform1f(S.uTanF, TANF); gl.uniform1f(S.uAspect, bw / bh); gl.uniform1f(S.uStar, atm.star); gl.uniform1f(S.uTime, clockMs * 0.001)
     gl.uniform3fv(S.uSunDir, atm.sunDir); gl.uniform3fv(S.uSunCol, atm.sunCol)
     gl.uniform3fv(S.uMoonDir, atm.moonDir); gl.uniform3fv(S.uMoonCol, atm.moonCol)
@@ -399,5 +410,6 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
     zoomBy: (f) => { dist = clamp(dist * f, minDist, maxDist) },
     tiltBy: (d) => { pitch = clamp(pitch + d, 8 * DEG, 85 * DEG) },
     orbitBy: (d) => { yaw += d },
+    getFocus: () => ({ x: fx, z: fz, yaw, dist, fitDist }),
   }
 }

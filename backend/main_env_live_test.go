@@ -43,7 +43,7 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 		},
 	}
 
-	if !writeEnvLive(context.Background(), rv, run, 3, live) {
+	if !writeEnvLive(context.Background(), rv, run, 3, "100-0", live) {
 		t.Fatal("writeEnvLive returned false on a healthy store")
 	}
 
@@ -55,8 +55,9 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 	}
 	// The flora baseline is wrapped in a FloraDoc tagged with the publishing
 	// revision (data-contracts §2) — the frontend verifies it against the snapshot.
-	if got := live.FloraOf(run); !strings.Contains(got, `"world_revision":3`) || !strings.Contains(got, `"flora":[`) {
-		t.Fatalf("flora blob missing world_revision/flora wrapper: %s", got)
+	if got := live.FloraOf(run); !strings.Contains(got, `"world_revision":3`) ||
+		!strings.Contains(got, `"stream_cursor":"100-0"`) || !strings.Contains(got, `"flora":[`) {
+		t.Fatalf("flora blob missing revision/cursor/flora wrapper: %s", got)
 	}
 	if got := live.ClimateOf(run); !strings.Contains(got, `"temperature":18.5`) || !strings.Contains(got, `"day_night":"day"`) {
 		t.Fatalf("climate key missing/wrong: %s", got)
@@ -81,7 +82,7 @@ func TestWriteEnvLive_FloraWriteFailureGatesPublication(t *testing.T) {
 		Tick: 1, FloraOn: true,
 		Flora: []world.FloraRenderView{{ID: "p1", Species: "oak", Pos: core.Vec2{X: 1, Y: 2}, Stage: 1, Width: 1}},
 	}
-	if writeEnvLive(context.Background(), rv, "r", 5, live) {
+	if writeEnvLive(context.Background(), rv, "r", 5, "100-0", live) {
 		t.Fatal("writeEnvLive must return false when a FloraOn WriteFlora fails (gates publication)")
 	}
 }
@@ -93,7 +94,7 @@ func TestWriteEnvLive_EnvOffWritesNothing(t *testing.T) {
 	live := persist.NewFakeRedis()
 	run := core.RunID("test-run")
 
-	if !writeEnvLive(context.Background(), world.RenderView{Tick: 7}, run, 1, live) {
+	if !writeEnvLive(context.Background(), world.RenderView{Tick: 7}, run, 1, "100-0", live) {
 		t.Fatal("writeEnvLive returned false with no terrain to write")
 	}
 

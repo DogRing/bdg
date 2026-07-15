@@ -3,7 +3,8 @@
 > Status: `APPROVED` (ecosystem render phase; plan: `docs/plans/frontend.md`, Q1–Q8 RESOLVED 2026-07-02)
 > Leaf level: `L10` (depends only on the HTTP boundary of `platform/api` — SSE + REST endpoints)
 > Language: **TypeScript + React 19** (Vite). The viewer is a component tree, not vanilla DOM.
-> Children (referenced, not restated): [`src/render/SPEC.md`](src/render/SPEC.md) ·
+> Children (referenced, not restated): [`src/gl/SPEC.md`](src/gl/SPEC.md) (**primary 3D renderer**) ·
+> [`src/render/SPEC.md`](src/render/SPEC.md) (2D library behind the Minimap) ·
 > [`src/assets/SPEC.md`](src/assets/SPEC.md) · [`dev/SPEC.md`](dev/SPEC.md)
 
 ## Purpose
@@ -13,8 +14,16 @@ world state in a browser tab, and expose a filterable event log. Read-only obser
 controls beyond a local view pause, no auth beyond same-origin. The goal is to watch the **social
 layer** (agents wander, gossip, form reliance clusters, shift power) AND the **ecosystem layer**
 (river/grass/forest terrain, plants growing and dying, animals grazing / fleeing / hunting with
-visible **movement, attack, and death motion**, weather + wind + day-night) in real time, on one
-2D map plus a scrolling narrative log.
+visible **movement, attack, and death motion**, weather + wind + day-night) in real time, in a
+**3D curved-world view** (`src/gl`) plus a scrolling narrative log.
+
+> **Viewer: 3D main view + 2D minimap (2026-07-15).** The single full-window view is the WebGL
+> **curved-world** renderer (`WorldCanvas3D` + `src/gl`, `src/gl/SPEC.md`). The former flat top-down
+> **2D `WorldCanvas`** full view is **removed** (its `src/render` draw library is retained); the 2D
+> layer now lives on as a small **bottom-right `Minimap`** overlay (`components/Minimap.tsx`) — a
+> whole-world overview drawn through the same pure render helpers, showing terrain + entity dots + a
+> marker for where the 3D camera is looking. There is no 2D/3D toggle. Decisions + rationale:
+> `docs/plans/frontend.md` §10–§11.
 
 > **Implementation status:** the data/state layer (types + `useWorld` reducer + `useSSE`) is built.
 > The render layer is the current work — specified across this file (state/UI contract) and the
@@ -41,7 +50,7 @@ otherwise ignored.
 | `type` | Payload (gist) | Treatment |
 |---|---|---|
 | `AgentFrame` | `tick, agents[]{id,pos?,goal?,mood?,action?}, removed[]` | Per-tick **sparse agent delta** (replaced the removed full-roster `TickDone`): merge only the fields present onto the known agent (REST snapshot = the baseline), delete `removed[]` ids; advance tick. Returns early (no log line) |
-| `StreamGap` | `reason` | **Transport control frame** (api SPEC GET /sse): the replay cursor fell behind the trimmed backlog — the reducer bumps `baselineRetries` (fresh snapshot/cursor reacquisition, §Bootstrap step 5) AND re-arms `floraLoaded:false` (+ clears `pendingFloraOps`) so the flora baseline re-fetches for the new cursor; never logged, never rendered |
+| `StreamGap` | `reason` | **Transport control frame**: bump `baselineRetries`, set `snapshotLoaded:false` (closing SSE), and re-arm `floraLoaded:false`; retain cursor-tagged `pendingFloraOps` until the fresh snapshot and a flora baseline at/after its cursor arrive. Never logged/rendered. |
 | `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge animal positions (keeping prev values for interpolation), **`flora_delta` full-row upserts by id** (grow FX on stage increase) — buffered into `pendingFloraOps` while `!floraLoaded` (§Bootstrap step 7), terrain deltas, ambient weather. Carries NO agents — agent state is `AgentFrame`'s. Returns early (no log line) |
 | `GoalSelected` | `dimension, target, eff_value` | Set agent goal; log "🎯 farmer_1 → Satiety" |
 | `PlanBuilt` | `steps[], total_cost, provisioned[]` | Log (detail) |
@@ -89,7 +98,7 @@ each frame. When env is OFF no `WorldFrame` is emitted and the env slices stay e
   wear?:[…]}` — an **offset (col,row) rectangular array** (`i = row·cols + col`) of flat-top hex cells;
   fetched once at connect, kept current by SSE `terrain_delta`. Until the endpoint exists, `terrain`
   stays `null` and no terrain layer draws.
-- `GET /api/flora` — **flora baseline** (`persist.FloraDoc`, data-contracts §2): `{world_revision,
+- `GET /api/flora` — **flora baseline** (`persist.FloraDoc`, data-contracts §2): `{world_revision, stream_cursor,
   flora:[{object_id, species, pos, stage, width}]}` — the plants present before connect (fixtures +
   already-propagated) that no SSE event replays; fetched once per revision after the snapshot, kept
   current by SSE `flora_delta`/`PlantSpawned`/`PlantDied`. `404` ⇒ flora-off; `flora:[]` ⇒
@@ -152,8 +161,8 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
    baseline — mirroring terrain. Gated by its OWN explicit signal `floraStatus` (from the
    snapshot's `flora` flag, decoupled from terrain): `'off'` ⇒ env-off, never fetched (and the
    reducer short-circuits `flora:[]` + `floraLoaded:true`); `'on'`/`'unknown'` ⇒ once
-   `snapshotLoaded`, `loadFlora(worldRevision)` fetches once per revision (capped backoff; a
-   `FloraDoc` tagged with a DIFFERENT `world_revision` is not-ready and retried). `FLORA_LOADED`
+   `snapshotLoaded`, `loadFlora(worldRevision,snapshotCursor)` fetches once per revision/reacquisition
+   (capped backoff; a different revision or `stream_cursor < snapshotCursor` is retried). `FLORA_LOADED`
    applies it as an **AUTHORITATIVE REPLACEMENT** of `WorldState.flora` (never merged — a
    regenerated world must leave no ghost plants), then **replays `pendingFloraOps`** (see below)
    on top so post-cursor mutations win, and sets `floraLoaded` (the once-per-revision guard,
@@ -163,12 +172,12 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
      `!floraLoaded`. Applying it to the empty `flora` map then wholesale-replacing it at
      `FLORA_LOADED` would LOSE a post-cursor spawn or RESURRECT a post-cursor death (the baseline is
      as-of an OLDER `stream_cursor`). Instead, while `!floraLoaded` these mutations are buffered as
-     `pendingFloraOps` (`{op:'upsert',plant}` / `{op:'remove',id}`) and replayed after the baseline
-     replacement, so the newer live state wins. `PlantSpawned`/`PlantDied` FX still fire immediately
+     cursor-tagged `pendingFloraOps` and replayed after replacement only when
+     `op.streamId > baseline.stream_cursor`, so the newer live state wins. `PlantSpawned`/`PlantDied` FX still fire immediately
      (FX carry no state).
-   - **Revision switch / StreamGap re-arm.** A revision switch AND a `StreamGap`/stale-snapshot
-     reacquisition reset `floraLoaded:false` (+ clear `pendingFloraOps`) → the baseline is
-     re-fetched for the fresh world/cursor (symmetric with terrain).
+   - **Revision switch / StreamGap re-arm.** A revision switch clears old-world ops. A `StreamGap`
+     sets `snapshotLoaded:false` (closing SSE), retains cursor-tagged ops, accepts a fresh snapshot,
+     then fetches flora at/after that cursor; the flora baseline cursor classifies which ops remain newer.
 
    After the baseline, SSE `flora_delta` (full-row upsert) / `PlantSpawned` (spawn FX) / `PlantDied`
    (remove + death FX) keep it current; a first-seen `flora_delta` row still carries `species`+`width`,
@@ -181,16 +190,19 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
 ┌───────────────────────────────────────────────────────────┐
 │  bdg · tick 42 · 8 agents · 6 fauna · ☀ 14°C · ● LIVE      │  ← Header
 ├───────────────────────────────┬───────────────────────────┤
-│   WorldCanvas (zoom/pan/      │  Sidebar                  │
-│                follow camera) │  ┌─ AgentDetail (click) ──┐│
+│  WorldCanvas3D (orbit/tilt/   │  Sidebar                  │
+│                zoom/pan)      │  ┌─ AgentDetail (click) ──┐│
 │  ≈≈ river   ▒ forest          │  └────────────────────────┘│
 │  · farmer_1 (satiety)         │  EventLog                  │
 │  ▷ goat (walk→run, flee)      │  [filter: all ▾]           │
 │  ▶ wolf (attack lunge)        │  ⚒ farmer_1 Crafted axe    │
 │  ♣ oak (stage 3, grow fx)     │  🐺 wolf_1 killed deer_2   │
-│  ~wind→  ☂rain   ◐dusk        │  🎯 farmer_1 → Satiety     │
-└───────────────────────────────┴───────────────────────────┘
+│  [±]           ┌────────┐     │  🎯 farmer_1 → Satiety     │
+│  ~wind→ ☂rain  │minimap ◹│ ◐  │                            │
+└────────────────┴────────┴─────┴───────────────────────────┘
 ```
+(`[±]` = 3D zoom buttons, bottom-left; `minimap` = the 2D overview overlay, bottom-right, with the
+camera-look marker `◹`.)
 
 - **Header** (`components/Header.tsx`): run id, tick, agent count, fauna count + ambient weather
   chip (day-night icon, temperature + `apparentTemp`, rain/wind), connection badge, theme + pause
@@ -217,11 +229,25 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
   snow lying). `Day N` = `climate.dayOfRun + 1` (dayOfRun is 0-based); `HH:MM` from
   `climate.minuteOfDay` (÷60 / %60). Hidden when `climate === null` (env OFF / pre-first-frame).
   Display-only (`pointerEvents:'none'`) so camera drag/wheel pass through to the canvas beneath.
-- **WorldCanvas** (`components/WorldCanvas.tsx`, left, flex-1): HTML5 Canvas, RAF render loop.
-  Draws (back→front) terrain → flora → placed objects → animals → agents → fx → ambient. **Camera
-  (plan Q6): wheel zoom (cursor-anchored), drag pan, click an entity to select + follow it**;
-  empty click deselects; on-screen **+/− zoom buttons** (bottom-right overlay) zoom about the
-  viewport centre. Input handlers dispatch pure camera reducers (`src/render/SPEC.md`).
+- **WorldCanvas3D** (`components/WorldCanvas3D.tsx`, left, flex-1) — **the main viewer**: a WebGL
+  **curved-world** renderer (`src/gl/SPEC.md`). Terrain draws as lit, curved hex prisms; entities are
+  billboards seated on the relief; atmosphere (day-night, weather, wind) rides the same climate slice.
+  **Camera:** orbit (Shift+wheel) · tilt (Alt+wheel) · dolly (Ctrl/Meta+wheel zoom) · drag pan; click
+  an entity to select; **+/− zoom buttons bottom-left**. Plain wheel is intentionally inert. WebGL
+  unavailable ⇒ an in-place "WebGL required" notice (no 2D fallback view). It writes its ground-plane
+  camera focus (`getFocus()`) into a ref each frame for the Minimap.
+- **Minimap** (`components/Minimap.tsx`, **bottom-right overlay**, display-only): a small whole-world
+  overview (`docs/plans/frontend.md` §11 — capability = camera-marker, detail = simplified). It runs its
+  **own RAF loop** and each frame: computes a **bounds-fit 2D transform** via the render library
+  (`initialCamera` → `buildTransform`), reuses a **cached terrain raster** (rebuilt only on grid
+  identity change), and draws **only** terrain colours + **agent/animal dots** + a **selection ring** +
+  a **camera-look cone** at the 3D camera's ground focus (read from the `CameraFocus` ref; opens toward
+  the view heading, sized by zoom). It does **not** draw flora / fx / ambient / motion interpolation
+  (those library draws stay unwired). Its size follows the world aspect; geometry (cone direction/radius,
+  sizing) lives in `minimapGeom.ts` (unit-tested), and the cone **heading reuses `gl/cameraGeom.
+  groundForward`** — the same yaw convention the 3D camera uses, so marker and view can't diverge.
+  **No input handlers** — the 3D view owns camera + selection; the minimap only reads the read-only
+  `CameraFocus`.
 - **Sidebar** (`components/Sidebar.tsx`, right): `AgentDetail` (selected agent; a followed
   *animal* shows no detail panel) over `EventLog` (scrolling, filtered, newest-first, ≤500).
 
@@ -247,13 +273,14 @@ frontend/
     components/
       Header.tsx          status strip
       StatusHud.tsx       top-right canvas overlay: date (Day N) + clock (HH:MM) + temperature
-      WorldCanvas.tsx     2D canvas + RAF + ResizeObserver + camera input (wheel/drag/click)
-      WorldCanvas3D.tsx   WebGL curved-world view (opt-in toggle, same props)  → src/gl/SPEC.md
+      WorldCanvas3D.tsx   WebGL curved-world view — MAIN viewer                 → src/gl/SPEC.md
+      Minimap.tsx         bottom-right 2D minimap overlay (whole-world + camera marker) → src/render/SPEC.md
+      minimapGeom.ts      pure minimap geometry (size, camera-cone dir/radius) — unit-tested
       Sidebar.tsx         AgentDetail + EventLog container
       EventLog.tsx        scrolling list, filter, trim
       AgentDetail.tsx     selected-agent panel
-    render/               pure draw / camera / animation layer          → src/render/SPEC.md
-    gl/                   stateful WebGL curved-world renderer (3D)      → src/gl/SPEC.md
+    gl/                   stateful WebGL curved-world renderer (3D) — MAIN view  → src/gl/SPEC.md
+    render/               pure 2D draw / camera / animation library (powers the Minimap) → src/render/SPEC.md
     assets/               manifest (data tables) + spritesheet cache    → src/assets/SPEC.md
     utils/
       eventFormatter.ts   formatEvent(ev) → LogEntry | null
@@ -261,9 +288,13 @@ frontend/
       streamId.ts         compareStreamIds (Redis entry-id ordering — §Bootstrap cursor guard)
       regenReady.ts       fetchPublishedRevision + waitForRegenReady (§New-map flow)
 ```
-`src/utils/canvasRenderer.ts` is **deleted** (absorbed into `src/render/`). State lives in the
-`useWorld` reducer (single source of truth, passed down as props); the camera is component state in
-`WorldCanvas` driven by pure reducers. No module-level mutable singletons; no `window.*` stores.
+`src/utils/canvasRenderer.ts` is **deleted** (absorbed into `src/render/`). World state lives in the
+`useWorld` reducer (single source of truth, passed down as props). **Camera ownership:** the 3D camera
+is internal state of `WorldGL` (`src/gl`, the main view); `WorldCanvas3D` exposes it **read-only** as a
+`CameraFocus` written into a `focusOut` ref each frame; the `Minimap` reads that ref and derives its
+own **per-frame** bounds-fit 2D transform (it keeps no persistent camera). `App` owns no camera
+state — it only wires the shared `CameraFocus` ref between the two. No module-level mutable
+singletons; no `window.*` stores.
 
 ## Key Types (`src/types.ts`)
 
@@ -310,12 +341,20 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
 
 ## Rendering & Motion (contract summary — detail in `src/render/SPEC.md`)
 
+> This section is the contract of the **2D render library** (`src/render`) that now powers the
+> bottom-right **Minimap** (`components/Minimap.tsx`); the Minimap uses a subset (bounds-fit camera +
+> shared transform + terrain raster) drawing simplified dots, the rest remaining as tested library
+> code. The **main 3D** rendering/atmosphere/camera contract lives in `src/gl/SPEC.md`. Both consume
+> the same reducer-owned `WorldState` slices (below), so the reducer/bootstrap contract is view-agnostic.
+
 - **One shared world→canvas transform** built from `CameraState` (center/zoom/follow) — all layers
   (terrain, flora, objects, animals, agents, fx) map through it (D11: continuous coords, never
   tiled/snapped). Camera: init from `RenderConfig` (auto-fit until fetched), then zoom/pan/follow.
-- **RAF loop** (`WorldCanvas`): redraw on state change *or* while any animation is live (env
-  entities, fx queue non-empty, follow active); `performance.now()` is sampled once per frame at
-  the loop boundary and passed into the pure render fns as `clockMs`. Never draw in the SSE handler.
+- **RAF loop** (owned by the consuming component): today's simplified `Minimap` redraws continuously
+  from reducer state + the read-only camera-focus ref; it does not sample a clock or call the
+  animation/fx/ambient draw functions. A fuller consumer of the retained 2D library samples
+  `performance.now()` once at the frame boundary and passes it into pure render functions as
+  `clockMs`, redrawing on state change or while animation is live. Never draw in the SSE handler.
 - **Motion**: entity positions/headings interpolate between the last two SSE frames (adaptive
   lerp, plan Q3); animals draw a spritesheet frame chosen by `species × pose × clockMs`, where
   pose = data-driven mapping of the open-content `action` (plan Q2; `hunt/attack→attack` is the
@@ -347,8 +386,10 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
   not for agents, not for animals.
 - **Reconnect on failure.** SSE drop → badge + capped-backoff retry; never a page reload.
 - **Single source of truth.** All world state (incl. `fx[]`, `terrain`, interpolation fields) is
-  the `useWorld` reducer value; camera state is one `CameraState` in the canvas component. No
-  `window.*`, no module-level mutable state outside pure render helpers (see child invariants).
+  the `useWorld` reducer value. The 3D camera is `WorldGL`-internal (surfaced read-only as a
+  `CameraFocus` ref); the Minimap's 2D `CameraState` is a per-frame derived value (bounds-fit via
+  `initialCamera`), not persistent user state; `App` owns no camera state. No `window.*`, no
+  module-level mutable state outside pure render helpers (see child invariants).
 - **Render purity.** Render/animator fns are pure `(state, camera, clockMs) → pixels`; sprite
   cache injected; no `Math.random`/wall-clock reads inside (child SPECs own the guards).
 - **Data-driven content mapping (D10 mirror).** species/ActionID/TerrainID → sprite/pose/colour
@@ -390,14 +431,15 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
   clears `pendingFloraOps`, accepts a lower cursor and a rewound tick, and subsequent new-stream
   frames apply normally.
 - [ ] **StreamGap ⇒ reacquisition (§Bootstrap step 5)** — the control frame increments
-  `baselineRetries` (fresh snapshot/cursor refetch) and re-arms `floraLoaded:false` (+ clears
-  `pendingFloraOps`) so the flora baseline re-fetches; changes nothing else.
+  `baselineRetries`, sets `snapshotLoaded:false` to close SSE, and re-arms flora without prematurely
+  deleting buffered ops; after the fresh snapshot, only ops strictly newer than the accepted flora
+  baseline cursor replay.
 - [ ] **Terrain availability (§Bootstrap step 6)** — `terrain:"off"` completes bootstrap without
   ever fetching terrain and clears any grid/queued deltas; `"on"` retries transient failures and
   revision mismatches; `"unknown"` (legacy/mock) keeps the capped-backoff fallback.
 - [ ] **Flora availability + pre-baseline buffering (§Bootstrap step 7)** — `flora:"off"` completes
   bootstrap without ever fetching `/api/flora` (`flora:[]`, `floraLoaded:true`); `"on"`/`"unknown"`
-  fetch once per revision with capped backoff + revision-mismatch retry. A `flora_delta` upsert or
+  fetch once per revision with capped backoff + revision/cursor-mismatch retry. A `flora_delta` upsert or
   `PlantDied` remove arriving while `!floraLoaded` is buffered into `pendingFloraOps` and replayed
   AFTER the baseline replacement (a post-cursor spawn survives; a post-cursor death is not
   resurrected); spawn/death FX fire immediately regardless.

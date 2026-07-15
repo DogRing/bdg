@@ -5,11 +5,11 @@ import type {
 } from '../types'
 import type { ThemeTokens } from '../theme'
 import type { SpriteCache } from '../assets/sprites'
-import { createWorldGL, type WorldGL } from '../gl/worldGL'
+import { createWorldGL, type WorldGL, type CameraFocus } from '../gl/worldGL'
 
-// Same prop shape as WorldCanvas so App can swap the two by a view toggle. Draws terrain +
-// agents + animal & flora sprite billboards + objects + climate atmosphere (day/night, weather,
-// wind — gl/atmosphere.ts); fx arrive in a later phase.
+// The primary viewer (frontend/SPEC.md §Purpose · Viewer note). Draws terrain + agents + animal &
+// flora sprite billboards + objects + climate atmosphere (day/night, weather, wind — gl/atmosphere.ts);
+// fx arrive in a later phase. Shares the canvasProps shape with the retained render library.
 interface Props {
   agents: AgentState[]
   objects: WorldObject[]
@@ -23,6 +23,8 @@ interface Props {
   selectedId: string | null
   t: ThemeTokens
   onSelectAgent: (id: string | null) => void
+  // Written each frame with the GL camera's ground focus so the Minimap overlay can mark it.
+  focusOut?: React.MutableRefObject<CameraFocus | null>
 }
 
 export function WorldCanvas3D(props: Props) {
@@ -54,6 +56,7 @@ export function WorldCanvas3D(props: Props) {
       rafRef.current = requestAnimationFrame(frame)
       const p = propsRef.current
       h.draw(p.agents, p.animals.values(), p.objects, p.flora, p.selectedId, performance.now(), p.climate)
+      if (p.focusOut) p.focusOut.current = h.getFocus()
     }
     rafRef.current = requestAnimationFrame(frame)
     return () => { cancelAnimationFrame(rafRef.current); h.dispose(); handleRef.current = null }
@@ -133,12 +136,12 @@ export function WorldCanvas3D(props: Props) {
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 24, textAlign: 'center', color: t.textMuted, fontFamily: t.fontMono, fontSize: 13,
         }}>
-          {`3D view unavailable (${error}). Switch back to the 2D map.`}
+          {`3D view unavailable (${error}). A WebGL-capable browser is required.`}
         </div>
       )}
 
-      {/* Zoom controls */}
-      <div style={{ position: 'absolute', bottom: 14, right: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* Zoom controls — bottom-LEFT so the bottom-right minimap overlay (App) has the corner. */}
+      <div style={{ position: 'absolute', bottom: 14, left: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {([['+', 1.25], ['−', 1 / 1.25]] as const).map(([label, factor]) => (
           <button
             key={label}
