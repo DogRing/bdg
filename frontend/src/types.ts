@@ -84,6 +84,18 @@ export interface PlantState {
   width: number
 }
 
+// The flora baseline (GET /api/flora; persist.FloraDoc, data-contracts §2). The
+// full live plant render set for a published revision — the plants that existed
+// BEFORE the client connected (fixtures + already-propagated), which no SSE
+// event replays. SSE flora_delta / PlantSpawned / PlantDied keep it current
+// after the baseline. Applied as an AUTHORITATIVE REPLACEMENT (never merged) so a
+// regenerated world leaves no ghost plants. worldRevision gates it against the
+// snapshot's (like TerrainGrid): null ⇒ legacy backend without revisions.
+export interface FloraBaseline {
+  worldRevision: number | null
+  flora: PlantState[]
+}
+
 // Mirrors the climate ambient hash (Redis sim:{run}:climate; data-contracts §2).
 export interface ClimateState {
   temperature: number           // °C (CA3; may be sub-zero)
@@ -139,7 +151,10 @@ export interface WorldFramePayload {
   snow_cover?: number           // [0,1] world-uniform snowpack (CS2b); absent on pre-snow frames ⇒ 0
   wind: { dir: number; mag: number }
   animals: Array<{ id: string; pos: AgentPos; species: string; action: string; heading: number; cover_id?: string }>
-  flora_delta: Array<{ id: string; pos: AgentPos; stage: number }>
+  // Each entry is a FULL render row (data-contracts §4): the reducer upserts it
+  // by id authoritatively, so a first-seen plant (no baseline / partial replay)
+  // still gets species+width to pick+scale its sprite.
+  flora_delta: Array<{ id: string; species: string; pos: AgentPos; stage: number; width: number }>
   terrain_delta: TerrainDelta[]
 }
 
@@ -184,6 +199,11 @@ export interface WorldState {
   terrain: TerrainGrid | null
   pendingTerrainDeltas: TerrainDelta[]
   snapshotLoaded: boolean
+  // floraLoaded: the flora baseline (GET /api/flora) for the accepted revision
+  // has been applied. Distinct from `flora.length === 0`, which is also the
+  // (valid) state of an installed-but-empty world; the loader keys off this flag
+  // so it fetches exactly once per revision. Reset to false on a revision switch.
+  floraLoaded: boolean
   // ── Baseline identity + transport cursor (frontend/SPEC.md §Bootstrap) ──
   // worldRevision: the published single-world revision the accepted baseline
   // belongs to (null until the first snapshot; a snapshot with a DIFFERENT
@@ -229,6 +249,7 @@ export type WorldAction =
   // when the transport carries none (legacy/mock).
   | { type: 'EVENT'; payload: SimEvent; atMs?: number; streamId?: string }
   | { type: 'TERRAIN_LOADED'; payload: TerrainGrid }
+  | { type: 'FLORA_LOADED'; payload: FloraBaseline }
   | { type: 'SET_CONNECTION'; payload: WorldState['connectionStatus'] }
   | { type: 'SELECT_AGENT'; payload: string | null }
   | { type: 'TOGGLE_PAUSE' }

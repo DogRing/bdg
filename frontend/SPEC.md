@@ -42,7 +42,7 @@ otherwise ignored.
 |---|---|---|
 | `AgentFrame` | `tick, agents[]{id,pos?,goal?,mood?,action?}, removed[]` | Per-tick **sparse agent delta** (replaced the removed full-roster `TickDone`): merge only the fields present onto the known agent (REST snapshot = the baseline), delete `removed[]` ids; advance tick. Returns early (no log line) |
 | `StreamGap` | `reason` | **Transport control frame** (api SPEC GET /sse): the replay cursor fell behind the trimmed backlog — the reducer bumps `baselineRetries` (fresh snapshot/cursor reacquisition, §Bootstrap step 5); never logged, never rendered |
-| `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge animal positions (keeping prev values for interpolation), flora stage deltas (grow FX on stage increase), terrain deltas, ambient weather. Carries NO agents — agent state is `AgentFrame`'s. Returns early (no log line) |
+| `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge animal positions (keeping prev values for interpolation), **`flora_delta` full-row upserts by id** (grow FX on stage increase), terrain deltas, ambient weather. Carries NO agents — agent state is `AgentFrame`'s. Returns early (no log line) |
 | `GoalSelected` | `dimension, target, eff_value` | Set agent goal; log "🎯 farmer_1 → Satiety" |
 | `PlanBuilt` | `steps[], total_cost, provisioned[]` | Log (detail) |
 | `ActionStarted` / `ActionDone` | `action, pos? / action, result` | Move agent dot (if `pos`); log |
@@ -53,7 +53,7 @@ otherwise ignored.
 | `CopingEntered` | `mode` | Set coping mode; log "😶 → Apathy" |
 | `Decayed` / `Crafted` / `Mined` / `ToolBroke` | (Materials, data-contracts §4) | Log line |
 | `AnimalBorn` / `AnimalDied` | `object_id, species, pos / cause` | Add / remove an animal **+ enqueue spawn / death FX**; log (WI-P4) |
-| `PlantSpawned` / `PlantDied` | `object_id, species, pos` | Add / remove a plant **+ enqueue spawn / death FX**; log (WI-P4) |
+| `PlantSpawned` / `PlantDied` | `object_id, species, pos` | `PlantSpawned` = **enqueue spawn FX only** (render STATE is owned by the authoritative `flora_delta` upsert, which carries `width`; the spawn's paired `flora_delta` row arrives the same tick). `PlantDied` = **remove the plant + enqueue death FX**; log (WI-P4) |
 
 ### Env render channel — `WorldFrame` (WI-P4, data-contracts §4/§10)
 Once the env subsystem is installed backend-side, the world streams a periodic **`WorldFrame`** —
@@ -63,7 +63,7 @@ deltas, and the ambient weather. Wire shape (snake_case; `WorldFramePayload` in 
 { tick, day_of_run, hour_of_day, minute_of_day, day_night:'day'|'night', temperature, apparent_temp?, raining,
   wind:{dir, mag},
   animals:[{id, pos, species, action, heading}],
-  flora_delta:[{id, pos, stage}],
+  flora_delta:[{id, species, pos, stage, width}],   // each entry a FULL render row → upsert by id
   terrain_delta:[{cell, terrain?, wear?}] }
 ```
 The reducer stores it into `WorldState.animals` / `flora` / `climate` / `terrain`, and — for motion
@@ -89,6 +89,11 @@ each frame. When env is OFF no `WorldFrame` is emitted and the env slices stay e
   wear?:[…]}` — an **offset (col,row) rectangular array** (`i = row·cols + col`) of flat-top hex cells;
   fetched once at connect, kept current by SSE `terrain_delta`. Until the endpoint exists, `terrain`
   stays `null` and no terrain layer draws.
+- `GET /api/flora` — **flora baseline** (`persist.FloraDoc`, data-contracts §2): `{world_revision,
+  flora:[{object_id, species, pos, stage, width}]}` — the plants present before connect (fixtures +
+  already-propagated) that no SSE event replays; fetched once per revision after the snapshot, kept
+  current by SSE `flora_delta`/`PlantSpawned`/`PlantDied`. `404` ⇒ flora-off; `flora:[]` ⇒
+  installed-but-empty. Applied as an authoritative replacement (§Bootstrap step 7).
 - `GET /api/agents/{id}` — optional: a single agent's live state on click.
 - World-geometry (bounds + `pixelsPerUnit`) → `RenderConfig` — anchors the initial camera;
   `null` until fetched (auto-fit fallback). Source: DERIVED from the `GET /api/terrain` grid
@@ -142,6 +147,18 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
    DIFFERENT `world_revision` counts as not-ready (another regen landed between reads).
    env-off is NEVER inferred from a failed fetch. `terrain_delta`s arriving before the grid
    queue in `pendingTerrainDeltas` and apply when it lands.
+7. **Flora baseline (`GET /api/flora`).** Flora that existed BEFORE this client connected
+   (fixtures + already-propagated plants) is replayed by NO SSE event, so it needs a REST
+   baseline — mirroring terrain. Gated by the same env signal: `terrainStatus === 'off'` ⇒
+   never fetched; otherwise, once `snapshotLoaded`, `loadFlora(worldRevision)` fetches once per
+   revision (capped backoff; a `FloraDoc` tagged with a DIFFERENT `world_revision` is not-ready
+   and retried). `FLORA_LOADED` applies it as an **AUTHORITATIVE REPLACEMENT** of `WorldState.flora`
+   (never merged — a regenerated world must leave no ghost plants) and sets `floraLoaded` (the
+   once-per-revision guard, distinct from `flora.length === 0` which is a valid installed-empty
+   state). A revision switch resets `floraLoaded` → re-fetch for the new world. After the baseline,
+   SSE `flora_delta` (full-row upsert) / `PlantSpawned` (spawn FX) / `PlantDied` (remove + death FX)
+   keep it current; a first-seen `flora_delta` row still carries `species`+`width`, so a plant that
+   propagated between the baseline and now renders correctly even without its `PlantSpawned`.
 
 ## UI Layout
 

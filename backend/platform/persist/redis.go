@@ -95,13 +95,14 @@ func (r *RedisLiveStore) WriteAnimal(ctx context.Context, run core.RunID, v Anim
 	return nil
 }
 
-// WriteFlora replaces sim:{run}:flora with the full live plant render set
-// (WI-P4, §2) — a JSON array, periodic-full (not a delta).
-func (r *RedisLiveStore) WriteFlora(ctx context.Context, run core.RunID, plants []FloraView) error {
-	if plants == nil {
-		plants = []FloraView{} // JSON "[]", not "null" — an empty-but-installed set
+// WriteFlora replaces sim:{run}:flora with the FloraDoc baseline (world_revision
+// + full live plant render set, WI-P4, §2) — periodic-full (not a delta); the
+// byte-identical GET /api/flora response (platform/api forwards it verbatim).
+func (r *RedisLiveStore) WriteFlora(ctx context.Context, run core.RunID, v FloraDoc) error {
+	if v.Flora == nil {
+		v.Flora = []FloraView{} // JSON "flora":[], not "null" — an empty-but-installed set
 	}
-	blob, err := json.Marshal(plants)
+	blob, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("redis.WriteFlora: marshal: %w", err)
 	}

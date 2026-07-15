@@ -14,6 +14,7 @@ const (
 	agentNotFound      = `{"error":"agent not found"}`
 	snapNotFound       = `{"error":"snapshot not found"}`
 	terrainNotFound    = `{"error":"terrain not found"}`
+	floraNotFound      = `{"error":"flora not found"}`
 	metaNotFound       = `{"error":"meta not found"}`
 	restartUnavailable = `{"error":"restart unavailable"}`
 	regenUnavailable   = `{"error":"regen unavailable"}`
@@ -92,6 +93,27 @@ func (s *Server) handleTerrain(w http.ResponseWriter, r *http.Request) {
 	blob, err := s.rds.Get(r.Context(), s.keyer.Terrain())
 	if err != nil || len(blob) == 0 {
 		http.Error(w, terrainNotFound, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(blob)
+}
+
+// ── GET /api/flora ─────────────────────────────────────────────────────────
+
+// handleFlora forwards the sim:{run}:flora bytes verbatim (WI-P4,
+// data-contracts §2): persist.FloraDoc is written to the key already shaped
+// exactly as this route's response ({world_revision, flora:[{object_id,species,
+// pos,stage,width}]} — the frontend flora baseline), so no reshaping happens
+// here. The key exists only when flora is installed; absence is served as 404,
+// which the frontend treats as "no flora layer" for this revision (env-off
+// neutrality). Like /api/terrain, the blob carries world_revision so the client
+// verifies it against the snapshot's before applying (mid-regen guard).
+func (s *Server) handleFlora(w http.ResponseWriter, r *http.Request) {
+	blob, err := s.rds.Get(r.Context(), s.keyer.Flora())
+	if err != nil || len(blob) == 0 {
+		http.Error(w, floraNotFound, http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -807,14 +807,19 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 		}
 	}
 
-	if len(rv.Flora) > 0 {
+	if rv.FloraOn {
+		// Written whenever flora is installed, even with zero plants: the empty
+		// baseline ({world_revision, flora:[]}) is a servable 200 that the frontend
+		// applies as an authoritative-empty replacement — distinct from
+		// flora-not-installed (key absent ⇒ 404). Tagged with the publishing
+		// world_revision so a mid-regen fetch pair can't mix revisions.
 		plants := make([]persist.FloraView, 0, len(rv.Flora))
 		for _, p := range rv.Flora {
 			plants = append(plants, persist.FloraView{
 				ID: p.ID, Species: p.Species, Pos: p.Pos, Stage: p.Stage, Width: p.Width,
 			})
 		}
-		if err := live.WriteFlora(ctx, runID, plants); err != nil {
+		if err := live.WriteFlora(ctx, runID, persist.FloraDoc{WorldRevision: rev, Flora: plants}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteFlora: %v\n", err)
 		}
 	}

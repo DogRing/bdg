@@ -40,7 +40,11 @@ encodes the periodic-full rows; `RestoreInto` round-trips them for byte-identica
 Written each render cadence from the live world; **god-view excluded** (`stats`/`drives`/`vital` are
 NOT in the live keys, only the snapshot blob):
 - `sim:{run}:animal:{id}` HASH — `pos, species, action, heading, stamina`
-- `sim:{run}:flora` STRING — `[{object_id, species, pos, stage, width}]` (`stage` DERIVED from `length`)
+- `sim:{run}:flora` STRING — `FloraDoc` `{world_revision, flora:[{object_id, species, pos, stage, width}]}`
+  (`stage` DERIVED from `length`). Wrapped + `world_revision`-tagged like `:terrain` so a reader verifies
+  it belongs to the same published revision as the snapshot (GET /api/flora — the frontend flora baseline).
+  Written whenever flora is INSTALLED (even 0 plants ⇒ `flora:[]`, an "installed-but-empty" 200 the client
+  applies as an authoritative-empty replacement) — distinct from flora-not-installed (key absent ⇒ 404).
 - `sim:{run}:climate` HASH — `temperature, apparent_temp?, moisture, raining, wind_dir, wind_mag,
   hour_of_day, day_night, year_fraction` (`day_night` DERIVED from `hour_of_day`)
 - `sim:{run}:terrain` STRING — base layout + overrides (climate transitions) + wear (trails);
@@ -69,7 +73,7 @@ SSE (persist/world supply the render view; api owns the HTTP stream):
 AgentFrame { tick, agents[]{id, pos?, goal?, mood?, action?}, removed[] }
 WorldFrame { tick, hour_of_day, day_night, temperature, apparent_temp?, raining, snow_cover, wind{dir,mag},
              animals[]{id, pos, species, action, heading, cover_id?},
-             flora_delta[]{id, pos, stage}, terrain_delta[]{cell, terrain, wear} }
+             flora_delta[]{id, species, pos, stage, width}, terrain_delta[]{cell, terrain, wear} }
 ```
 - **God-view EXCLUDED** (no `real_stats`/`tom_digest`/raw drives) — the observation-mode boundary
   (data-contracts §4). `day_night` from `hour_of_day`, `stage` from `length`, `apparent_temp` derived

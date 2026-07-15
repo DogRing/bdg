@@ -31,7 +31,8 @@ type RenderView struct {
 	SnowCover   float64 // world-uniform snowpack ∈ [0,1] (CS2b)
 
 	Animals []AnimalRenderView // sorted ObjectID (D12); empty when fauna OFF
-	Flora   []FloraRenderView  // sorted ObjectID (D12); empty when flora OFF
+	FloraOn bool               // flora INSTALLED (⇒ write a flora baseline even when Flora is empty)
+	Flora   []FloraRenderView  // sorted ObjectID (D12); empty when flora OFF or installed-but-no-plants
 	Terrain *TerrainRenderView // nil when navmap OFF
 }
 
@@ -118,6 +119,7 @@ func (w *World) RenderView() RenderView {
 	}
 
 	if w.floraState != nil {
+		rv.FloraOn = true
 		for _, p := range w.floraState.Plants() {
 			rv.Flora = append(rv.Flora, FloraRenderView{
 				ID: p.ID, Species: string(p.Species), Pos: p.Pos,
@@ -209,14 +211,19 @@ func (w *World) frameAnimals() []map[string]any {
 }
 
 // frameFloraDelta converts this tick's sparse flora spawn/grow buffer (populated
-// by runFloraEnv) into the WorldFrame flora_delta[]{id,pos,stage} shape.
+// by runFloraEnv) into the WorldFrame flora_delta[]{id,species,pos,stage,width}
+// shape. Each entry is a FULL render row (not just the changed field) so the
+// frontend reducer can upsert it authoritatively — a first-seen plant (no
+// baseline / partial replay) still gets species+width to pick+scale its sprite.
 func (w *World) frameFloraDelta() []map[string]any {
 	if len(w.pendingFloraFrame) == 0 {
 		return []map[string]any{}
 	}
 	out := make([]map[string]any, 0, len(w.pendingFloraFrame))
 	for _, e := range w.pendingFloraFrame {
-		out = append(out, map[string]any{"id": string(e.ID), "pos": e.Pos, "stage": e.Stage})
+		out = append(out, map[string]any{
+			"id": string(e.ID), "species": e.Species, "pos": e.Pos, "stage": e.Stage, "width": e.Width,
+		})
 	}
 	return out
 }
@@ -318,11 +325,15 @@ func (w *World) buildTerrainGrid() *TerrainRenderView {
 // ── Small pure helpers ───────────────────────────────────────────────────────
 
 // floraFrameEntry is one sparse flora spawn/grow render delta entry (this
-// tick), buffered in World.pendingFloraFrame by runFloraEnv (env.go).
+// tick), buffered in World.pendingFloraFrame by runFloraEnv (env.go). It carries
+// the FULL render row (Species/Width, not just Stage) so frameFloraDelta can
+// emit an authoritative upsert (data-contracts §4).
 type floraFrameEntry struct {
-	ID    core.ObjectID
-	Pos   core.Vec2
-	Stage int
+	ID      core.ObjectID
+	Species string
+	Pos     core.Vec2
+	Stage   int
+	Width   float64
 }
 
 // dayNightOf derives the WorldFrame/climate-key day_night field from HourOfDay

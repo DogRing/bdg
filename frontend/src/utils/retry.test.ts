@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { retryUntil } from './retry'
-import { fetchSnapshotWithRetry, fetchTerrainWithRetry } from '../hooks/useWorld'
+import { fetchSnapshotWithRetry, fetchTerrainWithRetry, fetchFloraWithRetry } from '../hooks/useWorld'
 
 const recordingSleep = (log: number[]) => (ms: number) => {
   log.push(ms)
@@ -134,6 +134,41 @@ describe('baseline loaders survive transient failures (SPEC §Bootstrap)', () =>
       sleep: () => Promise.resolve(),
     })
     expect(result).toMatchObject({ cols: 1, rows: 1 })
+  })
+
+  it('flora: 404 then success (FloraDoc wrapper parsed to a baseline)', async () => {
+    const doc = {
+      world_revision: 4,
+      flora: [{ object_id: 'grass_1', species: 'grass', pos: { x: 12, y: 7 }, stage: 2, width: 0.35 }],
+    }
+    const responses = [notFound(), okJson(doc)]
+    const result = await fetchFloraWithRetry({
+      fetchFn: () => responses.shift()!,
+      sleep: () => Promise.resolve(),
+    })
+    expect(result).toMatchObject({ worldRevision: 4 })
+    expect(result!.flora[0]).toMatchObject({ id: 'grass_1', species: 'grass', stage: 2, width: 0.35 })
+  })
+
+  it('flora: a baseline from ANOTHER revision is retried until the matching one is published', async () => {
+    const doc = (rev: number) => ({ world_revision: rev, flora: [] })
+    const responses = [okJson(doc(4)), okJson(doc(5))] // stale revision, then the match
+    const result = await fetchFloraWithRetry({
+      fetchFn: () => responses.shift() ?? okJson(doc(5)),
+      sleep: () => Promise.resolve(),
+      expectedRevision: 5,
+    })
+    expect(result).toMatchObject({ worldRevision: 5, flora: [] })
+  })
+
+  it('flora: a legacy bare array (no wrapper) is tolerated with revision null', async () => {
+    const arr = [{ object_id: 'p1', species: 'oak', pos: { x: 0, y: 0 }, stage: 1, width: 1 }]
+    const result = await fetchFloraWithRetry({
+      fetchFn: () => okJson(arr),
+      sleep: () => Promise.resolve(),
+    })
+    expect(result).toMatchObject({ worldRevision: null })
+    expect(result!.flora[0]).toMatchObject({ id: 'p1', species: 'oak' })
   })
 
   it('a cancelled loader never returns a stale response', async () => {

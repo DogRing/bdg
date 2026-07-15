@@ -55,25 +55,38 @@ describe('fx queue (Q4)', () => {
     expect(death).toMatchObject({ id: 'd1', species: 'deer', heading: 2, pos: { x: 7, y: 8 }, at: 100 })
   })
 
-  it('AnimalBorn / PlantSpawned add the entity + a spawn fx; PlantDied removes + death fx', () => {
+  it('AnimalBorn adds the animal; PlantSpawned is FX-only (state via flora_delta); PlantDied removes + death fx', () => {
     let s = dispatch(ready(),
       ev('AnimalBorn', { object_id: 'd2', species: 'deer', pos: { x: 1, y: 2 } }), 0)
     expect(s.animals.get('d2')).toMatchObject({ species: 'deer', pos: { x: 1, y: 2 } })
+
+    // PlantSpawned enqueues the spawn puff but does NOT write flora state: the
+    // authoritative flora_delta upsert owns state (and carries width, which
+    // PlantSpawned's payload lacks).
     s = dispatch(s, ev('PlantSpawned', { object_id: 'p1', species: 'tree', pos: { x: 3, y: 4 } }), 10)
-    expect(s.flora.find(f => f.id === 'p1')).toBeTruthy()
+    expect(s.flora.find(f => f.id === 'p1')).toBeUndefined()
     expect(s.fx.filter(f => f.kind === 'spawn')).toHaveLength(2)
+
+    // The paired WorldFrame flora_delta (same tick) creates the plant with the
+    // full render row (species + width present).
+    s = dispatch(s, frame([], [{ id: 'p1', species: 'tree', pos: { x: 3, y: 4 }, stage: 0, width: 0.2 }]), 15)
+    expect(s.flora.find(f => f.id === 'p1')).toMatchObject({ species: 'tree', width: 0.2 })
+
     s = dispatch(s, ev('PlantDied', { object_id: 'p1' }), 20)
     expect(s.flora.find(f => f.id === 'p1')).toBeUndefined()
     expect(s.fx.find(f => f.kind === 'death' && f.id === 'p1')).toMatchObject({ species: 'tree' })
   })
 
   it('a flora stage increase enqueues a grow fx', () => {
+    // Establish the plant via its first flora_delta (stage 1)…
     let s = dispatch(ready(),
-      ev('PlantSpawned', { object_id: 'p1', species: 'tree', pos: { x: 0, y: 0 }, stage: 1 }), 0)
-    s = dispatch(s, frame([], [{ id: 'p1', pos: { x: 0, y: 0 }, stage: 2 }]), 100)
+      frame([], [{ id: 'p1', species: 'tree', pos: { x: 0, y: 0 }, stage: 1, width: 0.3 }]), 0)
+    expect(s.flora.find(f => f.id === 'p1')).toMatchObject({ stage: 1 })
+    // …then a later delta with a higher stage → grow fx.
+    s = dispatch(s, frame([], [{ id: 'p1', species: 'tree', pos: { x: 0, y: 0 }, stage: 2, width: 0.4 }]), 100)
     expect(s.fx.find(f => f.kind === 'grow')).toMatchObject({ id: 'p1', at: 100 })
     // same stage again → no second grow
-    s = dispatch(s, frame([], [{ id: 'p1', pos: { x: 0, y: 0 }, stage: 2 }]), 200)
+    s = dispatch(s, frame([], [{ id: 'p1', species: 'tree', pos: { x: 0, y: 0 }, stage: 2, width: 0.4 }]), 200)
     expect(s.fx.filter(f => f.kind === 'grow')).toHaveLength(1)
   })
 
@@ -298,5 +311,61 @@ describe('RenderConfig derivation from terrain (camera anchor)', () => {
     const s0: WorldState = { ...initialWorldState, render: preset }
     const s = worldReducer(s0, { type: 'TERRAIN_LOADED', payload: grid })
     expect(s.render).toBe(preset)
+  })
+})
+
+describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
+  const onRev = (rev = 1, cursor = '100-0'): WorldState => worldReducer(initialWorldState, {
+    type: 'SNAPSHOT_LOADED',
+    payload: { tick: 10, agents: [agent('a1')], revision: rev, cursor, terrain: 'on' },
+  })
+
+  it('FLORA_LOADED replaces flora authoritatively and marks floraLoaded', () => {
+    let s = onRev()
+    // A ghost plant somehow present before the baseline (e.g. a stale slice)...
+    s = { ...s, flora: [{ id: 'ghost', pos: { x: 9, y: 9 }, species: 'weed', stage: 3, width: 2 }] }
+    const loaded = worldReducer(s, {
+      type: 'FLORA_LOADED',
+      payload: { worldRevision: 1, flora: [
+        { id: 'grass_1', pos: { x: 1, y: 1 }, species: 'grass', stage: 2, width: 0.35 },
+      ] },
+    })
+    expect(loaded.floraLoaded).toBe(true)
+    expect(loaded.flora).toHaveLength(1)                    // authoritative REPLACE, not merge
+    expect(loaded.flora.find(f => f.id === 'ghost')).toBeUndefined()
+    expect(loaded.flora[0]).toMatchObject({ id: 'grass_1', species: 'grass', width: 0.35 })
+  })
+
+  it('a baseline tagged with a different revision is ignored (regen raced the fetch)', () => {
+    const s = onRev(2)
+    const ignored = worldReducer(s, {
+      type: 'FLORA_LOADED',
+      payload: { worldRevision: 1, flora: [{ id: 'stale', pos: { x: 0, y: 0 }, species: 'oak', stage: 1, width: 1 }] },
+    })
+    expect(ignored.floraLoaded).toBe(false)
+    expect(ignored.flora).toHaveLength(0)
+  })
+
+  it('a first-seen plant via flora_delta gets species+width (late join / partial replay)', () => {
+    // No baseline, no PlantSpawned — a lone grow delta must still be renderable.
+    let s = onRev()
+    s = dispatch(s, frame([], [{ id: 'p9', species: 'oak', pos: { x: 4, y: 5 }, stage: 1, width: 0.8 }]), 50, '101-0')
+    expect(s.flora.find(f => f.id === 'p9')).toMatchObject({ species: 'oak', stage: 1, width: 0.8 })
+  })
+
+  it('a revision switch re-arms the loader (floraLoaded false) and drops ghost plants', () => {
+    let s = onRev(1, '100-0')
+    s = worldReducer(s, {
+      type: 'FLORA_LOADED',
+      payload: { worldRevision: 1, flora: [{ id: 'oldworld', pos: { x: 2, y: 2 }, species: 'grass', stage: 1, width: 0.2 }] },
+    })
+    expect(s.floraLoaded).toBe(true)
+
+    const switched = worldReducer(s, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 1, agents: [agent('b1')], revision: 2, cursor: '50-0', terrain: 'on' },
+    })
+    expect(switched.floraLoaded).toBe(false)               // loader re-fetches for the new world
+    expect(switched.flora).toHaveLength(0)                  // no ghost from the old revision
   })
 })

@@ -299,10 +299,13 @@ func TestRedisLiveStoreWriteFlora(t *testing.T) {
 	ctx := context.Background()
 	run := core.RunID("live-flora")
 
-	plants := []FloraView{
-		{ID: "pl:1", Species: "oak", Pos: core.Vec2{X: 3, Y: 4}, Stage: 2, Width: 1.5},
+	doc := FloraDoc{
+		WorldRevision: 7,
+		Flora: []FloraView{
+			{ID: "pl:1", Species: "oak", Pos: core.Vec2{X: 3, Y: 4}, Stage: 2, Width: 1.5},
+		},
 	}
-	if err := store.WriteFlora(ctx, run, plants); err != nil {
+	if err := store.WriteFlora(ctx, run, doc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -310,21 +313,25 @@ func TestRedisLiveStoreWriteFlora(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get flora key: %v", err)
 	}
-	var got []FloraView
+	var got FloraDoc
 	if err := json.Unmarshal([]byte(blob), &got); err != nil {
-		t.Fatalf("flora key not a FloraView array: %v", err)
+		t.Fatalf("flora key not a FloraDoc: %v", err)
 	}
-	if len(got) != 1 || got[0] != plants[0] {
-		t.Errorf("flora round-trip = %+v, want %+v", got, plants)
+	if got.WorldRevision != 7 || len(got.Flora) != 1 || got.Flora[0] != doc.Flora[0] {
+		t.Errorf("flora round-trip = %+v, want %+v", got, doc)
 	}
 
-	// nil plants ⇒ JSON "[]" (empty-but-installed), never "null".
-	if err := store.WriteFlora(ctx, run, nil); err != nil {
+	// nil Flora ⇒ JSON "flora":[] (empty-but-installed), never "null".
+	if err := store.WriteFlora(ctx, run, FloraDoc{WorldRevision: 8}); err != nil {
 		t.Fatal(err)
 	}
 	blob, _ = client.Get(ctx, Keyer{Run: run}.Flora())
-	if blob != "[]" {
-		t.Errorf("nil plants stored as %q, want []", blob)
+	var empty FloraDoc
+	if err := json.Unmarshal([]byte(blob), &empty); err != nil {
+		t.Fatalf("empty flora doc not decodable: %v", err)
+	}
+	if empty.WorldRevision != 8 || empty.Flora == nil || len(empty.Flora) != 0 {
+		t.Errorf("nil Flora stored as %q, want {world_revision:8, flora:[]}", blob)
 	}
 }
 

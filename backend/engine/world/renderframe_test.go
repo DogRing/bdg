@@ -336,15 +336,36 @@ func TestPlantSpawnedEventAndFrameDelta(t *testing.T) {
 		t.Errorf("PlantSpawned species = %v, want weed", sp["species"])
 	}
 
-	// The spawn is also reflected in the sparse WorldFrame flora_delta buffer.
-	foundDelta := false
-	for _, e := range fx.world.pendingFloraFrame {
-		if e.ID == core.ObjectID(sp["object_id"].(string)) {
-			foundDelta = true
+	// The spawn is also reflected in the sparse WorldFrame flora_delta buffer,
+	// carrying the FULL render row (species + width, not just stage) so the
+	// frontend can upsert authoritatively (data-contracts §4).
+	var entry *floraFrameEntry
+	for i := range fx.world.pendingFloraFrame {
+		if fx.world.pendingFloraFrame[i].ID == core.ObjectID(sp["object_id"].(string)) {
+			entry = &fx.world.pendingFloraFrame[i]
 		}
 	}
-	if !foundDelta {
-		t.Errorf("spawned plant %v not present in pendingFloraFrame %+v", sp["object_id"], fx.world.pendingFloraFrame)
+	if entry == nil {
+		t.Fatalf("spawned plant %v not present in pendingFloraFrame %+v", sp["object_id"], fx.world.pendingFloraFrame)
+	}
+	// The entry carries the FULL render row: species is set (the old bug: a
+	// first-seen plant reaching the frontend only via flora_delta had no species
+	// to pick a sprite). Width may be 0 for a fresh seedling and grows via later
+	// grow deltas — the point is the field is now populated from the plant, not
+	// dropped on the wire.
+	if entry.Species != "weed" {
+		t.Errorf("flora_delta entry missing species: got %q, want weed", entry.Species)
+	}
+
+	// frameFloraDelta emits every render field, not just the changed one.
+	delta := fx.world.frameFloraDelta()
+	if len(delta) == 0 {
+		t.Fatal("frameFloraDelta returned empty")
+	}
+	for _, key := range []string{"id", "species", "pos", "stage", "width"} {
+		if _, ok := delta[0][key]; !ok {
+			t.Errorf("flora_delta row missing %q: %+v", key, delta[0])
+		}
 	}
 }
 

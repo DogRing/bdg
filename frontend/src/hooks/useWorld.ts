@@ -2,7 +2,7 @@ import { useReducer, useCallback, useEffect, useRef } from 'react'
 import type {
   WorldState, WorldAction, SimEvent, AgentState, AnimalState, LogEntry, WorldObject,
   PlantState, ClimateState, FxInstance, TerrainGrid, TerrainDelta, TerrainStatus,
-  SnapshotPayloadAction,
+  SnapshotPayloadAction, FloraBaseline,
 } from '../types'
 import { formatEvent } from '../utils/eventFormatter'
 import { poseFor, FX_DEFS } from '../assets/manifest'
@@ -47,6 +47,7 @@ const initial: WorldState = {
   terrain: null,
   pendingTerrainDeltas: [],
   snapshotLoaded: false,
+  floraLoaded: false,
   worldRevision: null,
   snapshotCursor: '',
   lastAppliedStreamId: '',
@@ -276,10 +277,12 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
           break
         }
         case 'PlantSpawned': {
+          // FX ONLY (the spawn puff). The render STATE is owned by the
+          // authoritative flora_delta upsert, which carries species+width — the
+          // spawn is emitted in the SAME tick's WorldFrame delta. PlantSpawned's
+          // payload has no width, so inserting the plant here would flash a
+          // width-0 sprite until the paired delta lands.
           const pos = parsePos(p.pos)
-          flora = [...flora.filter(f => f.id !== id), {
-            id, pos, species, stage: Number(p.stage ?? 0), width: Number(p.width ?? 0),
-          }]
           fx = [...fx, { kind: 'spawn', at: atMs, pos, id, species }]
           break
         }
@@ -419,6 +422,9 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
           ...next,
           animals: new Map(), flora: [], climate: null, fx: [],
           terrain: null, pendingTerrainDeltas: [],
+          // Re-arm the flora baseline loader for the new revision (its plants are
+          // a different world; keeping floraLoaded would strand the new baseline).
+          floraLoaded: false,
         }
       }
       if (terrainStatus === 'off') {
@@ -487,6 +493,22 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
       const terrain = applyTerrainDeltas(g, state.pendingTerrainDeltas)
       return { ...state, terrain, pendingTerrainDeltas: [], render }
     }
+    case 'FLORA_LOADED': {
+      // The flora baseline (GET /api/flora) — the plants that existed before this
+      // client connected (fixtures + already-propagated), which no SSE event
+      // replays. Applied as an AUTHORITATIVE REPLACEMENT (never merged): a stale
+      // array from the previous revision would otherwise survive as ghost plants.
+      const b = action.payload
+      // Stale-baseline guard: a baseline tagged with a DIFFERENT revision than
+      // the accepted one is a leftover from a regen that raced the fetch — ignore
+      // it (the loader re-runs for the current revision). null on either side ⇒
+      // legacy backend without revisions: accept.
+      if (b.worldRevision !== null && state.worldRevision !== null &&
+        b.worldRevision !== state.worldRevision) {
+        return state
+      }
+      return { ...state, flora: b.flora, floraLoaded: true }
+    }
     case 'SET_CONNECTION':
       return { ...state, connectionStatus: action.payload }
     case 'SELECT_AGENT':
@@ -525,7 +547,8 @@ export function useWorld() {
   // discards its late (stale) response (SPEC §Bootstrap step 3).
   const snapshotGen = useRef(0)
   const terrainGen = useRef(0)
-  useEffect(() => () => { snapshotGen.current++; terrainGen.current++ }, [])
+  const floraGen = useRef(0)
+  useEffect(() => () => { snapshotGen.current++; terrainGen.current++; floraGen.current++ }, [])
 
   const loadSnapshot = useCallback(async () => {
     const gen = ++snapshotGen.current
@@ -551,6 +574,26 @@ export function useWorld() {
     if (!state.snapshotLoaded || state.terrainStatus === 'off' || state.terrain !== null) return
     void loadTerrain(state.worldRevision)
   }, [state.snapshotLoaded, state.terrainStatus, state.terrain, state.worldRevision, loadTerrain])
+
+  // Flora baseline follows the same env gate as terrain (SPEC §Bootstrap): 'off'
+  // ⇒ env-off, never fetched; 'on'/'unknown' ⇒ fetched once per revision after
+  // the snapshot lands (fixtures + already-propagated plants that no SSE event
+  // replays). A revision switch resets floraLoaded, re-arming this for the new
+  // world. The baseline write is same-flush with the snapshot, so an env-on world
+  // always has the key (empty or not); a transient 404 is retried like terrain.
+  const loadFlora = useCallback(async (expectedRevision: number | null) => {
+    const gen = ++floraGen.current
+    const baseline = await fetchFloraWithRetry({
+      isCancelled: () => gen !== floraGen.current,
+      expectedRevision,
+    })
+    if (baseline) dispatch({ type: 'FLORA_LOADED', payload: baseline })
+  }, [])
+
+  useEffect(() => {
+    if (!state.snapshotLoaded || state.terrainStatus === 'off' || state.floraLoaded) return
+    void loadFlora(state.worldRevision)
+  }, [state.snapshotLoaded, state.terrainStatus, state.floraLoaded, state.worldRevision, loadFlora])
 
   // Baseline reacquisition (SPEC §Bootstrap step 5): a StreamGap control frame
   // or a stale snapshot rejection asks for a fresh snapshot/cursor pair —
@@ -651,6 +694,59 @@ export function parseTerrainDoc(doc: unknown): TerrainGrid | null {
     grid.elevation = Float32Array.from((root.elevation as unknown[]).map(Number))
   }
   return grid
+}
+
+// parseFloraDoc maps the /api/flora response (persist.FloraDoc:
+// {world_revision, flora:[{object_id,species,pos,stage,width}]}) to a
+// FloraBaseline, or null on a non-object document (retried as transient). Rows
+// missing an id are skipped; a bare legacy array (no wrapper) is tolerated with
+// worldRevision null.
+export function parseFloraDoc(doc: unknown): FloraBaseline | null {
+  if (typeof doc !== 'object' || doc === null) return null
+  const root = doc as Record<string, unknown>
+  const rawArr = Array.isArray(root.flora) ? root.flora
+    : Array.isArray(doc) ? (doc as unknown[]) : null
+  if (rawArr === null) return null
+  const worldRevision = typeof root.world_revision === 'number' && Number.isFinite(root.world_revision)
+    ? root.world_revision : null
+  const flora: PlantState[] = []
+  for (const item of rawArr as Array<Record<string, unknown>>) {
+    const id = String(item.object_id ?? item.id ?? '')
+    if (!id) continue
+    flora.push({
+      id,
+      pos: parsePos(item.pos),
+      species: String(item.species ?? ''),
+      stage: Number(item.stage ?? 0),
+      width: Number(item.width ?? 0),
+    })
+  }
+  return { worldRevision, flora }
+}
+
+// fetchFloraWithRetry — same policy as the terrain loader (capped backoff on
+// transient/non-OK/malformed, plus the revision match: a baseline tagged with a
+// DIFFERENT world_revision than the accepted snapshot's is another revision's
+// set — a regen landed between reads — and is retried until the matching one is
+// published). An env-off world (no flora key ⇒ 404) is guarded upstream by the
+// terrainStatus gate, so this is not entered there.
+export function fetchFloraWithRetry(opts: TerrainLoaderOptions = {}): Promise<FloraBaseline | null> {
+  const fetchFn: FetchLike = opts.fetchFn ?? (url => fetch(url))
+  const expected = opts.expectedRevision ?? null
+  return retryUntil(async () => {
+    try {
+      const res = await fetchFn(`${API_BASE}/api/flora`)
+      if (!res.ok) return null
+      const doc = await res.json()
+      if (expected !== null && (typeof doc !== 'object' || doc === null ||
+        Number((doc as Record<string, unknown>).world_revision) !== expected)) {
+        return null // baseline belongs to another published revision — retry
+      }
+      return parseFloraDoc(doc)
+    } catch {
+      return null
+    }
+  }, { baseMs: RETRY_BASE_MS, maxMs: RETRY_MAX_MS, sleep: opts.sleep, isCancelled: opts.isCancelled })
 }
 
 // fetchSnapshotWithRetry resolves the snapshot baseline, retrying non-OK /

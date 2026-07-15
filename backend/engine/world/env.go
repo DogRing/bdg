@@ -140,7 +140,8 @@ func (w *World) runFloraEnv() {
 			Payload: map[string]any{"object_id": string(p.ID), "species": string(p.Species), "pos": p.Pos},
 		})
 		w.pendingFloraFrame = append(w.pendingFloraFrame, floraFrameEntry{
-			ID: p.ID, Pos: p.Pos, Stage: w.floraStageOf(p.Species, p.Length),
+			ID: p.ID, Species: string(p.Species), Pos: p.Pos,
+			Stage: w.floraStageOf(p.Species, p.Length), Width: p.Width,
 		})
 	}
 	// WI-P4: PlantDied (object-mortality, §7), using the pre-Step species/pos.
@@ -169,7 +170,8 @@ func (w *World) runFloraEnv() {
 				continue
 			}
 			w.pendingFloraFrame = append(w.pendingFloraFrame, floraFrameEntry{
-				ID: gd.ID, Pos: p.Pos, Stage: w.floraStageOf(p.Species, gd.Length),
+				ID: gd.ID, Species: string(p.Species), Pos: p.Pos,
+				Stage: w.floraStageOf(p.Species, gd.Length), Width: p.Width,
 			})
 		}
 	}

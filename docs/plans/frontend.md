@@ -243,3 +243,41 @@ dimensions (assets SPEC delta). Fauna needs only manifest frame-size/url edits (
   **Superseded 2026-07-14 (human decision):** concealment rustle belongs to occupied `berry_shrub`
   (`bush.png`), not grass. `WorldFrame.animals[].cover_id` identifies the occupied cover; the bush
   bends for 300 ms once per 3 seconds and stays still between cues.
+
+## 9. FE-P7 — flora render authority (baseline + full-row delta) — ✅ shipped 2026-07-14
+
+The FE-P6 art landed but plants did not draw: fixture (initial) plants emit no `PlantSpawned`
+(only `flora.Step` propagation does), and `flora_delta` carried only `{id,pos,stage}` — so the
+frontend never learned about pre-connect plants and a first-seen delta could not pick/scale a
+sprite. This phase gives flora a proper baseline + a self-sufficient delta.
+
+### Decisions locked
+- **Flora is transported like agents/terrain, NOT like fauna.** Fauna (`~200`, moving every tick)
+  is re-sent as a full roster every `WorldFrame`, so it needs no baseline. Flora (`~500`, mostly
+  static) is a **REST baseline + sparse SSE delta** set whose baseline must be revision-consistent
+  — so it patterns with the agent roster + terrain, not the full-frame fauna roster.
+- **`flora_delta` is the sole authoritative render-state writer** (full `{id,species,pos,stage,
+  width}` row, upsert by id); **`PlantSpawned` = spawn FX only**, **`PlantDied` = remove + death FX**.
+- **Baseline applied as an authoritative REPLACEMENT** (never merged) so a regen leaves no ghosts.
+
+### Open questions (all RESOLVED by the human, 2026-07-14; deliberation → `docs/decisions/flora-render-authority.md`)
+- **P7-Q1 — Flora baseline transport.** (a) separate `GET /api/flora` mirroring `/api/terrain`
+  (`FloraDoc {world_revision, flora:[…]}`, revision-gated); (b) fold into `/api/snapshot` (one
+  atomic cursor-consistent read — the reviewer's recommendation). `RESOLVED: (a)`. Why (b) was
+  argued (cursor-consistency / spurious-FX micro-race) and why (a) won anyway (intra-flush
+  ordering makes the window unhittable; flora is snapshot-like; reuses terrain machinery) →
+  `docs/decisions/flora-render-authority.md`.
+- **P7-Q2 — Render-state carrier.** (a) `flora_delta` full-row upsert + `PlantSpawned` FX-only;
+  (b) `PlantSpawned` carries `stage`+`width`, `flora_delta` stays grow-only. `RESOLVED: (a)`.
+- **P7-Q3 — 3D flora width.** No code change — the `gl/worldGL.ts` billboard height already has a
+  `0.8·width` term (it read 0 only because `width` was undelivered); the data fix activates it.
+
+### Per-module deltas (How lives in the SPECs)
+- `backend/platform/persist` — `FloraDoc` wrapper; `WriteFlora(…, FloraDoc)`; `RenderView.FloraOn`
+  gates a write-when-installed (empty `flora:[]` is servable). `SPEC-world.md` updated.
+- `backend/platform/api` — `GET /api/flora` (writer server only) forwards bytes verbatim. `SPEC.md`.
+- `backend/engine/world` — `frameFloraDelta` emits the full row; `floraFrameEntry` gains
+  `Species`/`Width` (populated at spawn + grow).
+- `frontend` — `FloraBaseline` type + `FLORA_LOADED` + `floraLoaded` + `loadFlora`/
+  `fetchFloraWithRetry`/`parseFloraDoc` (terrain-loader mirror); `PlantSpawned` reducer → FX-only;
+  `dev/mock-server.mjs` serves `/api/flora` + full-row deltas. `frontend/SPEC.md` §Bootstrap step 7.

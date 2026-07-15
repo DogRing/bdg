@@ -48,6 +48,18 @@ type FloraView struct {
 	Width   float64       `json:"width"`
 }
 
+// FloraDoc is the sim:{run}:flora STRING payload AND the byte-identical GET
+// /api/flora response (§2): the full live plant render set tagged with the
+// publishing world_revision (mirrors TerrainView.WorldRevision). A reader
+// verifies WorldRevision against the snapshot's so a mid-regen fetch pair can't
+// mix revisions. Written whenever flora is INSTALLED — an empty Flora is
+// "installed, no plants" (200 with flora:[]), distinct from flora-not-installed
+// (key absent ⇒ 404). platform/api forwards the stored bytes verbatim.
+type FloraDoc struct {
+	WorldRevision int64       `json:"world_revision"`
+	Flora         []FloraView `json:"flora"`
+}
+
 // ClimateView is the sim:{run}:climate ambient hash payload (§2). ApparentTemp
 // is optional (fauna F40 — only meaningful once fauna is active); nil ⇒ the
 // field is omitted, not zero.
@@ -114,9 +126,11 @@ type LiveStore interface {
 	// The AnimalView it accepts CANNOT carry Stats/Drives/Vital (god-view guard,
 	// WI-P4). Called only when env/fauna is installed.
 	WriteAnimal(ctx context.Context, run core.RunID, v AnimalView) error
-	// WriteFlora replaces sim:{run}:flora with the full live plant render set
-	// (§2, WI-P4) — periodic-full, not a delta. Called only when flora is installed.
-	WriteFlora(ctx context.Context, run core.RunID, plants []FloraView) error
+	// WriteFlora replaces sim:{run}:flora with the FloraDoc baseline
+	// (world_revision + full live plant render set, §2, WI-P4) — periodic-full,
+	// not a delta; also the GET /api/flora source. Called only when flora is
+	// installed (empty FloraDoc.Flora ⇒ installed-but-no-plants).
+	WriteFlora(ctx context.Context, run core.RunID, v FloraDoc) error
 	// WriteClimate upserts the sim:{run}:climate ambient hash (§2, WI-P4).
 	// Called only when climate is installed.
 	WriteClimate(ctx context.Context, run core.RunID, v ClimateView) error

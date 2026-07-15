@@ -25,6 +25,7 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 		Animals: []world.AnimalRenderView{
 			{ID: "an:d1", Species: "deer", Pos: core.Vec2{X: 1, Y: 2}, Action: "Graze", Heading: 0.5, Stamina: 0.9},
 		},
+		FloraOn: true,
 		Flora: []world.FloraRenderView{
 			{ID: "pl:oak1", Species: "oak", Pos: core.Vec2{X: 3, Y: 4}, Stage: 2, Width: 1.5},
 		},
@@ -42,6 +43,11 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 	}
 	if got := live.FloraOf(run); !strings.Contains(got, `"object_id":"pl:oak1"`) || !strings.Contains(got, `"stage":2`) {
 		t.Fatalf("flora key missing/wrong: %s", got)
+	}
+	// The flora baseline is wrapped in a FloraDoc tagged with the publishing
+	// revision (data-contracts §2) — the frontend verifies it against the snapshot.
+	if got := live.FloraOf(run); !strings.Contains(got, `"world_revision":3`) || !strings.Contains(got, `"flora":[`) {
+		t.Fatalf("flora blob missing world_revision/flora wrapper: %s", got)
 	}
 	if got := live.ClimateOf(run); !strings.Contains(got, `"temperature":18.5`) || !strings.Contains(got, `"day_night":"day"`) {
 		t.Fatalf("climate key missing/wrong: %s", got)

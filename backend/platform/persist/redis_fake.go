@@ -78,13 +78,13 @@ func (f *FakeRedis) WriteAnimal(_ context.Context, run core.RunID, v AnimalView)
 	return nil
 }
 
-func (f *FakeRedis) WriteFlora(_ context.Context, run core.RunID, plants []FloraView) error {
+func (f *FakeRedis) WriteFlora(_ context.Context, run core.RunID, v FloraDoc) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if plants == nil {
-		plants = []FloraView{}
+	if v.Flora == nil {
+		v.Flora = []FloraView{}
 	}
-	blob, err := json.Marshal(plants)
+	blob, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}

@@ -254,7 +254,8 @@ function step() {
         reseedAt = tick + 10
       } else {
         g.stage++; g.width += 1
-        floraDelta.push({ id: g.id, pos: round(g.pos), stage: g.stage })
+        // Full render row per entry (data-contracts §4): the reducer upserts it.
+        floraDelta.push({ id: g.id, species: g.species, pos: round(g.pos), stage: g.stage, width: g.width })
       }
     }
   }
@@ -262,7 +263,10 @@ function step() {
     const id = `tree_g${++growerSerial}`
     plant(id, 'tree', 380 + rng() * 12, 128 + rng() * 10, 0, 2)
     const p = flora.get(id)
+    // PlantSpawned is FX-only on the client; the plant's render STATE arrives via
+    // the paired flora_delta full row (same tick), matching the backend.
     emit('PlantSpawned', null, { object_id: id, species: 'tree', pos: round(p.pos) })
+    floraDelta.push({ id, species: p.species, pos: round(p.pos), stage: p.stage, width: p.width })
   }
 
   // climate: 0.25 game-hour per tick (48 s day at 500 ms); rain spell each ~120 ticks
@@ -358,6 +362,17 @@ const server = http.createServer((req, res) => {
       elevation,
       world_revision: worldRevision,
     }))
+  } else if (url.startsWith('/api/flora')) {
+    // Flora baseline (persist.FloraDoc; data-contracts §2): the full live plant
+    // render set for this revision, so a late joiner sees fixtures + already-
+    // propagated plants that no SSE event replays. SSE flora_delta keeps it current.
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      world_revision: worldRevision,
+      flora: [...flora.values()].map(f => ({
+        object_id: f.id, species: f.species, pos: round(f.pos), stage: f.stage, width: f.width,
+      })),
+    }))
   } else if (url.startsWith('/sse')) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -398,5 +413,5 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(`[mock] contract-parity backend on :${PORT} (seed ${SEED}, tick ${TICK_MS}ms)`)
-  console.log('[mock] GET /api/snapshot · /api/terrain · /sse · POST /api/restart · /api/regen')
+  console.log('[mock] GET /api/snapshot · /api/terrain · /api/flora · /sse · POST /api/restart · /api/regen')
 })

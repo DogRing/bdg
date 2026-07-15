@@ -90,6 +90,7 @@ func New(cfg Config, live persist.LiveStore, rds RedisReader, gv GodViewStore) *
 	s.mux.HandleFunc("GET /api/meta", s.handleMeta)
 	s.mux.HandleFunc("GET /api/snapshot", s.handleSnapshot)
 	s.mux.HandleFunc("GET /api/terrain", s.handleTerrain)
+	s.mux.HandleFunc("GET /api/flora", s.handleFlora)
 	s.mux.HandleFunc("GET /api/agents/{id}", s.handleAgent)
 	s.mux.HandleFunc("POST /api/restart", s.handleRestart)
 	s.mux.HandleFunc("POST /api/regen", s.handleRegen)
