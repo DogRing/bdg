@@ -100,6 +100,29 @@ func TestFakeRedisWriteAgent(t *testing.T) {
 	}
 }
 
+// TestPublishWorldRevisionWritesFloraFlag verifies the publication HSET stamps
+// the explicit flora availability alongside terrain (fix #3): a reader keys the
+// /api/flora bootstrap off this flag, never an inferred terrain status.
+func TestPublishWorldRevisionWritesFloraFlag(t *testing.T) {
+	f := NewFakeRedis()
+	run := core.RunID("pub-flora")
+	if err := f.PublishWorldRevision(context.Background(), run, 7, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.MetaField(run, "flora"); got != "off" {
+		t.Errorf("flora flag = %q, want off", got)
+	}
+	if got := f.MetaField(run, "terrain"); got != "on" {
+		t.Errorf("terrain flag = %q, want on (flora flag must not disturb terrain)", got)
+	}
+	if err := f.PublishWorldRevision(context.Background(), run, 8, true, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.MetaField(run, "flora"); got != "on" {
+		t.Errorf("flora flag after re-publish = %q, want on", got)
+	}
+}
+
 func TestFakeRedisInitMeta(t *testing.T) {
 	fake := NewFakeRedis()
 	ctx := context.Background()

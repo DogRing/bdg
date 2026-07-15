@@ -47,6 +47,7 @@ type Snapshot struct {
 	WorldRevision int64            `json:"world_revision,omitempty"`
 	StreamCursor  string           `json:"stream_cursor,omitempty"`
 	TerrainStatus string           `json:"terrain,omitempty"`
+	FloraStatus   string           `json:"flora,omitempty"` // "on"/"off"; "" ⇒ unknown/legacy (fix #3)
 	World         world.WorldState `json:"world"`
 }
 

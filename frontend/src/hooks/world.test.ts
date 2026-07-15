@@ -17,6 +17,11 @@ const frame = (animals: Array<Record<string, unknown>>, flora: Array<Record<stri
 const ready = (): WorldState =>
   worldReducer(initialWorldState, { type: 'SNAPSHOT_LOADED', payload: { agents: [], tick: 0 } })
 
+// A world PAST the flora baseline (floraLoaded), so flora_delta applies live
+// instead of buffering into pendingFloraOps (fix #1).
+const liveFlora = (): WorldState =>
+  worldReducer(ready(), { type: 'FLORA_LOADED', payload: { worldRevision: null, flora: [] } })
+
 const deer = (over: Record<string, unknown> = {}) =>
   ({ id: 'd1', pos: { x: 0, y: 0 }, species: 'deer', action: 'graze', heading: 0, ...over })
 
@@ -56,7 +61,7 @@ describe('fx queue (Q4)', () => {
   })
 
   it('AnimalBorn adds the animal; PlantSpawned is FX-only (state via flora_delta); PlantDied removes + death fx', () => {
-    let s = dispatch(ready(),
+    let s = dispatch(liveFlora(),
       ev('AnimalBorn', { object_id: 'd2', species: 'deer', pos: { x: 1, y: 2 } }), 0)
     expect(s.animals.get('d2')).toMatchObject({ species: 'deer', pos: { x: 1, y: 2 } })
 
@@ -79,7 +84,7 @@ describe('fx queue (Q4)', () => {
 
   it('a flora stage increase enqueues a grow fx', () => {
     // Establish the plant via its first flora_delta (stage 1)…
-    let s = dispatch(ready(),
+    let s = dispatch(liveFlora(),
       frame([], [{ id: 'p1', species: 'tree', pos: { x: 0, y: 0 }, stage: 1, width: 0.3 }]), 0)
     expect(s.flora.find(f => f.id === 'p1')).toMatchObject({ stage: 1 })
     // …then a later delta with a higher stage → grow fx.
@@ -317,7 +322,7 @@ describe('RenderConfig derivation from terrain (camera anchor)', () => {
 describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
   const onRev = (rev = 1, cursor = '100-0'): WorldState => worldReducer(initialWorldState, {
     type: 'SNAPSHOT_LOADED',
-    payload: { tick: 10, agents: [agent('a1')], revision: rev, cursor, terrain: 'on' },
+    payload: { tick: 10, agents: [agent('a1')], revision: rev, cursor, terrain: 'on', flora: 'on' },
   })
 
   it('FLORA_LOADED replaces flora authoritatively and marks floraLoaded', () => {
@@ -346,11 +351,38 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     expect(ignored.flora).toHaveLength(0)
   })
 
-  it('a first-seen plant via flora_delta gets species+width (late join / partial replay)', () => {
-    // No baseline, no PlantSpawned — a lone grow delta must still be renderable.
+  it('fix #1: a flora_delta arriving BEFORE the baseline is buffered, then survives the authoritative replace', () => {
+    // SSE beats /api/flora: a post-cursor spawn (full row) lands first. It must
+    // NOT be clobbered when the (older, as-of-cursor) baseline replaces flora.
     let s = onRev()
     s = dispatch(s, frame([], [{ id: 'p9', species: 'oak', pos: { x: 4, y: 5 }, stage: 1, width: 0.8 }]), 50, '101-0')
-    expect(s.flora.find(f => f.id === 'p9')).toMatchObject({ species: 'oak', stage: 1, width: 0.8 })
+    expect(s.floraLoaded).toBe(false)
+    expect(s.flora.find(f => f.id === 'p9')).toBeUndefined()   // buffered, not live yet
+    expect(s.pendingFloraOps).toHaveLength(1)
+
+    const loaded = worldReducer(s, {
+      type: 'FLORA_LOADED',
+      payload: { worldRevision: 1, flora: [{ id: 'fixture', pos: { x: 0, y: 0 }, species: 'grass', stage: 2, width: 0.3 }] },
+    })
+    // Baseline fixture AND the buffered post-cursor spawn both present; buffer cleared.
+    expect(loaded.flora.find(f => f.id === 'fixture')).toBeTruthy()
+    expect(loaded.flora.find(f => f.id === 'p9')).toMatchObject({ species: 'oak', width: 0.8 })
+    expect(loaded.pendingFloraOps).toHaveLength(0)
+  })
+
+  it('fix #1: a PlantDied arriving BEFORE the baseline is NOT resurrected by it', () => {
+    // The dreaded ghost: PlantDied applies to empty flora (no-op), then the
+    // baseline still lists the plant — the buffered remove must win.
+    let s = onRev()
+    s = dispatch(s, ev('PlantDied', { object_id: 'doomed', species: 'oak', pos: { x: 1, y: 1 } }), 50, '101-0')
+    expect(s.pendingFloraOps).toEqual([{ op: 'remove', id: 'doomed' }])
+    expect(s.fx.find(f => f.kind === 'death' && f.id === 'doomed')).toBeTruthy()   // FX fires immediately
+
+    const loaded = worldReducer(s, {
+      type: 'FLORA_LOADED',
+      payload: { worldRevision: 1, flora: [{ id: 'doomed', pos: { x: 1, y: 1 }, species: 'oak', stage: 2, width: 1 }] },
+    })
+    expect(loaded.flora.find(f => f.id === 'doomed')).toBeUndefined()   // stays dead — no resurrection
   })
 
   it('a revision switch re-arms the loader (floraLoaded false) and drops ghost plants', () => {
@@ -367,5 +399,41 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     })
     expect(switched.floraLoaded).toBe(false)               // loader re-fetches for the new world
     expect(switched.flora).toHaveLength(0)                  // no ghost from the old revision
+    expect(switched.pendingFloraOps).toHaveLength(0)
+  })
+
+  it('fix #2: a StreamGap re-arms the flora baseline (floraLoaded false) so a trim re-converges', () => {
+    let s = onRev(1, '100-0')
+    s = worldReducer(s, {
+      type: 'FLORA_LOADED',
+      payload: { worldRevision: 1, flora: [{ id: 'p1', pos: { x: 0, y: 0 }, species: 'grass', stage: 1, width: 0.2 }] },
+    })
+    expect(s.floraLoaded).toBe(true)
+
+    // The trimmed-stream control frame: agents reacquire via snapshot, but flora
+    // is a separate endpoint — it must be re-armed too or a dropped PlantDied
+    // leaves flora permanently stale.
+    const gapped = dispatch(s, ev('StreamGap', { reason: 'cursor_trimmed' }, 0), 0, '')
+    expect(gapped.baselineRetries).toBe(1)
+    expect(gapped.floraLoaded).toBe(false)                 // re-armed → loadFlora refires
+  })
+
+  it('fix #3: floraStatus "off" marks flora loaded-empty and never buffers (no infinite retry)', () => {
+    const off = worldReducer(initialWorldState, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 5, agents: [], revision: 1, cursor: '10-0', terrain: 'on', flora: 'off' },
+    })
+    expect(off.floraStatus).toBe('off')
+    expect(off.floraLoaded).toBe(true)                     // authoritatively empty; loader guard skips it
+    expect(off.flora).toHaveLength(0)
+  })
+
+  it('fix #3: floraStatus "on" leaves floraLoaded false so the loader fetches once', () => {
+    const on = worldReducer(initialWorldState, {
+      type: 'SNAPSHOT_LOADED',
+      payload: { tick: 5, agents: [], revision: 1, cursor: '10-0', terrain: 'off', flora: 'on' },
+    })
+    expect(on.floraStatus).toBe('on')
+    expect(on.floraLoaded).toBe(false)                     // even with terrain OFF — decoupled (fix #3)
   })
 })

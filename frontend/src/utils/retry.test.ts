@@ -90,16 +90,16 @@ describe('baseline loaders survive transient failures (SPEC §Bootstrap)', () =>
     expect(result!.terrain[2]).toBe('water')
   })
 
-  it('snapshot: publication wrapper is parsed (revision, cursor, terrain flag)', async () => {
+  it('snapshot: publication wrapper is parsed (revision, cursor, terrain + flora flags)', async () => {
     const doc = {
-      tick: 12, world_revision: 4, stream_cursor: '1718-3', terrain: 'on',
+      tick: 12, world_revision: 4, stream_cursor: '1718-3', terrain: 'on', flora: 'on',
       agents: [], objects: [],
     }
     const payload = await fetchSnapshotWithRetry({
       fetchFn: () => okJson(doc),
       sleep: () => Promise.resolve(),
     })
-    expect(payload).toMatchObject({ tick: 12, revision: 4, cursor: '1718-3', terrain: 'on' })
+    expect(payload).toMatchObject({ tick: 12, revision: 4, cursor: '1718-3', terrain: 'on', flora: 'on' })
   })
 
   it('snapshot: a legacy blob without the wrapper degrades to null/empty/unknown', async () => {
@@ -107,7 +107,7 @@ describe('baseline loaders survive transient failures (SPEC §Bootstrap)', () =>
       fetchFn: () => okJson({ tick: 3, agents: [], objects: [] }),
       sleep: () => Promise.resolve(),
     })
-    expect(payload).toMatchObject({ revision: null, cursor: '', terrain: 'unknown' })
+    expect(payload).toMatchObject({ revision: null, cursor: '', terrain: 'unknown', flora: 'unknown' })
   })
 
   it('terrain: a grid from ANOTHER revision is retried until the matching one is published', async () => {

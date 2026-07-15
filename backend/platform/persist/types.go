@@ -144,13 +144,13 @@ type LiveStore interface {
 	// regen), so a meta refresh can never un-publish or re-publish a revision.
 	InitMeta(ctx context.Context, run core.RunID, m RunMeta) error
 	// PublishWorldRevision publishes the single-world revision marker
-	// (data-contracts §2): ONE HSET writes {world_revision, terrain:"on"|"off"}
-	// onto sim:{run}:meta. The run-driver calls it LAST — only after the same
-	// revision's snapshot (and terrain, when env is on) live writes succeeded —
-	// so a reader observing the new revision finds matching, revision-tagged
-	// baselines already servable. NOT a run generation (multi-world stays
-	// DEFERRED, docs/plans/run-generation.md).
-	PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn bool) error
+	// (data-contracts §2): ONE HSET writes {world_revision, terrain:"on"|"off",
+	// flora:"on"|"off"} onto sim:{run}:meta. The run-driver calls it LAST — only
+	// after the same revision's snapshot AND its terrain/flora baselines (when
+	// installed) live writes succeeded — so a reader observing the new revision
+	// finds matching, revision-tagged baselines already servable. NOT a run
+	// generation (multi-world stays DEFERRED, docs/plans/run-generation.md).
+	PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn, floraOn bool) error
 	// ReadSnapshot loads the latest snapshot blob (for resume / hand-off to backup).
 	ReadSnapshot(ctx context.Context, run core.RunID) ([]byte, error)
 	// Expire applies the TTL/expiry policy for a run (called on completion).

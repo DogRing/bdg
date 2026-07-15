@@ -45,14 +45,18 @@ NOT in the live keys, only the snapshot blob):
   it belongs to the same published revision as the snapshot (GET /api/flora — the frontend flora baseline).
   Written whenever flora is INSTALLED (even 0 plants ⇒ `flora:[]`, an "installed-but-empty" 200 the client
   applies as an authoritative-empty replacement) — distinct from flora-not-installed (key absent ⇒ 404).
+  A FloraOn flora-write FAILURE gates publication exactly as terrain does: `writeEnvLive` returns false, so
+  the run-driver holds the revision (a published revision must always serve `/api/flora`).
 - `sim:{run}:climate` HASH — `temperature, apparent_temp?, moisture, raining, wind_dir, wind_mag,
   hour_of_day, day_night, year_fraction` (`day_night` DERIVED from `hour_of_day`)
 - `sim:{run}:terrain` STRING — base layout + overrides (climate transitions) + wear (trails);
   the blob carries `world_revision` (data-contracts §2) so a reader can verify it belongs to the
   same published revision as the snapshot it was fetched next to
 These keys exist only when env is installed; absent ⇒ env-off — and the published meta
-`terrain` flag ("on"/"off", written by `PublishWorldRevision`) states availability EXPLICITLY,
-so clients never have to infer env-off from a failed fetch. The per-frame
+`terrain` and `flora` flags (each "on"/"off", written by `PublishWorldRevision(ctx, run, rev,
+terrainOn, floraOn)`) state availability EXPLICITLY per subsystem, so clients never have to infer
+env-off from a failed fetch (the frontend gates its `/api/flora` load on the `flora` flag,
+independently of terrain). The per-frame
 `AgentFrame`/`WorldFrame` deltas (below) are EVENT TYPES on the run's single
 `sim:{run}:events` STREAM (data-contracts §2/§4) — there is NO separate frame stream/key;
 SSE tails the events stream (with `id:`-line cursors + replay, api SPEC `GET /sse`).

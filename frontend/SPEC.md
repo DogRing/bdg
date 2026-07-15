@@ -41,8 +41,8 @@ otherwise ignored.
 | `type` | Payload (gist) | Treatment |
 |---|---|---|
 | `AgentFrame` | `tick, agents[]{id,pos?,goal?,mood?,action?}, removed[]` | Per-tick **sparse agent delta** (replaced the removed full-roster `TickDone`): merge only the fields present onto the known agent (REST snapshot = the baseline), delete `removed[]` ids; advance tick. Returns early (no log line) |
-| `StreamGap` | `reason` | **Transport control frame** (api SPEC GET /sse): the replay cursor fell behind the trimmed backlog — the reducer bumps `baselineRetries` (fresh snapshot/cursor reacquisition, §Bootstrap step 5); never logged, never rendered |
-| `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge animal positions (keeping prev values for interpolation), **`flora_delta` full-row upserts by id** (grow FX on stage increase), terrain deltas, ambient weather. Carries NO agents — agent state is `AgentFrame`'s. Returns early (no log line) |
+| `StreamGap` | `reason` | **Transport control frame** (api SPEC GET /sse): the replay cursor fell behind the trimmed backlog — the reducer bumps `baselineRetries` (fresh snapshot/cursor reacquisition, §Bootstrap step 5) AND re-arms `floraLoaded:false` (+ clears `pendingFloraOps`) so the flora baseline re-fetches for the new cursor; never logged, never rendered |
+| `WorldFrame` | env frame (below) | **Env render frame** (WI-P4): merge animal positions (keeping prev values for interpolation), **`flora_delta` full-row upserts by id** (grow FX on stage increase) — buffered into `pendingFloraOps` while `!floraLoaded` (§Bootstrap step 7), terrain deltas, ambient weather. Carries NO agents — agent state is `AgentFrame`'s. Returns early (no log line) |
 | `GoalSelected` | `dimension, target, eff_value` | Set agent goal; log "🎯 farmer_1 → Satiety" |
 | `PlanBuilt` | `steps[], total_cost, provisioned[]` | Log (detail) |
 | `ActionStarted` / `ActionDone` | `action, pos? / action, result` | Move agent dot (if `pos`); log |
@@ -53,7 +53,7 @@ otherwise ignored.
 | `CopingEntered` | `mode` | Set coping mode; log "😶 → Apathy" |
 | `Decayed` / `Crafted` / `Mined` / `ToolBroke` | (Materials, data-contracts §4) | Log line |
 | `AnimalBorn` / `AnimalDied` | `object_id, species, pos / cause` | Add / remove an animal **+ enqueue spawn / death FX**; log (WI-P4) |
-| `PlantSpawned` / `PlantDied` | `object_id, species, pos` | `PlantSpawned` = **enqueue spawn FX only** (render STATE is owned by the authoritative `flora_delta` upsert, which carries `width`; the spawn's paired `flora_delta` row arrives the same tick). `PlantDied` = **remove the plant + enqueue death FX**; log (WI-P4) |
+| `PlantSpawned` / `PlantDied` | `object_id, species, pos` | `PlantSpawned` = **enqueue spawn FX only** (render STATE is owned by the authoritative `flora_delta` upsert, which carries `width`; the spawn's paired `flora_delta` row arrives the same tick). `PlantDied` = **remove the plant + enqueue death FX** — the removal is buffered into `pendingFloraOps` while `!floraLoaded` (§Bootstrap step 7; FX fire immediately either way); log (WI-P4) |
 
 ### Env render channel — `WorldFrame` (WI-P4, data-contracts §4/§10)
 Once the env subsystem is installed backend-side, the world streams a periodic **`WorldFrame`** —
@@ -149,16 +149,31 @@ events entry ID the captured state already reflects, data-contracts §1/§4). Th
    queue in `pendingTerrainDeltas` and apply when it lands.
 7. **Flora baseline (`GET /api/flora`).** Flora that existed BEFORE this client connected
    (fixtures + already-propagated plants) is replayed by NO SSE event, so it needs a REST
-   baseline — mirroring terrain. Gated by the same env signal: `terrainStatus === 'off'` ⇒
-   never fetched; otherwise, once `snapshotLoaded`, `loadFlora(worldRevision)` fetches once per
-   revision (capped backoff; a `FloraDoc` tagged with a DIFFERENT `world_revision` is not-ready
-   and retried). `FLORA_LOADED` applies it as an **AUTHORITATIVE REPLACEMENT** of `WorldState.flora`
-   (never merged — a regenerated world must leave no ghost plants) and sets `floraLoaded` (the
-   once-per-revision guard, distinct from `flora.length === 0` which is a valid installed-empty
-   state). A revision switch resets `floraLoaded` → re-fetch for the new world. After the baseline,
-   SSE `flora_delta` (full-row upsert) / `PlantSpawned` (spawn FX) / `PlantDied` (remove + death FX)
-   keep it current; a first-seen `flora_delta` row still carries `species`+`width`, so a plant that
-   propagated between the baseline and now renders correctly even without its `PlantSpawned`.
+   baseline — mirroring terrain. Gated by its OWN explicit signal `floraStatus` (from the
+   snapshot's `flora` flag, decoupled from terrain): `'off'` ⇒ env-off, never fetched (and the
+   reducer short-circuits `flora:[]` + `floraLoaded:true`); `'on'`/`'unknown'` ⇒ once
+   `snapshotLoaded`, `loadFlora(worldRevision)` fetches once per revision (capped backoff; a
+   `FloraDoc` tagged with a DIFFERENT `world_revision` is not-ready and retried). `FLORA_LOADED`
+   applies it as an **AUTHORITATIVE REPLACEMENT** of `WorldState.flora` (never merged — a
+   regenerated world must leave no ghost plants), then **replays `pendingFloraOps`** (see below)
+   on top so post-cursor mutations win, and sets `floraLoaded` (the once-per-revision guard,
+   distinct from `flora.length === 0` which is a valid installed-empty state).
+   - **Pre-baseline buffering (mirrors `pendingTerrainDeltas`).** SSE opens BEFORE the flora
+     baseline lands, so a `flora_delta` upsert or `PlantDied` remove can arrive while
+     `!floraLoaded`. Applying it to the empty `flora` map then wholesale-replacing it at
+     `FLORA_LOADED` would LOSE a post-cursor spawn or RESURRECT a post-cursor death (the baseline is
+     as-of an OLDER `stream_cursor`). Instead, while `!floraLoaded` these mutations are buffered as
+     `pendingFloraOps` (`{op:'upsert',plant}` / `{op:'remove',id}`) and replayed after the baseline
+     replacement, so the newer live state wins. `PlantSpawned`/`PlantDied` FX still fire immediately
+     (FX carry no state).
+   - **Revision switch / StreamGap re-arm.** A revision switch AND a `StreamGap`/stale-snapshot
+     reacquisition reset `floraLoaded:false` (+ clear `pendingFloraOps`) → the baseline is
+     re-fetched for the fresh world/cursor (symmetric with terrain).
+
+   After the baseline, SSE `flora_delta` (full-row upsert) / `PlantSpawned` (spawn FX) / `PlantDied`
+   (remove + death FX) keep it current; a first-seen `flora_delta` row still carries `species`+`width`,
+   so a plant that propagated between the baseline and now renders correctly even without its
+   `PlantSpawned`.
 
 ## UI Layout
 
@@ -272,6 +287,9 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
                          snapshotCursor; lastAppliedStreamId; // §Bootstrap transport cursor
                          terrainStatus:'on'|'off'|'unknown';  // explicit availability
                          pendingTerrainDeltas:TerrainDelta[]; // pre-grid deltas
+                         floraLoaded;                         // once-per-revision flora baseline guard
+                         floraStatus:'on'|'off'|'unknown';    // explicit flora availability (decoupled from terrain)
+                         pendingFloraOps:FloraOp[];           // pre-baseline flora upserts/removes (§Bootstrap step 7)
                          baselineRetries }                    // gap/stale → reacquire
 ```
 `Pose`, `CameraState`, and manifest types are owned by the children (`src/assets/SPEC.md`,
@@ -368,13 +386,21 @@ interface WorldState   { tick; agents:Map; objects[]; roles[]; log[]; connection
   cursor is behind `lastAppliedStreamId` (same revision) is rejected with `baselineRetries++`
   and nothing rolls back.
 - [ ] **Revision switch (§Bootstrap step 2)** — a snapshot with a different `world_revision`
-  clears agents/animals/flora/climate/fx/terrain/queued deltas, accepts a lower cursor and a
-  rewound tick, and subsequent new-stream frames apply normally.
+  clears agents/animals/flora/climate/fx/terrain/queued deltas, re-arms `floraLoaded:false` +
+  clears `pendingFloraOps`, accepts a lower cursor and a rewound tick, and subsequent new-stream
+  frames apply normally.
 - [ ] **StreamGap ⇒ reacquisition (§Bootstrap step 5)** — the control frame increments
-  `baselineRetries` (fresh snapshot/cursor refetch) and changes nothing else.
+  `baselineRetries` (fresh snapshot/cursor refetch) and re-arms `floraLoaded:false` (+ clears
+  `pendingFloraOps`) so the flora baseline re-fetches; changes nothing else.
 - [ ] **Terrain availability (§Bootstrap step 6)** — `terrain:"off"` completes bootstrap without
   ever fetching terrain and clears any grid/queued deltas; `"on"` retries transient failures and
   revision mismatches; `"unknown"` (legacy/mock) keeps the capped-backoff fallback.
+- [ ] **Flora availability + pre-baseline buffering (§Bootstrap step 7)** — `flora:"off"` completes
+  bootstrap without ever fetching `/api/flora` (`flora:[]`, `floraLoaded:true`); `"on"`/`"unknown"`
+  fetch once per revision with capped backoff + revision-mismatch retry. A `flora_delta` upsert or
+  `PlantDied` remove arriving while `!floraLoaded` is buffered into `pendingFloraOps` and replayed
+  AFTER the baseline replacement (a post-cursor spawn survives; a post-cursor death is not
+  resurrected); spawn/death FX fire immediately regardless.
 - [ ] **New-map completion-aware reload (§New-map flow)** — `waitForRegenReady` reports ready
   only after a NEW `world_revision` is published AND the snapshot (and terrain when that
   revision says on) carries exactly that revision; an unchanged revision (rebuild running,

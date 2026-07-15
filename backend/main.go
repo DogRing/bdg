@@ -436,8 +436,8 @@ func main() {
 	// ── 14. Final snapshot flush (fresh ctx — sigCtx is already cancelled on SIGTERM) ─
 	fmt.Fprintln(os.Stderr, "tick loop stopped; flushing final snapshot...")
 	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	if ok, terrainOn := flushSnapshot(flushCtx, w, runIDc, pub, liveStore, backupStore, pgEventBuf); ok {
-		pub.publishIfReady(flushCtx, ok, terrainOn)
+	if ok, terrainOn, floraOn := flushSnapshot(flushCtx, w, runIDc, pub, liveStore, backupStore, pgEventBuf); ok {
+		pub.publishIfReady(flushCtx, ok, terrainOn, floraOn)
 	}
 	finalizeRun(flushCtx, w, runIDc, runSeed, startedAt, cfg.ConfigHash(), liveStore, backupStore)
 	flushCancel()
@@ -549,8 +549,8 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 		}
 		w = nw
 		*i = 0
-		ok, terrainOn := flushSnapshot(sigCtx, w, runID, ctl.pub, live, backup, buf)
-		ctl.pub.publishIfReady(sigCtx, ok, terrainOn)
+		ok, terrainOn, floraOn := flushSnapshot(sigCtx, w, runID, ctl.pub, live, backup, buf)
+		ctl.pub.publishIfReady(sigCtx, ok, terrainOn, floraOn)
 	}
 	doRestart := func(i *int64) {
 		fmt.Fprintln(os.Stderr, "restart signal: rebuilding world from initial state (tick 0)")
@@ -583,8 +583,8 @@ func runLoop(sigCtx context.Context, w *world.World, limit int64, runID core.Run
 		// Live movement streams to the god-view via SSE AgentFrame/WorldFrame events,
 		// so the full snapshot + Postgres backup only need to run on the backup cadence.
 		if backupEvery > 0 && int64(tick)%int64(backupEvery) == 0 {
-			ok, terrainOn := flushSnapshot(sigCtx, w, runID, ctl.pub, live, backup, buf)
-			ctl.pub.publishIfReady(sigCtx, ok, terrainOn)
+			ok, terrainOn, floraOn := flushSnapshot(sigCtx, w, runID, ctl.pub, live, backup, buf)
+			ctl.pub.publishIfReady(sigCtx, ok, terrainOn, floraOn)
 		}
 		if tickSleep > 0 {
 			select {
@@ -664,7 +664,7 @@ func (p *worldPub) bump() {
 // publishIfReady publishes the pending revision AFTER a successful baseline
 // flush (persist SPEC step 5). baselineOK=false or an HSET failure keeps the
 // revision pending; the next backup-cadence flush retries flush+publication.
-func (p *worldPub) publishIfReady(ctx context.Context, baselineOK, terrainOn bool) {
+func (p *worldPub) publishIfReady(ctx context.Context, baselineOK, terrainOn, floraOn bool) {
 	if p == nil || p.published || !baselineOK {
 		return
 	}
@@ -672,12 +672,12 @@ func (p *worldPub) publishIfReady(ctx context.Context, baselineOK, terrainOn boo
 		p.published = true // nothing externally visible to publish to
 		return
 	}
-	if err := p.live.PublishWorldRevision(ctx, p.runID, p.revision, terrainOn); err != nil {
+	if err := p.live.PublishWorldRevision(ctx, p.runID, p.revision, terrainOn, floraOn); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: publish world_revision %d: %v (retrying next flush)\n", p.revision, err)
 		return
 	}
 	p.published = true
-	fmt.Fprintf(os.Stderr, "world_revision %d published (terrain_on=%t)\n", p.revision, terrainOn)
+	fmt.Fprintf(os.Stderr, "world_revision %d published (terrain_on=%t flora_on=%t)\n", p.revision, terrainOn, floraOn)
 }
 
 // flushSnapshot captures the world's deterministic state once, encodes the untouched
@@ -693,32 +693,36 @@ func (p *worldPub) publishIfReady(ctx context.Context, baselineOK, terrainOn boo
 // Returns baselineOK (the live snapshot — and terrain, when env is on — writes
 // succeeded: the gate for pub.publishIfReady) and terrainOn.
 func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID, pub *worldPub,
-	live persist.LiveStore, backup persist.BackupStore, buf *eventBuffer) (baselineOK, terrainOn bool) {
+	live persist.LiveStore, backup persist.BackupStore, buf *eventBuffer) (baselineOK, terrainOn, floraOn bool) {
 	if live == nil && backup == nil {
-		return true, false
+		return true, false, false
 	}
 	rv := w.RenderView()
 	terrainOn = rv.Terrain != nil
+	floraOn = rv.FloraOn
 
 	baseSnapshot := persist.CaptureSnapshot(runID, w)
 	backupBlob, err := persist.Encode(baseSnapshot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: encode backup snapshot: %v\n", err)
-		return false, terrainOn
+		return false, terrainOn, floraOn
 	}
 
+	onOff := func(b bool) string {
+		if b {
+			return "on"
+		}
+		return "off"
+	}
 	liveSnapshot := baseSnapshot
 	liveSnapshot.WorldRevision = pub.rev()
 	liveSnapshot.StreamCursor = pub.cursor()
-	if terrainOn {
-		liveSnapshot.TerrainStatus = "on"
-	} else {
-		liveSnapshot.TerrainStatus = "off"
-	}
+	liveSnapshot.TerrainStatus = onOff(terrainOn)
+	liveSnapshot.FloraStatus = onOff(floraOn)
 	liveBlob, err := persist.Encode(liveSnapshot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: encode live snapshot: %v\n", err)
-		return false, terrainOn
+		return false, terrainOn, floraOn
 	}
 	tick := w.CurrentTick()
 
@@ -751,7 +755,7 @@ func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID, pub *w
 			fmt.Fprintf(os.Stderr, "warning: pg PruneSnapshots: %v\n", err)
 		}
 	}
-	return baselineOK, terrainOn
+	return baselineOK, terrainOn, floraOn
 }
 
 // writeLive writes the snapshot blob and each agent's render view to the live Redis
@@ -793,11 +797,14 @@ func writeLive(ctx context.Context, w *world.World, rv world.RenderView, runID c
 // the keys stay ABSENT (§2 "absent ⇒ env-off"). Staleness is TTL-bounded: dead
 // animals' hashes and a flora set that empties out age off via the store's TTL
 // rather than an explicit delete (same policy as agent hashes).
-// The terrain blob is tagged with the publishing world_revision; its write is
-// the only env write that gates baseline publication (returned bool) — animal/
-// flora/climate failures are logged and self-heal on the next flush.
+// The terrain and flora blobs are tagged with the publishing world_revision;
+// their writes GATE baseline publication (returned bool): the new contract is
+// "revision published ⇒ its snapshot/terrain/flora baselines are servable", so a
+// failed terrain OR flora baseline write holds the revision (fix #4). Animal/
+// climate failures are logged and self-heal on the next flush.
 func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 	rev int64, live persist.LiveStore) bool {
+	ok := true
 	for _, a := range rv.Animals {
 		if err := live.WriteAnimal(ctx, runID, persist.AnimalView{
 			ID: a.ID, Pos: a.Pos, Species: a.Species,
@@ -821,6 +828,7 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 		}
 		if err := live.WriteFlora(ctx, runID, persist.FloraDoc{WorldRevision: rev, Flora: plants}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteFlora: %v\n", err)
+			ok = false // gate publication: a published 'on' revision must serve /api/flora (fix #4)
 		}
 	}
 
@@ -845,10 +853,10 @@ func writeEnvLive(ctx context.Context, rv world.RenderView, runID core.RunID,
 			WorldRevision: rev,
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: live WriteTerrain: %v\n", err)
-			return false
+			ok = false
 		}
 	}
-	return true
+	return ok
 }
 
 // finalizeRun marks the run completed: it refreshes the Redis meta hash and the Postgres

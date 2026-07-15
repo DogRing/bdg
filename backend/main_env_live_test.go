@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,14 @@ import (
 	"github.com/dogring/bdg/engine/world"
 	"github.com/dogring/bdg/platform/persist"
 )
+
+// floraFailStore is a LiveStore whose flora write always fails, to prove a
+// FloraOn WriteFlora failure gates baseline publication (fix #4).
+type floraFailStore struct{ *persist.FakeRedis }
+
+func (floraFailStore) WriteFlora(context.Context, core.RunID, persist.FloraDoc) error {
+	return errors.New("flora write boom")
+}
 
 // ── writeEnvLive (WI-P4 env render keys) ───────────────────────────────────────
 
@@ -58,6 +67,22 @@ func TestWriteEnvLive_WritesAllEnvKeys(t *testing.T) {
 	// The terrain blob is tagged with the publishing revision (data-contracts §2).
 	if got := live.TerrainOf(run); !strings.Contains(got, `"world_revision":3`) {
 		t.Fatalf("terrain blob missing world_revision tag: %s", got)
+	}
+}
+
+// TestWriteEnvLive_FloraWriteFailureGatesPublication verifies fix #4: when flora
+// is installed (FloraOn) but its baseline write fails, writeEnvLive returns
+// false so the run-driver holds the revision — a published revision must always
+// serve /api/flora. (Animal/climate failures still self-heal; only terrain+flora
+// gate.)
+func TestWriteEnvLive_FloraWriteFailureGatesPublication(t *testing.T) {
+	live := floraFailStore{persist.NewFakeRedis()}
+	rv := world.RenderView{
+		Tick: 1, FloraOn: true,
+		Flora: []world.FloraRenderView{{ID: "p1", Species: "oak", Pos: core.Vec2{X: 1, Y: 2}, Stage: 1, Width: 1}},
+	}
+	if writeEnvLive(context.Background(), rv, "r", 5, live) {
+		t.Fatal("writeEnvLive must return false when a FloraOn WriteFlora fails (gates publication)")
 	}
 }
 

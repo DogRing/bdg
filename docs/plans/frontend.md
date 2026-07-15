@@ -281,3 +281,23 @@ sprite. This phase gives flora a proper baseline + a self-sufficient delta.
 - `frontend` — `FloraBaseline` type + `FLORA_LOADED` + `floraLoaded` + `loadFlora`/
   `fetchFloraWithRetry`/`parseFloraDoc` (terrain-loader mirror); `PlantSpawned` reducer → FX-only;
   `dev/mock-server.mjs` serves `/api/flora` + full-row deltas. `frontend/SPEC.md` §Bootstrap step 7.
+
+### Follow-up hardening — ✅ shipped 2026-07-15 (post-ship review, 4 findings)
+A branch code-review found the FE-P7 baseline had a real **state-divergence** window (not just the
+"spurious FX micro-race" the decision doc had judged acceptable — that assessment was **wrong** and
+is corrected in `docs/decisions/flora-render-authority.md`). SSE opens before the flora baseline
+lands, and the baseline is applied as a wholesale REPLACEMENT as-of an OLDER `stream_cursor`, so a
+`flora_delta`/`PlantDied` arriving in that window was either **lost** (post-cursor spawn overwritten)
+or **resurrected** (post-cursor death undone). Fixes, all on `fix/flora-render-baseline`:
+- **① Pre-baseline buffering (mirrors `pendingTerrainDeltas`).** While `!floraLoaded`, SSE flora
+  mutations buffer into `pendingFloraOps` (`upsert`/`remove`) and replay ON TOP of the baseline at
+  `FLORA_LOADED`, so post-cursor live state wins. Spawn/death FX still fire immediately.
+- **② StreamGap / stale-snapshot re-arm.** Both reset `floraLoaded:false` (+ clear `pendingFloraOps`)
+  so the baseline re-fetches for the new cursor — flora was previously left stale after a gap.
+- **③ Explicit `flora` availability flag** (`"on"`/`"off"`) in `/api/meta` + the snapshot wrapper
+  (`RESOLVED: (a)`, human 2026-07-15) — `floraStatus` gates the loader INDEPENDENTLY of terrain,
+  instead of inferring flora-availability from `terrainStatus`. `PublishWorldRevision(…, terrainOn,
+  floraOn)`.
+- **④ Flora write gates publication.** `writeEnvLive` returns false on a `FloraOn` `WriteFlora`
+  failure (was silently ignored), so a published revision always serves `/api/flora` — symmetric
+  with terrain.

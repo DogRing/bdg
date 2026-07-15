@@ -96,6 +96,16 @@ export interface FloraBaseline {
   flora: PlantState[]
 }
 
+// A buffered flora render-state operation. Post-cursor SSE flora mutations that
+// arrive BEFORE the /api/flora baseline (FLORA_LOADED) are queued as these ops
+// and replayed on top of the baseline (mirrors pendingTerrainDeltas) — so an
+// as-of-cursor baseline can never clobber a newer spawn/death (a dead plant
+// would otherwise resurrect, a new plant vanish). 'upsert' = a full flora_delta
+// row; 'remove' = a PlantDied.
+export type FloraOp =
+  | { op: 'upsert'; plant: PlantState }
+  | { op: 'remove'; id: string }
+
 // Mirrors the climate ambient hash (Redis sim:{run}:climate; data-contracts §2).
 export interface ClimateState {
   temperature: number           // °C (CA3; may be sub-zero)
@@ -202,8 +212,19 @@ export interface WorldState {
   // floraLoaded: the flora baseline (GET /api/flora) for the accepted revision
   // has been applied. Distinct from `flora.length === 0`, which is also the
   // (valid) state of an installed-but-empty world; the loader keys off this flag
-  // so it fetches exactly once per revision. Reset to false on a revision switch.
+  // so it fetches exactly once per revision. Reset to false on a revision switch
+  // AND on a StreamGap reacquire (a trim may have dropped spawn/death events, so
+  // the baseline must be re-fetched to re-converge).
   floraLoaded: boolean
+  // floraStatus: the published revision's explicit flora availability (mirrors
+  // terrainStatus, snapshot `flora` flag / meta): 'off' ⇒ flora-off, never
+  // fetched; 'on' ⇒ fetch the baseline; 'unknown' ⇒ legacy backend without the
+  // flag. NEVER inferred from a failed fetch, and decoupled from terrainStatus.
+  floraStatus: TerrainStatus
+  // pendingFloraOps: post-cursor flora mutations (flora_delta upserts / PlantDied
+  // removes) that arrived before FLORA_LOADED; replayed on top of the baseline
+  // then cleared (fix: baseline must not clobber newer SSE state).
+  pendingFloraOps: FloraOp[]
   // ── Baseline identity + transport cursor (frontend/SPEC.md §Bootstrap) ──
   // worldRevision: the published single-world revision the accepted baseline
   // belongs to (null until the first snapshot; a snapshot with a DIFFERENT
@@ -238,6 +259,7 @@ export interface SnapshotPayloadAction {
   revision?: number | null
   cursor?: string
   terrain?: TerrainStatus
+  flora?: TerrainStatus
 }
 
 export type WorldAction =

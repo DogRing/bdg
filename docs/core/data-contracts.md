@@ -15,8 +15,10 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
   schema_version, run_id, tick
   world_revision?                  // publication marker (§2); stamped by the run-driver at flush
   stream_cursor?                   // Redis events-stream entry ID the state reflects (§2); flush-stamped
-  terrain?                         // "on" | "off" — explicit terrain/env availability of this
+  terrain?                         // "on" | "off" — explicit terrain availability of this
                                    // revision (§2); absent ⇒ unknown (legacy blob)
+  flora?                           // "on" | "off" — explicit flora availability of this revision
+                                   // (§2, mirrors `terrain`); absent ⇒ unknown (legacy blob)
   world {                          // engine world.WorldState
     tick, rng_state               // rng_state: for deterministic resume
     agents[] {
@@ -55,9 +57,9 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
 - All keys are snake_case so the read API (`platform/api`) parses the live snapshot blob directly.
 - **Two storage views.** Each backup cadence starts with one `CaptureSnapshot` base. The run-driver
   encodes that untouched base for the Postgres `snapshots.blob`; because the wrapper fields are
-  zero/empty and `omitempty`, `world_revision`, `stream_cursor`, and `terrain` are absent. It then
-  copies the base, stamps those three fields, and separately encodes the Redis live snapshot.
-- **Wrapper vs state (determinism scope).** `world_revision` / `stream_cursor` / `terrain` are
+  zero/empty and `omitempty`, `world_revision`, `stream_cursor`, `terrain`, and `flora` are absent.
+  It then copies the base, stamps those fields, and separately encodes the Redis live snapshot.
+- **Wrapper vs state (determinism scope).** `world_revision` / `stream_cursor` / `terrain` / `flora` are
   OPERATIONAL Redis publication metadata (wall-clock-derived stream IDs, boot-dependent revision),
   not deterministic simulation state. They never enter the Postgres backup blob. Determinism ACs
   (§5, `docs/core/testing.md`) cover the base snapshot; resume consumes the base state only.
@@ -90,12 +92,12 @@ Snapshot {                        // persist.Snapshot — JSON, snake_case keys 
 Keyspace (`{run}` = RunID):
 ```
 sim:{run}:meta          HASH    { tick, schema_version, started_at, status,
-                                  world_revision, terrain }        // publication marker, below
+                                  world_revision, terrain, flora }  // publication marker, below
 sim:{run}:tick          STRING  current tick (fast read)
 sim:{run}:snapshot      STRING  latest Snapshot (serialized)  // or chunked
 sim:{run}:agent:{id}    HASH     live agent summary (render): pos, goal, action, mood
 sim:{run}:animal:{id}   HASH     live animal summary (render): pos, species, action, heading, stamina (WI-P4)
-sim:{run}:flora         STRING   live plant render baseline: {world_revision, flora:[{object_id, species, pos, stage, width}]} (WI-P4; GET /api/flora — revision-tagged like :terrain; empty flora:[] ⇒ installed-but-no-plants, key absent ⇒ flora-off)
+sim:{run}:flora         STRING   live plant render baseline: {world_revision, flora:[{object_id, species, pos, stage, width}]} (WI-P4; GET /api/flora — revision-tagged like :terrain; empty flora:[] ⇒ installed-but-no-plants, key absent ⇒ flora-off; the meta `flora` flag ("on"/"off") is the frontend-facing availability signal, mirroring `terrain`)
 sim:{run}:climate       HASH     ambient: temperature, apparent_temp?, moisture, raining, snow_cover,
                                  wind_dir, wind_mag, hour_of_day, day_night, year_fraction (WI-P4 — frontend
                                  ambient FX; snow_cover ∈[0,1] world-uniform snowpack CS2b, plan §1d)
@@ -116,17 +118,19 @@ sim:{run}:events        STREAM   ALL events (§4), incl. the per-frame render de
   live baselines belong to. It is an operational readiness marker for the current single-world
   mode — not a user-selectable world identity, not `run_id`, not the deferred multi-world
   generation (`docs/plans/run-generation.md`). Semantics:
-  · the snapshot blob (§1 wrapper), the terrain blob and the meta hash each carry the revision
-    of the world they were written for, so a reader can verify that a snapshot/terrain pair
-    belongs to one published world without atomic multi-key reads (mismatch ⇒ refetch);
+  · the snapshot blob (§1 wrapper), the terrain blob, the flora blob and the meta hash each carry
+    the revision of the world they were written for, so a reader can verify that a snapshot/terrain/
+    flora set belongs to one published world without atomic multi-key reads (mismatch ⇒ refetch);
   · a successful `POST /api/regen` publishes the NEXT revision; `POST /api/restart` and failed
     regens never change it; publication is LAST — after the mandatory Postgres reset, the
-    best-effort Redis cleanup AND the regenerated snapshot+terrain baseline writes succeed, the
-    run-driver HSETs `world_revision` + `terrain` ("on"/"off" — explicit env-off marker) onto
-    `sim:{run}:meta` in one command. A reader that observes the new revision in meta is
-    therefore guaranteed revision-tagged baselines are already servable;
-  · a transient baseline-write failure defers publication to the next backup-cadence flush
-    (revision stays pending, old revision stays visible);
+    best-effort Redis cleanup AND the regenerated snapshot+terrain+flora baseline writes succeed,
+    the run-driver HSETs `world_revision` + `terrain` + `flora` (each "on"/"off" — explicit env-off
+    markers) onto `sim:{run}:meta` in one command. A reader that observes the new revision in meta
+    is therefore guaranteed revision-tagged baselines are already servable;
+  · a transient baseline-write failure — terrain **or flora** — defers publication to the next
+    backup-cadence flush (revision stays pending, old revision stays visible): a published revision
+    must always serve BOTH `/api/terrain` and `/api/flora`, so the flora write gates publication
+    exactly as terrain does (`writeEnvLive` returns false on either failure);
   · process restart: the run-driver reads the stored revision at boot and publishes
     `stored+1` with its FIRST baseline flush (never backwards, never reused — a restarted
     process rebuilds from the fixture and may publish a different map, so reusing the stored
@@ -148,7 +152,7 @@ events     ( id PK, run_id FK, tick, seq, agent_id, type, payload JSONB, created
 ```
 - Backup interval from config (`backup_every_ticks`). Reproduce from `seed + config_hash + last snapshot`.
 - `snapshots.blob` is the deterministic base snapshot encoding from §1. Redis-only publication
-  fields (`world_revision`, `stream_cursor`, `terrain`) are absent, so transport cursor or
+  fields (`world_revision`, `stream_cursor`, `terrain`, `flora`) are absent, so transport cursor or
   publication changes do not change Postgres backup bytes for an otherwise identical world state.
 - `events` is the source for why-trace, emergence-metric analysis, and replay.
 - **High-frequency exclusion.** Render/operational events (`TickDone`, `AgentFrame`, `WorldFrame`,

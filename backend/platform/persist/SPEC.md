@@ -117,9 +117,10 @@ type LiveStore interface {
     // WriteAnimal upserts sim:{run}:animal:{id}. AnimalView CANNOT carry
     // Stats/Drives/Vital (god-view guard). Called only when fauna is installed.
     WriteAnimal(ctx context.Context, run core.RunID, v AnimalView) error
-    // WriteFlora replaces sim:{run}:flora with the full live plant render set
-    // (periodic-full, JSON array; nil ⇒ "[]"). Called only when flora is installed.
-    WriteFlora(ctx context.Context, run core.RunID, plants []FloraView) error
+    // WriteFlora replaces sim:{run}:flora with the full live plant render set,
+    // wrapped in a FloraDoc {world_revision, flora:[…]} (revision-tagged like the
+    // terrain blob; nil plants ⇒ flora:[]). Called only when flora is installed.
+    WriteFlora(ctx context.Context, run core.RunID, v FloraDoc) error
     // WriteClimate upserts the sim:{run}:climate ambient hash. Called only when
     // climate is installed.
     WriteClimate(ctx context.Context, run core.RunID, v ClimateView) error
@@ -128,18 +129,18 @@ type LiveStore interface {
     // only when navmap is installed.
     WriteTerrain(ctx context.Context, run core.RunID, v TerrainView) error
     // InitMeta writes sim:{run}:meta { tick, schema_version, started_at, status }. It
-    // deliberately does NOT touch the world_revision/terrain publication fields (HSET of the
+    // deliberately does NOT touch the world_revision/terrain/flora publication fields (HSET of the
     // listed fields only — the meta key is never deleted on regen), so a meta refresh can
     // never un-publish or re-publish a revision.
     InitMeta(ctx context.Context, run core.RunID, m RunMeta) error
     // PublishWorldRevision publishes the single-world revision marker (data-contracts §2):
-    // ONE HSET writes {world_revision, terrain:"on"|"off"} onto sim:{run}:meta. The
-    // run-driver calls it LAST — only after the revision's snapshot+terrain live baselines
+    // ONE HSET writes {world_revision, terrain:"on"|"off", flora:"on"|"off"} onto sim:{run}:meta.
+    // The run-driver calls it LAST — only after the revision's snapshot+terrain+flora live baselines
     // were written successfully — so any reader observing the new revision finds matching,
     // revision-tagged baselines already servable. NOT a run generation: one run_id, one
     // active world; the marker only identifies which published map revision the current
     // baselines belong to (multi-world remains DEFERRED, docs/plans/run-generation.md).
-    PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn bool) error
+    PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn, floraOn bool) error
     // ReadSnapshot loads the latest snapshot blob (for resume / hand-off to backup).
     ReadSnapshot(ctx context.Context, run core.RunID) ([]byte, error)
     // Expire applies the TTL/expiry policy for a run (called on completion).
@@ -414,11 +415,12 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
   `sim:{run}:*` keys for a completed run; active runs keep their keys. (Live keys hold only active
   runs; on completion → back up to Postgres, then expire.)
 - [ ] **Revision publication (`PublishWorldRevision`)**: one call HSETs
-  `{world_revision, terrain}` onto `sim:{run}:meta`; `InitMeta` before/after it never clears
+  `{world_revision, terrain, flora}` onto `sim:{run}:meta`; `InitMeta` before/after it never clears
   those fields. Run-driver ordering (verified in `backend/main.go` tests): the revision is
-  published only AFTER the same revision's snapshot (and terrain, when env is on) live writes
-  succeeded; rebuild/reset failures and restarts never bump it; a failed baseline write leaves
-  it unpublished until the next flush retries.
+  published only AFTER the same revision's snapshot (and terrain + flora, when env is on) live writes
+  succeeded; rebuild/reset failures and restarts never bump it; a failed baseline write — terrain
+  OR flora — leaves it unpublished until the next flush retries (`writeEnvLive` returns false on
+  either).
 
 ### §3 Postgres backup
 - [ ] **Three tables mapped**: `UpsertRun` → `runs(run_id, seed, schema_version, started_at,
@@ -586,11 +588,11 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error
      — residual risk: a stale per-entity hash whose DEL failed lingers until the run ends (see
      api SPEC);
   4. **fresh baseline flush**: the regenerated world's snapshot (wrapper stamped with the NEXT
-     `world_revision` + the emitter's `stream_cursor` + the `terrain` flag) and, when env is on,
-     the revision-tagged terrain blob are written to the live keys;
-  5. **revision publication — LAST**: only after step 4's live snapshot (and terrain, when env is
-     on) writes SUCCEED does the run-driver call `PublishWorldRevision` — a reader observing the
-     new revision in meta is guaranteed matching baselines are servable. A transient step-4/5
+     `world_revision` + the emitter's `stream_cursor` + the `terrain` and `flora` flags) and, when
+     env is on, the revision-tagged terrain + flora blobs are written to the live keys;
+  5. **revision publication — LAST**: only after step 4's live snapshot (and terrain + flora, when
+     env is on) writes SUCCEED does the run-driver call `PublishWorldRevision` — a reader observing
+     the new revision in meta is guaranteed matching baselines are servable. A transient step-4/5
      failure leaves the revision UNPUBLISHED (pending) and the next backup-cadence flush retries
      flush+publication; restart and every failed/aborted regen never bump the revision, and the
      serial tick goroutine makes concurrent regen signals coalesce (no revision reuse).

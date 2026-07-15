@@ -55,13 +55,13 @@ func (r *recordingLiveStore) WriteTerrain(ctx context.Context, run core.RunID, v
 	return r.FakeRedis.WriteTerrain(ctx, run, v)
 }
 
-func (r *recordingLiveStore) PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn bool) error {
+func (r *recordingLiveStore) PublishWorldRevision(ctx context.Context, run core.RunID, rev int64, terrainOn, floraOn bool) error {
 	if r.failPublish != nil {
 		r.log("publish:FAIL")
 		return r.failPublish
 	}
 	r.log(fmt.Sprintf("publish:%d:%t", rev, terrainOn))
-	return r.FakeRedis.PublishWorldRevision(ctx, run, rev, terrainOn)
+	return r.FakeRedis.PublishWorldRevision(ctx, run, rev, terrainOn, floraOn)
 }
 
 func (r *recordingLiveStore) publishes() []string {

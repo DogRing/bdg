@@ -2,7 +2,7 @@ import { useReducer, useCallback, useEffect, useRef } from 'react'
 import type {
   WorldState, WorldAction, SimEvent, AgentState, AnimalState, LogEntry, WorldObject,
   PlantState, ClimateState, FxInstance, TerrainGrid, TerrainDelta, TerrainStatus,
-  SnapshotPayloadAction, FloraBaseline,
+  SnapshotPayloadAction, FloraBaseline, FloraOp,
 } from '../types'
 import { formatEvent } from '../utils/eventFormatter'
 import { poseFor, FX_DEFS } from '../assets/manifest'
@@ -48,6 +48,8 @@ const initial: WorldState = {
   pendingTerrainDeltas: [],
   snapshotLoaded: false,
   floraLoaded: false,
+  floraStatus: 'unknown',
+  pendingFloraOps: [],
   worldRevision: null,
   snapshotCursor: '',
   lastAppliedStreamId: '',
@@ -108,6 +110,21 @@ function applyTerrainDeltas(terrain: TerrainGrid, deltas: TerrainDelta[]): Terra
     }
   }
   return changed ? { ...terrain, terrain: cells, wear } : terrain
+}
+
+// applyFloraOps replays buffered post-cursor flora ops on top of the baseline,
+// in arrival order (upsert = set by id, remove = delete). The baseline reflects
+// state as of the snapshot cursor; these ops are strictly newer, so they win —
+// a dead plant stays dead, a newly-spawned plant survives (fix: an authoritative
+// baseline replace must not clobber post-cursor SSE mutations that raced it).
+function applyFloraOps(base: PlantState[], ops: FloraOp[]): PlantState[] {
+  if (ops.length === 0) return base
+  const byId = new Map(base.map((f): [string, PlantState] => [f.id, f]))
+  for (const op of ops) {
+    if (op.op === 'upsert') byId.set(op.plant.id, op.plant)
+    else byId.delete(op.id)
+  }
+  return Array.from(byId.values())
 }
 
 function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
@@ -188,31 +205,54 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
       }
     }
 
-    // flora arrives as a sparse delta — merge by id
+    // flora arrives as full-row upserts by id. Applied live once the baseline is
+    // in; before it (floraLoaded=false) the rows are BUFFERED into pendingFloraOps
+    // and replayed atop the baseline at FLORA_LOADED — an as-of-cursor baseline
+    // replace must not clobber these newer post-cursor deltas (mirrors
+    // pendingTerrainDeltas).
     let flora = state.flora
+    let pendingFloraOps = state.pendingFloraOps
     if (Array.isArray(p.flora_delta) && (p.flora_delta as unknown[]).length > 0) {
-      const byId = new Map(state.flora.map((f): [string, PlantState] => [f.id, f]))
-      for (const raw of p.flora_delta as Array<Record<string, unknown>>) {
-        const id = String(raw.id ?? '')
-        if (!id) continue
-        const prev = byId.get(id)
-        const pos = parsePos(raw.pos)
-        const stage = Number(raw.stage ?? prev?.stage ?? 0)
-        // A stage increase is the visible growth moment → grow tween (plan Q4).
-        if (prev && stage > prev.stage) {
-          fx = [...fx, { kind: 'grow', at: atMs, pos, id, species: prev.species }]
+      if (state.floraLoaded) {
+        const byId = new Map(state.flora.map((f): [string, PlantState] => [f.id, f]))
+        for (const raw of p.flora_delta as Array<Record<string, unknown>>) {
+          const id = String(raw.id ?? '')
+          if (!id) continue
+          const prev = byId.get(id)
+          const pos = parsePos(raw.pos)
+          const stage = Number(raw.stage ?? prev?.stage ?? 0)
+          // A stage increase is the visible growth moment → grow tween (plan Q4).
+          if (prev && stage > prev.stage) {
+            fx = [...fx, { kind: 'grow', at: atMs, pos, id, species: prev.species }]
+          }
+          byId.set(id, {
+            id,
+            pos,
+            // Prefer the wire value (each delta row is full so late joiners
+            // converge); fall back to prev for a sparse growth-only delta.
+            species: String(raw.species ?? prev?.species ?? ''),
+            stage,
+            width: Number(raw.width ?? prev?.width ?? 0),
+          })
         }
-        byId.set(id, {
-          id,
-          pos,
-          // Prefer the wire value (a full snapshot carries species/width so late
-          // joiners converge); fall back to prev for a sparse growth-only delta.
-          species: String(raw.species ?? prev?.species ?? ''),
-          stage,
-          width: Number(raw.width ?? prev?.width ?? 0),
-        })
+        flora = Array.from(byId.values())
+      } else {
+        // Pre-baseline: buffer as upserts (no grow FX — there is no reliable prev
+        // stage until the baseline lands).
+        const ops: FloraOp[] = []
+        for (const raw of p.flora_delta as Array<Record<string, unknown>>) {
+          const id = String(raw.id ?? '')
+          if (!id) continue
+          ops.push({
+            op: 'upsert',
+            plant: {
+              id, pos: parsePos(raw.pos), species: String(raw.species ?? ''),
+              stage: Number(raw.stage ?? 0), width: Number(raw.width ?? 0),
+            },
+          })
+        }
+        if (ops.length > 0) pendingFloraOps = [...pendingFloraOps, ...ops]
       }
-      flora = Array.from(byId.values())
     }
 
     // terrain arrives as sparse cell deltas over the /api/terrain base grid.
@@ -244,7 +284,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
       yearFraction: state.climate?.yearFraction ?? 0,
     }
 
-    return { ...state, tick, agents, animals, flora, climate, terrain, pendingTerrainDeltas, roles, log: state.log, food, wood, fx }
+    return { ...state, tick, agents, animals, flora, pendingFloraOps, climate, terrain, pendingTerrainDeltas, roles, log: state.log, food, wood, fx }
   }
 
   // Ecosystem lifecycle events (data-contracts §4, WI-P4): mutate the live maps
@@ -252,6 +292,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
   // formatEvent below so the log line still appears.
   let animals = state.animals
   let flora = state.flora
+  let pendingFloraOps = state.pendingFloraOps
   if (ev.type === 'AnimalBorn' || ev.type === 'AnimalDied' ||
       ev.type === 'PlantSpawned' || ev.type === 'PlantDied') {
     const id = String(p.object_id ?? '')
@@ -287,10 +328,18 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
           break
         }
         case 'PlantDied': {
-          const live = flora.find(f => f.id === id)
-          const pos = live?.pos ?? parsePos(p.pos)
-          flora = flora.filter(f => f.id !== id)
-          fx = [...fx, { kind: 'death', at: atMs, pos, id, species: live?.species ?? species }]
+          if (state.floraLoaded) {
+            const live = flora.find(f => f.id === id)
+            const pos = live?.pos ?? parsePos(p.pos)
+            flora = flora.filter(f => f.id !== id)
+            fx = [...fx, { kind: 'death', at: atMs, pos, id, species: live?.species ?? species }]
+          } else {
+            // Pre-baseline: buffer the removal so the as-of-cursor baseline (which
+            // may still list this plant) does NOT resurrect it. Death FX fires now
+            // (the payload carries species+pos, no state lookup needed).
+            pendingFloraOps = [...pendingFloraOps, { op: 'remove', id }]
+            fx = [...fx, { kind: 'death', at: atMs, pos: parsePos(p.pos), id, species }]
+          }
           break
         }
       }
@@ -363,7 +412,7 @@ function applyEvent(state: WorldState, ev: SimEvent, atMs: number): WorldState {
     if (log.length > MAX_LOG) log = log.slice(0, TRIM_TO)
   }
 
-  return { ...state, tick, agents, animals, flora, roles, log, food, wood, fx }
+  return { ...state, tick, agents, animals, flora, pendingFloraOps, roles, log, food, wood, fx }
 }
 
 // Exported for reducer unit tests (frontend/SPEC.md ACs); components use useWorld().
@@ -384,7 +433,9 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
       // stream, so the old cursor space does not order against it.
       if (!revisionSwitch && state.snapshotLoaded && cursor !== '' && state.lastAppliedStreamId !== '' &&
         compareStreamIds(cursor, state.lastAppliedStreamId) < 0) {
-        return { ...state, baselineRetries: state.baselineRetries + 1 }
+        // Reacquiring a fresh baseline set — re-arm flora too (the loader is
+        // idempotent; the buffered-ops path keeps live flora correct meanwhile).
+        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false }
       }
 
       // AUTHORITATIVE roster (SPEC §Bootstrap step 4): the snapshot's agents
@@ -395,6 +446,7 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
       for (const a of p.agents) agents.set(a.id, a)
 
       const terrainStatus: TerrainStatus = p.terrain ?? 'unknown'
+      const floraStatus: TerrainStatus = p.flora ?? 'unknown'
       let next: WorldState = {
         ...state,
         // Tick only advances WITHIN a revision; a revision switch legitimately
@@ -413,6 +465,7 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
         // replay resumes strictly after it.
         lastAppliedStreamId: cursor !== '' ? cursor : (revisionSwitch ? '' : state.lastAppliedStreamId),
         terrainStatus,
+        floraStatus,
       }
       if (revisionSwitch) {
         // New published world under the same run: every old-revision slice is
@@ -423,13 +476,20 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
           animals: new Map(), flora: [], climate: null, fx: [],
           terrain: null, pendingTerrainDeltas: [],
           // Re-arm the flora baseline loader for the new revision (its plants are
-          // a different world; keeping floraLoaded would strand the new baseline).
-          floraLoaded: false,
+          // a different world; keeping floraLoaded would strand the new baseline);
+          // drop any buffered ops from the old world.
+          floraLoaded: false, pendingFloraOps: [],
         }
       }
       if (terrainStatus === 'off') {
         // Explicit env-off: no terrain exists for this revision — never poll.
         next = { ...next, terrain: null, pendingTerrainDeltas: [] }
+      }
+      if (floraStatus === 'off') {
+        // Explicit flora-off (fix #3): no /api/flora for this revision — never
+        // fetch, and treat the empty set as authoritatively loaded so buffered
+        // ops never accumulate and the loader guard skips it.
+        next = { ...next, flora: [], floraLoaded: true, pendingFloraOps: [] }
       }
       return next
     }
@@ -448,7 +508,11 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
         // longer bridge our cursor — the backlog was trimmed. Reacquire a
         // fresh snapshot/cursor pair instead of accepting a partial sparse
         // history; the server closed the stream, so nothing arrives meanwhile.
-        return { ...state, baselineRetries: state.baselineRetries + 1 }
+        // Re-arm the flora baseline too (fix #2): a trim may have dropped
+        // PlantSpawned/PlantDied, so flora must re-fetch to re-converge. The
+        // buffered-ops path (floraLoaded=false ⇒ pendingFloraOps) keeps live flora
+        // correct across the refetch; floraStatus 'off' is skipped by the loader.
+        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false }
       }
       // SSE is enabled only after the snapshot baseline (App wiring), so a
       // pre-baseline event can only be a mis-ordered straggler — drop it
@@ -496,8 +560,9 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
     case 'FLORA_LOADED': {
       // The flora baseline (GET /api/flora) — the plants that existed before this
       // client connected (fixtures + already-propagated), which no SSE event
-      // replays. Applied as an AUTHORITATIVE REPLACEMENT (never merged): a stale
-      // array from the previous revision would otherwise survive as ghost plants.
+      // replays. Applied as the authoritative as-of-cursor set, then the buffered
+      // post-cursor ops (pendingFloraOps) are replayed on top so newer spawns/
+      // deaths win — the baseline must not clobber them (revive dead / lose new).
       const b = action.payload
       // Stale-baseline guard: a baseline tagged with a DIFFERENT revision than
       // the accepted one is a leftover from a regen that raced the fetch — ignore
@@ -507,7 +572,12 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
         b.worldRevision !== state.worldRevision) {
         return state
       }
-      return { ...state, flora: b.flora, floraLoaded: true }
+      return {
+        ...state,
+        flora: applyFloraOps(b.flora, state.pendingFloraOps),
+        pendingFloraOps: [],
+        floraLoaded: true,
+      }
     }
     case 'SET_CONNECTION':
       return { ...state, connectionStatus: action.payload }
@@ -575,12 +645,13 @@ export function useWorld() {
     void loadTerrain(state.worldRevision)
   }, [state.snapshotLoaded, state.terrainStatus, state.terrain, state.worldRevision, loadTerrain])
 
-  // Flora baseline follows the same env gate as terrain (SPEC §Bootstrap): 'off'
-  // ⇒ env-off, never fetched; 'on'/'unknown' ⇒ fetched once per revision after
-  // the snapshot lands (fixtures + already-propagated plants that no SSE event
-  // replays). A revision switch resets floraLoaded, re-arming this for the new
-  // world. The baseline write is same-flush with the snapshot, so an env-on world
-  // always has the key (empty or not); a transient 404 is retried like terrain.
+  // Flora baseline keyed off its OWN availability flag (fix #3 — decoupled from
+  // terrain): floraStatus 'off' ⇒ flora-off, never fetched; 'on'/'unknown' ⇒
+  // fetched once per revision after the snapshot lands (fixtures + already-
+  // propagated plants that no SSE event replays). A revision switch OR a
+  // StreamGap reacquire resets floraLoaded, re-arming this. The baseline write is
+  // same-flush with the snapshot and gates publication (backend fix #4), so a
+  // published 'on' revision always has the key; a transient 404 is retried.
   const loadFlora = useCallback(async (expectedRevision: number | null) => {
     const gen = ++floraGen.current
     const baseline = await fetchFloraWithRetry({
@@ -591,9 +662,9 @@ export function useWorld() {
   }, [])
 
   useEffect(() => {
-    if (!state.snapshotLoaded || state.terrainStatus === 'off' || state.floraLoaded) return
+    if (!state.snapshotLoaded || state.floraStatus === 'off' || state.floraLoaded) return
     void loadFlora(state.worldRevision)
-  }, [state.snapshotLoaded, state.terrainStatus, state.floraLoaded, state.worldRevision, loadFlora])
+  }, [state.snapshotLoaded, state.floraStatus, state.floraLoaded, state.worldRevision, loadFlora])
 
   // Baseline reacquisition (SPEC §Bootstrap step 5): a StreamGap control frame
   // or a stale snapshot rejection asks for a fresh snapshot/cursor pair —
@@ -640,6 +711,8 @@ export function parseSnapshotDoc(doc: unknown): SnapshotPayload | null {
   const cursor = typeof root.stream_cursor === 'string' ? root.stream_cursor : ''
   const terrain: TerrainStatus =
     root.terrain === 'on' ? 'on' : root.terrain === 'off' ? 'off' : 'unknown'
+  const flora: TerrainStatus =
+    root.flora === 'on' ? 'on' : root.flora === 'off' ? 'off' : 'unknown'
   const world = (root.world ?? root) as Record<string, unknown>
 
   const rawAgents: AgentState[] = []
@@ -671,7 +744,7 @@ export function parseSnapshotDoc(doc: unknown): SnapshotPayload | null {
     })
   }
 
-  return { agents: rawAgents, objects: rawObjects, tick, revision, cursor, terrain }
+  return { agents: rawAgents, objects: rawObjects, tick, revision, cursor, terrain, flora }
 }
 
 // parseTerrainDoc maps the /api/terrain response to a TerrainGrid, or null on a

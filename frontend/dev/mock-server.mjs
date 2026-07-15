@@ -341,6 +341,7 @@ const server = http.createServer((req, res) => {
       status: 'running',
       world_revision: String(worldRevision),
       terrain: 'on',
+      flora: 'on',
     }))
   } else if (url.startsWith('/api/snapshot')) {
     res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -348,6 +349,7 @@ const server = http.createServer((req, res) => {
       tick,
       world_revision: worldRevision,
       terrain: 'on',
+      flora: 'on',
       agents: agents.map(a => ({ id: a.id, pos: round(a.pos), goal: a.goal, action: a.action, mood: a.mood })),
       objects,
     }))
