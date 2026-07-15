@@ -761,8 +761,9 @@ func flushSnapshot(ctx context.Context, w *world.World, runID core.RunID, pub *w
 // writeLive writes the snapshot blob and each agent's render view to the live Redis
 // keyspace. Called from flushSnapshot on the backup cadence. Returns whether the
 // BASELINE writes succeeded — the snapshot key and, when env is on, the terrain
-// key (what a bootstrap client requires; per-entity/flora/climate failures are
-// logged but self-heal on the per-flush overwrite and do not gate publication).
+// AND flora keys (what a bootstrap client requires; a published revision must
+// serve /api/terrain and /api/flora, fix #4). Per-agent/animal/climate failures
+// are logged but self-heal on the per-flush overwrite and do not gate publication.
 func writeLive(ctx context.Context, w *world.World, rv world.RenderView, runID core.RunID,
 	rev int64, live persist.LiveStore, blob []byte) bool {
 	if live == nil {

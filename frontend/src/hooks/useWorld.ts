@@ -433,9 +433,11 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
       // stream, so the old cursor space does not order against it.
       if (!revisionSwitch && state.snapshotLoaded && cursor !== '' && state.lastAppliedStreamId !== '' &&
         compareStreamIds(cursor, state.lastAppliedStreamId) < 0) {
-        // Reacquiring a fresh baseline set — re-arm flora too (the loader is
-        // idempotent; the buffered-ops path keeps live flora correct meanwhile).
-        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false }
+        // Reacquiring a fresh baseline set — re-arm flora too: the refetched
+        // baseline is as-of the NEW cursor, so any ops buffered against the old
+        // cursor are already folded into it and would REGRESS state if replayed.
+        // Drop them (matches the revision-switch reset below).
+        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false, pendingFloraOps: [] }
       }
 
       // AUTHORITATIVE roster (SPEC §Bootstrap step 4): the snapshot's agents
@@ -509,10 +511,12 @@ export function worldReducer(state: WorldState, action: WorldAction): WorldState
         // fresh snapshot/cursor pair instead of accepting a partial sparse
         // history; the server closed the stream, so nothing arrives meanwhile.
         // Re-arm the flora baseline too (fix #2): a trim may have dropped
-        // PlantSpawned/PlantDied, so flora must re-fetch to re-converge. The
-        // buffered-ops path (floraLoaded=false ⇒ pendingFloraOps) keeps live flora
-        // correct across the refetch; floraStatus 'off' is skipped by the loader.
-        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false }
+        // PlantSpawned/PlantDied, so flora must re-fetch to re-converge. Clear any
+        // buffered ops — the refetched baseline is as-of the NEW post-gap cursor,
+        // so pre-gap ops are already folded in and replaying them would regress
+        // state (floraStatus 'off' is skipped by the loader). New post-gap frames
+        // rebuffer against the fresh baseline.
+        return { ...state, baselineRetries: state.baselineRetries + 1, floraLoaded: false, pendingFloraOps: [] }
       }
       // SSE is enabled only after the snapshot baseline (App wiring), so a
       // pre-baseline event can only be a mis-ordered straggler — drop it

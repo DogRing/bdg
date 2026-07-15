@@ -418,6 +418,30 @@ describe('flora baseline (GET /api/flora; SPEC §Bootstrap)', () => {
     expect(gapped.floraLoaded).toBe(false)                 // re-armed → loadFlora refires
   })
 
+  it('fix #2: a StreamGap MID-BOOTSTRAP clears buffered ops so they cannot regress the new baseline', () => {
+    // The gap lands while flora is still bootstrapping (floraLoaded=false) with
+    // pre-gap ops buffered. Those ops are as-of the OLD cursor; the refetched
+    // baseline will be as-of the NEW post-gap cursor and already includes them,
+    // so replaying them would REGRESS state (e.g. snap a grown plant back). The
+    // re-arm must DROP them (mirrors the revision-switch reset).
+    let s = onRev()
+    s = dispatch(s, frame([], [{ id: 'p1', species: 'oak', pos: { x: 4, y: 5 }, stage: 1, width: 0.4 }]), 50, '101-0')
+    expect(s.floraLoaded).toBe(false)
+    expect(s.pendingFloraOps).toHaveLength(1)               // buffered against the OLD cursor
+
+    const gapped = dispatch(s, ev('StreamGap', { reason: 'cursor_trimmed' }, 0), 0, '')
+    expect(gapped.floraLoaded).toBe(false)
+    expect(gapped.pendingFloraOps).toHaveLength(0)          // dropped — refetch supersedes them
+
+    // The fresh (post-gap) baseline already carries p1 grown to stage 3; the stale
+    // buffered stage-1 op is gone, so it is NOT regressed back.
+    const loaded = worldReducer(gapped, {
+      type: 'FLORA_LOADED',
+      payload: { worldRevision: 1, flora: [{ id: 'p1', pos: { x: 4, y: 5 }, species: 'oak', stage: 3, width: 1.2 }] },
+    })
+    expect(loaded.flora.find(f => f.id === 'p1')).toMatchObject({ stage: 3, width: 1.2 })
+  })
+
   it('fix #3: floraStatus "off" marks flora loaded-empty and never buffers (no infinite retry)', () => {
     const off = worldReducer(initialWorldState, {
       type: 'SNAPSHOT_LOADED',
