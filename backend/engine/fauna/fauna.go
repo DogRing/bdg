@@ -161,7 +161,11 @@ type CombatParams struct {
 // plan phase). A missing live-animal entry in Env is a world-contract bug (panic,
 // mirrors flora's missing SiteInput).
 type Snapshot struct {
-	Animals       []Animal
+	Animals []Animal
+	// ByID resolves a spatial-hash neighbour ID to its Animal (nil ⇒ combatTarget falls back to a
+	// full Animals scan — e.g. the ecosim arena). Lets combat target-selection query Spatial for
+	// nearby candidates instead of scanning every animal (O(N²), docs/plans/scaling.md P2).
+	ByID          map[core.ObjectID]Animal
 	Scent         *scent.Grid
 	Spatial       *spatial.SpatialHash
 	Terrain       TerrainSampler

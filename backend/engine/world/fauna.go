@@ -79,8 +79,15 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 	if w.waterField != nil {
 		water = w.waterField
 	}
+	// Animal-by-ID index so fauna combat can resolve Spatial neighbour IDs to Animals (O(nearby)
+	// target selection instead of an O(N²) full scan, docs/plans/scaling.md P2).
+	byID := make(map[core.ObjectID]fauna.Animal, len(animals))
+	for _, a := range animals {
+		byID[a.ID] = a
+	}
 	return &fauna.Snapshot{
 		Animals:       animals,
+		ByID:          byID,
 		Scent:         w.scent,
 		Spatial:       w.spatial,
 		Terrain:       worldTerrainSampler{nav: w.nav},

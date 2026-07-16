@@ -33,36 +33,73 @@ func combatTarget(a Animal, snap *Snapshot, rules *Rules, targetRange float64) c
 	if len(diet) == 0 {
 		return combatTargetInfo{}
 	}
-	targetID := a.EngagedWith
-	animals := sortAnimalsByID(snap.Animals)
+	// Engaged: return the specific EngagedWith partner (no diet/range filter — the old code
+	// returned it regardless), resolved directly by ID.
+	if targetID := a.EngagedWith; targetID != "" {
+		if other, ok := animalByID(snap, targetID); ok {
+			return combatTargetInfo{id: other.ID, pos: other.Pos, threat: combatThreatOf(rules, other), distance: a.Pos.Distance(other.Pos), found: true}
+		}
+		return combatTargetInfo{}
+	}
+
+	// Free: nearest diet-match within targetRange. This is an argmin with an explicit (distance,
+	// then ID) tie-break — order-independent — so no sort is needed (the old per-call
+	// sortAnimalsByID allocated + sorted a full copy of every animal on EVERY call: O(N²·logN) +
+	// the dominant GC source at large populations, docs/plans/scaling.md P2). Candidates come from
+	// a Spatial neighbour query (O(nearby)) when available, else a full Animals scan (ecosim/tests).
 	var best combatTargetInfo
-	for _, other := range animals {
+	consider := func(other Animal) {
 		if other.ID == a.ID {
-			continue
+			return
 		}
 		dist := a.Pos.Distance(other.Pos)
-		if targetID != "" && other.ID != targetID {
-			continue
+		if !rules.dietMatches(diet, other.Species) || dist > targetRange {
+			return
 		}
-		if targetID == "" && (!rules.dietMatches(diet, other.Species) || dist > targetRange) {
-			continue
+		if other.HiddenUntil > 0 && other.HiddenUntil >= snap.Tick && dist > snap.Combat.HiddenFlushFactor*snap.ScentCellSize {
+			return
 		}
-		if targetID == "" && other.HiddenUntil > 0 && other.HiddenUntil >= snap.Tick && dist > snap.Combat.HiddenFlushFactor*snap.ScentCellSize {
-			continue
-		}
-		threat := scalarZero
-		if rules.IsPredator(other.Species) {
-			threat = predatorTargetThreat
-		}
-		info := combatTargetInfo{id: other.ID, pos: other.Pos, threat: threat, distance: dist, found: true}
-		if targetID != "" {
-			return info
-		}
+		info := combatTargetInfo{id: other.ID, pos: other.Pos, threat: combatThreatOf(rules, other), distance: dist, found: true}
 		if !best.found || info.distance < best.distance || (info.distance == best.distance && info.id < best.id) {
 			best = info
 		}
 	}
+	if snap.Spatial != nil && snap.ByID != nil {
+		for _, e := range snap.Spatial.NearbyEntities(a.Pos, targetRange) {
+			if other, ok := snap.ByID[e.ID]; ok { // ok=false ⇒ a non-animal (object/agent) neighbour
+				consider(other)
+			}
+		}
+	} else {
+		for _, other := range snap.Animals {
+			consider(other)
+		}
+	}
 	return best
+}
+
+// combatThreatOf is the target's threat weight: nonzero for a predator target (a prey animal
+// eyeing a predator), else zero.
+func combatThreatOf(rules *Rules, other Animal) float64 {
+	if rules.IsPredator(other.Species) {
+		return predatorTargetThreat
+	}
+	return scalarZero
+}
+
+// animalByID resolves an animal by ID via the snapshot's ByID index, falling back to a linear
+// Animals scan when the index is absent (ecosim/tests).
+func animalByID(snap *Snapshot, id core.ObjectID) (Animal, bool) {
+	if snap.ByID != nil {
+		a, ok := snap.ByID[id]
+		return a, ok
+	}
+	for _, a := range snap.Animals {
+		if a.ID == id {
+			return a, true
+		}
+	}
+	return Animal{}, false
 }
 
 // dietMatches reports whether the TARGET species carries any of the diet tags (D10 tag-driven — a wolf's

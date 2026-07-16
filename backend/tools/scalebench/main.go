@@ -36,6 +36,7 @@ func main() {
 	ticks := flag.Int("ticks", 200, "ticks to run per world")
 	warmup := flag.Int("warmup", 5, "leading ticks excluded from the tick average (cover-index build + GC settle)")
 	sweep := flag.String("sweep", "", "comma-separated square world sizes (e.g. 500,1000,2000); empty ⇒ single verbose run")
+	bounds := flag.Float64("bounds", 0, "override the fixture to a square world of this side (single-run mode); 0 ⇒ keep fixture bounds")
 	cpuprofile := flag.String("cpuprofile", "", "write CPU profile of the tick loop (single-run mode only)")
 	flag.Parse()
 
@@ -50,6 +51,9 @@ func main() {
 	fatal(err, "ParseFile")
 
 	if *sweep == "" {
+		if *bounds > 0 {
+			fx.Bounds = &worldgen.Bounds{Min: worldgen.Vec2{0, 0}, Max: worldgen.Vec2{*bounds, *bounds}}
+		}
 		singleRun(cfg, fx, *ticks, *warmup, *cpuprofile, logf)
 		return
 	}

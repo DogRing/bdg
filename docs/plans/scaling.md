@@ -69,30 +69,32 @@
 - 테스트: `worldgen/density_test.go`(불변식+결정성), `verify_ecosystem_test.go`(3000² 종별 census+타이밍).
 - 밀도 계수 = 빌드-시 데이터(§3 OQ-DENS, 비차단, UNTUNED 1차값).
 
-### P2 — 천장 리포트 + 레버 🔬 4개 O(N²) 수정, 스윕 완료
-**발견 = 스케일 천장은 전부 고칠 수 있는 O(N²) hot spot이고, 메모리는 절대 벽이 아님.** 프로파일로 4개 지목→
-공간 인덱스/지연정렬로 수정(전부 결과-보존; golden+`-race` 통과):
-- 틱 루프 3개(fauna apply, 동물×식물 전체 스캔): `coverDensity`(→cover 전용 spatial 인덱스, floraState 포인터
-  키잉) · `nearForageFlora` · `nearestCoverFloraID`(→`w.spatial.NearbyEntities`). **3000² 틱 7000→57ms(~123×)**.
-- 로드 1개: `PlaceObject`가 삽입마다 objectIDs 전체 재정렬 → O(N²log N). **지연정렬**(dirty 플래그+`orderedObjectIDs()`,
+### P2 — 천장 리포트 + 레버 🔬 5개 O(N²) 수정, 스윕 완료
+**발견 = 스케일 천장은 전부 고칠 수 있는 O(N²) hot spot이고, 메모리는 절대 벽이 아님.** 프로파일로 5개 지목→
+공간 인덱스/지연정렬로 수정(전부 결과-보존; golden 통과; combatTarget은 순차·read-only라 무레이스):
+- 틱 3개(fauna apply, 동물×식물 전체 스캔): `coverDensity`(→cover 전용 spatial 인덱스, floraState 포인터 키잉) ·
+  `nearForageFlora` · `nearestCoverFloraID`(→`w.spatial.NearbyEntities`). **3000² 틱 7000→57ms(~123×)**.
+- 로드 1개: `PlaceObject`가 삽입마다 objectIDs 전체 재정렬 → O(N²log N). **지연정렬**(dirty+`orderedObjectIDs()`,
   bulk load O(N log N)). **Load 3000² 16.3s→0.28s(57×), 6000² 284s→1.4s(205×), 8000² ~15분→2.8s**.
+- fauna combat 1개: `combatTarget`이 **호출마다 전체 동물 정렬·복사**(O(N²logN), GC 주범) + 전체 스캔. 정렬 제거
+  (argmin은 순서 무관) + `snap.Spatial` 근처 질의(byID 해소, engaged=byID). **8000² 틱 1030→491ms(2.1×)**.
 
-**스윕 결과(scalebench, ticks=15, cell 5, 4개 수정 후):**
+**스윕 결과(scalebench, ticks=15, cell 5, 5개 수정 후):**
 
 | size | flora | animals | load | tick_avg | tick_max | heap |
 |---|---|---|---|---|---|---|
-| 2000² | 34k | 1458 | 0.12s | 35ms | 271ms | 30MB |
-| 3000² | 76k | 1458 | 0.28s | 41ms | 697ms | 60MB |
-| 4000² | 136k | 2312 | 0.55s | 94ms | 1.5s | 115MB |
-| 6000² | 306k | 4752 | 1.4s | 355ms | 4.7s | 237MB |
-| 8000² | 544k | 8168 | 2.8s | 1030ms | 12s | 456MB |
+| 2000² | 34k | 1458 | 0.13s | 26ms | 287ms | 30MB |
+| 3000² | 76k | 1458 | 0.29s | 31ms | 670ms | 60MB |
+| 4000² | 136k | 2312 | 0.56s | 64ms | 1.3s | 115MB |
+| 6000² | 306k | 4752 | 1.45s | 204ms | 3.7s | 237MB |
+| 8000² | 544k | 8168 | 2.78s | 491ms | 7.8s | 456MB |
 
 - **메모리·Load = 벽 아님**(8000²도 heap 456MB, load 2.8s).
-- **남은 천장 = 초대형 틱 비용**: ~4000²까지 쾌적(≤94ms), ~6000² 사용가능(355ms), 8000²=~1s/틱 실용 한계.
-- **남은 레버**(비차단): tick_max 스파이크=cover 인덱스 O(plants) 전체 재빌드(flora step마다)→증분화;
-  `depositFloraScent`/`depositObjectScent`(O(objects)/틱, grass가 scent field 포화)→ 다음 프로파일 후보;
-  SSE 뷰포트 컬링(SC1 레버). 주의: `respawn_targets`가 절대값(합 1458)이라 ≤3000²에서 동물수 미스케일(픽스처).
-- **결론**: **SC1(3000² whole-map) 완전 검증** — Load 0.28s·틱 41ms·heap 60MB, 청크 불필요. 여유는 ~6000²까지.
+- **남은 천장 = 초대형 틱 비용**: ~4000²까지 쾌적(≤64ms), ~6000² 여유(204ms), 8000²=~0.5s/틱.
+- **남은 레버**(비차단, 수확 체감): tick_max 스파이크=cover 인덱스 O(plants) 전체 재빌드(flora step마다)→증분화;
+  `depositFloraScent`/`depositObjectScent` + scent.Spread(grass가 scent field 포화 → O(면적)/틱); GC 할당(fauna
+  step 컨텍스트); SSE 뷰포트 컬링(SC1 레버). 주의: `respawn_targets` 절대값(합 1458)→≤3000² 동물수 미스케일(픽스처).
+- **결론**: **SC1(3000² whole-map) 완전 검증** — Load 0.29s·틱 31ms·heap 60MB, 청크 불필요. 여유는 ~6000²(204ms)까지.
 - 남음: 상세 audit → `docs/decisions/`.
 
 ### P3 — 준-무한 아키텍처 (이연, 게이트)
