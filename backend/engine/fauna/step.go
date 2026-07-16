@@ -205,12 +205,15 @@ func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc floa
 		return scalarZero, sightRadius, nil, nil
 	}
 
-	// Build a temporary ObjectID → index map for snap.Animals (key lookup, not iteration).
-	// This is built per-animal on the full pipeline; O(N) per-animal is acceptable for P_fa1.
-	// We iterate snap.Animals once to build the map, then do O(1) key lookups.
-	animalIdx := make(map[core.ObjectID]int, len(snap.Animals))
-	for i := range snap.Animals {
-		animalIdx[snap.Animals[i].ID] = i
+	// Resolve neighbour IDs to Animals via the snapshot's shared ByID index (built once per tick),
+	// falling back to a local map only when it is absent (ecosim/tests). The old per-call animalIdx
+	// build was O(N) per animal → O(N²) + a top GC source at large populations (docs/plans/scaling.md P2).
+	byID := snap.ByID
+	if byID == nil {
+		byID = make(map[core.ObjectID]Animal, len(snap.Animals))
+		for _, an := range snap.Animals {
+			byID[an.ID] = an
+		}
 	}
 
 	nearby := snap.Spatial.NearbyEntities(a.Pos, sightRadius)
@@ -232,11 +235,10 @@ func sightQuery(a Animal, snap *Snapshot, rules *Rules, sightRadius, fovArc floa
 		if ent.ID == a.ID {
 			continue // skip self
 		}
-		idx, isAnimal := animalIdx[ent.ID]
+		other, isAnimal := byID[ent.ID]
 		if !isAnimal {
 			continue // skip non-animals (objects, agents — P_fa1 scope)
 		}
-		other := snap.Animals[idx]
 		if !rules.IsPredator(other.Species) {
 			continue
 		}
