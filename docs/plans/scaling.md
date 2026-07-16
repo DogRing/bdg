@@ -95,6 +95,23 @@
 - **결론**: **SC1(3000² whole-map) 완전 검증** — Load 0.29s·틱 24ms·heap 60MB, 청크 불필요. 8000²(틱 218ms)도 실용.
 - 남음: 상세 audit → `docs/decisions/`.
 
+#### P2.1 — 틱 루프 심화 (스파이크 정체 + scent 병목 확정, 2026-07-16)
+6개 수정 후 8000² 스테디 틱은 ~90ms인데 **평균이 208~218ms**인 이유를 프로파일로 규명:
+- **평균을 지배하는 건 `scent_spread`(Ns=6) cadence 스파이크(~860ms)**, 스테디 틱이 아님. Ns틱마다 `runScentEnv`가
+  flora 전체(8000²=544k)·animal·object scent를 재-deposit + `scent.Grid.Spread`를 돌림. `tick_max`(5.7s)는 **tick 0**의
+  cover 인덱스 최초 빌드(warmup 제외)일 뿐 재발 아님.
+- **스파이크 비용의 정체 = scent의 map 해싱**(cum: runScentEnv 33% / Spread 19% / depositObjectScent 9%; `matchH2`
+  17% flat). `pending`/`committed`가 sparse `map[cellKey]cellVals`라 셀당 Deposit 2해시 + Spread 네이버 16해시.
+  grass 포화로 on-cell ≈ O(면적) → **O(면적)이되 map-해시 상수가 큼**(선형이지만 무거움).
+- **SHIPPED(behavior-neutral, golden byte-identical, 커밋 `78375d7`)**: `Commit` 이중버퍼(옛 committed를 clear 후 pending
+  재사용 → 틱마다 map 할당·대형맵 GC 제거) + `Spread` snap map/키 슬라이스 재사용 + 채널 루프를 네이버 안쪽으로 폴딩.
+  GC/할당은 줄지만 **벽시계 평균은 그대로**(스파이크가 map-해시 bound라 할당이 아니라 해시가 벽) — 다만 에이전트 추가 시
+  할당 압력을 미리 낮춤.
+- **남은 유일한 큰 레버 = scent를 dense 배열로**(map 해싱 제거, ~25–30% 틱 절감 추정). **단, 게이트**: dense는 월드
+  경계를 요구 → 경계 밖으로 퍼지는 scent가 **클리핑**(현 unbounded sparse는 무한대로 보존) = **결정적 출력 변화 → golden 재조정**.
+  물리적으론 "유한 월드 밖으로 냄새가 사라짐"이 오히려 타당하나, D12 golden을 바꾸므로 **사람 승인 필요**(§3 OQ-SCENT).
+- **판정: SC-goal "면적 비례"는 이미 달성**(O(면적) 선형). dense는 상수 축소용 선택지이며, 목표(3000² 23ms)는 이미 충분.
+
 ### P3 — 준-무한 아키텍처 (이연, 게이트)
 - **§3 OQ-INF가 RESOLVED된 뒤에만 착수.** 청크 지연생성(seed+청크좌표→항상 동일 청크, 결정적이되
   런타임 생성) = **D12 재해석** → `design.md` 수정 + 사람 승인 선행. 미승인 상태로 착수 금지(불변식 위반=defect).
@@ -107,6 +124,11 @@
   RESOLVE 필요. 3000² 단일 마을엔 해당 없음.
 - **OQ-DENS (비차단, 빌드-시 데이터)** — flora/fauna 종별 목표 밀도 계수. 생태적으로 타당한 값
   (초식>육식, biome 적합도)은 P1 SPEC/튜닝 시 데이터로 확정. 새 메커니즘 아님(world-gen.md §2와 동일 성격).
+- **OQ-SCENT (결정성-출력 게이트)** — `space/scent`를 sparse map → **dense 배열**로 바꿔 틱 루프의 최대 상수
+  (map 해싱, 스파이크 틱의 지배 비용)를 제거할지. 이득: 대형 맵 틱 ~25–30%↓(추정), 3000²도 23→~17ms.
+  대가: dense는 월드 경계를 요구 → 경계 밖 확산 scent가 **클리핑**(현 unbounded sparse는 보존) = **golden 재기준**
+  (D12 결정성은 유지되나 수치 출력이 변함). `OPEN`. 필요 시 scent 워크로드 마이크로벤치로 실측 후 RESOLVE.
+  ※ 미채택 상태의 판정: "면적 비례"는 이미 O(면적) 선형으로 달성 → dense는 **상수 축소 선택지**, 필수 아님.
 
 ## 4. 불변식 / 결정성 (매 페이즈 유지)
 - **D11** — 연속좌표. 배치·계측 어디서도 셀 스냅 금지(격자는 인덱스).
