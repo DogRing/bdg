@@ -121,7 +121,11 @@ type World struct {
 	agentIDs []core.AgentID // sorted lexicographically (D12)
 
 	objects   map[core.ObjectID]objectRecord
-	objectIDs []core.ObjectID // sorted lexicographically (D12)
+	objectIDs []core.ObjectID // lexicographic order via orderedObjectIDs() (D12); sorted lazily
+	// objectIDsSorted tracks whether objectIDs is currently in sorted order. PlaceObject only
+	// appends + clears this (no per-insert sort — that made bulk load O(N² log N)); the sort is
+	// deferred to the next order-dependent read via orderedObjectIDs().
+	objectIDsSorted bool
 
 	// Per-agent known objects (objects each agent has ever perceived).
 	knownObjects map[core.AgentID]map[core.ObjectID]agent.KnownObject
@@ -315,7 +319,7 @@ func (w *World) Spawn(id core.AgentID, pos core.Vec2, agentCfg agent.Config, rng
 
 	// Initialize known objects.
 	w.knownObjects[id] = make(map[core.ObjectID]agent.KnownObject)
-	for _, objID := range w.objectIDs {
+	for _, objID := range w.orderedObjectIDs() {
 		obj := w.objects[objID]
 		w.knownObjects[id][objID] = agent.KnownObject{
 			ID: obj.ID, Pos: obj.Pos, Kind: obj.Kind, Supply: obj.Supply,
@@ -331,9 +335,7 @@ func (w *World) PlaceObject(id core.ObjectID, kind core.Tag, pos core.Vec2, supp
 
 	if _, exists := w.objects[id]; !exists {
 		w.objectIDs = append(w.objectIDs, id)
-		sort.Slice(w.objectIDs, func(i, j int) bool {
-			return string(w.objectIDs[i]) < string(w.objectIDs[j])
-		})
+		w.objectIDsSorted = false // sorted lazily on the next order-dependent read (bulk-load O(N log N))
 	}
 	w.objects[id] = obj
 	w.spatial.Insert(id, pos)
@@ -345,6 +347,20 @@ func (w *World) PlaceObject(id core.ObjectID, kind core.Tag, pos core.Vec2, supp
 		}
 		w.knownObjects[agentID][id] = ko
 	}
+}
+
+// orderedObjectIDs returns objectIDs in sorted (lexicographic) order, sorting once if a
+// PlaceObject has appended since the last sort (D12). Order-dependent readers (scent deposit,
+// carcass resolution, serialization) MUST use this, not the raw slice. Cheap no-op when clean.
+// Callers are all in the serial apply/serialize phases, so the lazy mutation is race-free.
+func (w *World) orderedObjectIDs() []core.ObjectID {
+	if !w.objectIDsSorted {
+		sort.Slice(w.objectIDs, func(i, j int) bool {
+			return string(w.objectIDs[i]) < string(w.objectIDs[j])
+		})
+		w.objectIDsSorted = true
+	}
+	return w.objectIDs
 }
 
 // RemoveObject deletes an object. No-op if absent.

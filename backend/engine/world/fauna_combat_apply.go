@@ -312,7 +312,7 @@ func (w *World) resolveFeedCarcass(predator *fauna.Animal, preferred core.Object
 	if preferred != "" && w.isCarcassObject(preferred) {
 		return preferred, true
 	}
-	for _, id := range w.objectIDs {
+	for _, id := range w.orderedObjectIDs() {
 		if !w.isCarcassObject(id) {
 			continue
 		}

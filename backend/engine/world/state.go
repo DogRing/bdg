@@ -122,7 +122,7 @@ func (w *World) State() WorldState {
 		ws.Agents = append(ws.Agents, d)
 	}
 
-	for _, objID := range w.objectIDs {
+	for _, objID := range w.orderedObjectIDs() {
 		ws.Objects = append(ws.Objects, w.objects[objID])
 	}
 
@@ -219,6 +219,7 @@ func (w *World) RestoreState(ws WorldState) {
 		w.objects[obj.ID] = obj
 		w.objectIDs = append(w.objectIDs, obj.ID)
 	}
+	w.objectIDsSorted = false // sorted lazily on the next order-dependent read (D12)
 
 	// ── Env state restore (WI-P4) ──────────────────────────────────────────────
 	// Must run BEFORE the spatial-hash rebuild below so restored animals are

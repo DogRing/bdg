@@ -52,12 +52,11 @@
 
 ## 2. Phases (각 독립 shippable; 결정적·golden 유지)
 
-### P0 — 생태 스윕 벤치 하니스 ✅ 하니스 SHIPPED (스윕 자동화 남음)
+### P0 — 생태 스윕 벤치 하니스 ✅ SHIPPED (스윕 포함)
 - **에이전트 0**, env(climate/flora/decay)+fauna만 설치한 `world.World`를 fixture에서 만들고 N틱 돌려 계측.
-- **구현**: `backend/tools/scalebench`(dev 툴, worldgen.Load+world.Tick import). 단계별(config/parse/Load/
-  per-tick) wall-time을 **stderr 라이브 출력**, 힙(`runtime.MemStats`), 동물 종별 카운트, `-cpuprofile` 지원.
-  `go run ./tools/scalebench -fixture <f> -content <dir> -ticks N [-cpuprofile p]`(절대경로 권장).
-- 남음: 크기 스윕(500²→8k²) 자동화 → CSV 곡선. 지금은 3000² 단일 샘플(P2).
+- **구현**: `backend/tools/scalebench`(dev 툴, worldgen.Load+world.Tick). 단일 모드=단계별 stderr 라이브 타이밍+
+  `-cpuprofile`; **스윕 모드 `-sweep 500,1000,…`**=크기별 bounds 오버라이드→CSV(size,flora,animals,load_ms,
+  tick_avg/max_ms,heap/sys_mb). `go -C backend run ./tools/scalebench -content <dir> -sweep <list> -ticks N`.
 
 ### P1 — 종별 대량 배치 (SC4) ✅ SHIPPED
 - **fixture schema**(`content/schema/fixture.schema.json`): `flora_density`/`animal_density`(map 종→개체/면적).
@@ -70,21 +69,31 @@
 - 테스트: `worldgen/density_test.go`(불변식+결정성), `verify_ecosystem_test.go`(3000² 종별 census+타이밍).
 - 밀도 계수 = 빌드-시 데이터(§3 OQ-DENS, 비차단, UNTUNED 1차값).
 
-### P2 — 천장 리포트 + 레버 🔬 1차 발견·수정 (스윕 남음)
-**3000² 단일 샘플(seed 20260715, ~77k flora + 1103 fauna, cell 5 → ~600×693 hex):**
-- **메모리는 벽이 아님**: post-Load heap ~56MB, sys ~95MB. 지형 dense 생성도 문제 없음.
-- **벽 = 틱당 O(동물×식물) 전체 스캔 루프**(fauna apply). 최초 **~7000ms/틱**(틱당 ~265 GC). 프로파일이
-  3개 hot loop 지목 → **공간 인덱스로 수정**(전부 결과-보존; golden+`-race` 통과):
-  1. `world.coverDensity` — 위치당 전체 plants 스캔 + 호출마다 `flora.Plants()` 전체 복사 → **cover 전용
-     spatial 인덱스**(floraState 포인터 키잉, flora step마다 1회 재빌드). **7000→242ms**(~29×).
-  2. `world.nearForageFlora` — 동물당 전체 objects 스캔 → `w.spatial.NearbyEntities`. **242→57ms**(누적 ~123×).
-  3. `world.nearestCoverFloraID` — 동물당 전체 objects 스캔 → spatial 질의(최근접+ID 타이브레이크 보존).
-- **결과: avg ~57ms/틱**(1440틱 게임하루 ≈ 82초 연산). 지배적 hot 함수 사라짐(GC+일반 런타임만).
-- **남은 레버**(비차단): (a) flora step 스파이크(~800ms/60틱: cover 인덱스 전체 재빌드+flora.Step 77k) 증분화,
-  (b) Load 16s 일회성(지형생성+77k 배치) — per-tick 아님, (c) SSE 뷰포트 컬링(SC1 레버), (d) `depositFloraScent`/
-  scent-spread가 dense flora로 O(면적)화 — 다음 프로파일 후보.
-- **결론**: SC1(3000² whole-map) **연산 검증됨** — 메모리 여유, 틱 실용적, 청크 불필요.
-- 남음: 스윕(P0)으로 knee 확정 + 상세 audit → `docs/decisions/`.
+### P2 — 천장 리포트 + 레버 🔬 4개 O(N²) 수정, 스윕 완료
+**발견 = 스케일 천장은 전부 고칠 수 있는 O(N²) hot spot이고, 메모리는 절대 벽이 아님.** 프로파일로 4개 지목→
+공간 인덱스/지연정렬로 수정(전부 결과-보존; golden+`-race` 통과):
+- 틱 루프 3개(fauna apply, 동물×식물 전체 스캔): `coverDensity`(→cover 전용 spatial 인덱스, floraState 포인터
+  키잉) · `nearForageFlora` · `nearestCoverFloraID`(→`w.spatial.NearbyEntities`). **3000² 틱 7000→57ms(~123×)**.
+- 로드 1개: `PlaceObject`가 삽입마다 objectIDs 전체 재정렬 → O(N²log N). **지연정렬**(dirty 플래그+`orderedObjectIDs()`,
+  bulk load O(N log N)). **Load 3000² 16.3s→0.28s(57×), 6000² 284s→1.4s(205×), 8000² ~15분→2.8s**.
+
+**스윕 결과(scalebench, ticks=15, cell 5, 4개 수정 후):**
+
+| size | flora | animals | load | tick_avg | tick_max | heap |
+|---|---|---|---|---|---|---|
+| 2000² | 34k | 1458 | 0.12s | 35ms | 271ms | 30MB |
+| 3000² | 76k | 1458 | 0.28s | 41ms | 697ms | 60MB |
+| 4000² | 136k | 2312 | 0.55s | 94ms | 1.5s | 115MB |
+| 6000² | 306k | 4752 | 1.4s | 355ms | 4.7s | 237MB |
+| 8000² | 544k | 8168 | 2.8s | 1030ms | 12s | 456MB |
+
+- **메모리·Load = 벽 아님**(8000²도 heap 456MB, load 2.8s).
+- **남은 천장 = 초대형 틱 비용**: ~4000²까지 쾌적(≤94ms), ~6000² 사용가능(355ms), 8000²=~1s/틱 실용 한계.
+- **남은 레버**(비차단): tick_max 스파이크=cover 인덱스 O(plants) 전체 재빌드(flora step마다)→증분화;
+  `depositFloraScent`/`depositObjectScent`(O(objects)/틱, grass가 scent field 포화)→ 다음 프로파일 후보;
+  SSE 뷰포트 컬링(SC1 레버). 주의: `respawn_targets`가 절대값(합 1458)이라 ≤3000²에서 동물수 미스케일(픽스처).
+- **결론**: **SC1(3000² whole-map) 완전 검증** — Load 0.28s·틱 41ms·heap 60MB, 청크 불필요. 여유는 ~6000²까지.
+- 남음: 상세 audit → `docs/decisions/`.
 
 ### P3 — 준-무한 아키텍처 (이연, 게이트)
 - **§3 OQ-INF가 RESOLVED된 뒤에만 착수.** 청크 지연생성(seed+청크좌표→항상 동일 청크, 결정적이되

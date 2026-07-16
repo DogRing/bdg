@@ -18,6 +18,15 @@ func (w *World) Animals() []fauna.Animal {
 	return out
 }
 
+// FloraCount returns the number of live plants (0 when flora is off) — a cheap census for
+// scaling/benchmark harnesses without copying the whole plant set.
+func (w *World) FloraCount() int {
+	if w.floraState == nil {
+		return 0
+	}
+	return len(w.floraState.Plants())
+}
+
 // ScentIntensityAt exposes the committed scent value for headless integration checks.
 func (w *World) ScentIntensityAt(ch scent.Channel, pos core.Vec2) float64 {
 	if w.scent == nil {

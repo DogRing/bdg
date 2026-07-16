@@ -221,7 +221,7 @@ func (w *World) depositFloraScent() {
 }
 
 func (w *World) depositObjectScent() {
-	for _, id := range w.objectIDs {
+	for _, id := range w.orderedObjectIDs() {
 		obj, ok := w.objects[id]
 		if !ok {
 			continue
