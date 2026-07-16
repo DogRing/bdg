@@ -46,8 +46,9 @@
 - **로드 타임 / 메모리** — `GenerateTerrain`+`materialize`가 맵 전체를 dense로 한 번에 생성. 이게 시작시간·힙의
   벽이자, 준-무한과 정면충돌하는 지점(무한은 청크 지연생성 필요 → §3 OQ-INF).
 - **틱당 개체수** — flora 번식이 캐리잉캐패시티까지 차면 고정 밀도에서 개체수 ∝ 면적. flora/fauna step +
-  scent deposit + **스냅샷/SSE 직렬화**가 전부 여기 비례. (현 라이브 `rabbit_meadow`는 500²에 grass 4 +
-  rabbit 1 초미니 생태 → 부하 미관측. SC4가 이걸 현실화.)
+  scent deposit + **스냅샷/SSE 직렬화**가 전부 여기 비례. (라이브 `rabbit_meadow`는 이제 500² **12종 밀도배치
+  풀 생태계** — flora 6종 ~2125 + fauna 6종 ~35[rabbit 15/deer 8/goat 5/fish 4/wolf 2/bear 1]. SC4 현실화 완료;
+  옛 초미니 4-grass+1-rabbit는 `minimal_meadow.fixture.yaml`로 테스트 보존.)
 - **climate O(면적)/틱** — SC3 결과. 벤치가 flora/fauna 대비 상대 비중을 드러냄.
 
 ## 2. Phases (각 독립 shippable; 결정적·golden 유지)

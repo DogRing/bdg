@@ -86,3 +86,58 @@ func TestVillageEcosystemLoads(t *testing.T) {
 		loadDur, ticks, tickDur, float64(tickDur.Microseconds())/ticks/1000.0,
 		ms.HeapAlloc/1024/1024, ms.Sys/1024/1024)
 }
+
+// TestRabbitMeadowEcosystem asserts the LIVE 500² world is a full by-species ecosystem:
+// all 6 flora + the 5 land fauna establish via density placement. fish is water-only
+// (F18) and water is sparse at 500², so its count is LOGGED (may legitimately be 0 on a
+// seed with little water — the accepted behavior) rather than asserted.
+func TestRabbitMeadowEcosystem(t *testing.T) {
+	contentDir := findExisting(t, "../../../content", "../content", "content")
+	cfg, err := config.Load(contentDir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	schemaPath := filepath.Join(contentDir, "schema", "fixture.schema.json")
+	fx, err := ParseFile("testdata/rabbit_meadow.fixture.yaml", schemaPath)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+
+	_, navCfg, _ := fixtureConfigs(fx, cfg)
+	m, _, err := materialize(fx, navCfg, cfg)
+	if err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+
+	floraBy := map[core.Tag]int{}
+	for _, fp := range m.Flora {
+		floraBy[fp.Species]++
+	}
+	animalBy := map[core.Tag]int{}
+	for _, ap := range m.Animals {
+		animalBy[ap.Species]++
+	}
+	t.Logf("flora   placed (%d total): %v", len(m.Flora), floraBy)
+	t.Logf("animals placed (%d total): %v", len(m.Animals), animalBy)
+
+	for _, sp := range []core.Tag{"grass", "tall_grass", "wildflower", "berry_shrub", "dry_shrub", "oak"} {
+		if floraBy[sp] == 0 {
+			t.Errorf("flora species %s not placed in the live 500² ecosystem", sp)
+		}
+	}
+	// Land fauna must all establish; fish is water-gated (logged above, not asserted).
+	for _, sp := range []core.Tag{"rabbit", "deer", "goat", "wolf", "bear"} {
+		if animalBy[sp] == 0 {
+			t.Errorf("fauna species %s not placed in the live 500² ecosystem", sp)
+		}
+	}
+
+	// Prove it loads + ticks (the live world actually runs).
+	w, err := Load(fx, cfg)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	for i := 0; i < 50; i++ {
+		w.Tick()
+	}
+}

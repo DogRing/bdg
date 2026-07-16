@@ -1,0 +1,47 @@
+# minimal_meadow.fixture.yaml — a MINIMAL random test world: frontend rendering check +
+# fauna movement/respawn + flora propagation observation with nothing else in the way.
+# (This is the former rabbit_meadow content, preserved as a TEST-ONLY fixture: the focused
+# mechanism tests — pos-less placement lands on soil, respawn override, anti-east-march
+# heading spread — need a world with a known handful of entities. rabbit_meadow itself is
+# now the full by-species live ecosystem via density placement.)
+#
+# 500×500 world, terrain{random:true}: the loader materializes a 68×59 flat-top hex
+# offset GenerateTerrain layout (@ cell_size 5, navmap.OffsetDimsOf) from the run seed —
+# elevation-noise + flow-accumulation hydrology (sea/lakes/dendritic rivers/mountains,
+# WG1-a terrain stages) with per-cell elevation (3D hex height) and a water-proximity
+# initial climate moisture seed. Same seed ⇒ same map, new seed ⇒ new map. Exactly 4 grass
+# + 1 rabbit, all pos-less (placed on random soil hexes from the seed); NO other
+# fauna/flora/agents/objects. respawn_targets overrides the rabbit carrying capacity to 10
+# for THIS run (content/objects.yaml default 20 untouched); only rabbit has an
+# animal_template, so no other species ever respawns. Grass propagates naturally.
+
+schema_version: 1
+seed: 20260707
+cell_size: 5.0   # finer terrain/path/render hexes (docs/plans/shelter.md Q-M1); 500/5 ⇒ 68×59 hexes. Perception (spatial_hash_cell=12) unchanged.
+
+bounds:
+  min: [0.0, 0.0]
+  max: [500.0, 500.0]
+
+terrain:
+  random: true
+
+flora:
+  - { id: grass_1, species: grass, length: 0.3, width: 0.2 }
+  - { id: grass_2, species: grass, length: 0.3, width: 0.2 }
+  - { id: grass_3, species: grass, length: 0.3, width: 0.2 }
+  - { id: grass_4, species: grass, length: 0.3, width: 0.2 }
+
+animals:
+  - { id: rabbit_1, species: rabbit }
+
+animal_templates:
+  rabbit:
+    stats: { Strength: 18, Agility: 85 }
+    drives: { hunger: 0.90, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+
+respawn_targets:
+  rabbit: 10

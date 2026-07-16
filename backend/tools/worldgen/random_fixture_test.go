@@ -115,12 +115,15 @@ func waterMask(cells []core.Tag) []bool {
 	return w
 }
 
-// ── rabbit_meadow: random terrain materialization + pos-less placement + respawn
-//    override + moisture/elevation couplings over the real content ──────────────
+// ── minimal_meadow: random terrain materialization + pos-less placement + respawn
+//    override + moisture/elevation couplings over the real content. Uses the minimal
+//    (4 grass + 1 rabbit, pos-less-on-soil) fixture because these assertions need a
+//    known handful of entities; rabbit_meadow itself is now the full density ecosystem.
+//    ──────────────
 
-func TestRabbitMeadowRandomFixture(t *testing.T) {
+func TestMinimalMeadowRandomFixture(t *testing.T) {
 	contentDir := findExisting(t, "../../../content", "../content", "content")
-	fixturePath := findExisting(t, "testdata/rabbit_meadow.fixture.yaml", "backend/tools/worldgen/testdata/rabbit_meadow.fixture.yaml")
+	fixturePath := findExisting(t, "testdata/minimal_meadow.fixture.yaml", "backend/tools/worldgen/testdata/minimal_meadow.fixture.yaml")
 	schemaPath := filepath.Join(contentDir, "schema", "fixture.schema.json")
 
 	cfg, err := config.Load(contentDir)
@@ -234,9 +237,9 @@ func TestRabbitMeadowRandomFixture(t *testing.T) {
 	}
 }
 
-func TestRabbitMeadowSeedDeterminism(t *testing.T) {
+func TestMinimalMeadowSeedDeterminism(t *testing.T) {
 	contentDir := findExisting(t, "../../../content", "../content", "content")
-	fixturePath := findExisting(t, "testdata/rabbit_meadow.fixture.yaml", "backend/tools/worldgen/testdata/rabbit_meadow.fixture.yaml")
+	fixturePath := findExisting(t, "testdata/minimal_meadow.fixture.yaml", "backend/tools/worldgen/testdata/minimal_meadow.fixture.yaml")
 	schemaPath := filepath.Join(contentDir, "schema", "fixture.schema.json")
 
 	cfg, err := config.Load(contentDir)
