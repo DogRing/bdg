@@ -30,9 +30,9 @@ const maxPlaceTries = 10_000
 // explicit fixtures (uniform climate seed, existing goldens unchanged). The caller's
 // Fixture is never written through (pointers/slices are replaced), so a rebuild with a
 // different Seed re-rolls fresh — the /api/regen path.
-func materialize(fx Fixture, navCfg navmap.Config) (Fixture, []float64, error) {
+func materialize(fx Fixture, navCfg navmap.Config, cfg *config.LoadOutput) (Fixture, []float64, error) {
 	random := fx.Terrain != nil && fx.Terrain.Random
-	if !random && !hasPoslessPlacement(fx) {
+	if !random && !hasPoslessPlacement(fx) && !hasDensity(fx) {
 		return fx, nil, nil
 	}
 	r := rng.New(fx.Seed + genSeedSalt)
@@ -97,6 +97,25 @@ func materialize(fx Fixture, navCfg navmap.Config) (Fixture, []float64, error) {
 			animals[i].Heading = r.Float64() * 2 * math.Pi
 		}
 		fx.Animals = animals
+	}
+
+	// Density placement (scaling.md SC4): APPENDED after the explicit/pos-less lists so the
+	// draw order stays fixed (terrain → listed flora → listed animals → density flora → density
+	// animals), all off the one r stream (D12). Needs a terrain layout + config (suitability /
+	// passability). Best-effort per slot: a slot that never lands on a viable site is skipped
+	// (fewer than target on a hostile map) rather than spinning — deterministic either way.
+	if hasDensity(fx) {
+		if cfg == nil {
+			return fx, nil, fmt.Errorf("worldgen: flora/animal density requires a Load-supplied config")
+		}
+		if fx.Terrain == nil || len(fx.Terrain.Cells) == 0 {
+			return fx, nil, fmt.Errorf("worldgen: flora/animal density requires a terrain layout")
+		}
+		cols, rows := navmap.OffsetDimsOf(navCfg)
+		terrainAt := layoutSampler(*fx.Terrain, navCfg)
+		moistureAt := densityMoistureSampler(initMoisture, cols, rows, navCfg)
+		fx.Flora = append(fx.Flora, placeFloraDensity(fx, navCfg, cfg, terrainAt, moistureAt, r)...)
+		fx.Animals = append(fx.Animals, placeAnimalDensity(fx, navCfg, cfg, terrainAt, r)...)
 	}
 	return fx, initMoisture, nil
 }

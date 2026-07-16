@@ -154,7 +154,7 @@ func (w *World) runFloraEnv() {
 			})
 		}
 	}
-	w.floraState = next
+	w.floraState = next // coverDensity's cover index rebuilds lazily (floraState pointer changed)
 
 	// WI-P4: the WorldFrame flora_delta buffer (grown half) — Pos/Species come
 	// from the POST-Step state (GrowthDelta itself carries no Pos, D9 parity: no

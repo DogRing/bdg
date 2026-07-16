@@ -1,0 +1,92 @@
+# village_ecosystem.fixture.yaml — a LARGE 3000×3000 by-type ecosystem for the scaling study
+# (docs/plans/scaling.md: SC1 = 3000² whole-map / no chunking, SC4 = density placement). No
+# agents yet — the medieval village emerges later; this seeds the SURROUNDING ecosystem by
+# species so the P0 scaling benchmark measures realistic flora+fauna load, not an empty map.
+#
+# terrain{random:true} generates the world from the seed (elevation → hydrology → base material
+# + moisture). flora_density / animal_density then populate it procedurally at materialize time:
+#   - flora sites are weighted by §6 carrying-capacity (dry_shrub → dry ground, tall_grass →
+#     wet, none on water/steep) — see backend/tools/worldgen/density.go.
+#   - animals are filtered by terrain passability (F18 allow-list): fish land only in water,
+#     land species avoid deep sea.
+# count = round(density · 9,000,000 unit²). Densities are UNTUNED first-pass ecological ratios
+# (herbivores ≫ predators); the P0 sweep varies them (scaling.md §2 OQ-DENS). Actual placed ≤
+# nominal (suitability/passability rejection).
+schema_version: 1
+seed: 20260715
+
+cell_size: 5.0
+bounds:
+  min: [0.0, 0.0]
+  max: [3000.0, 3000.0]
+
+terrain:
+  random: true
+
+# ── Flora by type (6 species) — ground cover dense, trees/shrubs sparse ───────────────
+flora_density:
+  grass:       0.004     # ~36000 nominal — primary ground cover on fertile flats
+  tall_grass:  0.0015    # ~13500 — wetter ground (high-moisture §6)
+  wildflower:  0.0012    # ~10800 — meadow flowers
+  berry_shrub: 0.0008    # ~7200  — forage shrubs
+  dry_shrub:   0.0006    # ~5400 nominal — establishes only on DRY ground ((1−moisture) §6)
+  oak:         0.0004    # ~3600  — sparse forest canopy
+
+# ── Fauna by type (6 species) — herbivores ≫ predators; fish confined to water ────────
+animal_density:
+  rabbit: 0.00006        # ~540 — abundant small grazer
+  deer:   0.00003        # ~270 — mid grazer
+  goat:   0.00002        # ~180 — climber grazer (mountain)
+  fish:   0.00004        # ~360 nominal — WATER only (rivers/lakes) after passability filter
+  wolf:   0.000008       # ~72  — pack predator
+  bear:   0.000004       # ~36  — apex omnivore
+
+# Sustain the placed populations (F9 respawn tops up toward target; ≈ nominal placed counts).
+respawn_targets:
+  rabbit: 540
+  deer: 270
+  goat: 180
+  fish: 360
+  wolf: 72
+  bear: 36
+
+# Per-species initial runtime vectors — buildAnimals REQUIRES a template per placed species so
+# §6 speed/graze/combat formulas have real Stat + drive inputs at t=0. Herbivores start Graze,
+# predators Hunt, fish drift (MoveTo); the controller re-decides each step (initial state only).
+animal_templates:
+  rabbit:
+    stats: { Strength: 18, Agility: 85 }
+    drives: { hunger: 0.90, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  deer:
+    stats: { Strength: 45, Agility: 70 }
+    drives: { hunger: 0.88, fatigue: 0.05, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  goat:
+    stats: { Strength: 40, Agility: 65 }
+    drives: { hunger: 0.85, fatigue: 0.05, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  wolf:
+    stats: { Strength: 78, Agility: 82 }
+    drives: { hunger: 0.96, fatigue: 0.02, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Hunt
+  bear:
+    stats: { Strength: 90, Agility: 55 }
+    drives: { hunger: 0.90, fatigue: 0.03, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Hunt
+  fish:
+    stats: { Strength: 10, Agility: 60 }
+    drives: { fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: MoveTo

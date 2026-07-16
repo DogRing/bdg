@@ -162,6 +162,14 @@ type World struct {
 	scent         *scent.Grid
 	scentEmitters map[core.Tag][]core.Tag
 	coverKinds    map[core.Tag]bool
+	// coverIndex is a spatial hash of ONLY cover-kind plants, so coverDensity is an O(nearby)
+	// lookup instead of an O(all-plants) scan + per-call Plants() copy (the dominant cost at large
+	// flora counts, docs/plans/scaling.md P2). It is rebuilt lazily whenever floraState changes —
+	// keyed by the floraState pointer (coverIndexKey), so it stays correct even when tests assign
+	// floraState directly. maxCoverWidth (widest cover Width) bounds the query radius; 0 ⇒ no cover.
+	coverIndex    *spatial.SpatialHash
+	coverIndexKey *flora.State
+	maxCoverWidth float64
 	nextAnimalSeq int64
 
 	// SH1 shelter/exposure (docs/plans/shelter.md): nil cache ⇒ OFF (ε ≡ 1, local wind == global wind,

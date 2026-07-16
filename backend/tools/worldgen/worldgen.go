@@ -37,6 +37,14 @@ type Fixture struct {
 	// RespawnTargets is a per-run OVERRIDE of the content per-species respawn_target
 	// (F9 carrying capacity); merged over config.RespawnTargets at Load (cfg untouched).
 	RespawnTargets map[core.Tag]int `yaml:"respawn_targets,omitempty"`
+	// FloraDensity / AnimalDensity request procedural by-species population at materialize
+	// time (scaling.md SC4): count = round(density · bounds area), placed deterministically
+	// over the terrain layout — flora weighted by §6 carrying-capacity, animals filtered by
+	// terrain passability (F18 allow-list). Density-placed entities are APPENDED to the
+	// explicit Flora/Animals lists. Requires a terrain layout + a Load-supplied config.
+	// density is entities per world unit² (bounds are continuous, D11).
+	FloraDensity  map[core.Tag]float64 `yaml:"flora_density,omitempty"`
+	AnimalDensity map[core.Tag]float64 `yaml:"animal_density,omitempty"`
 }
 
 type Bounds struct {
@@ -145,7 +153,7 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 	}
 
 	envCfg, navCfg, climateCfg := fixtureConfigs(fx, cfg)
-	fx, initMoisture, err := materialize(fx, navCfg)
+	fx, initMoisture, err := materialize(fx, navCfg, cfg)
 	if err != nil {
 		return nil, err
 	}

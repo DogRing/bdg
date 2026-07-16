@@ -156,6 +156,10 @@ func (s *State) ShadeOf(id core.ObjectID) (Shade, bool)
 // from Pos+Width).
 func (s *State) Plants() []Plant
 
+// PlantByID returns one plant via the O(1) index (ok=false if unknown) — a single-key lookup
+// (no full Plants() copy), for callers that resolve a spatial-hash neighbour ID to its Width.
+func (s *State) PlantByID(id core.ObjectID) (Plant, bool)
+
 // ── Rules (the data-defined flora table, RESOLVED §0 — content + §6) ────────────────
 
 // Rules is the compiled, immutable per-species flora table from content/objects.yaml `flora:`
@@ -211,6 +215,12 @@ type YieldRule struct {
 // advance by their own rate × this scalar). Below the species' death threshold θ it counts
 // toward DeathStreak.
 func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64
+
+// CarryingCapacity evaluates the species' §6 carrying-capacity K over the site → capacity ≥ 0
+// (0 on water/steep via (1−depth)/(1−slope)). NOT upper-clamped (K may exceed 1). Pure, no RNG.
+// For every shipped species K is temperature-free, so world-gen density placement can weight
+// establishment from terrain attrs + generated moisture before climate is built (scaling.md SC4).
+func (r *Rules) CarryingCapacity(sp SpeciesID, in SiteInput) float64
 
 // LengthRate / WidthRate evaluate the species' two §6 growth-rate formulas (scalars or §6
 // programs). Step integrates Length += LengthRate·Suitability and Width += WidthRate·Suitability

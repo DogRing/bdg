@@ -254,7 +254,7 @@ func TestRabbitMeadowSeedDeterminism(t *testing.T) {
 		navCfg := *cfg.NavCfg
 		navCfg.MinX, navCfg.MinY = f.Bounds.Min[0], f.Bounds.Min[1]
 		navCfg.MaxX, navCfg.MaxY = f.Bounds.Max[0], f.Bounds.Max[1]
-		m, moist, err := materialize(f, navCfg)
+		m, moist, err := materialize(f, navCfg, cfg)
 		if err != nil {
 			t.Fatalf("materialize(seed %d): %v", seed, err)
 		}
@@ -316,7 +316,7 @@ func TestMaterializeRandomizesAnimalHeading(t *testing.T) {
 				{ID: "a5", Species: "rabbit"}, {ID: "a6", Species: "rabbit"},
 			},
 		}
-		m, _, err := materialize(fx, navCfg)
+		m, _, err := materialize(fx, navCfg, nil)
 		if err != nil {
 			t.Fatalf("materialize(seed %d): %v", seed, err)
 		}

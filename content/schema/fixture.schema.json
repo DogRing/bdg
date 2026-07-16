@@ -89,6 +89,18 @@
       "description": "Per-run OVERRIDE of the content per-species respawn_target (F9 carrying capacity, content/objects.yaml fauna:). Keys = fauna species ids (loader cross-checks); values replace the content value for THIS run only. Absent ⇒ content values.",
       "additionalProperties": { "type": "integer", "minimum": 0 },
       "propertyNames": { "$ref": "#/$defs/identifier" }
+    },
+    "flora_density": {
+      "type": "object",
+      "description": "Procedural by-species flora population (scaling.md SC4): count = round(density · continuous bounds area) placed at materialize time, weighted by §6 carrying-capacity (denser where suitable, none on water/steep). density = plants per world unit² (D11). Keys = flora species ids (content/objects.yaml flora:). APPENDED to the explicit flora list; requires a terrain layout.",
+      "additionalProperties": { "type": "number", "minimum": 0 },
+      "propertyNames": { "$ref": "#/$defs/identifier" }
+    },
+    "animal_density": {
+      "type": "object",
+      "description": "Procedural by-species fauna population (scaling.md SC4): count = round(density · continuous bounds area) placed at materialize time, filtered by terrain passability (F18 allow-list — fish only in water, land species avoid deep sea). density = animals per world unit² (D11). Keys = fauna species ids (content/objects.yaml fauna:). APPENDED to the explicit animals list; requires a terrain layout.",
+      "additionalProperties": { "type": "number", "minimum": 0 },
+      "propertyNames": { "$ref": "#/$defs/identifier" }
     }
   },
   "$defs": {

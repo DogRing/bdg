@@ -7,6 +7,7 @@ import (
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/kernel/rng"
+	"github.com/dogring/bdg/engine/space/spatial"
 )
 
 func (w *World) commitAnimalVital(a *fauna.Animal, intent fauna.Intent) {
@@ -142,11 +143,14 @@ func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
 	}
 }
 
-// nearForageFlora reports whether an edible-flora object (a scent:food emitter) is within grazing reach.
+// nearForageFlora reports whether an edible-flora object (a scent:food emitter) is within grazing
+// reach. Queries the spatial hash near the animal rather than scanning every object (the O(all
+// objects) scan per animal was a top per-tick cost at large flora counts, docs/plans/scaling.md P2).
+// Result is a within-reach existence test, order-independent → identical to the full scan.
 func (w *World) nearForageFlora(a *fauna.Animal) bool {
 	reach := w.envCfg.ScentCellSize
-	for _, id := range w.objectIDs {
-		obj, ok := w.objects[id]
+	for _, e := range w.spatial.NearbyEntities(a.Pos, reach) {
+		obj, ok := w.objects[e.ID]
 		if !ok || !w.kindEmitsFood(obj.Kind) {
 			continue
 		}
@@ -172,16 +176,23 @@ func (w *World) nearestCoverFloraID(a *fauna.Animal) core.ObjectID {
 	if reach <= 0 {
 		return ""
 	}
+	// Spatial-hash query near the animal instead of scanning every object (scaling.md P2). The
+	// old full scan iterated objectIDs (ascending ID) and updated only on a STRICTLY closer plant,
+	// so among equidistant plants it kept the lowest ID. Reproduce that exactly: strictly-closer
+	// wins; on a distance tie the lower ID wins — independent of the spatial hash's return order.
 	var nearest core.ObjectID
 	nearestDistance := reach
-	for _, id := range w.objectIDs {
-		obj, ok := w.objects[id]
+	for _, e := range w.spatial.NearbyEntities(a.Pos, reach) {
+		obj, ok := w.objects[e.ID]
 		if !ok || !w.kindIsCover(obj.Kind) {
 			continue
 		}
 		distance := a.Pos.Distance(obj.Pos)
-		if distance <= nearestDistance && (nearest == "" || distance < nearestDistance) {
-			nearest, nearestDistance = id, distance
+		if distance > nearestDistance {
+			continue
+		}
+		if nearest == "" || distance < nearestDistance || (distance == nearestDistance && e.ID < nearest) {
+			nearest, nearestDistance = e.ID, distance
 		}
 	}
 	return nearest
@@ -208,13 +219,59 @@ func (w *World) coverResistance(species fauna.SpeciesID, p core.Vec2) float64 {
 	return unitScalar + w.coverDensity(p)*cc
 }
 
+// coverIndexCellSize is the bucket size of the cover-plant spatial index. Correctness holds for
+// any positive value (NearbyEntities covers the query circle regardless); this just tunes bucket
+// occupancy for cover reaches on the order of a few plant widths.
+const coverIndexCellSize = 10.0
+
+// coverIndexFor returns the spatial index of cover-kind plants for the current floraState, lazily
+// (re)building it when floraState changed (pointer-keyed) or cover kinds were just (re)installed
+// (coverIndexKey reset to nil). Plants are static between flora Steps, so the index is built at
+// most once per flora Step. Also refreshes maxCoverWidth (the query-radius bound). Building from
+// floraState directly means coverDensity does NOT depend on plants being in the general object
+// spatial hash — it works even when a test assigns floraState by hand.
+func (w *World) coverIndexFor() *spatial.SpatialHash {
+	if w.coverIndex != nil && w.coverIndexKey == w.floraState {
+		return w.coverIndex
+	}
+	idx := spatial.New(coverIndexCellSize)
+	w.maxCoverWidth = zeroScalar
+	if w.floraState != nil && len(w.coverKinds) > 0 {
+		for _, pl := range w.floraState.Plants() {
+			if !w.kindIsCover(core.Tag(pl.Species)) {
+				continue
+			}
+			idx.Insert(pl.ID, pl.Pos)
+			if pl.Width > w.maxCoverWidth {
+				w.maxCoverWidth = pl.Width
+			}
+		}
+	}
+	w.coverIndex = idx
+	w.coverIndexKey = w.floraState
+	return idx
+}
+
+// coverDensity sums each nearby cover-kind plant's proximity weight (1 − d/radius, radius =
+// CoverRadiusFactor·Width) at p. It queries the cover index within CoverRadiusFactor·maxCoverWidth
+// — the widest possible cover reach — so it touches only nearby cover plants, not every plant (the
+// O(all-plants) scan + per-call Plants() copy was the dominant cost at large flora counts,
+// docs/plans/scaling.md P2). Contributions are summed in ascending plant-ID order, identical to the
+// old full-scan (Plants() is ID-sorted), so the exact float accumulation — and goldens — are preserved.
 func (w *World) coverDensity(p core.Vec2) float64 {
 	if w.floraState == nil {
 		return zeroScalar
 	}
-	density := zeroScalar
-	for _, pl := range w.floraState.Plants() {
-		if !w.kindIsCover(core.Tag(pl.Species)) {
+	idx := w.coverIndexFor()
+	if w.maxCoverWidth <= zeroScalar {
+		return zeroScalar
+	}
+	queryRadius := w.envCfg.FaunaCombat.CoverRadiusFactor * w.maxCoverWidth
+	nearby := idx.NearbyEntities(p, queryRadius)
+	contrib := make([]coverContrib, 0, len(nearby))
+	for _, e := range nearby {
+		pl, ok := w.floraState.PlantByID(e.ID)
+		if !ok {
 			continue
 		}
 		radius := w.envCfg.FaunaCombat.CoverRadiusFactor * pl.Width
@@ -222,10 +279,20 @@ func (w *World) coverDensity(p core.Vec2) float64 {
 			continue
 		}
 		if d := p.Distance(pl.Pos); d < radius {
-			density += unitScalar - d/radius
+			contrib = append(contrib, coverContrib{id: pl.ID, weight: unitScalar - d/radius})
 		}
 	}
+	sort.Slice(contrib, func(i, j int) bool { return contrib[i].id < contrib[j].id })
+	density := zeroScalar
+	for _, c := range contrib {
+		density += c.weight
+	}
 	return density
+}
+
+type coverContrib struct {
+	id     core.ObjectID
+	weight float64
 }
 
 func (w *World) kindEmitsFood(kind core.Tag) bool {

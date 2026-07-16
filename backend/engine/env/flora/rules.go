@@ -199,6 +199,27 @@ func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64 {
 	return v
 }
 
+// CarryingCapacity evaluates the species' §6 carrying-capacity formula K over the site
+// → per-site capacity ≥ 0 (0 on water/steep via the (1−depth)/(1−slope) factors). Returns
+// 0 for an unknown species or nil CarryingCapacity program. Unlike Suitability it is NOT
+// upper-clamped (K may exceed 1) and — for every shipped species — is temperature-free, so
+// world-gen density placement can weight WHERE a species establishes from terrain attrs +
+// generated moisture alone, before climate is built (scaling.md SC4 / docs/plans/world-gen.md).
+func (r *Rules) CarryingCapacity(sp SpeciesID, in SiteInput) float64 {
+	if r == nil {
+		return 0
+	}
+	sr, ok := r.bySpecies[sp]
+	if !ok {
+		return 0
+	}
+	v := evalNum(sr.CarryingCapacity, floraContext{site: in})
+	if v < nonNegativeFloor {
+		return nonNegativeFloor
+	}
+	return v
+}
+
 // LengthRate evaluates the species' §6 length-rate formula (height growth rate).
 // Returns 0 for an unknown species or nil LengthRate program.
 func (r *Rules) LengthRate(sp SpeciesID, in SiteInput) float64 {

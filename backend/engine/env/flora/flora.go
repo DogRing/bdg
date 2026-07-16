@@ -136,6 +136,14 @@ func (s *State) Plants() []Plant {
 	return out
 }
 
+// PlantByID returns the plant with the given ID via the O(1) index (single-key access, no
+// range-iteration, D12). ok=false if the ID is unknown. Lets callers look up one plant without
+// the full Plants() copy — e.g. a spatial-hash neighbour query that then reads plant Width.
+func (s *State) PlantByID(id core.ObjectID) (Plant, bool) {
+	p, ok := s.idx[id]
+	return p, ok
+}
+
 // ── Shade parameters (lazy, per-demand; RESOLVED 1g) ─────────────────────────
 
 // ShadeOf returns the Shade parameter for one plant (lazy — computed on demand, not in

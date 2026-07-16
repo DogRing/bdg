@@ -23,6 +23,7 @@ func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitte
 	w.scent = scent.New(cfg.ScentCellSize)
 	w.scentEmitters = cloneScentEmitters(scentEmitters)
 	w.coverKinds = cloneCoverKinds(coverKinds)
+	w.coverIndexKey = nil // force a cover-index rebuild now that cover kinds are known
 	w.animals = make(map[core.ObjectID]*fauna.Animal, len(animals))
 	w.animalIDs = nil
 	for _, animal := range animals {
