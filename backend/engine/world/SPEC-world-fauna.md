@@ -375,7 +375,13 @@ commits the animal's move, NOT a §6 speed change (fauna's speed is unchanged).
   rubs the wall" bug). Fires only when a wall is actually crossed; an interior commit returns
   `(p, heading)` unchanged ⇒ byte-identical to the old `clampToBounds` path (existing goldens hold).
   `clampToBounds` is retained for off-map respawn placement (position-only, no heading). Pure trig,
-  deterministic (no RNG/state). Respawn stays near-live (FM15, unchanged).
+  deterministic (no RNG/state). Respawn stays near-live (FM15, unchanged) but now **rejection-samples the
+  offset for F18 terrain passability** (`respawnPos` → `canRespawnAt` via `faunaRules.TerrainCost`): a
+  respawn must land on a cell its species can occupy (fish → water), else it retries up to
+  `maxRespawnPlacementTries` and falls back to the passable base. The **first** candidate reuses the same
+  fork draws as the old bounds-only placement, so already-passable respawns are byte-identical (goldens
+  hold); only an impassable first candidate spends extra draws. The extinction anchor is the first
+  actually-placed member (a real passable position), not the fixture-animals centroid.
 - **`coverResistance(species, p)`** (nil-safe; returns 1 when nothing applies):
   ```
   cc := w.faunaRules.CoverCost(species)                   // per-species content affinity; 0 ⇒ unaffected
