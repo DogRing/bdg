@@ -94,7 +94,14 @@ func (w *World) runRespawn() {
 }
 
 // respawnPos places a new member near a living member (small seeded offset) or at the species anchor if
-// the species is extinct. Deterministic given the seeded fork; kept inside the world bounds.
+// the species is extinct. The candidate is REJECTION-SAMPLED so it lands on terrain the species can
+// occupy (F18 passability — a fish must not respawn onto land; density placement already respects this,
+// respawn now does too). Deterministic given the seeded fork; kept inside the world bounds.
+//
+// The FIRST candidate consumes exactly the same two fork draws as the old bounds-only placement, so
+// respawns that were already passable are byte-identical; only an impassable first candidate spends
+// extra tries. After maxRespawnPlacementTries, fall back to base — a living member's position (or the
+// anchor, which is a real initial placement) is itself passable, so the fish stays in water.
 func (w *World) respawnPos(sp core.Tag, live []core.Vec2, fork *rng.RNG) core.Vec2 {
 	var base core.Vec2
 	switch {
@@ -107,10 +114,32 @@ func (w *World) respawnPos(sp core.Tag, live []core.Vec2, fork *rng.RNG) core.Ve
 	if off <= 0 {
 		off = defaultScentMagnitude
 	}
-	return w.clampToBounds(core.Vec2{
-		X: base.X + (fork.Float64()-centeredRandomOffset)*off,
-		Y: base.Y + (fork.Float64()-centeredRandomOffset)*off,
-	})
+	var pos core.Vec2
+	for try := 0; try < maxRespawnPlacementTries; try++ {
+		pos = w.clampToBounds(core.Vec2{
+			X: base.X + (fork.Float64()-centeredRandomOffset)*off,
+			Y: base.Y + (fork.Float64()-centeredRandomOffset)*off,
+		})
+		if w.canRespawnAt(sp, pos) {
+			return pos
+		}
+	}
+	if w.canRespawnAt(sp, base) {
+		return base // guaranteed-passable anchor / living-member position
+	}
+	return pos // exhausted (no passable spot found near base); best-effort last candidate
+}
+
+// canRespawnAt reports whether species sp may occupy the terrain at pos (F18 passability, the same
+// TerrainCost gate fauna movement uses). Permissive (true) when no navmap/fauna rules are installed —
+// terrain-free worlds (ecosim/unit tests) then keep the old bounds-only respawn behavior.
+func (w *World) canRespawnAt(sp core.Tag, pos core.Vec2) bool {
+	if w.nav == nil || w.faunaRules == nil {
+		return true
+	}
+	terrain := core.Tag(w.nav.TerrainAt(w.nav.CellOf(pos)))
+	_, passable := w.faunaRules.TerrainCost(fauna.SpeciesID(sp), terrain)
+	return passable
 }
 
 // reflectAtBounds clamps p into the world [Min,Max] rectangle AND, on each wall it hits, reflects the

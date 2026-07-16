@@ -45,6 +45,12 @@ const (
 	defaultTerrainCost      = 1.0
 	defaultScentMagnitude   = 1.0
 	defaultFreshAnimalVital = 1.0
+
+	// maxRespawnPlacementTries bounds the rejection sampling that keeps a respawned
+	// member on terrain its species can occupy (F18). The first try reuses the same
+	// fork draws as the old bounds-only placement (already-passable respawns stay
+	// byte-identical); only an impassable first candidate spends extra tries.
+	maxRespawnPlacementTries = 16
 	effortHighCost          = 0.90
 	effortMediumCost        = 0.50
 	effortLowCost           = 0.20

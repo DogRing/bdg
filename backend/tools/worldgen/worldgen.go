@@ -231,7 +231,7 @@ func Load(fx Fixture, cfg *config.LoadOutput, opts ...Option) (*world.World, err
 		w.InstallFauna(envCfg, cfg.FaunaRules, cfg.ScentEmitters, cfg.CoverKinds, animals)
 		targets := fixtureRespawnTargets(fx, cfg)
 		if envCfg.RespawnCadence > 0 && len(targets) > 0 {
-			templates, anchors := respawnInputs(fx)
+			templates, anchors := respawnInputs(fx, animals)
 			w.InstallRespawn(templates, targets, anchors, envCfg.RespawnCadence)
 		}
 	}
@@ -288,8 +288,12 @@ func buildAnimals(fx Fixture, cfg *config.LoadOutput) ([]fauna.Animal, error) {
 }
 
 // respawnInputs builds the per-species canonical template (from the fixture GenSpec) and the per-species
-// spawn anchor (centroid of the initial placements — used to revive an extinct species) for InstallRespawn.
-func respawnInputs(fx Fixture) (map[core.Tag]fauna.Animal, map[core.Tag]core.Vec2) {
+// spawn anchor (used to revive an EXTINCT species) for InstallRespawn. The anchor is the FIRST actually-
+// placed member of each species — a real, passability-respecting position — taken from `placed` (the
+// materialized animals) rather than the fixture: density fixtures carry no `fx.Animals`, so an
+// fx-centroid anchor would be the origin, and a centroid of scattered placements (e.g. fish in disjoint
+// ponds) can itself fall on impassable ground between them. A real placement is guaranteed occupiable.
+func respawnInputs(fx Fixture, placed []fauna.Animal) (map[core.Tag]fauna.Animal, map[core.Tag]core.Vec2) {
 	templates := make(map[core.Tag]fauna.Animal, len(fx.AnimalTemplates))
 	for sp, tpl := range fx.AnimalTemplates {
 		templates[core.Tag(sp)] = fauna.Animal{
@@ -302,18 +306,12 @@ func respawnInputs(fx Fixture) (map[core.Tag]fauna.Animal, map[core.Tag]core.Vec
 			ActiveUntil:   tpl.ActiveUntil,
 		}
 	}
-	sums := make(map[core.Tag]core.Vec2)
-	counts := make(map[core.Tag]int)
-	for _, ap := range fx.Animals {
-		sp := core.Tag(ap.Species)
-		p := ap.Pos.Core()
-		s := sums[sp]
-		sums[sp] = core.Vec2{X: s.X + p.X, Y: s.Y + p.Y}
-		counts[sp]++
-	}
-	anchors := make(map[core.Tag]core.Vec2, len(sums))
-	for sp, s := range sums {
-		anchors[sp] = core.Vec2{X: s.X / float64(counts[sp]), Y: s.Y / float64(counts[sp])}
+	anchors := make(map[core.Tag]core.Vec2)
+	for _, a := range placed { // `placed` is in a deterministic order (sorted-id build)
+		sp := core.Tag(a.Species)
+		if _, seen := anchors[sp]; !seen {
+			anchors[sp] = a.Pos
+		}
 	}
 	return templates, anchors
 }

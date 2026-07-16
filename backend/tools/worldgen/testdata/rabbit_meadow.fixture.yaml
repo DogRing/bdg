@@ -50,17 +50,15 @@ animal_density:
   bear:   0.000004       # ~1 — apex omnivore
 
 # Sustain the placed populations (F9 respawn tops up toward target; ≈ nominal placed counts).
-# NOTE: fish is intentionally ABSENT here. respawnPos (engine/world/respawn.go) places new members
-# near a living member / at the extinction anchor and clamps to world BOUNDS only — it does NOT
-# honor F18 terrain passability. Fish require water (scarce at 500²), so topping fish up toward a
-# target strands ~half of them on land (soil/sand). Fish therefore live as their initial
-# water-placed cohort only (density placement DOES respect passability); no land-spawn. Making
-# respawn passability-aware is the proper fix (engine change + respawn golden re-baseline) — a
-# separate follow-up, not gating this world.
+# fish is water-gated: respawnPos now rejection-samples for F18 passability (engine/world/respawn.go)
+# and revives from a real placed position, so fish top-ups stay in water (near the living school /
+# clustered when the pond is small) instead of stranding on land. Target kept modest to match the
+# scarce 500² water.
 respawn_targets:
   rabbit: 15
   deer: 8
   goat: 5
+  fish: 6
   wolf: 2
   bear: 1
 
