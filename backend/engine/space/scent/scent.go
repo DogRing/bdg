@@ -81,6 +81,12 @@ type Grid struct {
 	cellSize  float64
 	committed map[cellKey]cellVals // stable; Read/IntensityAt see this
 	pending   map[cellKey]cellVals // accumulates until Commit
+
+	// Spread scratch, reused across calls to avoid a per-tick map + slice
+	// allocation (GC pressure dominates at large scale, docs/plans/scaling.md P2).
+	// Single-writer (apply phase), so reuse is safe. Cleared/refilled each Spread.
+	spreadSnap map[cellKey]cellVals
+	spreadKeys []cellKey
 }
 
 // New creates an empty grid with the given square cell edge length (world units).
@@ -90,9 +96,10 @@ func New(cellSize float64) *Grid {
 		panic("scent.New: cellSize must be > 0")
 	}
 	return &Grid{
-		cellSize:  cellSize,
-		committed: make(map[cellKey]cellVals),
-		pending:   make(map[cellKey]cellVals),
+		cellSize:   cellSize,
+		committed:  make(map[cellKey]cellVals),
+		pending:    make(map[cellKey]cellVals),
+		spreadSnap: make(map[cellKey]cellVals),
 	}
 }
 
@@ -103,22 +110,6 @@ func cellOf(pos core.Vec2, cellSize float64) cellKey {
 		cx: int(math.Floor(pos.X / cellSize)),
 		cy: int(math.Floor(pos.Y / cellSize)),
 	}
-}
-
-// sortedKeys returns all keys of m in a deterministic sorted order (cy, cx
-// ascending). Used wherever buffer traversal must be logic-driving (D12).
-func sortedKeys(m map[cellKey]cellVals) []cellKey {
-	keys := make([]cellKey, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].cy != keys[j].cy {
-			return keys[i].cy < keys[j].cy
-		}
-		return keys[i].cx < keys[j].cx
-	})
-	return keys
 }
 
 // ── Deposit ───────────────────────────────────────────────────────────────────
@@ -177,44 +168,78 @@ func (g *Grid) Spread(wind Wind) {
 		return
 	}
 	// Snapshot pending so reads and writes don't interfere within one Spread call.
-	snap := make(map[cellKey]cellVals, len(g.pending))
+	// The snapshot map + sorted-key slice are reused across ticks (cleared/refilled)
+	// to avoid a per-Spread allocation — GC dominates at large scale (scaling.md P2).
+	snap := g.spreadSnap
+	clear(snap)
+	g.spreadKeys = g.spreadKeys[:0]
 	for k, v := range g.pending {
 		snap[k] = v
+		g.spreadKeys = append(g.spreadKeys, k)
 	}
 
 	nw := neighborWeights(wind)
 
-	// Sorted traversal (D12: never raw map-range for logic).
-	keys := sortedKeys(snap)
+	// Sorted traversal (D12: never raw map-range for logic). Sorted (cy, then cx)
+	// so float accumulation order into every shared neighbor cell is fixed.
+	keys := g.spreadKeys
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].cy != keys[j].cy {
+			return keys[i].cy < keys[j].cy
+		}
+		return keys[i].cx < keys[j].cx
+	})
+
 	for _, key := range keys {
 		sv := snap[key]
+
+		// Per-channel donated/received from the SNAPSHOT value (constant for this
+		// cell this call). Folding the channel loop INSIDE the neighbor loop below
+		// cuts map hashing from O(NumChannels·neighbors) to O(neighbors) per cell
+		// (the dominant tick cost at scale, scaling.md P2) — numerically identical:
+		// each (neighbor, channel) still receives one contribution per source in the
+		// same sorted-key order.
+		var donated cellVals
+		any := false
 		for ch := 0; ch < NumChannels; ch++ {
-			v := sv[ch]
-			if v <= 0 {
+			if sv[ch] > 0 {
+				donated[ch] = sv[ch] * spreadFraction
+				any = true
+			}
+		}
+		if !any {
+			continue
+		}
+
+		// Source cell loses the donated amount (single map read+write, all channels).
+		cv := g.pending[key]
+		for ch := 0; ch < NumChannels; ch++ {
+			if donated[ch] <= 0 {
 				continue
 			}
-			donated := v * spreadFraction
-			received := donated * spreadFalloff
-
-			// Source cell loses the donated amount.
-			cv := g.pending[key]
-			cv[ch] -= donated
+			cv[ch] -= donated[ch]
 			if cv[ch] < 0 {
 				cv[ch] = 0
 			}
-			g.pending[key] = cv
+		}
+		g.pending[key] = cv
 
-			// Distribute attenuated intensity to neighbors in fixed order.
-			for i, off := range neighborOffsets {
-				w := nw[i]
-				if w <= 0 {
+		// Distribute attenuated intensity to neighbors in fixed order — one map
+		// read+write per neighbor (all channels folded in), not per channel.
+		for i, off := range neighborOffsets {
+			w := nw[i]
+			if w <= 0 {
+				continue
+			}
+			nk := cellKey{key.cx + off[0], key.cy + off[1]}
+			nv := g.pending[nk]
+			for ch := 0; ch < NumChannels; ch++ {
+				if donated[ch] <= 0 {
 					continue
 				}
-				nk := cellKey{key.cx + off[0], key.cy + off[1]}
-				nv := g.pending[nk]
-				nv[ch] += received * w
-				g.pending[nk] = nv
+				nv[ch] += donated[ch] * spreadFalloff * w
 			}
+			g.pending[nk] = nv
 		}
 	}
 }
@@ -227,8 +252,15 @@ func (g *Grid) Spread(wind Wind) {
 // scent is absent from the new pending and thus absent from committed after the next
 // Commit (no stale accumulation). Deterministic; no RNG.
 func (g *Grid) Commit() {
+	// Reuse the two buffers instead of allocating a fresh pending each tick: the
+	// old committed map has no readers past this phase boundary (reads run before
+	// apply), so clear it and reuse it as the next pending. This avoids a per-tick
+	// map allocation AND the GC of the large committed map on spread cadences —
+	// GC dominates at scale (scaling.md P2). Cleared ⇒ starts empty (same as make).
+	old := g.committed
 	g.committed = g.pending
-	g.pending = make(map[cellKey]cellVals)
+	clear(old)
+	g.pending = old
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
