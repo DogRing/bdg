@@ -383,6 +383,24 @@ func steerFull(
 	}
 	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred, waterDir)
 
+	// PD1 scent-tracking confidence (P_fa4a, docs/plans/fauna.md §5): a FAINT scent gives an unreliable
+	// DIRECTION. For the scent-HOMING channels (food/prey/carrion, steer-TOWARD) blend the scent gradient
+	// toward the heading-continuation baseline by confidence = g·I/(1+g·I) — I = that channel's intensity,
+	// g = §6 ScentAcuity keenness gain. Faint scent (I→0) ⇒ confidence→0 ⇒ the animal wanders (can't localize
+	// → prey refugia emerge); at the source (I large) ⇒ confidence→1 ⇒ exact homing. No authored gain OR g≤0
+	// ⇒ SKIP (confidence 1, byte-identical neutral off-lever). Only the resulting ANGLE is used below.
+	// Deterministic: pure §6 + committed reading, no RNG. Flee/wary (steer-AWAY) is NOT degraded.
+	if intensity, homing := homingScentIntensity(tag, reading); homing && intensity > scalarZero {
+		if g := rules.ScentAcuity(a.Species, ctx); g > scalarZero {
+			conf := g * intensity / (scalarOne + g*intensity)
+			hx, hy := math.Cos(a.Heading), math.Sin(a.Heading)
+			dir = core.Vec2{
+				X: hx*(scalarOne-conf) + dir.X*conf,
+				Y: hy*(scalarOne-conf) + dir.Y*conf,
+			}
+		}
+	}
+
 	// Thin always-on HAZARD-REPULSION blend (P_move1/FM5, "a-backbone + bounded blend"):
 	// add e·Repulsion to bend the chosen direction away from dangerous terrain. Repulsion already
 	// scales with local danger SEVERITY + proximity (deep water/cliff push harder than a shallow
@@ -433,6 +451,22 @@ func steerFull(
 	nextHeading = heading
 
 	return nextPos, nextHeading
+}
+
+// homingScentIntensity reports the scent-channel intensity a HOMING steer channel steers toward
+// (food/prey/carrion — steer-TOWARD a source), and whether the tag is such a channel (PD1/P_fa4a). The
+// flee/wary channels (steer-AWAY) and non-scent channels return (0, false) — their direction is not degraded
+// by faint scent. Pure lookup, no state.
+func homingScentIntensity(tag core.Tag, reading scent.Reading) (float64, bool) {
+	switch tag {
+	case TagSteerFood:
+		return reading.Food.Intensity, true
+	case TagSteerPrey:
+		return reading.Prey.Intensity, true
+	case TagFeed:
+		return reading.Carrion.Intensity, true
+	}
+	return scalarZero, false
 }
 
 // baseSteerDir returns the base steering direction vector for the chosen action's

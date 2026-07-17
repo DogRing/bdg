@@ -54,19 +54,19 @@ animals:
 
 animal_templates:
   rabbit:
-    stats: { Strength: 18, Agility: 85 }
+    stats: { Strength: 18, Agility: 85, Perception: 45 }
     drives: { hunger: 0.90, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
     stamina: 1.0
     vital: 1.0
     current_action: Graze
   deer:
-    stats: { Strength: 45, Agility: 70 }
+    stats: { Strength: 45, Agility: 70, Perception: 50 }
     drives: { hunger: 0.88, fatigue: 0.05, fear: 0.0, thermal: 0.0 }
     stamina: 1.0
     vital: 1.0
     current_action: Graze
   wolf:
-    stats: { Strength: 78, Agility: 82 }
+    stats: { Strength: 78, Agility: 82, Perception: 65 }
     drives: { hunger: 0.96, fatigue: 0.02, thermal: 0.0 }
     stamina: 1.0
     vital: 1.0

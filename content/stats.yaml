@@ -64,6 +64,17 @@ stats:
     gen: { dist: normal, mean: 0.5, sd: 0.15 }
     inherit: 0.5
 
+  - id: Perception
+    label: Perception
+    kind: capability        # 지각/감각 예민도 — read by fauna scent-tracking keenness (scent_acuity = §6(Perception),
+                            # PD1b/P_fa4a, docs/plans/fauna.md §5): a keener nose homes on a fainter scent. Open
+                            # registry (D10); agents don't read it yet (fauna-first). Fauna templates set it on a
+                            # raw 0–100 scale like Agility; the registry range below governs agent generation only.
+    range: [0.0, 1.0]
+    default: 0.5
+    gen: { dist: normal, mean: 0.5, sd: 0.15 }
+    inherit: 0.5
+
   # ── Disposition (value weighting) ───────────────────────────────────────────
   - id: Aggression
     label: Aggression

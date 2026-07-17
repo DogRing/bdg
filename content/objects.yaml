@@ -337,6 +337,7 @@ object_kinds:
       speed: "Agility * 0.003 + hunger * 0.2 + fear * 0.2 - fatigue * 0.1 - thermal * 0.0015"  # base Agility; hunger→roam (FM14b restlessness: idle Ag·0.003≈0.21, sated animal holds under move_deadband, a hungry one roams to forage); fear→faster; fatigue/thermal→slower (F40)
       move_deadband: 0.27                                                          # FM14b: just above sated idle speed (≈0.21) — a sated deer rests; hunger>~0.3 breaks it → roam (UNTUNED, P_fa4)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
+      scent_acuity: "6 + Perception*0.1"                                           # PD1/P_fa4a keenness gain g: food-homing confidence = g·I/(1+g·I). Moderate forager nose (UNTUNED placeholder, P_fa4)
       graze: "0.06 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora (world applyAnimalGraze; parallels predator feed)
       hide_chance: "0.35 + Agility*0.003"                                          # M3 cover-hiding probability while fleeing near cover
       diet: [ forage ]                                                             # grazes objects carrying `forage` (grass/berry_shrub)
@@ -372,6 +373,7 @@ object_kinds:
       hazard_avoidance: 1.2                                                         # e: ranges widely, avoids drowning but commits to a chase (untuned)
       speed: "Agility * 0.0038 - fatigue * 0.3 - thermal * 0.0013"                  # faster than deer (pursuit); thermal stress → slower (F40)
       turn_rate: "0.5 + Agility*0.0048"                                            # M6 turn-rate (untuned placeholder)
+      scent_acuity: "8 + Perception*0.12"                                          # PD1/P_fa4a: keen scent-hunter — homes on fainter prey scent than herbivores (higher g). g·I/(1+g·I) (UNTUNED, P_fa4)
       attack_power: "Strength * 0.006"                                              # §6 damage magnitude from base stat composition (FC4)
       hit: "0.55 + Agility * 0.0045"                                                # §6 hit multiplier/probability proxy; target defense deferred to content operands
       feed: "0.35 + hunger * 0.45"                                                  # carcass supply → hunger recovery factor (FC8)
@@ -408,6 +410,7 @@ object_kinds:
       speed: "Agility * 0.004 + hunger * 0.25 + fear * 0.25 - fatigue * 0.1 - thermal * 0.0018"  # very fast sprinter; hunger→roam (FM14b: idle Ag·0.004≈0.34 holds under deadband, hungry roams); small body → strong thermal penalty (F40)
       move_deadband: 0.42                                                          # FM14b: just above sated idle speed (≈0.34) — sated rabbit rests, hunger>~0.3 roams (UNTUNED, P_fa4)
       turn_rate: "1.0 + Agility*0.0115"                                            # M6 turn-rate (untuned placeholder)
+      scent_acuity: "6 + Perception*0.1"                                           # PD1/P_fa4a food-homing keenness g (UNTUNED placeholder, P_fa4)
       graze: "0.07 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       hide_chance: "0.6 + Agility*0.004"                                           # small prey: high cover-hiding chance
       diet: [ forage ]
@@ -442,6 +445,7 @@ object_kinds:
       speed: "Agility * 0.0028 + hunger * 0.15 - fatigue * 0.08 - thermal * 0.0008"  # hardy mountain coat; hunger→roam (FM14b: idle Ag·0.0028≈0.174 holds under deadband, hungry roams); small thermal penalty (F40)
       move_deadband: 0.21                                                          # FM14b: just above sated idle speed (≈0.174) — sated goat rests, hunger>~0.24 roams (UNTUNED, P_fa4)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
+      scent_acuity: "6 + Perception*0.1"                                           # PD1/P_fa4a food-homing keenness g (UNTUNED placeholder, P_fa4)
       graze: "0.05 + hunger * 0.05"                                                # §6 hunger recovered per graze tick at forage flora
       hide_chance: "0.3 + Agility*0.003"                                           # M3 cover-hiding probability while fleeing near cover
       diet: [ forage ]
@@ -477,6 +481,7 @@ object_kinds:
       hazard_avoidance: 0.8                                                         # e: large & confident, wades/climbs readily — low avoidance (untuned)
       speed: "Agility * 0.0030 - fatigue * 0.3 - thermal * 0.0006"                  # strong, not fast; well-insulated → smallest thermal penalty (F40)
       turn_rate: "0.4 + Agility*0.004"                                             # M6 turn-rate (untuned placeholder)
+      scent_acuity: "8 + Perception*0.12"                                          # PD1/P_fa4a: SUPERB nose (omnivore, comment above) — keenest tracker, homes on the faintest prey/food/carrion scent (UNTUNED, P_fa4)
       attack_power: "Strength * 0.008"                                              # heavier hit than wolf (FC4)
       hit: "0.5 + Agility * 0.0035"                                                 # less agile but still stat-composed
       feed: "0.4 + hunger * 0.4"                                                    # larger predator extracts more recovery from a carcass

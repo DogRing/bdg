@@ -37,7 +37,7 @@ animals:
 
 animal_templates:
   rabbit:
-    stats: { Strength: 18, Agility: 85 }
+    stats: { Strength: 18, Agility: 85, Perception: 45 }
     drives: { hunger: 0.90, fatigue: 0.04, fear: 0.0, thermal: 0.0 }
     stamina: 1.0
     vital: 1.0

@@ -313,6 +313,7 @@ type SpeciesRule struct {
     //   + AttackPower, Hit, Feed, Graze (§6), Tags (diet-tag matching) — combat/feeding (FC4/FC8) → SPEC-combat.md
     //   + HideChance (§6), CoverCost — cover (M3/M4-b)                                            → SPEC-cover.md
     //   + TurnRate (§6 max turn rate) — steering inertia (M6)                                     → SPEC-steering.md
+    //   + ScentAcuity (§6 keenness gain) — scent-tracking confidence (PD1/P_fa4a)                 → SPEC-steering.md
 }
 
 // Steer-behavior tags recognized by the STEER step (the SpeciesRule.SteerChannel values; content

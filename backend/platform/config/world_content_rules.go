@@ -215,6 +215,10 @@ func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, statReg *stat
 		if err != nil {
 			return nil, err
 		}
+		scentAcuity, err := parseOptionalFaunaFormula(obj.Fauna.ScentAcuity, parse, "scent_acuity")
+		if err != nil {
+			return nil, err
+		}
 		attackPower, err := parseOptionalFaunaFormula(obj.Fauna.AttackPower, parse, "attack_power")
 		if err != nil {
 			return nil, err
@@ -247,7 +251,7 @@ func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, statReg *stat
 			Utilities: utilities, Drives: drives, AppTemp: appTemp,
 			ComfortTemp: obj.Fauna.ComfortTemp, ThermalBand: obj.Fauna.ThermalBand,
 			HazardAvoidance: obj.Fauna.HazardAvoidance, MoveDeadband: obj.Fauna.MoveDeadband, Speed: speed,
-			TurnRate: turnRate, AttackPower: attackPower, Hit: hit, Feed: feed, Graze: graze, Drink: drink, HideChance: hideChance,
+			TurnRate: turnRate, ScentAcuity: scentAcuity, AttackPower: attackPower, Hit: hit, Feed: feed, Graze: graze, Drink: drink, HideChance: hideChance,
 			CoverCost: obj.Fauna.CoverCost,
 			Diet:      faunaDiet(obj), Tags: faunaTags(obj), IsPredator: faunaIsPredator(obj), SmellRadius: obj.Fauna.Senses.SmellRadius,
 			SightRadius: obj.Fauna.Senses.SightRadius, FovArc: obj.Fauna.Senses.FovArc,

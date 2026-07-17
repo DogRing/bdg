@@ -45,6 +45,7 @@ type SpeciesRule struct {
 	MoveDeadband    float64                            // per-species §6-speed hold threshold (FM14a); >0 overrides Snapshot.MoveDeadband, ≤0 ⇒ fall back to the global
 	Speed           *expr.Program                      // §6 locomotion speed (F35)
 	TurnRate        *expr.Program                      // §6 max turn rate radians/unit time (M6)
+	ScentAcuity     *expr.Program                      // §6 scent-tracking keenness gain g (PD1/P_fa4a); nil/≤0 ⇒ exact scent Dir (neutral)
 	AttackPower     *expr.Program                      // §6 damage magnitude composition (FC4)
 	Hit             *expr.Program                      // §6 hit multiplier/probability composition (FC4)
 	Feed            *expr.Program                      // §6 carcass feed value composition (FC8)
@@ -92,6 +93,7 @@ type speciesData struct {
 	moveDeadband    float64
 	speed           *expr.Program
 	turnRate        *expr.Program
+	scentAcuity     *expr.Program
 	attackPower     *expr.Program
 	hit             *expr.Program
 	feed            *expr.Program
@@ -171,6 +173,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			moveDeadband:    sr.MoveDeadband,
 			speed:           sr.Speed,
 			turnRate:        sr.TurnRate,
+			scentAcuity:     sr.ScentAcuity,
 			attackPower:     sr.AttackPower,
 			hit:             sr.Hit,
 			feed:            sr.Feed,
@@ -378,6 +381,26 @@ func (r *Rules) TurnRate(sp SpeciesID, ctx expr.Context) float64 {
 		return scalarZero
 	}
 	v := sd.turnRate.EvalNumber(ctx)
+	if v < scalarZero {
+		return scalarZero
+	}
+	return v
+}
+
+// ScentAcuity is the species' §6 scent-tracking keenness gain `g` (PD1/P_fa4a, docs/plans/fauna.md §5).
+// Higher = keener nose: the confidence a homing animal has in the scent gradient is g·I/(1+g·I) (I = channel
+// intensity), so a keener species localizes a fainter scent. 0 (nil program / negative / nil Rules) ⇒ the
+// caller SKIPS the confidence blend and uses the exact scent Dir — the byte-identical neutral off-lever.
+// Pure, no RNG.
+func (r *Rules) ScentAcuity(sp SpeciesID, ctx expr.Context) float64 {
+	if r == nil {
+		return scalarZero
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.scentAcuity == nil {
+		return scalarZero
+	}
+	v := sd.scentAcuity.EvalNumber(ctx)
 	if v < scalarZero {
 		return scalarZero
 	}

@@ -246,6 +246,7 @@
         "move_deadband": { "type": "number", "minimum": 0, "description": "Per-species locomotion deadband (FM14b, docs/plans/fauna.md §4.4): when the §6 `speed` is below this, the animal HOLDS position (energy conservation — rest when unstimulated). Set just above the species' sated idle speed so a sated animal rests while a hungry one (whose §6 speed reads `hunger`) roams to forage. >0 overrides the global motion.move_deadband; 0/absent ⇒ fall back to the global." },
         "speed": { "$ref": "#/$defs/formula" },
         "turn_rate": { "$ref": "#/$defs/formula" },
+        "scent_acuity": { "$ref": "#/$defs/scalarOrFormula", "description": "§6 scent-tracking keenness gain `g` (PD1/P_fa4a, docs/plans/fauna.md §5): a homing animal's confidence in the scent gradient is g·I/(1+g·I) (I = channel intensity), so a keener nose (higher g) localizes a fainter scent while a faint scent otherwise degrades to wander (prey refugia emerge). Composed from base stats (D7, e.g. `8 + Perception*0.12`). Applies to the seek:food/seek:prey/feed:carrion homing channels only. 0/absent ⇒ exact scent Dir (byte-identical neutral off-lever)." },
         "attack_power": { "$ref": "#/$defs/scalarOrFormula" },
         "hit": { "$ref": "#/$defs/scalarOrFormula" },
         "feed": { "$ref": "#/$defs/scalarOrFormula" },

@@ -174,3 +174,43 @@ lateral escape **emerges** from the vector sum (D2/D3, no cornering FSM).
   inverse-square exponent `p=2` is a fauna constant (hot loop; promote to balance only if tuning demands
   it). Nearer predators dominate the sum, yet a second one bends the escape sideways. No new `Snapshot`
   seam / operand / RNG / config.
+
+## Scent-tracking confidence (PD1 · P_fa4a)
+
+**A faint scent gives an unreliable DIRECTION.** The scent field already fades a channel's *intensity* with
+distance + wind, but `ChannelReading.Dir` is a **unit** gradient — full-precision no matter how faint — so a
+predator homed on a whiff of far-off prey just as accurately as on a kill at its feet. That let a predator
+vacuum the whole map (no spatial refuge for prey) and is the precondition-gap for emergent
+starvation/reproduction (`docs/plans/fauna.md §5`, PD1 RESOLVED 2026-07-16). The fix degrades tracking
+*confidence* as intensity falls, **entirely fauna-side** (steering only; the shared scent grid stays a pure,
+RNG-free physical field — the sensor imperfection is a property of the animal's NOSE, not the field, D5/PD1a).
+
+- **Where (`steerFull`, after `baseSteerDir`, before the hazard/turn-rate stages):** for the scent-**homing**
+  channels only — `TagSteerFood` (Food), `TagSteerPrey` (Prey), `TagFeed` (Carrion), i.e. steer-**toward** a
+  source — blend the resolved scent gradient toward the heading-continuation baseline (the same "keep
+  going / wander" direction `baseSteerDir` uses at zero scent) by a confidence weight:
+
+  ```
+  confidence = g·I / (1 + g·I)          I = that channel's Reading.Intensity (committed, next-tick latency)
+                                        g = Rules.ScentAcuity(species, ctx)  (§6, keenness gain ≥ 0)
+  dir = headingDir·(1 − confidence) + scentDir·confidence     headingDir = (cos Heading, sin Heading)
+  ```
+
+  `I → ∞` (at the source) ⇒ confidence → 1 ⇒ exact scent Dir. `I → 0` (faint) ⇒ confidence → 0 ⇒ the animal
+  wanders (can't localize). **Higher `g` = keener nose** (homes at a lower intensity; half-confidence at
+  `I = 1/g`) — a wolf out-tracks a bear via a bigger `g`. Only the resulting ANGLE is used (the later
+  `atan2` + wander jitter + turn-rate cap + hazard blend apply unchanged). Flee/`wary` (steer-**away**) and
+  early-warning are **not** degraded — a prey's perfect alarm at a faint predator scent HELPS coexistence and
+  keeps sight-priority flee intact.
+- **`ScentAcuity` (§6, `scent_acuity`, PD1b RESOLVED (c) §6 stat composition):** an OPTIONAL per-species
+  keenness gain composed from base stats (e.g. `"10 + Perception*0.15"`, D7 — competence is stat
+  composition, a "good tracker" role emerges, not a stored skill). Compiled like `TurnRate`
+  (`parseOptionalFaunaFormula`). **Off-lever = neutral:** no `scent_acuity` authored (nil program) OR
+  `g ≤ 0` ⇒ the blend is **skipped** ⇒ exact scent Dir ⇒ **byte-identical** to pre-PD1 (species that don't
+  author it, and every existing golden, are untouched — a species opts IN by authoring a positive gain).
+- **Determinism (D12):** the blend is pure arithmetic over the committed `Reading` + the §6 `ScentAcuity`
+  evaluation — **no RNG, no new operand, no `Snapshot` seam**. The `confidence` is a deterministic function
+  of state, so same seed ⇒ same steering. NOTE: the RESOLVE preview wrote the confidence as
+  `I/(I+scent_acuity)` (higher acuity = *worse*, mis-signed against its own "wolf tracks better" label); the
+  shipped form is the keenness-gain `g·I/(1+g·I)` (= `I/(I + 1/g)`), which matches the resolved intent AND
+  the preview's numbers (wolf's larger value ⇒ keener).

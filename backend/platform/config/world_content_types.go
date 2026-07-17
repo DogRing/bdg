@@ -176,6 +176,7 @@ type objectKindDoc struct {
 		MoveDeadband    float64  `yaml:"move_deadband"` // FM14a per-species deadband (>0 overrides global motion.move_deadband)
 		Speed           any      `yaml:"speed"`
 		TurnRate        any      `yaml:"turn_rate"`
+		ScentAcuity     any      `yaml:"scent_acuity"` // §6 scent-tracking keenness gain (PD1/P_fa4a); absent ⇒ exact scent Dir (neutral)
 		AttackPower     any      `yaml:"attack_power"`
 		Hit             any      `yaml:"hit"`
 		Feed            any      `yaml:"feed"`
