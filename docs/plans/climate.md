@@ -117,7 +117,8 @@ operand 로 노출하는지 확인(apparent_temp 식 자체는 fauna F40 소관)
 ## 1d. Phase-1 reopened #3 — 겨울 눈 (강수 형태 + 적설/용해)  [ALL RESOLVED 2026-07-14]
 
 > **Resolutions — 사람 확정 (2026-07-14):** **CS2 = (b) 백엔드 world-uniform 스칼라** `SnowCover∈[0,1]` (climate.State,
-> 결정적 적분, WorldFrame/snapshot 스트림). **CS5 = (a) 낙하 눈 + 식생 스프라이트만** (지면/지형 백화 없음 — (b)(c) frontier).
+> 결정적 적분, WorldFrame/snapshot 스트림). **CS5 = (a) 낙하 눈 + 식생 스프라이트만** (지면/지형 백화 없음 — (b)(c) frontier;
+> **(b)는 2026-07-17 사람 요청으로 추가 SHIPPED** — 3D tile-pass 백색 워시, 미니맵 제외. §CS5).
 > **CS1 = (a) frontend 파생 + `snowFallC=2°C`.** **CS3 = 온도비례 선형 용해** (0°C 이하 축적 / 영상 (temp−0) 비례 용해;
 > 율은 climate.yaml balance). **CS4 = (a) `snowCover` 로 season 구동** (CS2(b) 채택으로 함의 — `snow` = `snowCover ≥
 > snowSpriteThresh`). 근거·기각안 상세 = `docs/decisions/climate-winter-snow.md` (재논쟁 금지). 활성화 staging = §CS-M.
@@ -175,10 +176,13 @@ operand 로 노출하는지 확인(apparent_temp 식 자체는 fauna F40 소관)
 - **rec: (a).** ⚠ `docs/plans/frontend.md` §8 P6-Q2(현 `snowBelowC=0`) 를 이 결정이 **supersede** — frontend 플랜·`assets.test.ts`
   floraSeason 케이스 재기준 필요.
 
-### CS5 — 지면 눈 레이어 (지형 백화)  [RESOLVED: (a) 지면 레이어 없음 — P1]
+### CS5 — 지면 눈 레이어 (지형 백화)  [RESOLVED: (a) P1 → (b) 추가, 사람 요청 2026-07-17 SHIPPED]
 쌓인 눈이 **지형/지면**도 하얗게 하나(식생 스프라이트뿐 아니라)?
 - (a) **P1 = 지면 레이어 없음** — 낙하 눈(CS1) + 식생 스프라이트(CS4)만. 사람이 명시한 범위("스프라이트가 변하고")와 정합. **rec.**
 - (b) world-uniform 백색 워시 ∝ `snowCover`(지형 위 반투명) — 저렴, "눈 세계" 가독성↑. 원하면 소규모 추가.
+  → **사람 요청(2026-07-17)으로 추가 SHIPPED**: 3D tile pass 전용(메인 뷰), eased `snowCover` ∝ 알베도 백화
+  (물 top 제외·벽면 감쇠, 조명 전 적용 — 메커니즘은 `frontend/src/gl/SPEC.md`). **2D 미니맵은 날씨/적설 무표시
+  유지**(사람 지시: 미니맵엔 날씨 불필요).
 - (c) per-cell 백화 — CS2(c) 필요. frontier.
 - **rec: (a)(P1); (b)는 사람 원하면 추가; (c) frontier.**
 

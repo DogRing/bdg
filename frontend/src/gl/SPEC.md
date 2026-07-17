@@ -27,12 +27,15 @@ gl/
                  shared by worldGL's eye + sky basis AND the minimap cone (components/minimapGeom.ts)
   hex.ts         flat-top odd-q hex math mirroring navmap hex.go: hexCentre (offset→world, ==render/terrain.ts),
                  pixelToOffset (world→cell inverse, for seating entities on terrain), neighbour steps
-  shaders.ts     GLSL source: tile (instanced curved prisms + walls + water + light + cloud shadow) ·
-                 sky (ray-based gradient + procedural sun/moon disc + night stars)
+  shaders.ts     GLSL source: tile (instanced curved prisms + walls + water + light + cloud shadow +
+                 snow-whitening `uSnow`, CS5b) · sky (ray-based gradient + procedural sun/moon disc +
+                 night stars)
   atmosphere.ts  climate → atmosphere values: day/night colour ramp, sun/moon arc, overcast/rain/wind
                  targets, wrap-aware eased state (τ≈3 s), overlay precip drawing — rain streaks OR
                  (temperature < PRECIP_SNOW_BELOW_C, CS1) snow flakes — + wind-arrow. Atmo carries
                  both `rain` and `snow` (0..1); the temp gate routes the eased precip density to one.
+                 Also `snowCover` (0..1): the eased GROUND snowpack (climate CS2b scalar) — the raw
+                 driver of the tile-pass snow wash (CS5b); scaling to a whitening amount is worldGL's.
   worldGL.ts     createWorldGL(glCanvas, overlayCanvas) → the stateful renderer handle
 ```
 The React wrapper is [`components/WorldCanvas3D.tsx`](../components/WorldCanvas3D.tsx); `App` always
@@ -77,7 +80,9 @@ export function cameraGroundOffset(yaw: number, planarRadius: number): GroundVec
 - **Terrain → prisms.** `setTerrain` walks the offset grid once; each cell becomes one instance
   `{centre(x,z), tileType, elevation, 6×neighbourElevation}`. The vertex shader extrudes a flat-top hex
   prism: top face textured with the flat `base/*_top.png` atlas tile (id→tile via a DATA table, unknown
-  → grass), side walls dropped **only toward a lower neighbour** (`min(elev, nbr)`) so equal-height
+  → grass; `ice` — winter frozen water, ICE5b — has no art file yet, so its atlas slot is painted
+  procedurally at init: a pale frozen-surface fill, elevation 0 like the water it replaces), side
+  walls dropped **only toward a lower neighbour** (`min(elev, nbr)`) so equal-height
   seams collapse (no z-fight) and cliffs are exactly as deep as the drop. Off-grid neighbours use a
   skirt so the map edge shows a wall. Rebuilt on grid identity change (small static buffer).
 - **Per-cell elevation.** When the grid carries `elevation[]` (`/api/terrain`, generated worlds —
@@ -126,6 +131,13 @@ export function cameraGroundOffset(yaw: number, planarRadius: number): GroundVec
     hash-based **rain streaks** (2D-overlay port of `render/ambient.ts`, slanted downwind) fall,
     the ground darkens (wet uniform). **Cloud shadows** — moisture/rain-driven noise darkening —
     drift downwind across the terrain.
+  - **Snow ground wash (CS5b, `docs/plans/climate.md` §1d — human-added 2026-07-17).** The tile FS
+    lerps each fragment's ALBEDO toward snow-white by `uSnow·vSnowW` **before** lighting, so the
+    whitened ground still shades through day/night/cloud. `uSnow = eased snowCover × SNOW_WASH_MAX
+    (0.85)`; the per-vertex mask `vSnowW` is 1 on land top faces, damped (0.45) on prism walls, and
+    0 on water tops (snow does not sit on liquid water; frozen `ice` tiles ARE whitened). Melting
+    fades it out continuously — below the flora `snowCoverThresh` it reads as a light dusting. The
+    2D **Minimap draws no weather and no snow wash** (human directive: the minimap is an overview).
   - **Wind.** HUD compass arrow (top-left, camera-yaw-corrected so it points where the wind blows
     on screen; length/alpha ∝ `windMag`) + world cues: water-ripple direction/speed follow
     `windDir/windMag`, rain slant and cloud drift follow the same vector.
@@ -156,7 +168,8 @@ export function cameraGroundOffset(yaw: number, planarRadius: number): GroundVec
   cluster colours/labels exist as functions in the `src/render` library (previously wired to the
   deleted 2D full view; the simplified Minimap does not draw them) and are not yet ported here — the 3D
   view gains them in later phases.
-  (Animal sprite billboards shipped with FE-P6.) Atmosphere polish deferred by
-  `docs/plans/gl-atmosphere.md` Q3/Q6: world-space rain particles, temperature vignette, seasonal
-  ground tint.
+  (Animal sprite billboards shipped with FE-P6; the winter snow ground wash shipped 2026-07-17 as
+  climate CS5b.) Atmosphere polish still deferred by `docs/plans/gl-atmosphere.md` Q3/Q6:
+  world-space rain particles, temperature vignette, seasonal ground tint (distinct from the
+  snowCover-driven wash).
 - Culling for very large grids (current build uploads all cells; starter grids are small).

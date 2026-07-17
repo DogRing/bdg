@@ -17,20 +17,21 @@ import { TILE_VS, TILE_FS, SKY_VS, SKY_FS } from './shaders'
 const FOV = 50 * Math.PI / 180, TANF = Math.tan(FOV / 2)
 const DEG = Math.PI / 180
 
-// terrain id → atlas tile index (0 grass,1 sand,2 stone,3 water,4 dirt) and top elevation
-// (fraction of a hex radius). Water MUST map to 3 (the shader's ripple/shimmer test). Unknown
+// terrain id → atlas tile index (0 grass,1 sand,2 stone,3 water,4 dirt,5 dry_dirt,6 ice) and top
+// elevation (fraction of a hex radius). Water MUST map to 3 (the shader's ripple/shimmer test);
+// ice maps to its own slot (solid — no ripple, and the snow wash DOES apply to it). Unknown
 // ids fall back to grass — open content renders, never throws.
 const TILE_INDEX: Record<string, number> = {
   soil: 0, plain: 0, grass: 0, forest: 0, sand: 1,
   mountain: 2, steep: 2, bare_rock: 2, stone: 2,
   river: 3, sea: 3, lake: 3, water: 3, swamp: 4,
-  dry_dirt: 5,
+  dry_dirt: 5, ice: 6,
 }
 const ELEV_FRAC: Record<string, number> = {
   soil: 0.55, plain: 0.55, grass: 0.55, forest: 0.72, swamp: 0.35, sand: 0.24,
   mountain: 1.6, steep: 1.4, bare_rock: 1.1, stone: 1.4,
   river: 0.0, sea: 0.0, lake: 0.0, water: 0.0,
-  dry_dirt: 0.55,
+  dry_dirt: 0.55, ice: 0.0,
 }
 const SKIRT_FRAC = -0.30
 // Per-cell relief mapping (gl/SPEC.md): a grid carrying `elevation[]` (generated worlds,
@@ -40,6 +41,7 @@ const ELEV_BASE = 0.06, ELEV_SPAN = 2.1   // real relief (taller peaks / deeper 
 // Curved-world bend + height-expression tuning (gl/SPEC.md "Curved / rolling world" + "Height ↔ tilt").
 const CURVE_AMT = 0.06                     // rolling-world roll-off strength (uCurv = CURVE_AMT/dist)
 const RELIEF_MIN = 0.85, RELIEF_GAIN = 0.5 // relief = MIN + GAIN·smoothstep(pitch) — height exaggeration
+const SNOW_WASH_MAX = 0.85                 // CS5b: max albedo→white blend at full snowCover (uSnow = cover·MAX)
 const tileIdx = (id: string) => TILE_INDEX[id] ?? 0
 const elevFrac = (id: string) => ELEV_FRAC[id] ?? 0.55
 const cellElevFrac = (grid: TerrainGrid, idx: number): number =>
@@ -131,6 +133,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
     uAmbI: UL(tileP, 'uAmbI'), uDiffI: UL(tileP, 'uDiffI'), uTint: UL(tileP, 'uTint'),
     uWindDir: UL(tileP, 'uWindDir'), uWindSpd: UL(tileP, 'uWindSpd'),
     uCloud: UL(tileP, 'uCloud'), uCloudOff: UL(tileP, 'uCloudOff'), uCloudScale: UL(tileP, 'uCloudScale'),
+    uSnow: UL(tileP, 'uSnow'),
   }
   const S = {
     aP: AL(skyP, 'aP'), uZen: UL(skyP, 'uZen'), uHor: UL(skyP, 'uHor'),
@@ -156,9 +159,9 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
   const instBuf = gl.createBuffer()!
   let instCount = 0
 
-  // texture atlas (3 cols × 512). 1×1 placeholder until the top-face art loads.
+  // texture atlas (3 cols × 512, 3 rows). 1×1 placeholder until the top-face art loads.
   const ACOLS = 3, CELL = 512
-  const atlas = document.createElement('canvas'); atlas.width = 1536; atlas.height = 1024
+  const atlas = document.createElement('canvas'); atlas.width = 1536; atlas.height = 1536
   const actx = atlas.getContext('2d')!
   const tex = gl.createTexture()!
   const texParams = () => {
@@ -168,6 +171,21 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
   gl.bindTexture(gl.TEXTURE_2D, tex)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([126, 158, 120, 255])); texParams()
   const TILES = ['grass', 'sand', 'stone', 'water', 'dirt', 'dry_dirt']
+  // ice (slot 6, ICE5b): no `ice_top.png` exists yet, so paint a procedural pale frozen-surface
+  // fill straight into the atlas slot (deterministic strokes, no Math.random). If art ships later,
+  // add 'ice' to TILES and the loaded image will simply overdraw this.
+  {
+    const ix = (6 % ACOLS) * CELL, iy = ((6 / ACOLS) | 0) * CELL
+    const g = actx.createLinearGradient(ix, iy, ix + CELL, iy + CELL)
+    g.addColorStop(0, '#cfe6f2'); g.addColorStop(0.5, '#e6f3fa'); g.addColorStop(1, '#c2dcee')
+    actx.fillStyle = g; actx.fillRect(ix, iy, CELL, CELL)
+    actx.strokeStyle = 'rgba(140,175,205,0.4)'; actx.lineWidth = 3
+    for (const [x0, y0, x1, y1, x2, y2] of [
+      [60, 120, 240, 210, 470, 180], [120, 420, 300, 330, 430, 440], [40, 300, 180, 280, 260, 350],
+    ]) {
+      actx.beginPath(); actx.moveTo(ix + x0, iy + y0); actx.lineTo(ix + x1, iy + y1); actx.lineTo(ix + x2, iy + y2); actx.stroke()
+    }
+  }
   const imgs: HTMLImageElement[] = []
   let imgDone = 0, imgOk = 0
   TILES.forEach((k, i) => {
@@ -286,6 +304,7 @@ export function createWorldGL(glc: HTMLCanvasElement, ovc: HTMLCanvasElement, sp
       gl.uniform1f(T.uAmbI, atm.ambI); gl.uniform1f(T.uDiffI, atm.diffI); gl.uniform3fv(T.uTint, atm.tint)
       gl.uniform2fv(T.uWindDir, atm.rippleDir); gl.uniform1f(T.uWindSpd, atm.rippleSpd)
       gl.uniform1f(T.uCloud, atm.cloud); gl.uniform2fv(T.uCloudOff, atm.cloudOff); gl.uniform1f(T.uCloudScale, 1 / (cellSize * 6))
+      gl.uniform1f(T.uSnow, atm.snowCover * SNOW_WASH_MAX)
       gl.uniform1f(T.uHexR, cellSize); gl.uniform1f(T.uRipple, 0.05 * cellSize)
       gl.uniform2f(T.uCell, CELL / atlas.width, CELL / atlas.height); gl.uniform1f(T.uCols, ACOLS)
       gl.uniform1f(T.uFogNear, fogN); gl.uniform1f(T.uFogFar, fogF); gl.uniform3fv(T.uFog, atm.hor)

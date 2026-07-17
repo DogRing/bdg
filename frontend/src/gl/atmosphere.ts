@@ -22,6 +22,7 @@ export interface Atmo {
   rippleDir: [number, number]; rippleSpd: number // water ripple travel (wind cue)
   rain: number                    // eased precip amount 0..1 as RAIN (0 when the precip falls as snow, CS1)
   snow: number                    // eased precip amount 0..1 as SNOW (0 when it falls as rain) — temp-gated form
+  snowCover: number               // eased GROUND snowpack 0..1 (climate CS2b) — raw CS5b wash driver; the consumer scales it
   fogMul: number                  // fog distance multiplier (precip pulls fog closer)
   windDir: number; windMag: number // eased wind (screen arrow angle = windDir + camera yaw)
 }
@@ -54,7 +55,7 @@ export const LEGACY: Atmo = {
   zen: L_ZEN, hor: L_HOR, light: L_LIGHT, tint: [1, 1, 1], ambI: 0.42, diffI: 0.58,
   sunDir: [0, 1, 0], sunCol: [0, 0, 0], moonDir: [0, -1, 0], moonCol: [0, 0, 0],
   star: 0, cloud: 0, cloudOff: [0, 0], rippleDir: L_RIPPLE, rippleSpd: 1.7,
-  rain: 0, snow: 0, fogMul: 1, windDir: 0, windMag: 0,
+  rain: 0, snow: 0, snowCover: 0, fogMul: 1, windDir: 0, windMag: 0,
 }
 
 // Day-cycle keyframes (cyclic over 24 h). Noon == the legacy daylight constants.
@@ -89,7 +90,7 @@ const CLOUD_DRIFT = 6 // world units/s at windMag 1
 
 export function createAtmosphere() {
   let inited = false, lastMs: number | null = null
-  let hourE = 13, rainE = 0, cloudE = 0, windDirE = 0, windMagE = 0
+  let hourE = 13, rainE = 0, cloudE = 0, windDirE = 0, windMagE = 0, snowCoverE = 0
   const cloudOff: [number, number] = [0, 0]
 
   function update(climate: ClimateState | null, clockMs: number): Atmo {
@@ -99,10 +100,11 @@ export function createAtmosphere() {
     const rT = climate.raining ? 1 : 0
     const isSnow = climate.raining && climate.temperature < PRECIP_SNOW_BELOW_C
     const cT = clamp(0.35 * climate.moisture + 0.8 * rT, 0, 1)
+    const snowT = climate.snowCover ?? 0
     if (!inited) {
       inited = true
       hourE = climate.hourOfDay; rainE = rT; cloudE = cT
-      windDirE = climate.windDir; windMagE = climate.windMag
+      windDirE = climate.windDir; windMagE = climate.windMag; snowCoverE = snowT
     } else {
       const k = 1 - Math.exp(-dt / TAU_MS)
       hourE = easeWrap(hourE, climate.hourOfDay, k, 24)
@@ -110,6 +112,7 @@ export function createAtmosphere() {
       cloudE += (cT - cloudE) * k
       windDirE = easeWrap(windDirE, climate.windDir, k, Math.PI * 2)
       windMagE += (climate.windMag - windMagE) * k
+      snowCoverE += (snowT - snowCoverE) * k
     }
     cloudOff[0] += Math.cos(windDirE) * windMagE * CLOUD_DRIFT * dt / 1000
     cloudOff[1] += Math.sin(windDirE) * windMagE * CLOUD_DRIFT * dt / 1000
@@ -152,7 +155,8 @@ export function createAtmosphere() {
       // Precipitation form (CS1): the eased density rainE is drawn as snow below the freeze-fall
       // threshold, as rain above it. The form gate uses the live temperature (not eased) — a rare,
       // acceptable hard flip at the threshold; the density itself stays eased either way.
-      rain: isSnow ? 0 : rainE, snow: isSnow ? rainE : 0, fogMul: 1 - 0.45 * rainE,
+      rain: isSnow ? 0 : rainE, snow: isSnow ? rainE : 0, snowCover: snowCoverE,
+      fogMul: 1 - 0.45 * rainE,
       windDir: windDirE, windMag: windMagE,
     }
   }

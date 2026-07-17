@@ -2,8 +2,10 @@
 // - tile: instanced hex prisms. Vertex shader bends the world down with view-space depth
 //   (rolling/curved world), extrudes side walls only toward LOWER neighbours (no z-fight),
 //   ripples water tops (travel direction/speed = wind), and shades with one directional
-//   light whose ambient/diffuse intensities are uniforms (day-night ramp). Fragment tints
-//   by the light colour, darkens under drifting cloud-shadow noise, and fogs into the sky.
+//   light whose ambient/diffuse intensities are uniforms (day-night ramp). Fragment whitens
+//   the albedo toward snow by uSnow·vSnowW (CS5b — land tops full, walls damped, water tops
+//   excluded; BEFORE lighting so snow still shades through day/night), tints by the light
+//   colour, darkens under drifting cloud-shadow noise, and fogs into the sky.
 // - sky: ray-based (camera basis uniforms): horizon-locked gradient + procedural sun/moon
 //   discs + hash stars at night. Horizon colour == the fog colour → seamless join.
 // Atmosphere uniform values come from gl/atmosphere.ts (docs/plans/gl-atmosphere.md).
@@ -16,7 +18,7 @@ attribute float aFace;      // 0 = top face, 1 = side wall
 attribute vec3 aNormal;
 attribute float aEdge;      // side wall: which of the 6 edges (0..5)
 attribute vec2 iCenter;     // per-instance hex centre (world x,z)
-attribute float iType;      // per-instance tile type 0..4 (3 = water)
+attribute float iType;      // per-instance tile type 0..6 (3 = water, 6 = ice)
 attribute float iElev;      // per-instance top elevation (world units)
 attribute vec3 iNbrA;       // neighbour top elevations for edges 0,1,2
 attribute vec3 iNbrB;       // neighbour top elevations for edges 3,4,5
@@ -27,7 +29,7 @@ uniform vec2 uCell, uWindDir;
 uniform float uWindSpd;
 uniform vec3 uLight;
 varying vec2 vUV; varying float vDepth; varying float vLight; varying float vWater;
-varying vec2 vWXZ;
+varying vec2 vWXZ; varying float vSnowW;
 float nbr(float e){
   if(e<0.5) return iNbrA.x; else if(e<1.5) return iNbrA.y; else if(e<2.5) return iNbrA.z;
   else if(e<3.5) return iNbrB.x; else if(e<4.5) return iNbrB.y; return iNbrB.z;
@@ -50,18 +52,19 @@ void main(){
   vUV = (vec2(col,row)+luv)*uCell;
   vLight = uAmbI + uDiffI*max(dot(normalize(aNormal),uLight),0.0);
   vWater = water*((aFace<0.5)?1.0:0.0);
+  vSnowW = (1.0-water)*((aFace<0.5)?1.0:0.45);
 }`
 
 export const TILE_FS = `
 precision highp float;
 uniform sampler2D uTex; uniform vec3 uFog, uTint; uniform float uFogNear, uFogFar, uTime;
-uniform float uCloud, uCloudScale; uniform vec2 uCloudOff;
+uniform float uCloud, uCloudScale; uniform vec2 uCloudOff; uniform float uSnow;
 varying vec2 vUV; varying float vDepth; varying float vLight; varying float vWater;
-varying vec2 vWXZ;
+varying vec2 vWXZ; varying float vSnowW;
 void main(){
   vec4 c = texture2D(uTex, vUV);
   if(c.a < 0.5) discard;
-  vec3 col = c.rgb * vLight * uTint;
+  vec3 col = mix(c.rgb, vec3(0.93,0.95,0.99), uSnow*vSnowW) * vLight * uTint;
   col += vWater * 0.06 * vec3(0.55,0.8,1.0) * (0.5 + 0.5*sin(uTime*2.3 + vUV.x*90.0 + vUV.y*70.0));
   if(uCloud > 0.003){                                       // drifting cloud-shadow noise
     vec2 cp = (vWXZ + uCloudOff) * uCloudScale;

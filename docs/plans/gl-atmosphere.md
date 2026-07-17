@@ -67,7 +67,9 @@ HUD compass arrow (top-left, `windDir + yaw`), water-ripple direction/speed from
 
 ### A5 — Polish (Q6 selection) — ✅ shipped 2026-07-12
 Cloud shadows (2-octave sin noise in the tile FS, drifting by accumulated downwind offset).
-Deferred per Q6: temperature vignette, seasonal tint.
+Deferred per Q6: temperature vignette, seasonal tint. (The winter snow ground wash shipped
+2026-07-17 is NOT the seasonal tint — it is climate CS5b, driven by the accumulated `snowCover`
+scalar, decision record `docs/plans/climate.md` §1d CS5; mechanism `frontend/src/gl/SPEC.md`.)
 
 > **Verified 2026-07-12** against `dev/mock-server.mjs` (48 s day cycle, rain spells, wandering
 > wind) via headless-Chrome screenshots: dusk/night/pre-dawn/noon ramp, night legibility, stars,
