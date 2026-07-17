@@ -7,6 +7,7 @@
     "Honesty",
     "Impulsivity",
     "Intelligence",
+    "Perception",
     "RiskAversion",
     "Sociability",
     "Strength",
@@ -16,6 +17,7 @@
     "Agility",
     "Dexterity",
     "Intelligence",
+    "Perception",
     "Strength"
   ],
   "dispositions": [
@@ -35,6 +37,7 @@
     "Honesty": 0.6,
     "Impulsivity": 0.5,
     "Intelligence": 0.5,
+    "Perception": 0.5,
     "RiskAversion": 0.5,
     "Sociability": 0.5,
     "Strength": 0.5,
