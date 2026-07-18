@@ -204,7 +204,11 @@ func (w *World) applyAnimalCombat(intent fauna.Intent) {
 		w.applyAnimalDrink(a)
 	}
 	if a.Vital <= 0 {
-		w.killAnimal(a.ID, causePredation)
+		// PD3 (P_fa4b): reaching the own-state Vital≤0 check means NON-combat vital depletion — a combat
+		// kill is already labelled (causePredation) and removed inside applyAnimalAttack, so the only way
+		// here is the nextVital starvation bleed (thermal-freeze later reuses the same path). Label it
+		// starvation so AnimalDied telemetry separates famine deaths from predation.
+		w.killAnimal(a.ID, causeStarvation)
 	}
 }
 

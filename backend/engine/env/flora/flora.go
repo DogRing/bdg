@@ -144,6 +144,35 @@ func (s *State) PlantByID(id core.ObjectID) (Plant, bool) {
 	return p, ok
 }
 
+// GrazeLength crops a plant's Length by `amount` (world-Length units of biomass eaten), clamped at 0,
+// and returns the amount ACTUALLY removed (≤ the plant's prior Length). It is the fauna→flora depletion
+// seam (PD2, docs/plans/fauna.md §5): a grazing herbivore consumes biomass so the plant shrinks — weaker
+// food scent (mag = Length+Width) and less recovery — then regrows via the ordinary growth Step, which
+// integrates LengthRate up from the reduced Length. Width (cover/shade) is deliberately untouched:
+// grazing crops edible height, not canopy. This is an IN-PLACE, world-owned mutation BETWEEN Steps (like
+// decay lots), NOT a Step output — Step's purity (never mutating prev) is unaffected. Deterministic: the
+// plant is found by ascending-ID binary search over the sorted `plants` slice (no map-iteration, D12);
+// the idx value is resynced from the slice. No-op (returns 0) for an unknown id or amount ≤ 0.
+func (s *State) GrazeLength(id core.ObjectID, amount float64) float64 {
+	if s == nil || amount <= 0 {
+		return 0
+	}
+	i := sort.Search(len(s.plants), func(i int) bool { return s.plants[i].ID >= id })
+	if i >= len(s.plants) || s.plants[i].ID != id {
+		return 0
+	}
+	removed := amount
+	if removed > s.plants[i].Length {
+		removed = s.plants[i].Length
+	}
+	if removed <= 0 {
+		return 0
+	}
+	s.plants[i].Length -= removed
+	s.idx[id] = s.plants[i]
+	return removed
+}
+
 // ── Shade parameters (lazy, per-demand; RESOLVED 1g) ─────────────────────────
 
 // ShadeOf returns the Shade parameter for one plant (lazy — computed on demand, not in

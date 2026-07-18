@@ -88,6 +88,7 @@
         "hide_cover_factor": { "type": "number", "minimum": 0, "description": "cover reach factor multiplied by scent_cell_size for nearCoverFlora (M3)" },
         "cover_radius_factor": { "type": "number", "minimum": 0, "description": "cover-drag radius factor multiplied by plant Width (M4-b)" },
         "conceal_factor": { "type": "number", "minimum": 0, "description": "cover-concealment strength; x cover density => per-animal Concealment (M5-b)" },
+        "graze_depletion_per_hunger": { "type": "number", "minimum": 0, "description": "PD2 (P_fa4b): flora Length cropped per 1.0 hunger recovered by grazing; 0 ⇒ flora not depleted (byte-identical)" },
         "respawn_cadence": { "type": "integer", "minimum": 0, "description": "ticks between timer-respawn top-ups (F9); 0 = off" },
         "vital_cap_damage_fraction": { "type": "number", "minimum": 0, "description": "fraction of exchange damage applied as vital-cap scar" }
       }

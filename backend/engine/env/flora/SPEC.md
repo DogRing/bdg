@@ -160,6 +160,18 @@ func (s *State) Plants() []Plant
 // (no full Plants() copy), for callers that resolve a spatial-hash neighbour ID to its Width.
 func (s *State) PlantByID(id core.ObjectID) (Plant, bool)
 
+// GrazeLength crops a plant's Length by `amount` (world-Length units of biomass eaten), clamped at 0,
+// and returns the amount ACTUALLY removed (≤ the plant's prior Length). It is the fauna→flora depletion
+// seam (PD2, docs/plans/fauna.md §5 · engine/world/SPEC-world-fauna.md): a grazing herbivore consumes
+// biomass so the plant shrinks — weaker food scent (scent mag = Length+Width) and less recovery — then
+// regrows via the ordinary growth Step (LengthRate integrates up from the reduced Length). Width
+// (cover/shade) is untouched: grazing crops edible height, not canopy. This is a deliberate IN-PLACE,
+// world-owned mutation BETWEEN Steps (like decay lots) — NOT a Step output; Step's purity (never
+// mutating `prev`) is unaffected. Deterministic: single plant located by ascending-ID binary search
+// over the sorted `plants` slice (no map-iteration, D12); no RNG. No-op (returns 0) for an unknown ID
+// or amount ≤ 0. Callers apply it in the fixed sorted apply order (D12).
+func (s *State) GrazeLength(id core.ObjectID, amount float64) float64
+
 // ── Rules (the data-defined flora table, RESOLVED §0 — content + §6) ────────────────
 
 // Rules is the compiled, immutable per-species flora table from content/objects.yaml `flora:`

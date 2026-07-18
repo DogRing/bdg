@@ -327,12 +327,23 @@ type SpeciesRule struct {
 // An ACCUMULATOR drive uses Rate; a SET-from-context fear drive uses WaryLevel (scent.predator) /
 // FleeLevel (sight.predator) + Decay; a DERIVED thermal drive uses none of these DriveRule fields —
 // it is SET each full tick from the species' SYMMETRIC comfort band (ComfortTemp/ThermalBand, FA5).
+//
+// VitalDrain/VitalDrainAbove are the PD3 grace+bleed coupling (docs/plans/fauna.md §5, P_fa4b): when
+// this drive is AT/ABOVE VitalDrainAbove (θ) the animal's Vital bleeds VitalDrain (r) per tick — a
+// drive-saturation→mortality seam authored PER DRIVE as content data (D4/D10), not a bespoke starvation
+// function. hunger authors it (starvation); thermal REUSES the SAME two fields later (freeze die-off,
+// only the drive differs). The "grace" is emergent — no counter field: hunger is [0,1]-clamped so the
+// time it takes the accumulator to reach θ is the grace, and the Vital pool draining at r is a second
+// buffer. OFF-lever: VitalDrain ≤ 0 ⇒ no coupling (every pre-P_fa4b drive has 0 ⇒ byte-identical).
 type DriveRule struct {
     ID        DriveID
     Rate      float64 // accumulator per-tick rise (hunger/fatigue/repro_readiness); 0 for set/derived
     Decay     float64 // per-tick decay when not raised/set (e.g. fear cooling)
     WaryLevel float64 // fear value SET on scent.predator (F43); 0 if unused
     FleeLevel float64 // fear value SET on sight.predator (F43); 0 if unused
+
+    VitalDrain      float64 // PD3: Vital bleed per tick while this drive ≥ VitalDrainAbove; ≤0 ⇒ no vital coupling (off-lever)
+    VitalDrainAbove float64 // PD3: the drive threshold θ at/above which VitalDrain applies (grace = accumulator rise time to θ)
 }
 
 // Candidates returns the species' candidate ActionIDs (= the utility-map keys, F26(a)/F28) in sorted

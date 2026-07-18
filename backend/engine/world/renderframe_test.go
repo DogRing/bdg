@@ -462,6 +462,9 @@ func TestAnimalDiedEventPayloadShape(t *testing.T) {
 
 	a := fx.world.animals["an:1"]
 	a.Vital = 0
+	// Non-attack action + already-zero Vital ⇒ the own-state Vital≤0 path (non-combat vital depletion),
+	// which PD3 (P_fa4b) labels "starvation" (a combat kill would be labelled+removed inside
+	// applyAnimalAttack). This test asserts the AnimalDied payload SHAPE; the cause is the starvation label.
 	fx.world.applyAnimalIntent(fauna.Intent{Animal: "an:1", Action: "Forage", NextPos: a.Pos, Drives: a.Drives})
 
 	var died *core.Event
@@ -474,8 +477,8 @@ func TestAnimalDiedEventPayloadShape(t *testing.T) {
 		t.Fatalf("no AnimalDied event")
 	}
 	p := died.Payload.(map[string]any)
-	if p["object_id"] != "an:1" || p["species"] != "deer" || p["cause"] != "predation" {
-		t.Errorf("AnimalDied payload = %+v, want object_id=an:1 species=deer cause=predation", p)
+	if p["object_id"] != "an:1" || p["species"] != "deer" || p["cause"] != "starvation" {
+		t.Errorf("AnimalDied payload = %+v, want object_id=an:1 species=deer cause=starvation", p)
 	}
 	if _, ok := p["id"]; ok {
 		t.Errorf("AnimalDied payload still carries legacy 'id' key: %+v", p)

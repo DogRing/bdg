@@ -216,6 +216,11 @@ Load-pipeline deltas for the combat/carcass round:
 - Parse the scalar combat balance into `EnvConfig.FaunaCombat` (`fauna.CombatParams`), MIRRORING
   `FaunaCadence`: exchange & engage cooldown min/max, `disengage_range_factor`, `stamina_drop_threshold`,
   `vital_regen_per_tick`, `vital_cap_damage_fraction` (from `world.yaml`).
+- **Flora depletion (PD2, P_fa4b):** parse `cadence.graze_depletion_per_hunger` → `CombatParams.GrazeDepletion`
+  (world-side graze crop rate; ≤0 ⇒ flora not depleted, byte-identical). `world.schema.json` gains the key.
+- **Starvation coupling (PD3, P_fa4b):** `buildFaunaDrives` parses each drive's optional `vital_drain` /
+  `vital_drain_above` (`objects.yaml` fauna `drives:` rows) into `fauna.DriveRule.VitalDrain` /
+  `VitalDrainAbove` (D10; absent ⇒ 0 ⇒ no vital coupling). `objects.schema.json` gains the two keys.
 - **Sleep/torpor (P_sleep1):** parse `cadence.sleep_wake_scent_threshold` → `Cadence.SleepWakeScentThreshold`
   (SS3 torpor wake gate) and `cadence.sleep_fatigue_recover_per_tick` → `CombatParams.SleepFatigueRecoverPerTick`
   (SS2 deep recovery), from `world.yaml` (+ `world.schema.json`). The steer-channel compiler recognizes the

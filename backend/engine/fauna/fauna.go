@@ -154,6 +154,7 @@ type CombatParams struct {
 	HideCoverFactor            float64 // × ScentCellSize = cover reach for world nearCoverFlora (M3)
 	CoverRadiusFactor          float64 // × plant Width = cover-drag radius for world-side resistance (M4-b)
 	ConcealFactor              float64 // × cover density = per-animal concealment for prey sight reduction (M5-b)
+	GrazeDepletion             float64 // PD2 (P_fa4b, world-side): flora-Length consumed per 1.0 hunger recovered by grazing; ≤0 ⇒ flora not depleted
 }
 
 // Snapshot is the read-only world view the controller scores over (the read phase;

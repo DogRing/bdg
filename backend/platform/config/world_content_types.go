@@ -76,6 +76,7 @@ type worldDoc struct {
 		HideCoverFactor            float64 `yaml:"hide_cover_factor"`
 		CoverRadiusFactor          float64 `yaml:"cover_radius_factor"`
 		ConcealFactor              float64 `yaml:"conceal_factor"`
+		GrazeDepletionPerHunger    float64 `yaml:"graze_depletion_per_hunger"` // PD2 (P_fa4b): flora-Length cropped per 1.0 hunger recovered; ≤0 ⇒ flora not depleted
 		RespawnCadence             int     `yaml:"respawn_cadence"`
 	} `yaml:"cadence"`
 }
@@ -163,11 +164,13 @@ type objectKindDoc struct {
 			Utility any    `yaml:"utility"`
 		} `yaml:"actions"`
 		Drives []struct {
-			ID        string  `yaml:"id"`
-			Rate      float64 `yaml:"rate"`
-			Decay     float64 `yaml:"decay"`
-			WaryLevel float64 `yaml:"wary_level"`
-			FleeLevel float64 `yaml:"flee_level"`
+			ID              string  `yaml:"id"`
+			Rate            float64 `yaml:"rate"`
+			Decay           float64 `yaml:"decay"`
+			WaryLevel       float64 `yaml:"wary_level"`
+			FleeLevel       float64 `yaml:"flee_level"`
+			VitalDrain      float64 `yaml:"vital_drain"`       // PD3 (P_fa4b): Vital bleed/tick while this drive ≥ vital_drain_above; ≤0 ⇒ no coupling
+			VitalDrainAbove float64 `yaml:"vital_drain_above"` // PD3: drive threshold θ at/above which vital_drain applies
 		} `yaml:"drives"`
 		ApparentTemp    any      `yaml:"apparent_temp"`
 		ComfortTemp     float64  `yaml:"comfort_temp"`

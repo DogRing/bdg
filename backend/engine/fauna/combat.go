@@ -202,6 +202,24 @@ func regenVital(a Animal, dt float64, params CombatParams) float64 {
 	return v
 }
 
+// nextVital is the proposed self Vital each tick: the free regen (regenVital) MINUS the PD3 starvation
+// bleed (starveDrain) — sign-symmetric (docs/plans/fauna.md §5, P_fa4b). Net is negative only while a
+// coupled drive (hunger) is saturated and its VitalDrain exceeds VitalRegenPerTick, so a fed animal never
+// loses Vital. Reads start-of-tick a.Drives (parallels regenVital reading a.Vital). Clamped ≥ 0; the world
+// removes the animal when Vital ≤ 0 (death is world-owned, F3). With no drive authoring VitalDrain,
+// starveDrain ≡ 0 ⇒ nextVital ≡ regenVital (byte-identical off-lever). Pure, no RNG.
+func nextVital(a Animal, rules *Rules, dt float64, params CombatParams) float64 {
+	v := regenVital(a, dt, params)
+	drain := rules.starveDrain(a.Species, a.Drives, dt)
+	if drain > scalarZero {
+		v -= drain
+		if v < scalarZero {
+			v = scalarZero
+		}
+	}
+	return v
+}
+
 // nextStamina drains stamina per tick while ENGAGED in combat and recovers it while free (FC6 / scenario
 // #8 — "the predator stops when its stamina drops first"). Once stamina falls to StaminaDropThreshold the
 // existing resolveCombat disengage fires; it then recovers and can re-engage → burst-style pursuit. Rates

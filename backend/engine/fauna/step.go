@@ -177,7 +177,7 @@ func fullPipeline(
 		NextHeading:          nextHeading,
 		Drives:               newDrives,
 		Stamina:              nextStamina(a, combat.engagedWith != "", snap.DT, snap.Combat),
-		Vital:                regenVital(a, snap.DT, snap.Combat),
+		Vital:                nextVital(a, rules, snap.DT, snap.Combat),
 		VitalCap:             effectiveVitalCap(a),
 		ActiveUntil:          newActiveUntil,
 		EngagedWith:          combat.engagedWith,

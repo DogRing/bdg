@@ -26,6 +26,13 @@ type DriveRule struct {
 	Decay     float64 // per-tick decay when not raised/set (e.g. fear cooling)
 	WaryLevel float64 // fear value SET on scent.predator (F43); 0 if unused
 	FleeLevel float64 // fear value SET on sight.predator (F43); 0 if unused
+
+	// PD3 grace+bleed (docs/plans/fauna.md §5, P_fa4b): while this drive is ≥ VitalDrainAbove (θ) the
+	// animal's Vital bleeds VitalDrain (r) per tick — a per-drive drive-saturation→mortality coupling
+	// authored as content data (D4/D10), not a bespoke starvation function. hunger authors it (starvation);
+	// thermal reuses the SAME two fields later (freeze die-off). VitalDrain ≤ 0 ⇒ no coupling (off-lever).
+	VitalDrain      float64
+	VitalDrainAbove float64
 }
 
 // SpeciesRule is one species' compiled fauna spec (the NewRules input).
@@ -308,6 +315,31 @@ func (r *Rules) cheapDriveAdvance(sp SpeciesID, cur map[DriveID]float64, dt floa
 		next[dr.ID] = clamp01(v)
 	}
 	return next
+}
+
+// starveDrain sums the per-drive Vital bleed for this species (PD3 grace+bleed, docs/plans/fauna.md §5):
+// for each DriveRule with VitalDrain > 0 whose CURRENT value (in `drives`, start-of-tick) is ≥
+// VitalDrainAbove, add VitalDrain·dt. Iterates the species' drives slice in sorted-DriveID order (D12);
+// reads `drives` by single key only (no map-iteration). Returns 0 for an unknown/nil species, or when no
+// coupled drive is saturated — so with no drive authoring VitalDrain the result is 0 (off-lever). Pure.
+func (r *Rules) starveDrain(sp SpeciesID, drives map[DriveID]float64, dt float64) float64 {
+	if r == nil {
+		return scalarZero
+	}
+	sd, ok := r.species[sp]
+	if !ok {
+		return scalarZero
+	}
+	total := scalarZero
+	for _, dr := range sd.drives {
+		if dr.VitalDrain <= scalarZero {
+			continue
+		}
+		if drives[dr.ID] >= dr.VitalDrainAbove {
+			total += dr.VitalDrain * dt
+		}
+	}
+	return total
 }
 
 // hazardAvoidance returns the species' hazard-repulsion multiplier `e` (P_move1/FM5).

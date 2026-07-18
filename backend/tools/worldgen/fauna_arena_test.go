@@ -75,18 +75,30 @@ func TestPredationArenaBalance(t *testing.T) {
 		}
 	}
 
+	// Hunt-success counts PREDATION deaths only. Since PD3 (P_fa4b) a prey can also die of "starvation"
+	// (hunger→vital bleed) — those are real mortality but NOT hunt outcomes, so they must not inflate the
+	// predation ratio. Starvation deaths are tallied separately as P_fa4b evidence.
 	deaths := map[string]int{}
 	totalDeaths := 0
+	starvations := map[string]int{}
+	totalStarv := 0
 	for _, e := range rec.events {
 		if e.Type != "AnimalDied" {
 			continue
 		}
-		sp := ""
+		sp, cause := "", ""
 		if p, ok := e.Payload.(map[string]any); ok {
 			sp, _ = p["species"].(string)
+			cause, _ = p["cause"].(string)
 		}
-		deaths[sp]++
-		totalDeaths++
+		switch cause {
+		case "starvation":
+			starvations[sp]++
+			totalStarv++
+		default: // predation
+			deaths[sp]++
+			totalDeaths++
+		}
 	}
 	successPct := 0.0
 	if engageStarts > 0 {
@@ -100,7 +112,8 @@ func TestPredationArenaBalance(t *testing.T) {
 	}
 
 	t.Logf("── predation ARENA over %d ticks (seed=%d) ──", ticks, fx.Seed)
-	t.Logf("engage-starts=%d  kills=%d (%s) → hunt-success ≈ %.1f%%", engageStarts, totalDeaths, fmtCounts(deaths), successPct)
+	t.Logf("engage-starts=%d  predation-kills=%d (%s) → hunt-success ≈ %.1f%%", engageStarts, totalDeaths, fmtCounts(deaths), successPct)
+	t.Logf("starvation deaths=%d (%s) — PD3/P_fa4b (forced-encounter prey rarely graze → some famine)", totalStarv, fmtCounts(starvations))
 	t.Logf("hide episodes: %s ; hidden avg=%.2f peak=%d", fmtSpeciesCounts(hideEpisodes), float64(hiddenTickSum)/ticks, hiddenPeak)
 	t.Logf("prey pop: min=%d final=%d", minPrey, finalPrey)
 

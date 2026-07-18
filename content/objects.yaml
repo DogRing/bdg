@@ -326,7 +326,7 @@ object_kinds:
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6 - fear * 2.5" } # P_sleep1: diurnal night torpor — deep fatigue recovery + high wake threshold; hunger/fear/day out-bid it (untuned)
         - { action: MoveTo, utility: "0.1" }                                        # wander baseline (lowest)
       drives:
-        - { id: hunger,  rate: 0.0008 }                                             # accumulator (D9): ~0→1 over ~1250 ticks
+        - { id: hunger,  rate: 0.0008, vital_drain: 0.006, vital_drain_above: 0.98 } # accumulator (D9): ~0→1 over ~1250 ticks. PD3 아사(P_fa4b): hunger≥0.98 → vital −0.006/tick(net −0.005 vs regen) ~200틱에 사망 (UNTUNED placeholder)
         - { id: fatigue, rate: 0.0004 }
         - { id: fear,    decay: 0.05, wary_level: 0.5, flee_level: 1.0 }            # SET-from-context (F43); cools when clear
         - { id: thermal }                                                          # DERIVED from apparent_temp (F40); no rate
@@ -364,7 +364,7 @@ object_kinds:
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.7" } # P_sleep1: night torpor (predator, no fear); hunger/day out-bid it. Nocturnal = swap to `daylight` (D2/D10, no code). Untuned
         - { action: MoveTo, utility: "0.15" }                                       # range/wander baseline
       drives:
-        - { id: hunger,  rate: 0.0008 }  # Phase 10: hunt-attempt cadence ~9 real-min at 500ms ticks (was 12.5) — spectator drama density; respawn absorbs the extra predation pressure
+        - { id: hunger,  rate: 0.0008, vital_drain: 0.006, vital_drain_above: 0.98 }  # Phase 10: hunt-attempt cadence ~9 real-min at 500ms ticks (was 12.5) — spectator drama density; respawn absorbs the extra predation pressure. PD3 아사(P_fa4b): 먹이(prey) 못 찾으면 포식자도 아사 → 항온기 없이 상한 조절 (UNTUNED)
         - { id: fatigue, rate: 0.0005 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 5 - moisture * 2"
@@ -399,7 +399,7 @@ object_kinds:
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 3" } # P_sleep1: night torpor; twitchiest — a whiff of fear out-bids sleep (wakes early). Untuned
         - { action: MoveTo, utility: "0.1" }
       drives:
-        - { id: hunger,  rate: 0.0012 }                                            # small body → eats often
+        - { id: hunger,  rate: 0.0012, vital_drain: 0.006, vital_drain_above: 0.98 } # small body → eats often. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
         - { id: fatigue, rate: 0.0006 }
         - { id: fear,    decay: 0.04, wary_level: 0.6, flee_level: 1.0 }            # twitchier than deer
         - { id: thermal }
@@ -434,7 +434,7 @@ object_kinds:
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 2" } # P_sleep1: night torpor; hardy mountain sleeper. Untuned
         - { action: MoveTo, utility: "0.1" }
       drives:
-        - { id: hunger,  rate: 0.0007 }
+        - { id: hunger,  rate: 0.0007, vital_drain: 0.006, vital_drain_above: 0.98 } # PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
         - { id: fatigue, rate: 0.0004 }
         - { id: fear,    decay: 0.06, wary_level: 0.4, flee_level: 0.9 }
         - { id: thermal }
@@ -472,7 +472,7 @@ object_kinds:
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6" } # P_sleep1: night torpor (large omnivore, no fear); hunger/day out-bid it. Untuned
         - { action: MoveTo, utility: "0.15" }
       drives:
-        - { id: hunger,  rate: 0.0005 }                                            # large body → slow hunger
+        - { id: hunger,  rate: 0.0005, vital_drain: 0.006, vital_drain_above: 0.98 } # large body → slow hunger. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
         - { id: fatigue, rate: 0.0004 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 3 - moisture * 1"                    # large, well-insulated

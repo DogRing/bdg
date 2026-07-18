@@ -308,15 +308,32 @@ World-side of the combat loop (world = sole mutator + owns death, F3):
   `scentChannelFromTag` (this is the only engine edit that channel needs — the point of tag-driven).
 - **Feed (FC8):** a `Feed` intent consumes carcass supply → reduces the predator's `hunger` drive by the
   carcass's per-state food value (size-proportional). Coexists with the agent-side `Butcher` (materials).
-- **Graze (herbivore feeding):** a `seek:food` (Graze) intent, when the animal is within one scent cell of a
-  `scent:food` flora object (`applyAnimalGraze`), reduces its `hunger` by the species `Graze` §6. The mirror
-  of Feed for herbivores; flora is not depleted in P1. No food source in reach ⇒ no-op (hunger keeps rising).
+- **Graze (herbivore feeding) + flora depletion (PD2, P_fa4b):** a `seek:food` (Graze) intent, when the
+  animal is within one scent cell of a `scent:food` flora object (`applyAnimalGraze`), reduces its `hunger`.
+  `applyAnimalGraze` locates the **nearest food-emitting flora PLANT** (`nearestForageFloraID`, mirroring
+  `nearestCoverFloraID` — spatial-hash query, ascending-ID tie-break, D12) that is in `floraState`, then:
+  `want = Graze §6`; `k = FaunaCombat.GrazeDepletion` (flora-Length per 1.0 hunger). If `k ≤ 0` (off-lever)
+  or the target is not a flora plant → recover `want`, deplete nothing (**byte-identical to pre-P_fa4b**).
+  Else `removed = State.GrazeLength(id, want·k)` (biomass actually cropped, ≤ the plant's Length),
+  `recovery = removed / k` ⇒ `hunger -= recovery`. So a healthy plant gives full `want` (removed = want·k);
+  a grazed-down plant (Length < want·k) gives proportionally less — **local famine emerges**: overgrazing
+  shrinks plants → weaker food scent (mag = Length+Width) → with P_fa4a's confidence-blend, herbivores can't
+  home → migration pressure/starvation ("공유지 비극"). The plant regrows via the ordinary flora Step. No food
+  source in reach ⇒ no-op (hunger keeps rising → PD3 starvation). Width (cover/shade) is untouched.
 - **Regen (FC7):** slow Vital regen toward `VitalCap` applied by world in the animal commit (balance rate).
+- **Starvation death (PD3, P_fa4b):** fauna's `nextVital` bleeds `Vital` while a coupled drive (hunger) is
+  saturated (fauna `SPEC-combat.md`). The world commits that lowered `Vital` (`commitAnimalVital`); the
+  **existing** `applyAnimalCombat` `Vital ≤ 0` check then removes the animal. That check now labels the
+  cause **`causeStarvation`** (not `causePredation`): a combat kill is already labelled + removed inside
+  `applyAnimalAttack` (line-of-death), so any animal reaching the own-state `Vital ≤ 0` check died of
+  non-combat vital depletion — starvation now, thermal-freeze later (same path, only the drive differs).
+  Predators and herbivores share the mechanism (D4), so a predator that cannot find prey starves too — the
+  cap on predator numbers is now mortality, not the respawn thermostat.
 
 ## Cover-hiding apply (M3 — fauna-realism; rationale: `docs/plans/fauna.md` 클러스터 10, gate RESOLVED 2026-07-02)
 
 The world is the **sole writer of `Animal.HiddenUntil`** (fauna only reads it — combatTarget skip + crouch,
-fauna SPEC M3). It reuses the graze machinery verbatim (`applyAnimalGraze`/`nearForageFlora`/`kindEmitsFood`
+fauna SPEC M3). It reuses the graze machinery verbatim (`applyAnimalGraze`/`nearestForageFloraID`/`kindEmitsFood`
 /`animalFeedContext`/`depositAnimalScent`):
 
 - **Entry roll (`applyAnimalHiding`, in the animal apply path):** for a **non-predator** animal whose
@@ -326,7 +343,7 @@ fauna SPEC M3). It reuses the graze machinery verbatim (`applyAnimalGraze`/`near
   animalFeedContext{animal:a})` then `a.HiddenUntil = w.tick + HideDurationTicks`. `HideChance`≡0 for a
   species without a `hide_chance` §6 ⇒ never hides (OFF-neutral). This mirrors `applyAnimalGraze` (§6 eval +
   proximity gate) — the roll is the only new RNG draw, from the disjoint `"fauna-hide"` fork (D12).
-- **`nearCoverFlora(a)`** — the `nearForageFlora` twin: a flora object whose kind carries the **`cover`**
+- **`nearCoverFlora(a)`** — the `nearestForageFloraID` twin: a flora object whose kind carries the **`cover`**
   tag within `HideCoverFactor * ScentCellSize` of `a.Pos` (add `kindIsCover(kind)` beside `kindEmitsFood`,
   matching the `cover` tag in `w.scentEmitters`… — NB `cover` is NOT a scent channel; extract it from the
   content kind→tags map the same way, or a dedicated `coverKinds` set built at install from `objects.yaml`

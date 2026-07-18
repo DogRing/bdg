@@ -82,6 +82,7 @@ type CombatParams struct {
     HideCoverFactor            float64 // × ScentCellSize = cover reach (world-side, M3 → SPEC-cover.md)
     CoverRadiusFactor          float64 // × plant Width = cover-drag radius (world-side, M4-b → SPEC-cover.md)
     ConcealFactor              float64 // × cover density = predator concealment (world-side, M5-b → SPEC-cover.md)
+    GrazeDepletion             float64 // PD2 (P_fa4b, world-side → SPEC-world-fauna.md): flora-Length consumed per 1.0 hunger recovered by grazing; ≤0 ⇒ flora not depleted (byte-identical)
 }
 
 // Intent gains the combat proposal fields (world applies them; fauna never mutates):
@@ -132,3 +133,26 @@ No species content ⇒ the delta is outcome-neutral: absent `Attack`/`Feed` util
 `Graze`/`Tags` ⇒ outcome-neutral (per the Feeding & diet bullet); `CombatParams` zero values are
 neutral until `platform/config` wires real content values. Predator↔predator is NEVER a special-case
 rule — it emerges only via the `target.threat` utility cost (D2, gate).
+
+## Vital update — regen minus starvation bleed (PD3 · P_fa4b)
+
+Every intent-building path (`step.go` full, `cheap.go` dormant ×2) proposes `Intent.Vital` via
+**`nextVital(a, rules, dt, params)`**, NOT bare `regenVital`:
+
+```
+nextVital = clamp≥0( regenVital(a, dt, params) − starveDrain(a.Species, a.Drives, dt) )
+starveDrain = Σ over the species' DriveRules with VitalDrain>0 of  VitalDrain·dt  when  a.Drives[id] ≥ VitalDrainAbove
+```
+
+- `regenVital` is unchanged (free Vital regen `VitalRegenPerTick`, clamped by VitalCap). `starveDrain`
+  is its **sign-symmetric** counterpart — a negative addend (PD3 (a) 유예+출혈). Net is negative only
+  while a coupled drive is saturated AND `r > VitalRegenPerTick`, so a well-fed animal never bleeds.
+- **Reads start-of-tick `a.Drives`** (parallels `regenVital` reading start-of-tick `a.Vital`); iterates
+  the species' `drives` slice in sorted-DriveID order (D12), single-key map reads only.
+- **Applies on EVERY path** (active + dormant) — an off-screen starving animal must die too, so cheap.go
+  drains as well (both callsites take `rules`).
+- **Off-lever byte-identical:** with no drive authoring `VitalDrain>0`, `starveDrain≡0` ⇒ `nextVital ≡
+  regenVital` ⇒ pre-P_fa4b goldens hold. hunger opts in via `DriveRule.VitalDrain`/`VitalDrainAbove`
+  (SPEC.md); thermal reuses the SAME path later (freeze die-off — only the drive differs).
+- **Death** is world-side (`SPEC-world-fauna.md`): fauna only lowers `Vital`; the world removes the
+  animal when `Vital ≤ 0` and labels the non-combat cause `starvation`.

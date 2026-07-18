@@ -263,7 +263,7 @@ func buildFaunaDrives(obj objectKindDoc, baseAllowed map[core.Tag]bool) ([]fauna
 	for _, d := range obj.Fauna.Drives {
 		id := core.Tag(d.ID)
 		allowed[id] = true
-		drives = append(drives, fauna.DriveRule{ID: fauna.DriveID(id), Rate: d.Rate, Decay: d.Decay, WaryLevel: d.WaryLevel, FleeLevel: d.FleeLevel})
+		drives = append(drives, fauna.DriveRule{ID: fauna.DriveID(id), Rate: d.Rate, Decay: d.Decay, WaryLevel: d.WaryLevel, FleeLevel: d.FleeLevel, VitalDrain: d.VitalDrain, VitalDrainAbove: d.VitalDrainAbove})
 	}
 	return drives, allowed
 }

@@ -159,6 +159,7 @@ func buildWorldEnv(wd worldDoc) (*world.EnvConfig, *navmap.Config, error) {
 			HideCoverFactor:            wd.Cadence.HideCoverFactor,
 			CoverRadiusFactor:          wd.Cadence.CoverRadiusFactor,
 			ConcealFactor:              wd.Cadence.ConcealFactor,
+			GrazeDepletion:             wd.Cadence.GrazeDepletionPerHunger,
 		},
 		RespawnCadence: core.Tick(wd.Cadence.RespawnCadence),
 		MaxSpeed:       wd.Motion.MaxSpeed,

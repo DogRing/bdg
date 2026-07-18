@@ -279,7 +279,7 @@
       }
     },
     "driveSpec": {
-      "description": "One drive's config (F25(c)/F29). `id` is the drive id (= its §6 Attr operand, F27). An ACCUMULATOR drive (hunger/fatigue/repro_readiness) sets `rate` (per-tick rise, D9 — no future-need field). A SET-from-context drive (fear) sets `wary_level`/`flee_level` (the values fear is set to on scent.predator / sight.predator, F43) and optionally `decay` (fall when neither present). A DERIVED drive (thermal, set from apparent_temp, F40) needs no rate. Which params apply is the drive's kind; platform/config + fauna.NewRules interpret them. Runtime drive value ∈ [0,1].",
+      "description": "One drive's config (F25(c)/F29). `id` is the drive id (= its §6 Attr operand, F27). An ACCUMULATOR drive (hunger/fatigue/repro_readiness) sets `rate` (per-tick rise, D9 — no future-need field). A SET-from-context drive (fear) sets `wary_level`/`flee_level` (the values fear is set to on scent.predator / sight.predator, F43) and optionally `decay` (fall when neither present). A DERIVED drive (thermal, set from apparent_temp, F40) needs no rate. Optionally, a drive couples to mortality via `vital_drain`/`vital_drain_above` (PD3, P_fa4b): while the drive ≥ `vital_drain_above` the animal's Vital bleeds `vital_drain`/tick — hunger authors it (starvation); thermal reuses it later (freeze). Which params apply is the drive's kind; platform/config + fauna.NewRules interpret them. Runtime drive value ∈ [0,1].",
       "type": "object",
       "additionalProperties": false,
       "required": ["id"],
@@ -288,7 +288,9 @@
         "rate":       { "type": "number", "description": "accumulator per-tick rise (D9); for hunger/fatigue/repro_readiness." },
         "decay":      { "type": "number", "minimum": 0, "description": "per-tick decay when not being raised/set (e.g. fear cooling)." },
         "wary_level": { "type": "number", "minimum": 0, "maximum": 1, "description": "fear value SET when scent.predator present → Wary band (F43)." },
-        "flee_level": { "type": "number", "minimum": 0, "maximum": 1, "description": "fear value SET when sight.predator present → Flee band (F43)." }
+        "flee_level": { "type": "number", "minimum": 0, "maximum": 1, "description": "fear value SET when sight.predator present → Flee band (F43)." },
+        "vital_drain":       { "type": "number", "minimum": 0, "description": "PD3 (P_fa4b): Vital bleed per tick while this drive ≥ vital_drain_above; 0/absent ⇒ no mortality coupling. hunger→starvation; thermal→freeze die-off (same seam)." },
+        "vital_drain_above": { "type": "number", "minimum": 0, "maximum": 1, "description": "PD3: the drive threshold θ at/above which vital_drain applies (the 'grace' is the accumulator's rise time to θ)." }
       }
     },
     "senses": {

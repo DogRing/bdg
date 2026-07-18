@@ -70,6 +70,7 @@ const (
 	driveHunger    = fauna.DriveID("hunger")
 	driveThirst    = fauna.DriveID("thirst")
 	causePredation = "predation"
+	causeStarvation = "starvation" // PD3 (P_fa4b): non-combat Vital≤0 (hunger→vital bleed; thermal-freeze later reuses)
 )
 
 // ── Config ─────────────────────────────────────────────────────────────────────

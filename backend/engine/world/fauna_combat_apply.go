@@ -82,9 +82,19 @@ func (w *World) applyAnimalFeed(predator *fauna.Animal, intent fauna.Intent) {
 // applyAnimalGraze is the herbivore analog of applyAnimalFeed: when a grazing animal (a seek:food action)
 // has reached an edible-flora source, it crops it — reducing hunger by the species' §6 graze value. The
 // food source must be within reach (one scent cell) so the deer only eats where food actually is (mirrors
-// Feed requiring a nearby carcass). Flora is not depleted in P1.
+// Feed requiring a nearby carcass).
+//
+// PD2 flora depletion (P_fa4b, docs/plans/fauna.md §5): the grazed flora PLANT loses biomass (Length) in
+// proportion to what is actually eaten, and the recovery scales with the biomass AVAILABLE — so an
+// overgrazed (short) plant feeds a herbivore less, driving local famine + migration pressure. GrazeDepletion
+// (k, flora-Length per 1.0 hunger) is the balance lever; k ≤ 0 (or a non-flora food source) ⇒ recover the
+// full §6 value and deplete nothing (byte-identical to pre-P_fa4b).
 func (w *World) applyAnimalGraze(a *fauna.Animal) {
-	if a == nil || !w.nearForageFlora(a) {
+	if a == nil {
+		return
+	}
+	plantID, isPlant := w.nearestForageFloraID(a)
+	if plantID == "" {
 		return
 	}
 	mult := w.faunaRules.Graze(a.Species, animalFeedContext{animal: a})
@@ -94,7 +104,13 @@ func (w *World) applyAnimalGraze(a *fauna.Animal) {
 	if a.Drives == nil {
 		a.Drives = make(map[fauna.DriveID]float64)
 	}
-	a.Drives[driveHunger] = clamp01(a.Drives[driveHunger] - mult)
+	k := w.envCfg.FaunaCombat.GrazeDepletion
+	if k <= zeroScalar || !isPlant || w.floraState == nil {
+		a.Drives[driveHunger] = clamp01(a.Drives[driveHunger] - mult)
+		return
+	}
+	removed := w.floraState.GrazeLength(plantID, mult*k)
+	a.Drives[driveHunger] = clamp01(a.Drives[driveHunger] - removed/k)
 }
 
 // applyAnimalDrink (FM4): a thirsty animal standing on a DRINKABLE-water cell recovers thirst by the
@@ -143,22 +159,40 @@ func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
 	}
 }
 
-// nearForageFlora reports whether an edible-flora object (a scent:food emitter) is within grazing
-// reach. Queries the spatial hash near the animal rather than scanning every object (the O(all
+// nearestForageFloraID returns the nearest food-emitting object within grazing reach in deterministic
+// object-ID order (strictly-closer wins; on a distance tie the lower ID wins — independent of the spatial
+// hash's return order, D12), and whether that object is a live flora plant (present in floraState — the
+// PD2 depletion target). "" ⇒ nothing edible in reach (the graze no-op gate, matching the old within-reach
+// existence test). Queries the spatial hash near the animal rather than scanning every object (the O(all
 // objects) scan per animal was a top per-tick cost at large flora counts, docs/plans/scaling.md P2).
-// Result is a within-reach existence test, order-independent → identical to the full scan.
-func (w *World) nearForageFlora(a *fauna.Animal) bool {
+func (w *World) nearestForageFloraID(a *fauna.Animal) (core.ObjectID, bool) {
+	if a == nil {
+		return "", false
+	}
 	reach := w.envCfg.ScentCellSize
+	var nearest core.ObjectID
+	nearestDistance := reach
 	for _, e := range w.spatial.NearbyEntities(a.Pos, reach) {
 		obj, ok := w.objects[e.ID]
 		if !ok || !w.kindEmitsFood(obj.Kind) {
 			continue
 		}
-		if a.Pos.Distance(obj.Pos) <= reach {
-			return true
+		distance := a.Pos.Distance(obj.Pos)
+		if distance > nearestDistance {
+			continue
+		}
+		if nearest == "" || distance < nearestDistance || (distance == nearestDistance && e.ID < nearest) {
+			nearest, nearestDistance = e.ID, distance
 		}
 	}
-	return false
+	if nearest == "" {
+		return "", false
+	}
+	isPlant := false
+	if w.floraState != nil {
+		_, isPlant = w.floraState.PlantByID(nearest)
+	}
+	return nearest, isPlant
 }
 
 func (w *World) nearCoverFlora(a *fauna.Animal) bool {
