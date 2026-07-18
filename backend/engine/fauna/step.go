@@ -114,6 +114,7 @@ func fullPipeline(
 	// Pre-compute AppTemp once (uses stats + climate only; no circular dep on drives).
 	// The animalContext for AppTemp uses pre-update drives + climate.
 	appTemp := computeAppTemp(a, env, rules)
+	maturity := rules.maturity(a.Species, a.Age)
 
 	// Build context for DriveUpdate with PRE-update drives.
 	dCtx := &animalContext{
@@ -126,6 +127,7 @@ func fullPipeline(
 		sightRadius:  sightRadius,
 		env:          env,
 		appTemp:      appTemp,
+		maturity:     maturity,
 		targetThreat: target.threat,
 	}
 	newDrives := rules.DriveUpdate(a.Species, a.Drives, dCtx, snap.DT)
@@ -142,6 +144,7 @@ func fullPipeline(
 		sightRadius:  sightRadius,
 		env:          env,
 		appTemp:      appTemp,
+		maturity:     maturity,
 		targetThreat: target.threat,
 	}
 

@@ -176,7 +176,8 @@ type objectKindDoc struct {
 		ComfortTemp     float64  `yaml:"comfort_temp"`
 		ThermalBand     float64  `yaml:"thermal_band"`
 		HazardAvoidance float64  `yaml:"hazard_avoidance"`
-		MoveDeadband    float64  `yaml:"move_deadband"` // FM14a per-species deadband (>0 overrides global motion.move_deadband)
+		MoveDeadband    float64  `yaml:"move_deadband"`  // FM14a per-species deadband (>0 overrides global motion.move_deadband)
+		MaturityAge     float64  `yaml:"maturity_age"`   // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1; ≤0/absent ⇒ maturity≡1 (gate-neutral)
 		Speed           any      `yaml:"speed"`
 		TurnRate        any      `yaml:"turn_rate"`
 		ScentAcuity     any      `yaml:"scent_acuity"` // §6 scent-tracking keenness gain (PD1/P_fa4a); absent ⇒ exact scent Dir (neutral)

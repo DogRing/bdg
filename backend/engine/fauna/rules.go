@@ -50,6 +50,7 @@ type SpeciesRule struct {
 	ThermalBand     float64                            // °C half-width; thermal = clamp01(|apparent_temp−comfort|/band); ≤0 ⇒ thermal neutral (0)
 	HazardAvoidance float64                            // per-species hazard-repulsion multiplier `e` (P_move1/FM5); ≤0 ⇒ no bend
 	MoveDeadband    float64                            // per-species §6-speed hold threshold (FM14a); >0 overrides Snapshot.MoveDeadband, ≤0 ⇒ fall back to the global
+	MaturityAge     float64                            // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1 (clamp01(age/MaturityAge)); ≤0 ⇒ maturity≡1 (always mature, gate-neutral)
 	Speed           *expr.Program                      // §6 locomotion speed (F35)
 	TurnRate        *expr.Program                      // §6 max turn rate radians/unit time (M6)
 	ScentAcuity     *expr.Program                      // §6 scent-tracking keenness gain g (PD1/P_fa4a); nil/≤0 ⇒ exact scent Dir (neutral)
@@ -98,6 +99,7 @@ type speciesData struct {
 	thermalBand     float64
 	hazardAvoidance float64
 	moveDeadband    float64
+	maturityAge     float64
 	speed           *expr.Program
 	turnRate        *expr.Program
 	scentAcuity     *expr.Program
@@ -178,6 +180,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			thermalBand:     sr.ThermalBand,
 			hazardAvoidance: sr.HazardAvoidance,
 			moveDeadband:    sr.MoveDeadband,
+			maturityAge:     sr.MaturityAge,
 			speed:           sr.Speed,
 			turnRate:        sr.TurnRate,
 			scentAcuity:     sr.ScentAcuity,
@@ -340,6 +343,20 @@ func (r *Rules) starveDrain(sp SpeciesID, drives map[DriveID]float64, dt float64
 		}
 	}
 	return total
+}
+
+// maturity returns the §6 `maturity` operand for an animal of the given species+age (PD4-ii/P_fa4c):
+// clamp01(age / MaturityAge). MaturityAge ≤ 0 (unauthored) ⇒ 1 (always mature) — so a species with no
+// maturity_age is gate-neutral (the operand is a constant 1, reproduction is unrestricted by age). Pure.
+func (r *Rules) maturity(sp SpeciesID, age float64) float64 {
+	if r == nil {
+		return scalarOne
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.maturityAge <= scalarZero {
+		return scalarOne
+	}
+	return clamp01(age / sd.maturityAge)
 }
 
 // hazardAvoidance returns the species' hazard-repulsion multiplier `e` (P_move1/FM5).

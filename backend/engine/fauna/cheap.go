@@ -35,11 +35,12 @@ func cheapPath(a Animal, snap *Snapshot, rules *Rules, newActiveUntil core.Tick)
 	env := snap.Env[a.ID] // already validated in Step (panic path is before cheapPath)
 	appTemp := computeAppTemp(a, env, rules)
 	sCtx := &animalContext{
-		animal:  &a,
-		drives:  newDrives,
-		reading: scent.Reading{}, // zero sense on cheap path
-		env:     env,
-		appTemp: appTemp,
+		animal:   &a,
+		drives:   newDrives,
+		reading:  scent.Reading{}, // zero sense on cheap path
+		env:      env,
+		appTemp:  appTemp,
+		maturity: rules.maturity(a.Species, a.Age),
 	}
 
 	speed := rules.Speed(a.Species, sCtx)

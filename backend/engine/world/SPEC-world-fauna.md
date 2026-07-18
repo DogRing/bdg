@@ -321,6 +321,10 @@ World-side of the combat loop (world = sole mutator + owns death, F3):
   home → migration pressure/starvation ("공유지 비극"). The plant regrows via the ordinary flora Step. No food
   source in reach ⇒ no-op (hunger keeps rising → PD3 starvation). Width (cover/shade) is untouched.
 - **Regen (FC7):** slow Vital regen toward `VitalCap` applied by world in the animal commit (balance rate).
+- **Age advance (PD4-ii/P_fa4c):** `commitAnimalOwnState` advances `a.Age += FaunaDT` each tick, so age = Σ
+  DT since birth (newborns start 0). The fauna Step reads start-of-tick Age for the §6 `maturity` operand
+  (world increments AFTER the fauna phase). Internal state (not render-visible; not persisted, like Vital).
+  §7 aging (age→senescence) is a later hook; P_fa4c uses Age only as the reproduction maturity clock.
 - **Starvation death (PD3, P_fa4b):** fauna's `nextVital` bleeds `Vital` while a coupled drive (hunger) is
   saturated (fauna `SPEC-combat.md`). The world commits that lowered `Vital` (`commitAnimalVital`); the
   **existing** `applyAnimalCombat` `Vital ≤ 0` check then removes the animal. That check now labels the

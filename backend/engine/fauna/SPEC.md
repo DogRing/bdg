@@ -88,6 +88,8 @@ type Animal struct {
     // Later-phase state deltas — NOT part of the P_fa1 core contract:
     //   + VitalCap, EngagedWith, NextExchangeTick, EngageCooldownUntil (combat, FC7/FC12) → SPEC-combat.md
     //   + HiddenUntil, Concealment (cover state; world is the SINGLE writer, M3/M5-b)     → SPEC-cover.md
+    //   + Age (Σ DT since birth; world advances it each tick — drives the §6 `maturity` operand),
+    //     MateCooldownUntil (post-mating refractory tick) — reproduction (PD4/P_fa4c). §7 aging is a later hook.
 }
 
 // EnvSample is the per-animal exogenous climate world samples at Animal.Pos and injects each tick.
@@ -272,7 +274,9 @@ func Step(snap *Snapshot, rules *Rules, rng *rng.RNG) []Intent
 // so a typo Attr (silently 0, expr policy) is a LOAD failure. Deterministic; excludes the Stat channel
 // (validated against the stats registry) and drive ids (from the species `fauna:` block).
 // (agent.disposition is P_fa3, F46 — NOT in the P_fa1 set; see Out of Scope. Combat adds
-// `target.threat` + `scent.carrion` to the fixed set — FC2/FC10, SPEC-combat.md.)
+// `target.threat` + `scent.carrion` to the fixed set — FC2/FC10, SPEC-combat.md. Reproduction adds
+// `maturity` — PD4-ii/P_fa4c: a controller-derived operand = clamp01(Age/SpeciesRule.MaturityAge), 1 when
+// mature or when MaturityAge ≤ 0 (unauthored ⇒ gate-neutral). The Mate §6 utility reads it.)
 func AttrOperands() []core.Tag
 
 // ── Rules (the data-defined fauna table; flora.Rules parity, F26/F31) ────────────────
@@ -314,6 +318,7 @@ type SpeciesRule struct {
     //   + HideChance (§6), CoverCost — cover (M3/M4-b)                                            → SPEC-cover.md
     //   + TurnRate (§6 max turn rate) — steering inertia (M6)                                     → SPEC-steering.md
     //   + ScentAcuity (§6 keenness gain) — scent-tracking confidence (PD1/P_fa4a)                 → SPEC-steering.md
+    //   + MaturityAge (Age→`maturity` operand scale) — reproduction gate (PD4-ii/P_fa4c); ≤0 ⇒ maturity≡1
 }
 
 // Steer-behavior tags recognized by the STEER step (the SpeciesRule.SteerChannel values; content

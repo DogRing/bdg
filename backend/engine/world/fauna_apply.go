@@ -143,6 +143,7 @@ func (w *World) commitAnimalOwnState(intent fauna.Intent) {
 	a.Heading = heading
 	a.Drives = cloneFaunaDrives(intent.Drives)
 	a.Stamina = intent.Stamina
+	a.Age += w.envCfg.FaunaDT // PD4-ii/P_fa4c: world advances age by one fauna time-step each tick (§6 `maturity`)
 	w.commitAnimalVital(a, intent)
 	a.ActiveUntil = intent.ActiveUntil
 	a.CurrentAction = intent.Action

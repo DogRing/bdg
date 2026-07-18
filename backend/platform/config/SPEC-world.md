@@ -221,6 +221,9 @@ Load-pipeline deltas for the combat/carcass round:
 - **Starvation coupling (PD3, P_fa4b):** `buildFaunaDrives` parses each drive's optional `vital_drain` /
   `vital_drain_above` (`objects.yaml` fauna `drives:` rows) into `fauna.DriveRule.VitalDrain` /
   `VitalDrainAbove` (D10; absent ⇒ 0 ⇒ no vital coupling). `objects.schema.json` gains the two keys.
+- **Maturity (PD4-ii, P_fa4c):** parse the per-species `maturity_age` (`objects.yaml` fauna block) into
+  `fauna.SpeciesRule.MaturityAge` (scales the `maturity` §6 operand; ≤0/absent ⇒ maturity≡1, gate-neutral).
+  `objects.schema.json` gains the key.
 - **Sleep/torpor (P_sleep1):** parse `cadence.sleep_wake_scent_threshold` → `Cadence.SleepWakeScentThreshold`
   (SS3 torpor wake gate) and `cadence.sleep_fatigue_recover_per_tick` → `CombatParams.SleepFatigueRecoverPerTick`
   (SS2 deep recovery), from `world.yaml` (+ `world.schema.json`). The steer-channel compiler recognizes the

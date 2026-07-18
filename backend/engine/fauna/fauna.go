@@ -68,6 +68,8 @@ type Animal struct {
 	EngageCooldownUntil core.Tick        // next tick an engage attempt may be made
 	HiddenUntil         core.Tick        // hidden while >0 and >= current tick; SINGLE WRITER = engine/world (M3)
 	Concealment         float64          // world-written transient cover concealment; fauna reads in sightQuery (M5-b)
+	Age                 float64          // accumulated time since birth (Σ DT); world advances it each tick. Drives the §6 `maturity` operand (PD4-ii/P_fa4c); §7 aging is a later hook. 0 = newborn.
+	MateCooldownUntil   core.Tick        // next tick this animal may conceive again (post-mating refractory, PD4-iii/P_fa4c); 0 = ready. world-written.
 }
 
 // EnvSample is the per-animal exogenous climate world samples injected each tick.
@@ -238,6 +240,7 @@ func AttrOperands() []core.Tag {
 		attrDistPredator,
 		attrDistPrey,
 		attrIsCurrent,
+		attrMaturity,
 		attrMoisture,
 		attrScentCarrion,
 		attrScentFood,
