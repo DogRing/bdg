@@ -452,6 +452,25 @@ func (r *Rules) TerrainCost(sp SpeciesID, terrain core.Tag) (mult float64, passa
   base-attribute vector, validated against the stats registry by config.
 
 ## Invariants
+- **Mate seeking is a proximity query, resolved only in the full pipeline (PD4-i / P_fa4c-2)** — when the
+  chosen action's steer channel is `seek:mate`, `mateTarget` returns the nearest ELIGIBLE conspecific
+  within the species' sight radius: same species, `maturity ≥ 1` (PD4-ii), and past its
+  `MateCooldownUntil`. It is an argmin with a (distance, then ID) tie-break — order-independent (D12) —
+  and reuses the `combatTarget` two-path structure (spatial neighbours when indexed, full scan otherwise).
+  There is **no scent channel for mating** and no new grid. The steer aims straight at the partner (no
+  confidence blend — proximity has no intensity to degrade); no partner in range ⇒ fall through to
+  continue-heading, so a courting animal roams instead of freezing. The query runs **only** for the
+  seek:mate channel, so species that author no Mate action pay nothing and stay byte-identical.
+  `Intent.MateWith` carries the partner to world; it is deliberately separate from `Intent.Target`
+  (combat), which it can never collide with — one animal cannot court and attack in the same tick.
+  **There is no sex/gender field** (D2/D10): the model is "two mature adults of one species", and the
+  refractory cooldown is what paces breeding.
+- **Consent is a STATE, not a same-tick coincidence (`IsCourting`)** — world decides mutuality by reading
+  the partner's committed `CurrentAction` through `Rules.IsCourting`, not by requiring both intents to
+  name each other in one tick. Load-bearing: partner search runs only in the full pipeline, but most
+  herbivores are F45 DORMANT and re-arbitrate on **ID-staggered** phases, so simultaneous resolution
+  essentially never coincides — requiring it made conception unreachable in a real world (measured:
+  8000 ticks, animals visibly choosing Mate, zero births).
 - **D12 determinism** — `Step` is a pure function of `(snap, Rules, rng)`. Same snapshot (incl. `Tick`) +
   same RNG fork ⇒ byte-identical `[]Intent`. No `time.Now()`, no global rand, no wall-clock; the only
   randomness is the injected `*rng.RNG` (steering jitter only).

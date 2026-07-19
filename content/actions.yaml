@@ -161,6 +161,17 @@ actions:
     effect_per_minute: { Rest: 0.0030 }
     interruptible: true
 
+  # COURTSHIP (fauna only, P_fa4c-2). `seek:mate` → fauna steers toward the nearest eligible
+  # conspecific (mature, off cooldown) found by a spatial query — proximity, not scent (PD4-i).
+  # Conception needs BOTH animals to be running this action and to have picked each other in the
+  # same tick (mutual consent, PD4-vi ⓒ), so hunger/fear in a species' §6 utility genuinely suppress
+  # breeding. Deliberately has NO `produces`: it satisfies no agent goal, so the agent planner never
+  # selects it and this stays a fauna-only action (the registry is shared, the behaviour is not).
+  - id: Mate
+    tags: [ "effort:low", "seek:mate" ]
+    duration: 30
+    interruptible: true
+
   - id: Rest
     tags: [ "effort:none", "no:locomotion" ]  # no:locomotion → fauna no-loco steer (a resting animal holds position, NextPos == Pos)
     duration: 30

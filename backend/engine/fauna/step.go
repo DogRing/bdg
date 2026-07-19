@@ -152,6 +152,14 @@ func fullPipeline(
 
 	combat := resolveCombat(a, target, bestAction, snap, rules, sCtx, r)
 
+	// Partner search (PD4-i/P_fa4c-2) — queried ONLY when the chosen action's steer channel is
+	// seek:mate, so a species that never authors a Mate action pays nothing (byte-identical to
+	// pre-P_fa4c-2) and no animal spends a spatial query on courtship while it is hunting or fleeing.
+	var mate mateTargetInfo
+	if rules.steerChannelFor(a.Species, bestAction) == TagSteerMate {
+		mate = mateTarget(a, snap, rules, sightRadius)
+	}
+
 	// ── Step 4: STEER (F35) ───────────────────────────────────────────────────
 	wander := scalarZero
 	if combat.engagedWith == "" {
@@ -159,8 +167,12 @@ func fullPipeline(
 		wander = r.NormFloat64() * defaultWanderAngle
 	}
 
+	var matePos *core.Vec2
+	if mate.found {
+		matePos = &mate.pos
+	}
 	nextPos, nextHeading := steerFull(a, env, bestAction, reading, nearPredPos, fleePredDir, sightPred,
-		snap, rules, sCtx, wander, smellRadius, sightRadius)
+		snap, rules, sCtx, wander, smellRadius, sightRadius, matePos)
 	if combat.engagedWith != "" {
 		nextPos = a.Pos
 		nextHeading = a.Heading
@@ -176,6 +188,7 @@ func fullPipeline(
 		Animal:               a.ID,
 		Action:               bestAction,
 		Target:               combat.target,
+		MateWith:             mate.id,
 		NextPos:              nextPos,
 		NextHeading:          nextHeading,
 		Drives:               newDrives,
@@ -349,7 +362,7 @@ func steerFull(
 	reading scent.Reading, nearPredPos, fleePredDir *core.Vec2,
 	sightPred float64,
 	snap *Snapshot, rules *Rules, ctx *animalContext,
-	wander, smellRadius, sightRadius float64,
+	wander, smellRadius, sightRadius float64, matePos *core.Vec2,
 ) (nextPos core.Vec2, nextHeading float64) {
 	// Check steer channel from Rules (content-defined, D4/D10).
 	tag := rules.steerChannelFor(a.Species, act)
@@ -384,7 +397,7 @@ func steerFull(
 			waterDir = &g
 		}
 	}
-	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred, waterDir)
+	dir := baseSteerDir(a, tag, reading, nearPredPos, fleePredDir, sightPred, waterDir, matePos)
 
 	// PD1 scent-tracking confidence (P_fa4a, docs/plans/fauna.md §5): a FAINT scent gives an unreliable
 	// DIRECTION. For the scent-HOMING channels (food/prey/carrion, steer-TOWARD) blend the scent gradient
@@ -478,7 +491,7 @@ func homingScentIntensity(tag core.Tag, reading scent.Reading) (float64, bool) {
 func baseSteerDir(
 	a Animal, tag core.Tag,
 	reading scent.Reading, nearPredPos, fleePredDir *core.Vec2, sightPred float64,
-	waterDir *core.Vec2,
+	waterDir, matePos *core.Vec2,
 ) core.Vec2 {
 	switch tag {
 	case TagSteerFood:
@@ -494,6 +507,18 @@ func baseSteerDir(
 	case TagSteerPrey:
 		if reading.Prey.Intensity > scalarZero {
 			return reading.Prey.Dir
+		}
+	case TagSteerMate:
+		// Courtship: straight at the resolved partner (PD4-i — proximity, not scent, so there is no
+		// intensity to degrade and no confidence blend). nil ⇒ nobody eligible in range, so fall
+		// through to continue-heading: the animal roams instead of freezing, and finds a partner by
+		// wandering into one.
+		if matePos != nil {
+			dx := matePos.X - a.Pos.X
+			dy := matePos.Y - a.Pos.Y
+			if mag := math.Sqrt(dx*dx + dy*dy); mag > scalarZero {
+				return core.Vec2{X: dx / mag, Y: dy / mag}
+			}
 		}
 	case TagFeed:
 		if reading.Carrion.Intensity > scalarZero {

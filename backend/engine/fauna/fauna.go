@@ -203,21 +203,25 @@ type Snapshot struct {
 // proposed Drives are the PASSIVE per-tick evolution (F25(c)); the action's own
 // drive Effect is layered by world when it enacts the action.
 type Intent struct {
-	Animal               core.ObjectID
-	Action               actions.ActionID    // max-utility action (ACTIVE/re-eval) or held CurrentAction (dormant)
-	Target               core.ObjectID       // resolved target for targeted action; empty in P_fa1
-	NextPos              core.Vec2           // steered next position (continuous, D11); == Pos if Rest/blocked
-	NextHeading          float64             // steered next heading (radians)
-	Drives               map[DriveID]float64 // passive per-tick drive evolution (F25(c)); world commits it
-	Stamina              float64             // proposed next stamina
-	Vital                float64             // proposed self vital regen, clamped by VitalCap
-	VitalCap             float64             // proposed self vital cap
-	ActiveUntil          core.Tick           // updated F45 wake-cooldown horizon; world commits it
-	EngagedWith          core.ObjectID       // proposed combat partner; empty means disengaged/free
-	NextExchangeTick     core.Tick           // proposed next exchange tick
-	EngageCooldownUntil  core.Tick           // proposed next engage attempt tick
-	Damage               float64             // damage world applies to Target; 0 means no exchange this tick
-	TargetVitalCapDamage float64             // permanent VitalCap reduction world applies to Target
+	Animal      core.ObjectID
+	Action      actions.ActionID    // max-utility action (ACTIVE/re-eval) or held CurrentAction (dormant)
+	Target      core.ObjectID       // resolved target for targeted action; empty in P_fa1
+	NextPos     core.Vec2           // steered next position (continuous, D11); == Pos if Rest/blocked
+	NextHeading float64             // steered next heading (radians)
+	Drives      map[DriveID]float64 // passive per-tick drive evolution (F25(c)); world commits it
+	Stamina     float64             // proposed next stamina
+	Vital       float64             // proposed self vital regen, clamped by VitalCap
+	VitalCap    float64             // proposed self vital cap
+	ActiveUntil core.Tick           // updated F45 wake-cooldown horizon; world commits it
+	MateWith    core.ObjectID       // PD4-iii/P_fa4c-2: the partner this animal is courting THIS tick (empty
+	//   unless the chosen action's steer channel is seek:mate and an eligible partner is in range).
+	//   A separate field from Target on purpose: world's mutual-consent check must not be confusable
+	//   with a combat target, and one animal can never court and attack in the same tick anyway.
+	EngagedWith          core.ObjectID // proposed combat partner; empty means disengaged/free
+	NextExchangeTick     core.Tick     // proposed next exchange tick
+	EngageCooldownUntil  core.Tick     // proposed next engage attempt tick
+	Damage               float64       // damage world applies to Target; 0 means no exchange this tick
+	TargetVitalCapDamage float64       // permanent VitalCap reduction world applies to Target
 }
 
 // ── AttrOperands ─────────────────────────────────────────────────────────────

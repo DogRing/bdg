@@ -51,6 +51,7 @@ type SpeciesRule struct {
 	HazardAvoidance float64                            // per-species hazard-repulsion multiplier `e` (P_move1/FM5); ≤0 ⇒ no bend
 	MoveDeadband    float64                            // per-species §6-speed hold threshold (FM14a); >0 overrides Snapshot.MoveDeadband, ≤0 ⇒ fall back to the global
 	MaturityAge     float64                            // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1 (clamp01(age/MaturityAge)); ≤0 ⇒ maturity≡1 (always mature, gate-neutral)
+	MateCooldown    core.Tick                          // PD4-vi(b)/P_fa4c-2: post-conception refractory ticks (species trait — breeding tempo); ≤0 ⇒ no cooldown
 	Speed           *expr.Program                      // §6 locomotion speed (F35)
 	TurnRate        *expr.Program                      // §6 max turn rate radians/unit time (M6)
 	ScentAcuity     *expr.Program                      // §6 scent-tracking keenness gain g (PD1/P_fa4a); nil/≤0 ⇒ exact scent Dir (neutral)
@@ -79,6 +80,7 @@ const (
 	TagSteerFood  core.Tag = "seek:food"     // steer toward food scent channel
 	TagSteerWater core.Tag = "seek:water"    // steer toward the water-attraction field gradient (FM4 thirst)
 	TagSteerPrey  core.Tag = "seek:prey"     // steer toward prey scent channel
+	TagSteerMate  core.Tag = "seek:mate"     // steer toward the nearest eligible conspecific partner (PD4-i/P_fa4c-2)
 	TagFleePred   core.Tag = "flee:predator" // steer away from predator (reversed dir)
 	TagWaryPred   core.Tag = "wary:predator" // steer slowly away from predator
 	TagNoLoco     core.Tag = "no:locomotion" // rest: NextPos == Pos
@@ -100,6 +102,7 @@ type speciesData struct {
 	hazardAvoidance float64
 	moveDeadband    float64
 	maturityAge     float64
+	mateCooldown    core.Tick
 	speed           *expr.Program
 	turnRate        *expr.Program
 	scentAcuity     *expr.Program
@@ -181,6 +184,7 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			hazardAvoidance: sr.HazardAvoidance,
 			moveDeadband:    sr.MoveDeadband,
 			maturityAge:     sr.MaturityAge,
+			mateCooldown:    sr.MateCooldown,
 			speed:           sr.Speed,
 			turnRate:        sr.TurnRate,
 			scentAcuity:     sr.ScentAcuity,
@@ -343,6 +347,30 @@ func (r *Rules) starveDrain(sp SpeciesID, drives map[DriveID]float64, dt float64
 		}
 	}
 	return total
+}
+
+// IsCourting reports whether this (species, action) pair is a courtship action — i.e. its steer
+// channel is seek:mate. world uses it to read a partner's CONSENT off its committed CurrentAction
+// (P_fa4c-2): mate seeking is resolved in the full pipeline, but most herbivores spend most ticks
+// on the F45 dormant cheap path and re-arbitrate on ID-staggered phases, so "both animals computed
+// a partner in the SAME tick" would almost never coincide. Courtship is a state an animal is in,
+// not a single-tick coincidence.
+func (r *Rules) IsCourting(sp SpeciesID, act actions.ActionID) bool {
+	return r.steerChannelFor(sp, act) == TagSteerMate
+}
+
+// MateCooldown returns the species' post-conception refractory window in ticks (PD4-vi ⓑ /
+// P_fa4c-2). Breeding tempo is a species trait — a rabbit recovers far faster than a bear — so it
+// is per-species content, not a global constant. 0 (unauthored) ⇒ no refractory period.
+func (r *Rules) MateCooldown(sp SpeciesID) core.Tick {
+	if r == nil {
+		return 0
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.mateCooldown < 0 {
+		return 0
+	}
+	return sd.mateCooldown
 }
 
 // maturity returns the §6 `maturity` operand for an animal of the given species+age (PD4-ii/P_fa4c):

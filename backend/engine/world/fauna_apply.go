@@ -61,6 +61,11 @@ func (w *World) applyCombinedIntents(
 	// Pass 2: animal combat cross-writes (attack/feed) + death, AFTER every own-state commit — so an
 	// attacker's mutual-engage/damage write to its target is never clobbered by the target's own commit.
 	// The mutual lock is thus order-independent (deterministic; the D12 sorted apply order is unchanged).
+	// Mating (P_fa4c-2) is a cross-animal write too and rides the same pass, for the same reason: it
+	// compares both partners' COMMITTED positions and writes both cooldowns. It resolves after combat
+	// on each animal so a partner killed this tick cannot also conceive.
+	mateIntents := mateIntentIndex(animalIntents)
+	mateFork := w.envFork(w.tick, "fauna-mate")
 	for i := range combined {
 		item := combined[i]
 		if item.animal == nil {
@@ -70,7 +75,28 @@ func (w *World) applyCombinedIntents(
 			continue
 		}
 		w.applyAnimalCombat(*item.animal)
+		if mateIntents != nil {
+			w.applyAnimalMate(*item.animal, mateIntents, mateFork)
+		}
 	}
+}
+
+// mateIntentIndex builds the partner lookup the mutual-consent check needs (P_fa4c-2). Returns nil
+// when no animal is courting this tick, which is the overwhelmingly common case — so a world whose
+// content authors no Mate action allocates nothing and behaves byte-identically to pre-P_fa4c-2.
+// The map is only ever read by single-key lookup, never ranged (D12).
+func mateIntentIndex(animalIntents []fauna.Intent) map[core.ObjectID]fauna.Intent {
+	var idx map[core.ObjectID]fauna.Intent
+	for i := range animalIntents {
+		if animalIntents[i].MateWith == "" {
+			continue
+		}
+		if idx == nil {
+			idx = make(map[core.ObjectID]fauna.Intent, len(animalIntents))
+		}
+		idx[animalIntents[i].Animal] = animalIntents[i]
+	}
+	return idx
 }
 
 func combinedAgentSeedOffsets(agentIntents []agent.Intent) map[core.AgentID]int {

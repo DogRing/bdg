@@ -162,6 +162,56 @@ RESOLVED note in Open Questions), so the world does NOT re-join `terrainTypes` f
 
 ---
 
+## Emergent 2-parent reproduction (pass-2 cross-write; PD4 / P_fa4c-2, `docs/plans/fauna.md` §5)
+
+Conception is a **cross-animal write** — it reads both partners' committed positions and writes both
+cooldowns — so it rides the SECOND apply pass alongside combat, after every own-state commit, and
+resolves **after** combat on each animal so a partner killed this tick cannot also conceive. Both
+partners have therefore already moved when the distance between them is measured, which is what makes
+courtship steering pay off.
+
+`applyAnimalMate(intent, byID, fork)` conceives when ALL hold:
+1. `intent.MateWith` is set (this animal resolved a partner this tick), and
+2. the partner is **also courting** — its committed `CurrentAction` satisfies `fauna.Rules.IsCourting`
+   (mutual consent, PD4-vi ⓒ). A partner that is hunting, fleeing, or grazing because it is starving
+   does **not** breed: that is what keeps a species' §6 hunger/fear terms in control of its own birth
+   rate rather than the mating code.
+3. neither partner is refractory (`MateCooldownUntil`), and
+4. they are within `conceptionReach() = FaunaCombat.DisengageRangeFactor × ScentCellSize` — the same
+   proximity that holds a combat engagement together (PD4-vi ⓐ: reuse, no new species key).
+
+**Exactly one offspring per pairing**: when both animals courted each other in the same tick, only the
+lower ID proceeds, so the outcome cannot depend on apply order (D12). Both parents are then set to
+`tick + Rules.MateCooldown(species)`.
+
+`spawnOffspring` copies the lower-ID parent and strips everything acquired — `Age = 0`, no drives (a
+missing drive key reads as 0, so it starts sated and unafraid), fresh `Vital`/`Stamina` and an unscarred
+`VitalCap`, no combat/hiding/cooldown state, no held action, a seeded random heading (a zero heading is
+due-east; a whole generation born facing east marches into the east wall, P_dist3). It is placed **at
+the parent's position** — guaranteed passable, so no rejection sampling — and emits the existing
+`AnimalBorn` event, so downstream consumers need no new type to see emergent births.
+
+`blendParentStats` (PD4-iv) is the **first consumer** of the per-stat `inherit` weight in
+`content/stats.yaml`, which until now was loaded and validated but never read. Per stat, in the
+registry's canonical sorted order and consuming exactly one draw each (D12):
+
+    raw   = lean·p1 + (1−lean)·p2     // lean ∈ [0,1) seeded — anywhere between the parents
+    child = mean + (raw − mean)·(1 − inherit)
+
+`inherit = 1` ⇒ exactly the parental mean; `inherit = 0` ⇒ anywhere between the parents. The variation
+magnitude is the **parents' own spread**, so no σ constant is invented and the result is always
+bracketed by the two parents. That bracket matters concretely: fauna fixtures author stats on a 0–100
+scale while the shared registry declares range `[0,1]`, so anything scaled by the registry's Min/Max or
+`gen.sd` would be wrong for animals.
+
+**Off-lever**: a species that authors no Mate action never sets `MateWith`, the intent index is nil, and
+the world allocates nothing and behaves byte-identically to pre-P_fa4c-2.
+
+> ⚠️ **Not yet population-safe.** The birth side has no density ceiling until PD4-v lands in P_fa4c-3
+> (deferred by design, one new mechanism per phase). Measured on the shipped fixture: rabbits 15 → 2407
+> over 16000 ticks, still accelerating — starvation did not cap it in that window, and respawn is a
+> FLOOR (re-introduction), not a cap. Do not run this live until the density gate ships.
+
 ## Scent driving (Phase 4-ENV step 4 — after intent apply, before tick advance)
 
 The WI-P1 env sub-phase step 4 (placeholder) is realized here. It runs AFTER the combined intent

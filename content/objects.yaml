@@ -328,6 +328,7 @@ object_kinds:
         - { action: Flee,   utility: "(fear - 0.6) * 5" }                           # predator SIGHT (higher fear) → flight band (F43)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6 - fear * 2.5" } # P_sleep1: diurnal night torpor — deep fatigue recovery + high wake threshold; hunger/fear/day out-bid it (untuned)
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.25 - fear * 3" }   # P_fa4c-2 courtship: mature adults only, and only when fed + unafraid. Mutual consent means BOTH must clear this, so famine/predation suppress breeding without any birth-rate code (untuned)
         - { action: MoveTo, utility: "0.1" }                                        # wander baseline (lowest)
       drives:
         - { id: hunger,  rate: 0.0008, vital_drain: 0.006, vital_drain_above: 0.98 } # accumulator (D9): ~0→1 over ~1250 ticks. PD3 아사(P_fa4b): hunger≥0.98 → vital −0.006/tick(net −0.005 vs regen) ~200틱에 사망 (UNTUNED placeholder)
@@ -346,6 +347,8 @@ object_kinds:
       hide_chance: "0.35 + Agility*0.003"                                          # M3 cover-hiding probability while fleeing near cover
       diet: [ forage ]                                                             # grazes objects carrying `forage` (grass/berry_shrub)
       senses: { smell_radius: 10.0, sight_radius: 16.0, fov_arc: 1.05 }             # M5-a early-detection nudge (untuned placeholder)
+      maturity_age:  600                                                           # PD4-ii: ticks (fauna_dt=1) until `maturity` reaches 1 = sexual maturity (UNTUNED placeholder, P_fa4)
+      mate_cooldown: 500                                                           # PD4-vi(b): post-conception refractory ticks — breeding tempo (UNTUNED placeholder, P_fa4)
       respawn_target: 16                                                           # herd carrying capacity (F9 timer-respawn)
       cover_cost: 0.7                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 1.5, mountain: 1.6 }                                  # FORDS water to escape (< wolf 3.0 → loses pursuers at the river, M4-a); climbs poorly (W10b)
@@ -366,6 +369,7 @@ object_kinds:
         - { action: Feed,   utility: "hunger * scent.carrion * 4" }                     # committed carrion scent → feed after a kill
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.7" } # P_sleep1: night torpor (predator, no fear); hunger/day out-bid it. Nocturnal = swap to `daylight` (D2/D10, no code). Untuned
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.22" }             # P_fa4c-2 courtship (predator: no fear term). Hunting out-bids it whenever hungry (untuned)
         - { action: MoveTo, utility: "0.15" }                                       # range/wander baseline
       drives:
         - { id: hunger,  rate: 0.0008, vital_drain: 0.006, vital_drain_above: 0.98 }  # Phase 10: hunt-attempt cadence ~9 real-min at 500ms ticks (was 12.5) — spectator drama density; respawn absorbs the extra predation pressure. PD3 아사(P_fa4b): 먹이(prey) 못 찾으면 포식자도 아사 → 항온기 없이 상한 조절 (UNTUNED)
@@ -383,6 +387,8 @@ object_kinds:
       feed: "0.35 + hunger * 0.45"                                                  # carcass supply → hunger recovery factor (FC8)
       diet: [ game ]                                                               # hunts animals carrying `game` (deer)
       senses: { smell_radius: 20.0, sight_radius: 34.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
+      maturity_age:  800                                                           # PD4-ii: slow-maturing predator (UNTUNED placeholder, P_fa4)
+      mate_cooldown: 700                                                           # PD4-vi(b): long refractory — predators breed slowly (UNTUNED placeholder, P_fa4)
       respawn_target: 3                                                            # apex predator — sparse (F9)
       cover_cost: 1.2                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 3.0, mountain: 1.5 }                                  # AVOIDS deep water (river = prey refuge, M4-a); modest on hills (W10b)
@@ -401,6 +407,7 @@ object_kinds:
         - { action: Flee,   utility: "(fear - 0.5) * 6" }                           # bolts EARLY (low flee threshold)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2.5" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 3" } # P_sleep1: night torpor; twitchiest — a whiff of fear out-bids sleep (wakes early). Untuned
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.30 - fear * 4" }  # P_fa4c-2 courtship: prolific breeder (earliest maturity, shortest refractory) but twitchiest — any fear kills it (untuned)
         - { action: MoveTo, utility: "0.1" }
       drives:
         - { id: hunger,  rate: 0.0012, vital_drain: 0.006, vital_drain_above: 0.98 } # small body → eats often. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
@@ -419,6 +426,8 @@ object_kinds:
       hide_chance: "0.6 + Agility*0.004"                                           # small prey: high cover-hiding chance
       diet: [ forage ]
       senses: { smell_radius: 8.0, sight_radius: 18.0, fov_arc: 1.4 }               # M5-a early-detection nudge (untuned placeholder)
+      maturity_age:  300                                                           # PD4-ii: earliest maturity of the six — r-strategist (UNTUNED placeholder, P_fa4)
+      mate_cooldown: 200                                                           # PD4-vi(b): shortest refractory — breeds back fastest after a predation crash (UNTUNED placeholder, P_fa4)
       respawn_target: 20                                                           # prolific prey (F9)
       cover_cost: 0.3                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 2.5, mountain: 2.0 }                                  # poor at water + climbing (plains animal)
@@ -436,6 +445,7 @@ object_kinds:
         - { action: Flee,   utility: "(fear - 0.65) * 5" }                         # flees later than deer (mountain safety)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 1.8" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 2" } # P_sleep1: night torpor; hardy mountain sleeper. Untuned
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.24 - fear * 3" }  # P_fa4c-2 courtship: mid-tempo breeder (untuned)
         - { action: MoveTo, utility: "0.1" }
       drives:
         - { id: hunger,  rate: 0.0007, vital_drain: 0.006, vital_drain_above: 0.98 } # PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
@@ -454,6 +464,8 @@ object_kinds:
       hide_chance: "0.3 + Agility*0.003"                                           # M3 cover-hiding probability while fleeing near cover
       diet: [ forage ]
       senses: { smell_radius: 9.0, sight_radius: 15.0, fov_arc: 1.0 }               # M5-a early-detection nudge (untuned placeholder)
+      maturity_age:  500                                                           # PD4-ii: mid maturity (UNTUNED placeholder, P_fa4)
+      mate_cooldown: 400                                                           # PD4-vi(b): mid refractory (UNTUNED placeholder, P_fa4)
       respawn_target: 6                                                            # small mountain band (F9)
       cover_cost: 0.6                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.6, river: 2.0, sand: 1.2 }                       # CLIMBER: cheap on mountains (FA8); poor at water
@@ -474,6 +486,7 @@ object_kinds:
         - { action: Graze,  utility: "hunger * (0.2 + scent.food)" }                # grazes when food scent dominates (emergent omnivore)
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - hunger * 0.6" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6" } # P_sleep1: night torpor (large omnivore, no fear); hunger/day out-bid it. Untuned
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.18" }             # P_fa4c-2 courtship (apex omnivore, no fear term): slowest breeder of the six (untuned)
         - { action: MoveTo, utility: "0.15" }
       drives:
         - { id: hunger,  rate: 0.0005, vital_drain: 0.006, vital_drain_above: 0.98 } # large body → slow hunger. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
@@ -491,6 +504,8 @@ object_kinds:
       feed: "0.4 + hunger * 0.4"                                                    # larger predator extracts more recovery from a carcass
       diet: [ game, forage ]                                                       # OMNIVORE: prey + vegetation (F7)
       senses: { smell_radius: 22.0, sight_radius: 30.0, fov_arc: 0.9 }              # superb nose
+      maturity_age:  1000                                                          # PD4-ii: latest maturity of the six (UNTUNED placeholder, P_fa4)
+      mate_cooldown: 900                                                           # PD4-vi(b): longest refractory (UNTUNED placeholder, P_fa4)
       respawn_target: 3                                                            # apex omnivore — sparse (F9)
       cover_cost: 2.0                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.7, river: 2.6 }                                  # CLIMBER predator (FA8); avoids deep water (river = prey refuge, M4-a)

@@ -180,6 +180,7 @@ type objectKindDoc struct {
 		HazardAvoidance float64  `yaml:"hazard_avoidance"`
 		MoveDeadband    float64  `yaml:"move_deadband"` // FM14a per-species deadband (>0 overrides global motion.move_deadband)
 		MaturityAge     float64  `yaml:"maturity_age"`  // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1; ≤0/absent ⇒ maturity≡1 (gate-neutral)
+		MateCooldown    int64    `yaml:"mate_cooldown"` // PD4-vi(b)/P_fa4c-2: post-conception refractory ticks (species breeding tempo); ≤0 ⇒ none
 		Speed           any      `yaml:"speed"`
 		TurnRate        any      `yaml:"turn_rate"`
 		ScentAcuity     any      `yaml:"scent_acuity"` // §6 scent-tracking keenness gain (PD1/P_fa4a); absent ⇒ exact scent Dir (neutral)

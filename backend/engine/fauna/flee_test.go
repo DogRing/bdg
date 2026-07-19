@@ -64,7 +64,7 @@ func TestSightQueryPincerAggregatesFlee(t *testing.T) {
 	}
 
 	// baseSteerDir must return the aggregate when it is present.
-	dir := baseSteerDir(prey, TagFleePred, scent.Reading{}, nearPredPos, fleeDir, sightPred, nil)
+	dir := baseSteerDir(prey, TagFleePred, scent.Reading{}, nearPredPos, fleeDir, sightPred, nil, nil)
 	if dir != *fleeDir {
 		t.Errorf("baseSteerDir = %+v, want the aggregated fleeDir %+v", dir, *fleeDir)
 	}
@@ -83,7 +83,7 @@ func TestSightQuerySinglePredatorNoAggregate(t *testing.T) {
 		t.Fatalf("fleeDir = %+v, want nil for a single visible predator", *fleeDir)
 	}
 
-	dir := baseSteerDir(prey, TagFleePred, scent.Reading{}, nearPredPos, fleeDir, sightPred, nil)
+	dir := baseSteerDir(prey, TagFleePred, scent.Reading{}, nearPredPos, fleeDir, sightPred, nil, nil)
 	// Old formula: normalize(Pos − predPos).
 	dx, dy := -3.0, -2.0
 	mag := math.Sqrt(dx*dx + dy*dy)
@@ -125,7 +125,7 @@ func TestSightQueryDegenerateCancelFallsBackToNearest(t *testing.T) {
 	if fleeDir != nil {
 		t.Fatalf("fleeDir = %+v, want nil (opposite repulsions cancel)", *fleeDir)
 	}
-	dir := baseSteerDir(prey, TagFleePred, scent.Reading{}, nearPredPos, fleeDir, sightPred, nil)
+	dir := baseSteerDir(prey, TagFleePred, scent.Reading{}, nearPredPos, fleeDir, sightPred, nil, nil)
 	if math.Abs(math.Hypot(dir.X, dir.Y)-1) > 1e-12 {
 		t.Errorf("fallback flee dir = %+v, want a unit vector away from nearest", dir)
 	}
