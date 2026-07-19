@@ -144,7 +144,16 @@ func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
 	if a.EngagedWith != "" || (a.HiddenUntil > 0 && a.HiddenUntil >= w.tick) {
 		return
 	}
-	if !w.actionHasTag(a.CurrentAction, fauna.TagFleePred) {
+	// The roll needs the animal to be actively evading: either running from the threat
+	// (flee:predator) or making for a thicket (seek:cover, M3's cover-seeking action).
+	//
+	// seek:cover is what makes M3 reachable at all. With only flee:predator, hiding required
+	// "fleeing AND already within cover reach", and those two are ANTI-correlated — flee steers
+	// straight away from the predator, so the one moment the roll can fire is the moment the animal
+	// is abandoning its bush. Measured on the balance bed: prey were near cover 10.1% of ticks and
+	// fleeing 2.1%, but both at once only 0.01% — 14× below independent chance.
+	if !w.actionHasTag(a.CurrentAction, fauna.TagFleePred) &&
+		!w.actionHasTag(a.CurrentAction, fauna.TagSteerCover) {
 		return
 	}
 	if !w.nearCoverFlora(a) {
@@ -230,6 +239,41 @@ func (w *World) nearestCoverFloraID(a *fauna.Animal) core.ObjectID {
 		}
 	}
 	return nearest
+}
+
+// coverLookup adapts world's cover index to the fauna.CoverSampler interface, so the seek:cover
+// steer can aim at a thicket without fauna importing flora or the object store.
+type coverLookup struct{ w *World }
+
+// NearestCover returns the position of the nearest cover plant within radius. Deterministic: the
+// candidate sweep takes the strictly-closest plant and breaks distance ties by lower ObjectID, the
+// same rule nearestCoverFloraID uses, so the answer never depends on spatial-hash return order (D12).
+func (c coverLookup) NearestCover(p core.Vec2, radius float64) (core.Vec2, bool) {
+	w := c.w
+	if w == nil || radius <= 0 {
+		return core.Vec2{}, false
+	}
+	idx := w.coverIndexFor()
+	if idx == nil || w.floraState == nil {
+		return core.Vec2{}, false
+	}
+	var best core.Vec2
+	var bestID core.ObjectID
+	bestDistance := radius
+	for _, e := range idx.NearbyEntities(p, radius) {
+		pl, ok := w.floraState.PlantByID(e.ID)
+		if !ok {
+			continue
+		}
+		d := p.Distance(pl.Pos)
+		if d > bestDistance {
+			continue
+		}
+		if bestID == "" || d < bestDistance || (d == bestDistance && e.ID < bestID) {
+			best, bestID, bestDistance = pl.Pos, e.ID, d
+		}
+	}
+	return best, bestID != ""
 }
 
 func (w *World) hiddenCoverID(a *fauna.Animal) core.ObjectID {

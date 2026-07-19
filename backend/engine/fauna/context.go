@@ -30,7 +30,7 @@ const (
 	attrWindMag       core.Tag = "wind.mag"
 	attrDaylight      core.Tag = "daylight"
 	attrIsCurrent     core.Tag = "is_current"
-	attrMaturity      core.Tag = "maturity" // PD4-ii/P_fa4c: clamp01(age/maturity_age); 1 when mature (or maturity_age unauthored)
+	attrMaturity      core.Tag = "maturity"  // PD4-ii/P_fa4c: clamp01(age/maturity_age); 1 when mature (or maturity_age unauthored)
 	attrKinCount      core.Tag = "kin_count" // PD4-v/P_fa4c-3: same-species neighbours within sight — local crowding (raw count; content normalises)
 )
 

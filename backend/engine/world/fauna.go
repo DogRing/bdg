@@ -100,6 +100,7 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 		MoveDeadband:  w.envCfg.FaunaMoveDeadband,
 		HazardField:   hazard,
 		WaterField:    water,
+		Cover:         coverLookup{w},
 	}
 }
 

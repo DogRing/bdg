@@ -119,6 +119,24 @@ type WaterSampler interface {
 	Gradient(p core.Vec2) core.Vec2
 }
 
+// CoverSampler is the read-only nearest-cover lookup fauna declares and world adapts (dependency
+// inversion, like TerrainSampler/HazardSampler/WaterSampler — fauna imports neither flora nor the
+// object store, so it cannot find a bush by itself).
+//
+// It exists for the `seek:cover` steer channel (M3 realisation, docs/plans/fauna.md 클러스터 10): a
+// prey animal that decides to hide must run TOWARD a thicket. Measured before this existed, M3 fired
+// on 0.01% of prey-ticks — 14× BELOW independent chance — because `flee:predator` steers purely away
+// from the threat, so the one moment the hide roll can happen is the moment the animal is abandoning
+// its cover. Prey were near cover 10% of the time and fleeing 2% of the time, but almost never both.
+//
+// NearestCover returns the position of the nearest cover plant within radius, or ok=false when there
+// is none. world answers it from the cover index it already maintains for M4-b/M5-b, so this adds no
+// new index and no field rebuild. Queried ONLY for the seek:cover channel — a species that authors no
+// cover-seeking action never touches it.
+type CoverSampler interface {
+	NearestCover(p core.Vec2, radius float64) (core.Vec2, bool)
+}
+
 // Cadence carries the F45 adaptive per-animal cadence parameters (balance data,
 // world-injected; NOT per-species). DormantPeriod is the N in the dormant
 // re-arbitration gate (Tick+phase(ID))%N==0 (N≈100). WakeCooldown is how many
@@ -189,6 +207,10 @@ type Snapshot struct {
 	// the thirst-seek action (TagSteerWater) is chosen — so non-thirsty / non-drinking species never query
 	// it. nil ⇒ NO water steering (byte-identical to pre-FM4). Read-only.
 	WaterField WaterSampler
+
+	// Cover is the nearest-cover lookup backing the `seek:cover` steer channel (M3). world answers it
+	// from its existing cover index; nil ⇒ no cover steering (byte-identical to pre-seek:cover).
+	Cover CoverSampler
 	// HazardField is the shared STATIC hazard potential field (P_move1/FM2). world builds it once
 	// (source cells = dangerous terrain, weight = danger) and injects it; steering adds e·Repulsion
 	// (e = the species' HazardAvoidance) to the chosen direction (F35). Per-species DIFFERENTIATION is

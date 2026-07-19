@@ -161,6 +161,18 @@ actions:
     effect_per_minute: { Rest: 0.0030 }
     interruptible: true
 
+  # TAKE COVER (fauna only, M3). `seek:cover` → fauna steers toward the nearest cover plant instead of
+  # straight away from the threat, which is what M3 always meant ("prey가 풀숲에 들어가면"). Without it
+  # hiding was unreachable: the roll requires being near cover WHILE evading, and plain Flee steers away
+  # from the predator, so the animal abandoned its bush at exactly the moment the roll could fire —
+  # measured at 0.01% of prey-ticks, 14× below independent chance. Whether an animal runs for cover or
+  # just runs is left to §6 utility competition against Flee (D2/D3), so a thicket-dweller and an
+  # open-country runner differ by data, not by code. No `produces`: fauna-only, invisible to the planner.
+  - id: Hide
+    tags: [ "uses:Agility", "effort:high", "noise:low", "seek:cover" ]
+    duration: 3
+    interruptible: true
+
   # COURTSHIP (fauna only, P_fa4c-2). `seek:mate` → fauna steers toward the nearest eligible
   # conspecific (mature, off cooldown) found by a spatial query — proximity, not scent (PD4-i).
   # Conception needs BOTH animals to be running this action and to have picked each other in the

@@ -326,6 +326,7 @@ object_kinds:
         - { action: Graze,  utility: "hunger * (0.3 + scent.food) - fear * 1.5" }   # hungry → seek/crop food; fear suppresses
         - { action: Wary,   utility: "fear" }                                       # predator SCENT → vigilance band (F43)
         - { action: Flee,   utility: "(fear - 0.6) * 5" }                           # predator SIGHT (higher fear) → flight band (F43)
+        - { action: Hide,   utility: "(fear - 0.6) * 5.3" }                         # M3: same trigger band as Flee but slightly preferred — a deer makes for the nearest grove instead of straight away; with no cover in range the steer falls back to fleeing (untuned)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6 - fear * 2.5" } # P_sleep1: diurnal night torpor — deep fatigue recovery + high wake threshold; hunger/fear/day out-bid it (untuned)
         - { action: Mate,   utility: "maturity * (1 - hunger) * 0.25 - fear * 3 - kin_count * 0.04" }   # P_fa4c-2 courtship: mature adults only, and only when fed + unafraid. Mutual consent means BOTH must clear this, so famine/predation suppress breeding without any birth-rate code (untuned)
@@ -405,6 +406,7 @@ object_kinds:
         - { action: Graze,  utility: "hunger * (0.3 + scent.food) - fear * 1.8" }   # eats often; strongly fear-suppressed
         - { action: Wary,   utility: "fear * 1.1" }
         - { action: Flee,   utility: "(fear - 0.5) * 6" }                           # bolts EARLY (low flee threshold)
+        - { action: Hide,   utility: "(fear - 0.5) * 7" }                           # M3: a thicket-dweller PREFERS cover over open flight (clearest margin of the three); falls back to fleeing when no bush is in range (untuned)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2.5" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 3" } # P_sleep1: night torpor; twitchiest — a whiff of fear out-bids sleep (wakes early). Untuned
         - { action: Mate,   utility: "maturity * (1 - hunger) * 0.30 - fear * 4 - kin_count * 0.10" }  # P_fa4c-2 courtship: prolific breeder (earliest maturity, shortest refractory) but twitchiest — any fear kills it (untuned)

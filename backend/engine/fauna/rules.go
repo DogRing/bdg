@@ -81,6 +81,7 @@ const (
 	TagSteerWater core.Tag = "seek:water"    // steer toward the water-attraction field gradient (FM4 thirst)
 	TagSteerPrey  core.Tag = "seek:prey"     // steer toward prey scent channel
 	TagSteerMate  core.Tag = "seek:mate"     // steer toward the nearest eligible conspecific partner (PD4-i/P_fa4c-2)
+	TagSteerCover core.Tag = "seek:cover"    // steer toward the nearest cover plant to hide in (M3)
 	TagFleePred   core.Tag = "flee:predator" // steer away from predator (reversed dir)
 	TagWaryPred   core.Tag = "wary:predator" // steer slowly away from predator
 	TagNoLoco     core.Tag = "no:locomotion" // rest: NextPos == Pos
