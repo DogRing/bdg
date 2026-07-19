@@ -1,0 +1,299 @@
+# predator_balance.fixture.yaml — the tuning bed for predator-prey balance (docs/plans/fauna.md 클러스터 10
+# "균형(공통)": tune to a measurable ~15% hunt success with balance.yaml + tools/tuner).
+#
+# WHY A THIRD FIXTURE. The other two cannot measure this:
+#   • predation_arena  — a 96×96 FORCED-encounter bed: a wolf starts on top of the rabbits. Good for
+#     "does a chase resolve at all", useless for "can a predator population feed itself", because
+#     nothing about finding prey is being tested.
+#   • rabbit_meadow    — the live demo world: 500² with 2 wolves + 1 bear and grass-dominated ground.
+#     Measured 2026-07-19: prey hide in cover on 0.17% of ticks, so M3/M4b/M5b essentially never fire,
+#     and every predator hunts alone across 250,000 unit². It was built to be watched, not measured.
+#
+# THIS FIXTURE is an OPEN world (predators must find their own prey — no forced start) sized and stocked
+# so the shipped mechanisms actually get exercised and statistics accumulate in a few thousand ticks:
+#   • 240×240 (57,600 unit²) — ~4× denser than the meadow, so encounters happen without teleporting
+#     anyone next to anyone; chases still have room to run and to be escaped.
+#   • A RIVER down the middle hex column (x≈126) — exercises M4-a: wolf river cost 3.0 vs deer 1.5, so a
+#     fleeing deer can cross to a refuge the wolf will not follow into.
+#   • A MOUNTAIN block in the NE — exercises per-species terrain cost the other way (goat country).
+#   • COVER IN CLUSTERS, not scattered singles: berry_shrub thickets west (rabbit-scale cover) and oak
+#     groves east (deer-scale). Clustering matters — M3 hiding, M4-b cover drag and M5-b ambush
+#     concealment all read local cover DENSITY, so a lone plant expresses almost nothing.
+#   • 4 wolves + 2 bears against 12 rabbits / 8 deer / 4 goats — enough predators that hunt attempts
+#     accumulate, enough prey that a few kills do not end the experiment.
+#
+# NO respawn_targets ON PURPOSE. Respawn is a floor that re-introduces the extinct, which is exactly the
+# signal we are trying to read here: whether predators can feed themselves. Extinction is a RESULT in
+# this fixture, not a failure of it — the harness reports time-to-extinction as a tuning number.
+#
+# Predators start moderately hungry (0.5), not starving: we want them motivated to hunt while still
+# leaving room to observe whether hunting actually keeps them fed. Prey start lightly hungry (0.3) so
+# they graze and roam rather than standing still (FM14b), which is what makes encounters organic.
+
+schema_version: 1
+seed: 20260719
+cell_size: 12.0   # explicit terrain baked at cell 12: cols=ceil(240/(1.5·12))+1=15, rows=ceil(240/(√3·12))+1=13
+
+bounds:
+  min: [0.0, 0.0]
+  max: [240.0, 240.0]
+
+# Flat-top hex offset grid, 15×13. River = hex column 7 (centre x≈126) splitting WEST from EAST.
+# Mountain = the NE corner (cols 12–14, rows 0–2), goat country the wolves pay to enter.
+terrain:
+  cols: 15
+  rows: 13
+  cells: [
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, mountain, mountain, mountain,  # row 0
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, mountain, mountain, mountain,  # row 1
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, mountain, mountain, mountain,  # row 2
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 3
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 4
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 5
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 6
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 7
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 8
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 9
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 10
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil,              # row 11
+    soil, soil, soil, soil, soil, soil, soil, river, soil, soil, soil, soil, soil, soil, soil               # row 12
+  ]
+
+# ── Flora ────────────────────────────────────────────────────────────────────────────────────────
+# Cover comes in CLUSTERS so local cover density is high enough for M3/M4-b/M5-b to register.
+# Grass is spread thinly on both banks so herbivores have somewhere to graze (and so hunger-driven
+# roaming carries them across the map rather than parking them on one patch).
+flora:
+  # WEST — berry_shrub thickets (rabbit-scale cover), three separate clumps
+  - { id: thicket_a1, species: berry_shrub, pos: [30.0, 40.0], length: 1.1, width: 0.9 }
+  - { id: thicket_a2, species: berry_shrub, pos: [38.0, 46.0], length: 1.0, width: 0.9 }
+  - { id: thicket_a3, species: berry_shrub, pos: [26.0, 52.0], length: 1.2, width: 1.0 }
+  - { id: thicket_a4, species: berry_shrub, pos: [36.0, 34.0], length: 1.0, width: 0.8 }
+  - { id: thicket_b1, species: berry_shrub, pos: [72.0, 138.0], length: 1.1, width: 0.9 }
+  - { id: thicket_b2, species: berry_shrub, pos: [80.0, 146.0], length: 1.0, width: 0.9 }
+  - { id: thicket_b3, species: berry_shrub, pos: [66.0, 150.0], length: 1.2, width: 1.0 }
+  - { id: thicket_c1, species: berry_shrub, pos: [44.0, 196.0], length: 1.1, width: 0.9 }
+  - { id: thicket_c2, species: berry_shrub, pos: [52.0, 204.0], length: 1.0, width: 0.9 }
+  - { id: thicket_c3, species: berry_shrub, pos: [38.0, 208.0], length: 1.0, width: 0.8 }
+  # EAST — oak groves (deer-scale cover), two stands
+  - { id: grove_a1, species: oak, pos: [170.0, 48.0], length: 8.0, width: 5.0 }
+  - { id: grove_a2, species: oak, pos: [180.0, 58.0], length: 8.5, width: 5.5 }
+  - { id: grove_a3, species: oak, pos: [162.0, 62.0], length: 7.5, width: 5.0 }
+  - { id: grove_a4, species: oak, pos: [174.0, 70.0], length: 8.0, width: 5.2 }
+  - { id: grove_b1, species: oak, pos: [198.0, 150.0], length: 8.0, width: 5.0 }
+  - { id: grove_b2, species: oak, pos: [208.0, 160.0], length: 8.5, width: 5.5 }
+  - { id: grove_b3, species: oak, pos: [192.0, 166.0], length: 7.5, width: 5.0 }
+  - { id: grove_b4, species: oak, pos: [204.0, 174.0], length: 8.0, width: 5.2 }
+  # Grazing ground: a deterministic 20-unit grid, hand-placed rather than procedural.
+  # Density placement was tried first and silently produced ZERO grass: it derives establishment
+  # from the generated moisture field, which only exists for `terrain: random: true`. This fixture
+  # authors its terrain explicitly (the river and mountain are the point), so moisture reads 0
+  # everywhere and grass carrying_capacity — `5 * moisture * …` — evaluates to 0. The first two
+  # runs of this bed were therefore famines: 155 then 177 rabbit STARVATION deaths against ~20
+  # kills, which would have made every predation number meaningless (a hunt-success target is
+  # about healthy prey, not dying ones). The grid skips the river column.
+  - { id: grass_015_015, species: grass, pos: [15.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_035, species: grass, pos: [15.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_055, species: grass, pos: [15.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_075, species: grass, pos: [15.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_095, species: grass, pos: [15.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_115, species: grass, pos: [15.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_135, species: grass, pos: [15.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_155, species: grass, pos: [15.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_175, species: grass, pos: [15.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_195, species: grass, pos: [15.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_215, species: grass, pos: [15.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_015_235, species: grass, pos: [15.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_015, species: grass, pos: [35.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_035, species: grass, pos: [35.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_055, species: grass, pos: [35.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_075, species: grass, pos: [35.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_095, species: grass, pos: [35.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_115, species: grass, pos: [35.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_135, species: grass, pos: [35.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_155, species: grass, pos: [35.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_175, species: grass, pos: [35.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_195, species: grass, pos: [35.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_215, species: grass, pos: [35.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_035_235, species: grass, pos: [35.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_015, species: grass, pos: [55.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_035, species: grass, pos: [55.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_055, species: grass, pos: [55.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_075, species: grass, pos: [55.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_095, species: grass, pos: [55.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_115, species: grass, pos: [55.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_135, species: grass, pos: [55.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_155, species: grass, pos: [55.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_175, species: grass, pos: [55.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_195, species: grass, pos: [55.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_215, species: grass, pos: [55.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_055_235, species: grass, pos: [55.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_015, species: grass, pos: [75.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_035, species: grass, pos: [75.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_055, species: grass, pos: [75.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_075, species: grass, pos: [75.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_095, species: grass, pos: [75.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_115, species: grass, pos: [75.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_135, species: grass, pos: [75.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_155, species: grass, pos: [75.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_175, species: grass, pos: [75.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_195, species: grass, pos: [75.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_215, species: grass, pos: [75.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_075_235, species: grass, pos: [75.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_015, species: grass, pos: [95.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_035, species: grass, pos: [95.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_055, species: grass, pos: [95.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_075, species: grass, pos: [95.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_095, species: grass, pos: [95.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_115, species: grass, pos: [95.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_135, species: grass, pos: [95.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_155, species: grass, pos: [95.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_175, species: grass, pos: [95.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_195, species: grass, pos: [95.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_215, species: grass, pos: [95.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_095_235, species: grass, pos: [95.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_015, species: grass, pos: [115.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_035, species: grass, pos: [115.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_055, species: grass, pos: [115.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_075, species: grass, pos: [115.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_095, species: grass, pos: [115.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_115, species: grass, pos: [115.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_135, species: grass, pos: [115.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_155, species: grass, pos: [115.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_175, species: grass, pos: [115.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_195, species: grass, pos: [115.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_215, species: grass, pos: [115.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_115_235, species: grass, pos: [115.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_015, species: grass, pos: [155.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_035, species: grass, pos: [155.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_055, species: grass, pos: [155.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_075, species: grass, pos: [155.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_095, species: grass, pos: [155.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_115, species: grass, pos: [155.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_135, species: grass, pos: [155.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_155, species: grass, pos: [155.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_175, species: grass, pos: [155.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_195, species: grass, pos: [155.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_215, species: grass, pos: [155.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_155_235, species: grass, pos: [155.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_015, species: grass, pos: [175.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_035, species: grass, pos: [175.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_055, species: grass, pos: [175.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_075, species: grass, pos: [175.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_095, species: grass, pos: [175.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_115, species: grass, pos: [175.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_135, species: grass, pos: [175.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_155, species: grass, pos: [175.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_175, species: grass, pos: [175.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_195, species: grass, pos: [175.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_215, species: grass, pos: [175.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_175_235, species: grass, pos: [175.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_015, species: grass, pos: [195.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_035, species: grass, pos: [195.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_055, species: grass, pos: [195.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_075, species: grass, pos: [195.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_095, species: grass, pos: [195.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_115, species: grass, pos: [195.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_135, species: grass, pos: [195.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_155, species: grass, pos: [195.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_175, species: grass, pos: [195.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_195, species: grass, pos: [195.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_215, species: grass, pos: [195.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_195_235, species: grass, pos: [195.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_015, species: grass, pos: [215.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_035, species: grass, pos: [215.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_055, species: grass, pos: [215.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_075, species: grass, pos: [215.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_095, species: grass, pos: [215.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_115, species: grass, pos: [215.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_135, species: grass, pos: [215.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_155, species: grass, pos: [215.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_175, species: grass, pos: [215.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_195, species: grass, pos: [215.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_215, species: grass, pos: [215.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_215_235, species: grass, pos: [215.0, 235.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_015, species: grass, pos: [235.0, 15.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_035, species: grass, pos: [235.0, 35.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_055, species: grass, pos: [235.0, 55.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_075, species: grass, pos: [235.0, 75.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_095, species: grass, pos: [235.0, 95.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_115, species: grass, pos: [235.0, 115.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_135, species: grass, pos: [235.0, 135.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_155, species: grass, pos: [235.0, 155.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_175, species: grass, pos: [235.0, 175.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_195, species: grass, pos: [235.0, 195.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_215, species: grass, pos: [235.0, 215.0], length: 0.35, width: 0.2 }
+  - { id: grass_235_235, species: grass, pos: [235.0, 235.0], length: 0.35, width: 0.2 }
+
+# ── Animals ──────────────────────────────────────────────────────────────────────────────────────
+# Prey are spread over both banks (rabbits + goats west, deer east) and predators start AWAY from any
+# prey cluster — this is an open world, so finding prey is part of what is being measured.
+animals:
+  # Rabbits — west bank, near but not inside the thickets (they must run for cover, exercising M3)
+  - { id: rabbit_1,  species: rabbit, pos: [48.0, 36.0] }
+  - { id: rabbit_2,  species: rabbit, pos: [22.0, 66.0] }
+  - { id: rabbit_3,  species: rabbit, pos: [58.0, 58.0] }
+  - { id: rabbit_4,  species: rabbit, pos: [88.0, 128.0] }
+  - { id: rabbit_5,  species: rabbit, pos: [60.0, 158.0] }
+  - { id: rabbit_6,  species: rabbit, pos: [34.0, 118.0] }
+  - { id: rabbit_7,  species: rabbit, pos: [30.0, 182.0] }
+  - { id: rabbit_8,  species: rabbit, pos: [66.0, 210.0] }
+  - { id: rabbit_9,  species: rabbit, pos: [96.0, 176.0] }
+  - { id: rabbit_10, species: rabbit, pos: [14.0, 142.0] }
+  - { id: rabbit_11, species: rabbit, pos: [76.0, 92.0] }
+  - { id: rabbit_12, species: rabbit, pos: [104.0, 54.0] }
+  # Deer — east bank, around the oak groves
+  - { id: deer_1, species: deer, pos: [156.0, 40.0] }
+  - { id: deer_2, species: deer, pos: [188.0, 84.0] }
+  - { id: deer_3, species: deer, pos: [214.0, 52.0] }
+  - { id: deer_4, species: deer, pos: [166.0, 108.0] }
+  - { id: deer_5, species: deer, pos: [206.0, 132.0] }
+  - { id: deer_6, species: deer, pos: [180.0, 186.0] }
+  - { id: deer_7, species: deer, pos: [224.0, 196.0] }
+  - { id: deer_8, species: deer, pos: [150.0, 158.0] }
+  # Goats — the NE mountain block and its skirt
+  - { id: goat_1, species: goat, pos: [222.0, 18.0] }
+  - { id: goat_2, species: goat, pos: [232.0, 34.0] }
+  - { id: goat_3, species: goat, pos: [212.0, 26.0] }
+  - { id: goat_4, species: goat, pos: [228.0, 8.0] }
+  # Predators — started away from the prey clusters, on both banks
+  - { id: wolf_1, species: wolf, pos: [100.0, 20.0],  heading: 3.14 }
+  - { id: wolf_2, species: wolf, pos: [12.0, 228.0],  heading: 0.0 }
+  - { id: wolf_3, species: wolf, pos: [228.0, 118.0], heading: 3.14 }
+  - { id: wolf_4, species: wolf, pos: [140.0, 226.0], heading: 1.57 }
+  - { id: bear_1, species: bear, pos: [110.0, 96.0],  heading: 0.0 }
+  - { id: bear_2, species: bear, pos: [196.0, 12.0],  heading: 3.14 }
+
+# Starting condition: predators motivated but not dying, prey lightly hungry so they graze and roam
+# (FM14b) instead of standing still — organic encounters rather than staged ones.
+animal_templates:
+  rabbit:
+    stats: { Strength: 18, Agility: 85, Perception: 45 }
+    drives: { hunger: 0.30, fatigue: 0.02, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  deer:
+    stats: { Strength: 45, Agility: 70, Perception: 50 }
+    drives: { hunger: 0.30, fatigue: 0.02, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  goat:
+    stats: { Strength: 40, Agility: 65, Perception: 48 }
+    drives: { hunger: 0.30, fatigue: 0.02, fear: 0.0, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Graze
+  wolf:
+    stats: { Strength: 78, Agility: 82, Perception: 65 }
+    drives: { hunger: 0.50, fatigue: 0.02, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Hunt
+  bear:
+    stats: { Strength: 90, Agility: 55, Perception: 80 }
+    drives: { hunger: 0.50, fatigue: 0.02, thermal: 0.0 }
+    stamina: 1.0
+    vital: 1.0
+    current_action: Hunt
