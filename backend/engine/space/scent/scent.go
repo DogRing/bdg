@@ -77,10 +77,32 @@ var neighborOffsets = [8][2]int{
 // the stable read snapshot; pending accumulates deposits/spread for the next tick.
 // Not safe for concurrent mutation (single-threaded apply phase; read phase is
 // parallel-safe because it only reads committed).
+// Grid holds the scent field as TWO LAYERS, summed on read (클러스터 8b).
+//
+// The field's contract is "a tile smells of what is in it". Because Commit rebuilds the dynamic
+// layer from scratch each tick (buffers swap, the old one is cleared), an occupant's scent only
+// exists on ticks it was deposited — so the layers are split by how often their occupants actually
+// change:
+//
+//	dynamic — ANIMALS. They move, so their tile genuinely changes every tick: deposited AND
+//	          diffused every tick. Cheap, O(live animals).
+//	static  — FLORA and OBJECTS. They do not move, so their contribution is rebuilt only on the
+//	          bulk cadence and PERSISTS in between instead of being cleared. This is the expensive
+//	          layer (hundreds of thousands of plants at scale), which is why the bulk cadence
+//	          existed in the first place.
+//
+// Before the split, the static layer was re-laid on the bulk cadence but cleared every tick, so
+// food scent existed on 1 tick in 6 even though the plants never moved (measured: 4.939 at a plant
+// on tick%6==1, 0.000 on the other five) and herbivore food homing was blind 5/6 of the time.
 type Grid struct {
 	cellSize  float64
-	committed map[cellKey]cellVals // stable; Read/IntensityAt see this
-	pending   map[cellKey]cellVals // accumulates until Commit
+	committed map[cellKey]cellVals // stable DYNAMIC layer; Read/IntensityAt sum this with static
+	pending   map[cellKey]cellVals // accumulates dynamic deposits until Commit
+
+	// Static layer: persistent between rebuilds. staticPend accumulates a rebuild; CommitStatic
+	// diffuses it and swaps it in, so readers never observe a half-rebuilt static field.
+	static     map[cellKey]cellVals
+	staticPend map[cellKey]cellVals
 
 	// Spread scratch, reused across calls to avoid a per-tick map + slice
 	// allocation (GC pressure dominates at large scale, docs/plans/scaling.md P2).
@@ -99,6 +121,8 @@ func New(cellSize float64) *Grid {
 		cellSize:   cellSize,
 		committed:  make(map[cellKey]cellVals),
 		pending:    make(map[cellKey]cellVals),
+		static:     make(map[cellKey]cellVals),
+		staticPend: make(map[cellKey]cellVals),
 		spreadSnap: make(map[cellKey]cellVals),
 	}
 }
@@ -126,6 +150,35 @@ func (g *Grid) Deposit(ch Channel, pos core.Vec2, intensity float64) {
 	v := g.pending[key]
 	v[ch] += intensity
 	g.pending[key] = v
+}
+
+// DepositStatic is Deposit for the STATIC layer (flora, objects, carcasses — occupants that do not
+// move). Deposits accumulate into a rebuild buffer that only becomes visible on CommitStatic, so a
+// half-finished rebuild is never read. Between rebuilds the previous static field stays in place:
+// a plant that has not changed keeps smelling, which is the whole point of the split (클러스터 8b).
+func (g *Grid) DepositStatic(ch Channel, pos core.Vec2, intensity float64) {
+	if intensity <= 0 {
+		return
+	}
+	key := cellOf(pos, g.cellSize)
+	v := g.staticPend[key]
+	v[ch] += intensity
+	g.staticPend[key] = v
+}
+
+// CommitStatic diffuses the accumulated static rebuild under `wind` and swaps it in, replacing the
+// previous static layer. Call it after re-depositing every static source (world does this on the
+// bulk cadence). Buffers are reused rather than reallocated, matching Commit.
+//
+// The static layer is diffused HERE, once per rebuild, rather than every tick: it is the expensive
+// layer, and its wind staleness is bounded by the rebuild cadence — the same staleness the bulk
+// cadence already accepted before the split.
+func (g *Grid) CommitStatic(wind Wind) {
+	g.spreadInto(g.staticPend, wind)
+	old := g.static
+	g.static = g.staticPend
+	clear(old)
+	g.staticPend = old
 }
 
 // ── Spread ────────────────────────────────────────────────────────────────────
@@ -164,7 +217,14 @@ func neighborWeights(wind Wind) [8]float64 {
 // No RNG; fixed sorted-key traversal + fixed neighborOffsets order ⇒ byte-identical
 // regardless of deposit order (D12).
 func (g *Grid) Spread(wind Wind) {
-	if len(g.pending) == 0 {
+	g.spreadInto(g.pending, wind)
+}
+
+// spreadInto is the shared diffusion kernel, applied to whichever layer buffer the caller names —
+// the dynamic pending buffer every tick, or the static rebuild buffer once per rebuild. Extracted
+// when the field was split in two (클러스터 8b) so both layers diffuse by identical arithmetic.
+func (g *Grid) spreadInto(buf map[cellKey]cellVals, wind Wind) {
+	if len(buf) == 0 {
 		return
 	}
 	// Snapshot pending so reads and writes don't interfere within one Spread call.
@@ -173,7 +233,7 @@ func (g *Grid) Spread(wind Wind) {
 	snap := g.spreadSnap
 	clear(snap)
 	g.spreadKeys = g.spreadKeys[:0]
-	for k, v := range g.pending {
+	for k, v := range buf {
 		snap[k] = v
 		g.spreadKeys = append(g.spreadKeys, k)
 	}
@@ -271,7 +331,7 @@ func (g *Grid) Commit() {
 // (no pending); 0 before the first Commit.
 func (g *Grid) IntensityAt(ch Channel, pos core.Vec2) float64 {
 	key := cellOf(pos, g.cellSize)
-	return g.committed[key][ch]
+	return g.static[key][ch] + g.committed[key][ch]
 }
 
 // Read returns the multi-channel reading at pos over the COMMITTED buffer,
@@ -300,9 +360,15 @@ func (g *Grid) Read(pos core.Vec2, smellRadius float64, wind Wind) Reading {
 	for dcy := -rings; dcy <= rings; dcy++ {
 		for dcx := -rings; dcx <= rings; dcx++ {
 			nk := cellKey{center.cx + dcx, center.cy + dcy}
-			v, ok := g.committed[nk]
-			if !ok {
+			// Both layers: a tile smells of everything in it, static and moving alike (클러스터 8b).
+			sv, sOK := g.static[nk]
+			dv, dOK := g.committed[nk]
+			if !sOK && !dOK {
 				continue
+			}
+			var v cellVals
+			for ch := range v {
+				v[ch] = sv[ch] + dv[ch]
 			}
 			// Cell center in world coordinates (used for gradient direction).
 			ccx := (float64(nk.cx) + 0.5) * g.cellSize

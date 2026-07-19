@@ -38,8 +38,31 @@ flora:
   - { id: oak_e1, species: oak, pos: [78.0, 42.0], length: 8.0, width: 5.0 }
   - { id: oak_e2, species: oak, pos: [84.0, 54.0], length: 8.0, width: 5.0 }
   - { id: oak_e3, species: oak, pos: [72.0, 60.0], length: 8.0, width: 5.0 }
-  - { id: grass_w, species: grass, pos: [36.0, 30.0], length: 0.3, width: 0.2 }
-  - { id: grass_e, species: grass, pos: [66.0, 30.0], length: 0.3, width: 0.2 }
+  # Grazing ground (added 2026-07-19). The arena forces encounters, and with only two grass
+  # tufts its prey STARVED: 251 starvation deaths in 3000 ticks. Prey dying of hunger are
+  # trivially catchable, which silently inflated hunt-success — the same contamination that
+  # made the first runs of the balance bed meaningless. A hunt-success target is about
+  # healthy prey, so the arena now feeds them.
+  - { id: graze_12_12, species: grass, pos: [12.0, 12.0], length: 0.4, width: 0.25 }
+  - { id: graze_12_30, species: grass, pos: [12.0, 30.0], length: 0.4, width: 0.25 }
+  - { id: graze_12_48, species: grass, pos: [12.0, 48.0], length: 0.4, width: 0.25 }
+  - { id: graze_12_66, species: grass, pos: [12.0, 66.0], length: 0.4, width: 0.25 }
+  - { id: graze_12_84, species: grass, pos: [12.0, 84.0], length: 0.4, width: 0.25 }
+  - { id: graze_30_12, species: grass, pos: [30.0, 12.0], length: 0.4, width: 0.25 }
+  - { id: graze_30_30, species: grass, pos: [30.0, 30.0], length: 0.4, width: 0.25 }
+  - { id: graze_30_48, species: grass, pos: [30.0, 48.0], length: 0.4, width: 0.25 }
+  - { id: graze_30_66, species: grass, pos: [30.0, 66.0], length: 0.4, width: 0.25 }
+  - { id: graze_30_84, species: grass, pos: [30.0, 84.0], length: 0.4, width: 0.25 }
+  - { id: graze_48_12, species: grass, pos: [48.0, 12.0], length: 0.4, width: 0.25 }
+  - { id: graze_48_30, species: grass, pos: [48.0, 30.0], length: 0.4, width: 0.25 }
+  - { id: graze_48_48, species: grass, pos: [48.0, 48.0], length: 0.4, width: 0.25 }
+  - { id: graze_48_66, species: grass, pos: [48.0, 66.0], length: 0.4, width: 0.25 }
+  - { id: graze_48_84, species: grass, pos: [48.0, 84.0], length: 0.4, width: 0.25 }
+  - { id: graze_84_12, species: grass, pos: [84.0, 12.0], length: 0.4, width: 0.25 }
+  - { id: graze_84_30, species: grass, pos: [84.0, 30.0], length: 0.4, width: 0.25 }
+  - { id: graze_84_48, species: grass, pos: [84.0, 48.0], length: 0.4, width: 0.25 }
+  - { id: graze_84_66, species: grass, pos: [84.0, 66.0], length: 0.4, width: 0.25 }
+  - { id: graze_84_84, species: grass, pos: [84.0, 84.0], length: 0.4, width: 0.25 }
 
 # ── Animals: 1 wolf among the rabbits (forced hunt) + rabbits (west) + deer (east) ──
 animals:

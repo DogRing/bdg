@@ -728,8 +728,8 @@ func TestHasAndLen(t *testing.T) {
 		t.Error("Has(Nonexistent) should be false")
 	}
 
-	if reg.Len() != 30 {
-		t.Errorf("Len = %d, want 30", reg.Len())
+	if reg.Len() != 32 {
+		t.Errorf("Len = %d, want 32", reg.Len())
 	}
 }
 

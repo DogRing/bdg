@@ -183,16 +183,21 @@ func (w *World) runScentEnv() {
 		}
 		w.depositAnimalScent(a)
 	}
-	// Flora and objects are STATIC occupants — their tiles do not change between ticks — so they
-	// stay on the bulk cadence together with the wind spread. (They are still re-laid rather than
-	// persisted, because Commit clears; making the static layer genuinely persistent is the larger
-	// scent refactor, tracked separately.)
+	// The dynamic layer diffuses EVERY tick: it is rebuilt every tick anyway, and animals are few,
+	// so a plume that only existed on cadence ticks would be a pure loss of fidelity for no saving.
+	w.scent.Spread(w.scentWind())
+	w.scent.Commit()
+
+	// Flora and objects are STATIC occupants — their tiles do not change between ticks — so the
+	// expensive layer is rebuilt (and diffused) only on the bulk cadence, and PERSISTS in between
+	// rather than being cleared. That persistence is the whole point of the split (클러스터 8b):
+	// before it, food scent existed on 1 tick in 6 even though the plants never moved, and herbivore
+	// food homing was blind the other five.
 	if w.envCfg.ScentSpread > 0 && int64(w.tick)%int64(w.envCfg.ScentSpread) == 0 {
 		w.depositFloraScent()
 		w.depositObjectScent()
-		w.scent.Spread(w.scentWind())
+		w.scent.CommitStatic(w.scentWind())
 	}
-	w.scent.Commit()
 }
 
 // depositAnimalScent lays down every channel this species emits, at the animal's CURRENT position.
@@ -236,7 +241,7 @@ func (w *World) depositFloraScent() {
 			if !ok || ch == scent.ChanPredator {
 				continue
 			}
-			w.scent.Deposit(ch, p.Pos, mag)
+			w.scent.DepositStatic(ch, p.Pos, mag)
 		}
 	}
 }
@@ -253,7 +258,7 @@ func (w *World) depositObjectScent() {
 			if !ok || ch == scent.ChanPredator {
 				continue
 			}
-			w.scent.Deposit(ch, obj.Pos, mag)
+			w.scent.DepositStatic(ch, obj.Pos, mag)
 		}
 	}
 }
