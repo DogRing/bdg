@@ -172,21 +172,21 @@ func (w *World) runScentEnv() {
 	if w.scent == nil {
 		return
 	}
+	// Animals are MOVING occupants: their tile changes every tick, so every channel they emit is
+	// re-laid every tick (see depositAnimalScent). Cost is O(live animals) — the same walk the
+	// predator channel already paid for.
 	for _, id := range w.animalIDs {
 		a := w.animals[id]
 		if a == nil {
 			continue
 		}
-		w.depositAnimalScent(a, true)
+		w.depositAnimalScent(a)
 	}
+	// Flora and objects are STATIC occupants — their tiles do not change between ticks — so they
+	// stay on the bulk cadence together with the wind spread. (They are still re-laid rather than
+	// persisted, because Commit clears; making the static layer genuinely persistent is the larger
+	// scent refactor, tracked separately.)
 	if w.envCfg.ScentSpread > 0 && int64(w.tick)%int64(w.envCfg.ScentSpread) == 0 {
-		for _, id := range w.animalIDs {
-			a := w.animals[id]
-			if a == nil {
-				continue
-			}
-			w.depositAnimalScent(a, false)
-		}
 		w.depositFloraScent()
 		w.depositObjectScent()
 		w.scent.Spread(w.scentWind())
@@ -194,14 +194,27 @@ func (w *World) runScentEnv() {
 	w.scent.Commit()
 }
 
-func (w *World) depositAnimalScent(a *fauna.Animal, predatorCadence bool) {
+// depositAnimalScent lays down every channel this species emits, at the animal's CURRENT position.
+//
+// Called every tick for every animal — not on the bulk cadence. The scent field's contract is
+// "a tile smells of what is in it", and `Grid.Commit` rebuilds the committed field from scratch
+// each tick (it swaps buffers and clears the old one, so nothing persists on its own). An animal
+// MOVES every tick, so its tile genuinely changes every tick: per-tick deposit is what implements
+// the contract for a moving occupant, not a departure from it.
+//
+// This used to run the non-predator channels on the ScentSpread cadence only, which — combined
+// with the clearing Commit — left the prey/food channels EMPTY on 5 ticks out of 6. Measured on
+// the shipped fixture: prey scent readable only at `tick%6==1`, zero otherwise, even standing on
+// top of the animal. Predators therefore saw no prey scent 83% of the time, their scent-gated Hunt
+// utility lost to the wander baseline, and they starved beside prey that was 14 units away.
+func (w *World) depositAnimalScent(a *fauna.Animal) {
 	if a == nil {
 		return
 	}
 	mag := animalScentMagnitude(a)
 	for _, tag := range w.scentEmitters[core.Tag(a.Species)] {
 		ch, ok := scentChannelFromTag(tag)
-		if !ok || (ch == scent.ChanPredator) != predatorCadence {
+		if !ok {
 			continue
 		}
 		if ch == scent.ChanPrey && a.HiddenUntil > 0 && a.HiddenUntil >= w.tick {

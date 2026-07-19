@@ -243,15 +243,10 @@ func (w *World) rebuildScent(finalTick core.Tick) {
 	w.tick = finalTick - 1
 	for _, id := range w.animalIDs {
 		if a := w.animals[id]; a != nil {
-			w.depositAnimalScent(a, true)
+			w.depositAnimalScent(a)
 		}
 	}
 	if w.envCfg.ScentSpread > 0 && int64(w.tick)%int64(w.envCfg.ScentSpread) == 0 {
-		for _, id := range w.animalIDs {
-			if a := w.animals[id]; a != nil {
-				w.depositAnimalScent(a, false)
-			}
-		}
 		w.depositFloraScent()
 		w.depositObjectScent()
 		w.scent.Spread(w.scentWind())
