@@ -252,6 +252,16 @@ func (w *World) depositObjectScent() {
 		if !ok {
 			continue
 		}
+		// Flora plants live in BOTH floraState and w.objects (env.go PlaceObject on spawn), and
+		// depositFloraScent already deposited them at their biomass magnitude (Length+Width).
+		// Depositing them AGAIN here would add a flat objectScentMagnitude on top, pegging an
+		// eaten-bare plant's food scent at a constant — which deletes the PD2 depletion feedback
+		// this SPEC describes ("overgrazing shrinks plants → weaker food scent → migration pressure").
+		if w.floraState != nil {
+			if _, isFlora := w.floraState.PlantByID(id); isFlora {
+				continue
+			}
+		}
 		mag := objectScentMagnitude(obj)
 		for _, tag := range w.scentEmitters[obj.Kind] {
 			ch, ok := scentChannelFromTag(tag)

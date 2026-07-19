@@ -239,6 +239,13 @@ apply (so animals have moved to their new cells) and is **fully serial** (D12):
 - **Wind source** = `climateState.Wind()` (CA2; WI-P1 owns climate). Climate OFF ⇒ `Wind{0,0}`.
 - **Emitter classification** is the world's read of content `scent:<channel>` tags (D4/D10) — which
   kind carries which channel + how `mag` is derived is content, not engine logic.
+- **One emitter, one deposit.** A flora plant is registered in BOTH `floraState` and `w.objects`
+  (`env.go` PlaceObject on spawn), so the per-object deposit **MUST skip anything present in
+  `floraState`** — plants are already deposited by `depositFloraScent` at their **biomass** magnitude
+  (`Length+Width`). Depositing them a second time adds a flat `objectScentMagnitude` on top, which
+  pegs an eaten-bare plant's food scent at a constant and **silently deletes the PD2 depletion
+  feedback** below ("overgrazing ⇒ weaker food scent ⇒ migration pressure"). Regression:
+  `TestFloraScentTracksBiomass`.
 
 ---
 
@@ -360,8 +367,9 @@ World-side of the combat loop (world = sole mutator + owns death, F3):
   carcass's per-state food value (size-proportional). Coexists with the agent-side `Butcher` (materials).
 - **Graze (herbivore feeding) + flora depletion (PD2, P_fa4b):** a `seek:food` (Graze) intent, when the
   animal is within one scent cell of a `scent:food` flora object (`applyAnimalGraze`), reduces its `hunger`.
-  `applyAnimalGraze` locates the **nearest food-emitting flora PLANT** (`nearestForageFloraID`, mirroring
-  `nearestCoverFloraID` — spatial-hash query, ascending-ID tie-break, D12) that is in `floraState`, then:
+  `applyAnimalGraze` locates the **nearest food-emitting flora PLANT that still has biomass**
+  (`nearestForageFloraID`, mirroring `nearestCoverFloraID` — spatial-hash query, ascending-ID tie-break,
+  D12) that is in `floraState`, then:
   `want = Graze §6`; `k = FaunaCombat.GrazeDepletion` (flora-Length per 1.0 hunger). If `k ≤ 0` (off-lever)
   or the target is not a flora plant → recover `want`, deplete nothing (**byte-identical to pre-P_fa4b**).
   Else `removed = State.GrazeLength(id, want·k)` (biomass actually cropped, ≤ the plant's Length),
@@ -370,6 +378,12 @@ World-side of the combat loop (world = sole mutator + owns death, F3):
   shrinks plants → weaker food scent (mag = Length+Width) → with P_fa4a's confidence-blend, herbivores can't
   home → migration pressure/starvation ("공유지 비극"). The plant regrows via the ordinary flora Step. No food
   source in reach ⇒ no-op (hunger keeps rising → PD3 starvation). Width (cover/shade) is untouched.
+  **A plant cropped to `Length ≤ 0` is NOT a food source** and the lookup skips it. Without that skip the
+  bare plant stays the animal's *nearest* emitter forever, so every later Graze re-picks it and recovers
+  nothing — the animal starves standing on untouched plants a few units away. Measured on the live meadow
+  before the skip: the nearest food plant was an exhausted one for **95–99% of samples across
+  rabbit/deer/goat/fish**, with a plant that HAD biomass inside the same reach ~80% of the time.
+  Regression: `TestGrazePassesOverExhaustedPlant`.
 - **Regen (FC7):** slow Vital regen toward `VitalCap` applied by world in the animal commit (balance rate).
 - **Age advance (PD4-ii/P_fa4c):** `commitAnimalOwnState` advances `a.Age += FaunaDT` each tick, so age = Σ
   DT since birth (newborns start 0). The fauna Step reads start-of-tick Age for the §6 `maturity` operand

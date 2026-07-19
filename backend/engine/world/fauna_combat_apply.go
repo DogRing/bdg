@@ -168,11 +168,12 @@ func (w *World) applyAnimalHiding(a *fauna.Animal, hideRNG *rng.RNG) {
 	}
 }
 
-// nearestForageFloraID returns the nearest food-emitting object within grazing reach in deterministic
-// object-ID order (strictly-closer wins; on a distance tie the lower ID wins — independent of the spatial
-// hash's return order, D12), and whether that object is a live flora plant (present in floraState — the
-// PD2 depletion target). "" ⇒ nothing edible in reach (the graze no-op gate, matching the old within-reach
-// existence test). Queries the spatial hash near the animal rather than scanning every object (the O(all
+// nearestForageFloraID returns the nearest food-emitting object within grazing reach that still has
+// something to eat, in deterministic object-ID order (strictly-closer wins; on a distance tie the lower
+// ID wins — independent of the spatial hash's return order, D12), and whether that object is a live
+// flora plant (present in floraState — the PD2 depletion target). Plants cropped to zero Length are
+// skipped: they are emitters, not food. "" ⇒ nothing edible in reach (the graze no-op gate).
+// Queries the spatial hash near the animal rather than scanning every object (the O(all
 // objects) scan per animal was a top per-tick cost at large flora counts, docs/plans/scaling.md P2).
 func (w *World) nearestForageFloraID(a *fauna.Animal) (core.ObjectID, bool) {
 	if a == nil {
@@ -185,6 +186,15 @@ func (w *World) nearestForageFloraID(a *fauna.Animal) (core.ObjectID, bool) {
 		obj, ok := w.objects[e.ID]
 		if !ok || !w.kindEmitsFood(obj.Kind) {
 			continue
+		}
+		// A plant cropped to zero Length is not food: GrazeLength can only return what biomass is
+		// left, so picking it recovers nothing. Since it also stays the NEAREST emitter, an animal
+		// that ate it bare would re-pick it forever and starve on top of untouched plants a few
+		// units away. Skipping it hands the animal the next plant in reach instead.
+		if w.floraState != nil {
+			if p, isFlora := w.floraState.PlantByID(e.ID); isFlora && p.Length <= zeroScalar {
+				continue
+			}
 		}
 		distance := a.Pos.Distance(obj.Pos)
 		if distance > nearestDistance {
