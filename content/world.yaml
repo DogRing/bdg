@@ -72,7 +72,7 @@ cadence:
   engage_cooldown_max_ticks: 100 # failed/initial engage cooldown upper bound (FC3)
   disengage_range_factor: 2.0    # disengage when target beyond this × scent_cell_size (FC6)
   stamina_drop_threshold: 0.05   # predator disengages when stamina falls below this (FC6)
-  stamina_drain_per_tick: 0.02   # stamina spent per tick while engaged → predator tires + stops (#8)
+  stamina_drain_per_tick: 0.038  # stamina spent per tick while engaged → predator tires + stops (#8)
   stamina_recover_per_tick: 0.01 # stamina regained per tick while free → recovers, re-engages (burst hunting)
   fatigue_pursuit_per_tick: 0.012 # fatigue gained per tick during a high-effort chase/flight (M2 endurance → speed §6 slows the tired one)
   fatigue_recover_per_tick: 0.008 # fatigue shed per tick while resting / low-effort

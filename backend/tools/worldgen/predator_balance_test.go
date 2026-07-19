@@ -142,7 +142,14 @@ func TestPredatorBalanceObservation(t *testing.T) {
 	t.Logf("── predator balance over %d ticks (seed=%d, NO respawn) ──", ticks, fx.Seed)
 	t.Logf("hunt attempts:   %s (total %d)", fmtSpeciesCounts(attempts), totalAttempts)
 	t.Logf("prey killed:     %s (total %d)", fmtCounts(kills), totalKills)
-	t.Logf("HUNT SUCCESS:    %.1f%%   ← cluster 10 target ≈ 15%%", successRate)
+	// Hunt success is an OBSERVATION, not a target to hit. It is a function of the conditions —
+	// prey density above all, plus prey condition, cover and terrain — so the same content reads
+	// very differently across beds (this open world vs the forced-encounter arena vs the dilute
+	// live meadow, where predators starve out entirely). Cluster 10's "~15%" is a reference point
+	// for what a healthy chase economy looks like, not a number to drive a knob to: forcing it on
+	// one fixture would just encode that fixture's stocking into the balance constants.
+	t.Logf("hunt success:    %.1f%%  (an outcome of THIS bed's stocking — cluster 10's ~15%% is a"+
+		" reference, not a target; more prey ⇒ more successful hunts)", successRate)
 	t.Logf("starvation:      %s", fmtCounts(starved))
 	t.Logf("cover hiding:    episodes %s ; prey-life spent hidden %.2f%%",
 		fmtSpeciesCounts(hideEpisodes), 100*float64(hiddenTickSum)/float64(max(preyTickSum, 1)))
@@ -151,10 +158,16 @@ func TestPredatorBalanceObservation(t *testing.T) {
 	}
 	t.Logf("populations:     prey min=%d final=%d ; predators final=%d", minPrey, finalPrey, finalPred)
 
+	// What this bed asserts is COEXISTENCE, not a rate. A predator-prey balance is healthy when
+	// both sides persist without a thermostat propping them up (this fixture has no respawn) —
+	// the rate that produces it is whatever the conditions produce.
 	if totalKills == 0 {
 		t.Errorf("no prey killed in %d ticks — predators cannot convert an encounter into a meal", ticks)
 	}
 	if minPrey == 0 {
 		t.Errorf("prey went extinct — predation far too strong for this stocking")
+	}
+	if finalPred == 0 {
+		t.Errorf("predators died out — they cannot feed themselves at this balance (no respawn here)")
 	}
 }
