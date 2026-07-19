@@ -504,6 +504,7 @@ object_kinds:
       attack_power: "Strength * 0.008"                                              # heavier hit than wolf (FC4)
       hit: "0.5 + Agility * 0.0035"                                                 # less agile but still stat-composed
       feed: "0.4 + hunger * 0.4"                                                    # larger predator extracts more recovery from a carcass
+      graze: "0.03 + hunger * 0.03"                                                # OMNIVORE vegetation return (D10). Authored 2026-07-19: `diet` said game+forage and a Graze action existed, but with NO graze formula the recovery multiplier was 0 — the bear grazed for ZERO calories 98.2% of its life and starved. Deliberately below the true grazers (deer 0.06/rabbit 0.07/goat 0.05): berries and roots keep a bear alive between kills, they do not replace meat (UNTUNED)
       diet: [ game, forage ]                                                       # OMNIVORE: prey + vegetation (F7)
       senses: { smell_radius: 22.0, sight_radius: 30.0, fov_arc: 0.9 }              # superb nose
       maturity_age:  1000                                                          # PD4-ii: latest maturity of the six (UNTUNED placeholder, P_fa4)
