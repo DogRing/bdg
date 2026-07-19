@@ -98,9 +98,12 @@ var _ expr.Context = floraContext{}
 // summand, which is why the clamp lives here — flora suitability terms are weighted summands
 // that must stay in [0,1] (fauna instead clamps in its drive update, FA5).
 //
-// A band ≤ 0 means "no comfort band authored" ⇒ 0, the thermal-neutral lever: identical to a
-// species whose formulas never mention the operand. platform/config rejects the mismatched
-// pairing (formula reads thermal_stress, band ≤ 0) at load time so it cannot pass silently.
+// A band ≤ 0 means "no comfort band authored" ⇒ the operand is a constant 0. Note what that does
+// NOT mean: a formula that READS the operand still gets its `(1 - thermal_stress)` summand in
+// full, which is not the same as omitting the term — so platform/config rejects that pairing at
+// load time rather than letting it read as neutral. The actual neutrality lever is a species that
+// never mentions the operand: it is byte-identical whatever the band, because expr only resolves
+// operands a formula references.
 func thermalStress(temperature, comfort, band float64) float64 {
 	if band <= nonNegativeFloor {
 		return probabilityMin

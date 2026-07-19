@@ -347,7 +347,8 @@ type YieldItem struct {
   arithmetic pretending to be normalized. `thermal_stress = clamp01(|temperature − ComfortTemp| /
   ThermalBand)`, the same shape and polarity as the fauna FA5 thermal drive (0 = comfortable,
   1 = maximally stressed; cold and heat are symmetric). `ThermalBand ≤ 0` ⇒ `thermal_stress ≡ 0`
-  (neutrality lever, byte-identical to not authoring a band). The clamp lives here — unlike fauna,
+  (a constant, NOT a neutral formula — see the fail-loud pairing below; true neutrality is a species
+  that never references the operand, which expr never resolves). The clamp lives here — unlike fauna,
   where the drive update clamps — because flora suitability terms are weighted summands that must
   stay in `[0,1]`. **Fail-loud pairing:** `platform/config` refuses to load a species whose formulas
   read `thermal_stress` while `ThermalBand ≤ 0`. `CarryingCapacity` remains temperature-free for
@@ -424,10 +425,16 @@ type YieldItem struct {
 - [ ] **`thermal_stress` is a symmetric comfort band (1l)** — for a species with
   `comfort_temp`/`thermal_band` authored, a site at `comfort_temp` yields `thermal_stress = 0`;
   sites the same distance BELOW and ABOVE the optimum yield the SAME positive stress (symmetry);
-  a site beyond one band-width in either direction clamps to exactly 1; `thermal_band ≤ 0` yields 0
-  at every temperature (neutrality lever) and leaves a formula reading the operand byte-identical to
-  the un-authored case. Two species with different bands at the SAME site get different stress.
+  a site beyond one band-width in either direction clamps to exactly 1 **in the operand itself** —
+  verified through a scaled formula (`thermal_stress * k`) and through the content shape
+  (`(1 - thermal_stress)` must floor at 0, never go negative), since `Suitability`'s own [0,1] clamp
+  would otherwise mask an unclamped operand; `thermal_band ≤ 0` makes the operand a constant 0 at
+  every temperature. Two species with different bands at the SAME site get different stress.
   Table-driven over cold/optimum/hot/beyond-band.
+- [ ] **Neutrality (1l)** — a species that never mentions `thermal_stress` is byte-identical whatever
+  its band (expr resolves only referenced operands), which is what keeps `grass`/`tall_grass`/`oak`
+  and every existing golden unchanged. Reading the operand with `thermal_band ≤ 0` is NOT a neutral
+  state (the `(1 - thermal_stress)` summand still contributes in full) and is a **load error**.
 - [ ] **Propagation = seed dispersal near parent (1a)** — a mature parent (Stage ≥ propagate-stage,
   Stage from `Length`) spawns children only within its propagation radius of its `Pos`; child sites
   with higher suitability and lower `NeighborCount` spawn more often (density/suitability weighting);

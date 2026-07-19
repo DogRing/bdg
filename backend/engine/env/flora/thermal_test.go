@@ -65,8 +65,50 @@ func TestThermalStressIsSymmetricComfortBand(t *testing.T) {
 	}
 }
 
-// AC (1l): thermal_band ≤ 0 is the neutrality lever — 0 at every temperature.
-func TestThermalStressBandOffIsNeutral(t *testing.T) {
+// The clamp must live in the OPERAND, not merely in Suitability's own [0,1] clamp — content
+// spells the response as `(1 - thermal_stress)`, so an unclamped stress > 1 would turn that
+// summand NEGATIVE and drag the whole suitability down at extremes (the shipped wildflower band
+// reaches 1.64 at −5 °C ⇒ a −0.19 summand ⇒ death in a dry winter). Suitability's clamp cannot
+// catch that, so scale the operand down: an unclamped value would still exceed 1 and be masked,
+// a clamped one reads back exactly.
+func TestThermalStressIsClampedInTheOperandNotJustInSuitability(t *testing.T) {
+	const (
+		comfort = 14.0
+		band    = 16.0
+		scale   = 0.5
+		farOff  = 100.0 // |Δ|/band ≈ 5.4 — well past 1
+	)
+	rules := flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{
+		// Scaled read-back: clamped ⇒ 1·scale; unclamped ⇒ 5.4·scale, masked to 1 by Suitability.
+		"scaled": {
+			Suitability: mustNum(t, "thermal_stress * 0.5", noStats{}),
+			ComfortTemp: comfort, ThermalBand: band,
+		},
+		// The real content shape: the `(1 - thermal_stress)` summand must FLOOR at 0, never go
+		// negative. Base 0.3 + a 0.3-weighted comfort term ⇒ exactly 0.3 when fully stressed.
+		"content_shape": {
+			Suitability: mustNum(t, "0.3 + (1 - thermal_stress)*0.3", noStats{}),
+			ComfortTemp: comfort, ThermalBand: band,
+		},
+	})
+
+	if got := stressAt(rules, "scaled", comfort+farOff); got != scale {
+		t.Errorf("scaled read-back far beyond the band = %v, want %v — the operand itself is not clamped", got, scale)
+	}
+	if got := stressAt(rules, "content_shape", comfort+farOff); got != 0.3 {
+		t.Errorf("`(1 - thermal_stress)` summand at extreme heat gave suitability %v, want 0.3 — the summand must floor at 0, not go negative", got)
+	}
+	if got := stressAt(rules, "content_shape", comfort-farOff); got != 0.3 {
+		t.Errorf("`(1 - thermal_stress)` summand at extreme cold gave suitability %v, want 0.3 — the summand must floor at 0, not go negative", got)
+	}
+	if got := stressAt(rules, "content_shape", comfort); got != 0.6 {
+		t.Errorf("at the optimum the comfort term should contribute in full: %v, want 0.6", got)
+	}
+}
+
+// AC (1l): thermal_band ≤ 0 makes the operand a CONSTANT 0 (not, by itself, a neutral formula —
+// see TestSpeciesIgnoringTheOperandIsUnaffected for the actual neutrality lever).
+func TestThermalStressBandOffIsConstantZero(t *testing.T) {
 	rules := flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{
 		"unbanded": bandSpecies(t, 14.0, 0),
 		"negative": bandSpecies(t, 14.0, -5),
@@ -76,6 +118,35 @@ func TestThermalStressBandOffIsNeutral(t *testing.T) {
 			if got := stressAt(rules, sp, temperature); got != 0 {
 				t.Errorf("%s: stress at %v °C = %v, want 0 (band ≤ 0 is neutral)", sp, temperature, got)
 			}
+		}
+	}
+}
+
+// AC (1l) neutrality: a species whose formulas never mention `thermal_stress` is unaffected by the
+// band whatever its value — expr resolves only the operands a formula references. This is what
+// keeps grass/tall_grass/oak and every existing golden byte-identical across this change.
+func TestSpeciesIgnoringTheOperandIsUnaffected(t *testing.T) {
+	const formula = "moisture*0.5 + (1 - slope)*0.5" // no temperature term at all
+	build := func(comfort, band float64) *flora.Rules {
+		return flora.NewRules(map[flora.SpeciesID]flora.SpeciesRule{
+			"grass": {
+				Suitability: mustNum(t, formula, noStats{}),
+				ComfortTemp: comfort, ThermalBand: band,
+			},
+		})
+	}
+	unbanded, banded := build(0, 0), build(14, 16)
+
+	for _, temperature := range []float64{-40, -5, 14, 30, 120} {
+		site := flora.SiteInput{
+			Moisture:     0.4,
+			Temperature:  temperature,
+			TerrainAttrs: map[core.Tag]float64{"slope": 0.2},
+		}
+		before := unbanded.Suitability("grass", site)
+		after := banded.Suitability("grass", site)
+		if before != after {
+			t.Errorf("at %v °C an operand-free formula changed with the band: %v → %v", temperature, before, after)
 		}
 	}
 }

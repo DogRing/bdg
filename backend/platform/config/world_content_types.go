@@ -155,8 +155,8 @@ type objectKindDoc struct {
 			Chance           any `yaml:"chance"`
 			CarryingCapacity any `yaml:"carrying_capacity"` // K: 1k density target — scalar OR §6(terrain attrs); absent = legacy 1/(1+n)
 		} `yaml:"propagation"`
-		ComfortTemp     float64 `yaml:"comfort_temp"`  // 1l: °C thermal optimum (flora comfort band, mirrors fauna FA5)
-		ThermalBand     float64 `yaml:"thermal_band"`  // 1l: °C half-width; thermal_stress = clamp01(|temperature−comfort_temp|/band); ≤0 ⇒ neutral
+		ComfortTemp     float64 `yaml:"comfort_temp"` // 1l: °C thermal optimum (flora comfort band, mirrors fauna FA5)
+		ThermalBand     float64 `yaml:"thermal_band"` // 1l: °C half-width; thermal_stress = clamp01(|temperature−comfort_temp|/band); ≤0 ⇒ neutral
 		DeathThreshold  float64 `yaml:"death_threshold"`
 		DeathHysteresis int     `yaml:"death_hysteresis"`
 	} `yaml:"flora"`
@@ -178,8 +178,8 @@ type objectKindDoc struct {
 		ComfortTemp     float64  `yaml:"comfort_temp"`
 		ThermalBand     float64  `yaml:"thermal_band"`
 		HazardAvoidance float64  `yaml:"hazard_avoidance"`
-		MoveDeadband    float64  `yaml:"move_deadband"`  // FM14a per-species deadband (>0 overrides global motion.move_deadband)
-		MaturityAge     float64  `yaml:"maturity_age"`   // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1; ≤0/absent ⇒ maturity≡1 (gate-neutral)
+		MoveDeadband    float64  `yaml:"move_deadband"` // FM14a per-species deadband (>0 overrides global motion.move_deadband)
+		MaturityAge     float64  `yaml:"maturity_age"`  // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1; ≤0/absent ⇒ maturity≡1 (gate-neutral)
 		Speed           any      `yaml:"speed"`
 		TurnRate        any      `yaml:"turn_rate"`
 		ScentAcuity     any      `yaml:"scent_acuity"` // §6 scent-tracking keenness gain (PD1/P_fa4a); absent ⇒ exact scent Dir (neutral)
