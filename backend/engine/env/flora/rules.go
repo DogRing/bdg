@@ -22,6 +22,7 @@ const (
 	statDexterity              core.StatID = "Dexterity"
 	attrMoisture               core.Tag    = "moisture"
 	attrTemperature            core.Tag    = "temperature"
+	attrThermalStress          core.Tag    = "thermal_stress"
 	attrWidth                  core.Tag    = "width"
 	attrLength                 core.Tag    = "length"
 )
@@ -31,19 +32,30 @@ const (
 // floraContext adapts SiteInput + Plant to the expr.Context interface for §6 rule evaluation.
 //
 // §6 operands exposed:
-//   - Stat "Dexterity"   → dexterity field (yield chance only; D7: read-only, never stored)
-//   - Attr "moisture"    → SiteInput.Moisture ∈ [0,1]
-//   - Attr "temperature" → SiteInput.Temperature in °C (CA3)
-//   - Attr "width"       → Plant.Width (canopy spread; drives shade formulas)
-//   - Attr "length"      → Plant.Length (height; may drive rate/suitability formulas)
-//   - Attr other         → SiteInput.TerrainAttrs lookup (grainSize, slope, depth, …)
+//   - Stat "Dexterity"      → dexterity field (yield chance only; D7: read-only, never stored)
+//   - Attr "moisture"       → SiteInput.Moisture ∈ [0,1]
+//   - Attr "temperature"    → SiteInput.Temperature in °C (CA3)
+//   - Attr "thermal_stress" → DERIVED symmetric comfort band ∈ [0,1] (1l); see thermalStress
+//   - Attr "width"          → Plant.Width (canopy spread; drives shade formulas)
+//   - Attr "length"         → Plant.Length (height; may drive rate/suitability formulas)
+//   - Attr other            → SiteInput.TerrainAttrs lookup (grainSize, slope, depth, …)
 //
 // Flora conditions use no predicates; Pred always returns false.
 // The zero-value floraContext is valid (all attrs resolve to 0 / ok=false).
 type floraContext struct {
-	site      SiteInput
-	plant     Plant
-	dexterity float64 // actor Dexterity for yield rolls; 0 for growth/shade contexts
+	site        SiteInput
+	plant       Plant
+	dexterity   float64 // actor Dexterity for yield rolls; 0 for growth/shade contexts
+	comfortTemp float64 // species thermal optimum in °C (1l); from SpeciesRule
+	thermalBand float64 // species band half-width in °C (1l); ≤0 ⇒ thermal_stress ≡ 0
+}
+
+// newFloraContext builds the §6 evaluation context for one species, carrying that species'
+// comfort band so `thermal_stress` resolves per-species at the same site (1l). Every call site
+// that has a SpeciesRule in hand goes through this, so no evaluation path silently loses the
+// band. A zero-value Plant/SiteInput is valid (those operands resolve to 0, as before).
+func newFloraContext(sr SpeciesRule, in SiteInput, p Plant) floraContext {
+	return floraContext{site: in, plant: p, comfortTemp: sr.ComfortTemp, thermalBand: sr.ThermalBand}
 }
 
 func (c floraContext) Stat(id core.StatID) float64 {
@@ -59,6 +71,8 @@ func (c floraContext) Attr(name core.Tag) (float64, bool) {
 		return c.site.Moisture, true
 	case attrTemperature:
 		return c.site.Temperature, true
+	case attrThermalStress:
+		return thermalStress(c.site.Temperature, c.comfortTemp, c.thermalBand), true
 	case attrWidth:
 		return c.plant.Width, true
 	case attrLength:
@@ -76,6 +90,27 @@ func (c floraContext) Pred(_ string, _ core.Tag) bool {
 
 // Compile-time check that floraContext satisfies expr.Context.
 var _ expr.Context = floraContext{}
+
+// thermalStress maps the site temperature (°C) to the species' SYMMETRIC comfort-band stress
+// (1l): |temperature − comfort| / band, clamped to [0,1]. Cold AND heat deviations both raise
+// it, so "winter slows growth" and "heatwave slows growth" are both encodable from one band;
+// `temperature` itself stays °C (CA3). Content spells the response as a `(1 - thermal_stress)`
+// summand, which is why the clamp lives here — flora suitability terms are weighted summands
+// that must stay in [0,1] (fauna instead clamps in its drive update, FA5).
+//
+// A band ≤ 0 means "no comfort band authored" ⇒ 0, the thermal-neutral lever: identical to a
+// species whose formulas never mention the operand. platform/config rejects the mismatched
+// pairing (formula reads thermal_stress, band ≤ 0) at load time so it cannot pass silently.
+func thermalStress(temperature, comfort, band float64) float64 {
+	if band <= nonNegativeFloor {
+		return probabilityMin
+	}
+	v := math.Abs(temperature-comfort) / band
+	if v > probabilityMax {
+		return probabilityMax
+	}
+	return v
+}
 
 // evalNum evaluates a *expr.Program that returns a numeric value.
 // Returns 0 if prog is nil (nil program = absent formula → 0 per expr fixed-absence policy).
@@ -137,6 +172,11 @@ type SpeciesRule struct {
 	//   nil → legacy densityWeight(n)=1/(1+n) (no equilibrium; back-compat; flora-off unaffected).
 	//   Evaluates ≤0 at a site → density 0 there (species won't establish, e.g. water via (1−depth)).
 	//   MUST NOT read neighbor_count (circular — it is the divisor of n); platform/config rejects that.
+	ComfortTemp float64 // °C thermal optimum (1l); midpoint of the symmetric comfort band
+	ThermalBand float64 // °C half-width: thermal_stress = clamp01(|temperature−ComfortTemp|/band).
+	//   ≤0 ⇒ thermal_stress ≡ 0 (neutrality lever — byte-identical to a species that never reads
+	//   the operand). Mirrors the fauna FA5 comfort band, same polarity (0 = comfortable).
+	//   platform/config rejects a species that READS thermal_stress with a band ≤ 0.
 	DeathThreshold  float64     // θ: suitability below this counts toward DeathStreak (1b)
 	DeathHysteresis int         // consecutive sub-θ steps before object-mortality (1b); 0 = no death
 	Yields          []YieldRule // yield table → Yield
@@ -188,7 +228,7 @@ func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64 {
 	if !ok {
 		return 0
 	}
-	ctx := floraContext{site: in}
+	ctx := newFloraContext(sr, in, Plant{})
 	v := evalNum(sr.Suitability, ctx)
 	if v < probabilityMin {
 		return probabilityMin
@@ -213,7 +253,7 @@ func (r *Rules) CarryingCapacity(sp SpeciesID, in SiteInput) float64 {
 	if !ok {
 		return 0
 	}
-	v := evalNum(sr.CarryingCapacity, floraContext{site: in})
+	v := evalNum(sr.CarryingCapacity, newFloraContext(sr, in, Plant{}))
 	if v < nonNegativeFloor {
 		return nonNegativeFloor
 	}
@@ -230,7 +270,7 @@ func (r *Rules) LengthRate(sp SpeciesID, in SiteInput) float64 {
 	if !ok {
 		return 0
 	}
-	return evalNum(sr.LengthRate, floraContext{site: in})
+	return evalNum(sr.LengthRate, newFloraContext(sr, in, Plant{}))
 }
 
 // WidthRate evaluates the species' §6 width-rate formula (canopy growth rate).
@@ -243,7 +283,7 @@ func (r *Rules) WidthRate(sp SpeciesID, in SiteInput) float64 {
 	if !ok {
 		return 0
 	}
-	return evalNum(sr.WidthRate, floraContext{site: in})
+	return evalNum(sr.WidthRate, newFloraContext(sr, in, Plant{}))
 }
 
 // PropRadius evaluates the species' §6 propagation-radius formula using the same context
@@ -256,7 +296,7 @@ func (r *Rules) PropRadius(sp SpeciesID, plant Plant, in SiteInput) float64 {
 	if !ok {
 		return 0
 	}
-	return evalNum(sr.PropRadius, floraContext{site: in, plant: plant})
+	return evalNum(sr.PropRadius, newFloraContext(sr, in, plant))
 }
 
 // Stage maps continuous Length (HEIGHT = maturity proxy) to the species' DERIVED discrete
@@ -307,7 +347,8 @@ func (r *Rules) Yield(sp SpeciesID, length, dexterity float64, rnd *rng.RNG) []Y
 	if r.Stage(sp, length) < sr.YieldStage {
 		return nil // immature: no yield (RESOLVED 1e + §1 refinement)
 	}
-	ctx := floraContext{dexterity: dexterity}
+	ctx := newFloraContext(sr, SiteInput{}, Plant{})
+	ctx.dexterity = dexterity
 	// Qty scaling: monotone increasing with length (documented choice above).
 	lengthScale := lengthScaleBase + math.Floor(length)
 	var items []YieldItem

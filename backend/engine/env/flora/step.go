@@ -70,7 +70,7 @@ func Step(
 			continue
 		}
 
-		ctx := floraContext{site: in, plant: p}
+		ctx := newFloraContext(sr, in, p)
 
 		// Suitability drives BOTH growth axes and death hysteresis; clamped ∈ [0,1].
 		suit := evalNum(sr.Suitability, ctx)
@@ -167,7 +167,7 @@ func Step(
 			}
 
 			in := inputs[p.ID] // already validated in Phase 1
-			ctx := floraContext{site: in, plant: p}
+			ctx := newFloraContext(sr, in, p)
 
 			// Evaluate propagation radius (may depend on site conditions).
 			propRadius := evalNum(sr.PropRadius, ctx)

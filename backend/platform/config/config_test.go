@@ -1137,6 +1137,15 @@ cadence:
 			wantErr: "flora grass suitability",
 		},
 		{
+			// flora 1l fail-loud pairing: reading thermal_stress without a positive
+			// thermal_band would make the operand a silent constant 0 (the failure mode
+			// that killed berry_shrub live — docs/decisions/flora-thermal-comfort.md).
+			name:    "flora thermal_stress without band",
+			file:    "objects.yaml",
+			data:    strings.Replace(validObjectsWorldYAML, "moisture*0.5 + (1 - slope)*0.5", "moisture*0.5 + (1 - thermal_stress)*0.5", 1),
+			wantErr: "flora grass reads thermal_stress but thermal_band is 0",
+		},
+		{
 			name:    "flora propagation radius neighbor count",
 			file:    "objects.yaml",
 			data:    strings.Replace(validObjectsWorldYAML, "radius: 3.0", "radius: \"neighbor_count + 1\"", 1),

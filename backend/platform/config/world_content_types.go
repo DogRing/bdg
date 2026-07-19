@@ -155,6 +155,8 @@ type objectKindDoc struct {
 			Chance           any `yaml:"chance"`
 			CarryingCapacity any `yaml:"carrying_capacity"` // K: 1k density target — scalar OR §6(terrain attrs); absent = legacy 1/(1+n)
 		} `yaml:"propagation"`
+		ComfortTemp     float64 `yaml:"comfort_temp"`  // 1l: °C thermal optimum (flora comfort band, mirrors fauna FA5)
+		ThermalBand     float64 `yaml:"thermal_band"`  // 1l: °C half-width; thermal_stress = clamp01(|temperature−comfort_temp|/band); ≤0 ⇒ neutral
 		DeathThreshold  float64 `yaml:"death_threshold"`
 		DeathHysteresis int     `yaml:"death_hysteresis"`
 	} `yaml:"flora"`

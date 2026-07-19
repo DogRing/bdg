@@ -196,7 +196,7 @@ func (s *State) ShadeOf(id core.ObjectID) (Shade, bool) {
 		return Shade{ID: id, Pos: p.Pos, Radius: 0, Opacity: 0}, true
 	}
 	// Shade uses only Plant.Width; SiteInput is zero-value (shade formulas reference only width).
-	ctx := floraContext{plant: p}
+	ctx := newFloraContext(sr, SiteInput{}, p)
 	radius := evalNum(sr.ShadeRadius, ctx)
 	if radius < 0 {
 		radius = 0

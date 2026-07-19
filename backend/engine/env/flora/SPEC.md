@@ -66,7 +66,9 @@ type SiteInput struct {
     Terrain        core.Tag           // terrain type at Pos (drives suitability via Rules)
     TerrainAttrs   map[core.Tag]float64 // §5 terrain attribute vector (grainSize, slope, depth, salinity, …) for §6 suitability operands
     Moisture       float64            // climate Moisture at Pos ∈ [0,1] (suitability operand)
-    Temperature    float64            // climate Temperature at Pos in °C (climate CA3; suitability §6 operand — content thresholds in °C)
+    Temperature    float64            // climate Temperature at Pos in °C (climate CA3; suitability §6 operand — content thresholds in °C).
+                                      // Species that respond to an OPTIMUM read the derived `thermal_stress`
+                                      // operand instead of this raw value (1l; see Rules/SpeciesRule).
     NeighborCount  int                // plants within propagation radius of Pos (density; P1 reads it only for propagation weighting, RESOLVED 1c: competition parked)
 }
 
@@ -208,6 +210,11 @@ type SpeciesRule struct {
                                  // control, terrain-varying; not a global cap); K≤0 ⇒ density 0
                                  // (no establishment, e.g. water via (1−depth)); nil ⇒ legacy
                                  // 1/(1+n) (back-compat). Must not read neighbor_count (circular).
+    ComfortTemp    float64       // °C midpoint of the thermal comfort band (1l, mirrors fauna FA5)
+    ThermalBand    float64       // °C half-width; thermal_stress = clamp01(|temperature−comfort|/band);
+                                 // ≤0 ⇒ thermal_stress ≡ 0 (neutral lever). A species whose formulas
+                                 // read `thermal_stress` MUST author band > 0 — platform/config rejects
+                                 // the pair otherwise (fail-loud; see Invariants).
     DeathThreshold float64       // θ: suitability below this counts toward death (1b)
     DeathHysteresis int          // consecutive sub-θ steps before object-mortality (1b)
     Yields         []YieldRule   // yield table → Yield
@@ -226,6 +233,21 @@ type YieldRule struct {
 // expression; design.md §6). It is the common driver of BOTH growth axes (Length and Width each
 // advance by their own rate × this scalar). Below the species' death threshold θ it counts
 // toward DeathStreak.
+//
+// §6 operands available to every flora formula: `moisture`, `temperature` (°C), `width`, `length`,
+// `neighbor_count`, the §5 terrain-attribute vector (`slope`, `depth`, `salinity`, …), and the
+// DERIVED `thermal_stress` (1l).
+//
+//	thermal_stress = clamp01(|temperature − ComfortTemp| / ThermalBand)   [ThermalBand > 0]
+//	thermal_stress = 0                                                    [ThermalBand ≤ 0]
+//
+// Symmetric comfort band mirroring fauna FA5 with the same polarity — 0 = comfortable, 1 = maximally
+// stressed — so cold AND heat both degrade suitability. Content spells the response as a
+// `(1 - thermal_stress)` summand, keeping the weighted-sum shape of the other terms. The band is a
+// derived operand rather than content arithmetic because the §6 DSL has neither `abs()` nor unary
+// minus (expr OQ-C). The band is per-species state on SpeciesRule, so the same site yields different
+// stress for different species. ThermalBand ≤ 0 is the neutrality lever (byte-identical to a species
+// that never mentions the operand).
 func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64
 
 // CarryingCapacity evaluates the species' §6 carrying-capacity K over the site → capacity ≥ 0
@@ -320,6 +342,17 @@ type YieldItem struct {
   radius/opacity (= §6(width)), stage thresholds (over length), propagation radius/chance, death θ,
   and yields (qty ∝ length) are all `content/objects.yaml` data; an unknown species/item id is caught
   at load (`platform/config`), never in `Step`.
+- **Temperature response is a symmetric comfort band (1l, RESOLVED 2026-07-19)** — a species that
+  responds to an optimum reads the derived `thermal_stress` operand, **never** raw `temperature`
+  arithmetic pretending to be normalized. `thermal_stress = clamp01(|temperature − ComfortTemp| /
+  ThermalBand)`, the same shape and polarity as the fauna FA5 thermal drive (0 = comfortable,
+  1 = maximally stressed; cold and heat are symmetric). `ThermalBand ≤ 0` ⇒ `thermal_stress ≡ 0`
+  (neutrality lever, byte-identical to not authoring a band). The clamp lives here — unlike fauna,
+  where the drive update clamps — because flora suitability terms are weighted summands that must
+  stay in `[0,1]`. **Fail-loud pairing:** `platform/config` refuses to load a species whose formulas
+  read `thermal_stress` while `ThermalBand ≤ 0`. `CarryingCapacity` remains temperature-free for
+  every shipped species, so world-gen density placement still runs before climate exists
+  (`docs/plans/scaling.md` SC4).
 - **Propagation model is fixed (1a option a)** — new plants are **seed dispersal near the parent**:
   for each mature-enough parent (Stage ≥ the species propagate-stage, Stage derived from `Length`), a
   seeded RNG draws candidate child positions within the species' propagation radius of the parent
@@ -388,6 +421,13 @@ type YieldItem struct {
   `f(moisture, temperature, slope)`, two sites differing only in `Moisture` yield the formula's
   values to float tolerance; the formula is loaded from a test fixture `flora:` block via
   `engine/kernel/expr`, NOT hardcoded.
+- [ ] **`thermal_stress` is a symmetric comfort band (1l)** — for a species with
+  `comfort_temp`/`thermal_band` authored, a site at `comfort_temp` yields `thermal_stress = 0`;
+  sites the same distance BELOW and ABOVE the optimum yield the SAME positive stress (symmetry);
+  a site beyond one band-width in either direction clamps to exactly 1; `thermal_band ≤ 0` yields 0
+  at every temperature (neutrality lever) and leaves a formula reading the operand byte-identical to
+  the un-authored case. Two species with different bands at the SAME site get different stress.
+  Table-driven over cold/optimum/hot/beyond-band.
 - [ ] **Propagation = seed dispersal near parent (1a)** — a mature parent (Stage ≥ propagate-stage,
   Stage from `Length`) spawns children only within its propagation radius of its `Pos`; child sites
   with higher suitability and lower `NeighborCount` spawn more often (density/suitability weighting);

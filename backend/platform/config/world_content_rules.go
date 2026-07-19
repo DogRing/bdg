@@ -65,7 +65,7 @@ func buildClimateRules(cd climateDoc, terrain map[navmap.TerrainID]navmap.Terrai
 
 func buildFloraRules(doc objectsDoc, itemIDs map[core.Tag]bool, terrainAttrs map[core.Tag]bool, statReg *stats.Registry) (*flora.Rules, error) {
 	allowed := cloneTagSet(terrainAttrs)
-	for _, k := range []core.Tag{"moisture", "temperature", "width", "length", "neighbor_count"} {
+	for _, k := range []core.Tag{"moisture", "temperature", "thermal_stress", "width", "length", "neighbor_count"} {
 		allowed[k] = true
 	}
 	species := make(map[flora.SpeciesID]flora.SpeciesRule)
@@ -138,6 +138,8 @@ func buildFloraRules(doc objectsDoc, itemIDs map[core.Tag]bool, terrainAttrs map
 			PropRadius:       propRadius,
 			PropChance:       propChance,
 			CarryingCapacity: carryingCap,
+			ComfortTemp:      obj.Flora.ComfortTemp,
+			ThermalBand:      obj.Flora.ThermalBand,
 			DeathThreshold:   obj.Flora.DeathThreshold,
 			DeathHysteresis:  obj.Flora.DeathHysteresis,
 		}
@@ -146,6 +148,9 @@ func buildFloraRules(doc objectsDoc, itemIDs map[core.Tag]bool, terrainAttrs map
 			return nil, err
 		}
 		rule.Yields = yields
+		if err := checkFloraThermalBand(obj.ID, rule); err != nil {
+			return nil, err
+		}
 		species[flora.SpeciesID(obj.ID)] = rule
 	}
 	if len(species) == 0 {

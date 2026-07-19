@@ -134,7 +134,9 @@ object_kinds:
                                     # → matched by a herbivore's fauna `diet` (deer grazes it); `cover` → a
                                     # thicket small prey (rabbit) can hide in (M3 seam, inert). Fauna-OFF: inert.
     flora:
-      suitability: "moisture*0.6 + (1 - temperature)*0.2 + (1 - slope)*0.2"  # §6 → [0,1]
+      suitability: "moisture*0.6 + (1 - thermal_stress)*0.2 + (1 - slope)*0.2"  # §6 → [0,1]; 1l comfort band (was `(1 - temperature)`, which read °C as [0,1] and killed the species — docs/decisions/flora-thermal-comfort.md)
+      comfort_temp: 14.0            # °C optimum: a temperate forage shrub (1l; UNTUNED placeholder, balance target)
+      thermal_band: 16.0            # °C half-width ⇒ stress saturates at −2 °C / 30 °C over the −5…30 °C annual cycle
       length_rate: 0.02             # Length += rate·suitability /step — modest height (a shrub) (1b/§1)
       width_rate:  0.025            # Width  += rate·suitability /step — slightly bushier than tall
       stages: [0.4, 0.9]            # ascending LENGTH (world units) → stage 0/1/2 (seedling/young/mature)
@@ -278,7 +280,9 @@ object_kinds:
   - id: wildflower
     mobile: false
     flora:
-      suitability: "moisture*0.4 + temperature*0.3 + (1 - slope)*0.3"
+      suitability: "moisture*0.4 + (1 - thermal_stress)*0.3 + (1 - slope)*0.3"  # 1l comfort band (was `temperature*0.3`, which saturated suitability to 1.0 year-round — docs/decisions/flora-thermal-comfort.md)
+      comfort_temp: 18.0            # °C optimum: a summer bloomer (1l; UNTUNED placeholder, balance target)
+      thermal_band: 14.0            # °C half-width ⇒ stress saturates at 4 °C / 32 °C — blooms genuinely thin out in winter
       length_rate: 0.015            # stays short
       width_rate:  0.035            # spreads WIDER than tall → low-but-broad bloom
       stages: [0.15, 0.4]           # LENGTH thresholds (world units)

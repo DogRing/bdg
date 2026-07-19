@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dogring/bdg/engine/env/decay"
+	"github.com/dogring/bdg/engine/env/flora"
 	"github.com/dogring/bdg/engine/fauna"
 	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/kernel/expr"
@@ -73,6 +74,32 @@ func checkProgramAttrs(label string, prog *expr.Program, allowed map[core.Tag]bo
 		if !allowed[attr] {
 			return fmt.Errorf("config: %s unknown operand %q", label, attr)
 		}
+	}
+	return nil
+}
+
+// checkFloraThermalBand enforces the flora 1l pairing: a species whose §6 formulas read the
+// derived `thermal_stress` operand MUST author a positive `thermal_band`, otherwise the operand
+// is a constant 0 and the formula silently means something other than what it reads like — the
+// exact failure mode that killed berry_shrub live (docs/decisions/flora-thermal-comfort.md).
+// A species that never mentions the operand is unconstrained (band ≤ 0 stays the neutral lever).
+func checkFloraThermalBand(id string, rule flora.SpeciesRule) error {
+	progs := []*expr.Program{
+		rule.Suitability, rule.LengthRate, rule.WidthRate,
+		rule.ShadeRadius, rule.ShadeOpacity,
+		rule.PropRadius, rule.PropChance, rule.CarryingCapacity,
+	}
+	for _, y := range rule.Yields {
+		progs = append(progs, y.Chance)
+	}
+	for _, prog := range progs {
+		if prog == nil || !containsTag(prog.ReadsAttrs(), "thermal_stress") {
+			continue
+		}
+		if rule.ThermalBand <= 0 {
+			return fmt.Errorf("config: flora %s reads thermal_stress but thermal_band is %v — author a positive thermal_band (°C half-width) or drop the operand", id, rule.ThermalBand)
+		}
+		return nil
 	}
 	return nil
 }

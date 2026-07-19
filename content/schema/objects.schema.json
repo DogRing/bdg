@@ -208,6 +208,8 @@
         },
         "shade": { "$ref": "#/$defs/shade" },
         "propagation": { "$ref": "#/$defs/propagation" },
+        "comfort_temp": { "type": "number", "description": "°C thermal optimum — midpoint of the symmetric comfort band (flora 1l, mirroring fauna FA5/F40): thermal_stress = clamp01(|temperature − comfort_temp| / thermal_band). Optional; inert unless a §6 formula reads `thermal_stress`." },
+        "thermal_band": { "type": "number", "minimum": 0, "description": "°C half-width of the symmetric comfort band (flora 1l). Temperature this far from comfort_temp (cold OR hot) saturates thermal_stress to 1, so growth degrades in BOTH directions. 0/absent ⇒ thermal_stress ≡ 0 (neutral); a species whose formulas READ thermal_stress must author a positive band — platform/config rejects the mismatched pair." },
         "death_threshold": {
           "description": "θ: suitability below this counts toward death (1b). [0,1].",
           "type": "number",
