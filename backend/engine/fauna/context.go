@@ -31,6 +31,7 @@ const (
 	attrDaylight      core.Tag = "daylight"
 	attrIsCurrent     core.Tag = "is_current"
 	attrMaturity      core.Tag = "maturity" // PD4-ii/P_fa4c: clamp01(age/maturity_age); 1 when mature (or maturity_age unauthored)
+	attrKinCount      core.Tag = "kin_count" // PD4-v/P_fa4c-3: same-species neighbours within sight — local crowding (raw count; content normalises)
 )
 
 // ── animalContext — expr.Context adapter ─────────────────────────────────────
@@ -64,6 +65,7 @@ type animalContext struct {
 	env          EnvSample           // injected climate sample (world-provided)
 	appTemp      float64             // pre-computed apparent_temp (to avoid circular eval)
 	maturity     float64             // pre-computed clamp01(age/maturity_age) ∈[0,1]; §6 `maturity` operand (PD4-ii/P_fa4c)
+	kinCount     float64             // pre-computed same-species neighbours in sight range; §6 `kin_count` operand (PD4-v)
 	targetThreat float64             // candidate target danger for combat utility (FC2)
 	isCurrent    bool                // set per-candidate in scoring loop (is_current operand)
 }
@@ -117,6 +119,12 @@ func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 	// species authors no maturity_age). Gates the Mate §6 utility + partner eligibility.
 	case attrMaturity:
 		return c.maturity, true
+
+	// Local crowding (PD4-v): how many same-species animals are within sight. A RAW COUNT, not a
+	// normalised density — content scales it (`- kin_count * 0.03`), so no normaliser is invented
+	// engine-side. Mirrors how dist.*/scent.* expose raw magnitudes. 0 unless the species reads it.
+	case attrKinCount:
+		return c.kinCount, true
 
 	// Climate operands (injected from EnvSample, F33/F40).
 	case attrTemperature:

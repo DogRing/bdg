@@ -211,7 +211,7 @@ object_kinds:
       propagation:
         radius: 3.0                 # spreads in tight clumps
         chance: 0.15                # moderate spread (was 0.30 — halved to keep pastures from carpeting the map)
-        carrying_capacity: "12 * moisture * (1 - slope) * (1 - salinity) * (1 - depth)"  # 1k: §6 per-site K — thick tuft field on fertile flat fresh soil, thinning on dry/salty/steep, 0 on deep water (no grass on lakes)
+        carrying_capacity: "5 * moisture * (1 - slope) * (1 - salinity) * (1 - depth)"  # 1k: §6 per-site K — thick tuft field on fertile flat fresh soil, thinning on dry/salty/steep, 0 on deep water (no grass on lakes)
                                     # neighbours within radius 3 (local density target, not global cap)
       death_threshold: 0.15         # weedy but prunes marginal sites (was 0.10 — raised to thin poor ground)
       death_hysteresis: 3
@@ -238,7 +238,7 @@ object_kinds:
       propagation:
         radius: 2.0
         chance: 0.10                # Spreads slower than normal grass
-        carrying_capacity: "10 * moisture * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — loves moisture: densest on wet flat ground (marsh edges), 0 on deep water/dry
+        carrying_capacity: "4 * moisture * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — loves moisture: densest on wet flat ground (marsh edges), 0 on deep water/dry
       death_threshold: 0.40         # Dies easily if moisture drops
       death_hysteresis: 2
     harvest:
@@ -294,7 +294,7 @@ object_kinds:
       propagation:
         radius: 5.0
         chance: 0.20
-        carrying_capacity: "6 * moisture * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — scattered blooms on moist flat ground, 0 on deep water/steep
+        carrying_capacity: "3 * moisture * (1 - slope) * (1 - depth)"  # 1k: §6 per-site K — scattered blooms on moist flat ground, 0 on deep water/steep
       death_threshold: 0.18
       death_hysteresis: 2           # flowers are short-lived / fragile
 
@@ -328,10 +328,10 @@ object_kinds:
         - { action: Flee,   utility: "(fear - 0.6) * 5" }                           # predator SIGHT (higher fear) → flight band (F43)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.6 - fear * 2.5" } # P_sleep1: diurnal night torpor — deep fatigue recovery + high wake threshold; hunger/fear/day out-bid it (untuned)
-        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.25 - fear * 3" }   # P_fa4c-2 courtship: mature adults only, and only when fed + unafraid. Mutual consent means BOTH must clear this, so famine/predation suppress breeding without any birth-rate code (untuned)
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.25 - fear * 3 - kin_count * 0.04" }   # P_fa4c-2 courtship: mature adults only, and only when fed + unafraid. Mutual consent means BOTH must clear this, so famine/predation suppress breeding without any birth-rate code (untuned)
         - { action: MoveTo, utility: "0.1" }                                        # wander baseline (lowest)
       drives:
-        - { id: hunger,  rate: 0.0008, vital_drain: 0.006, vital_drain_above: 0.98 } # accumulator (D9): ~0→1 over ~1250 ticks. PD3 아사(P_fa4b): hunger≥0.98 → vital −0.006/tick(net −0.005 vs regen) ~200틱에 사망 (UNTUNED placeholder)
+        - { id: hunger,  rate: 0.0014, vital_drain: 0.006, vital_drain_above: 0.98 } # accumulator (D9): ~0→1 over ~1250 ticks. PD3 아사(P_fa4b): hunger≥0.98 → vital −0.006/tick(net −0.005 vs regen) ~200틱에 사망 (UNTUNED placeholder)
         - { id: fatigue, rate: 0.0004 }
         - { id: fear,    decay: 0.05, wary_level: 0.5, flee_level: 1.0 }            # SET-from-context (F43); cools when clear
         - { id: thermal }                                                          # DERIVED from apparent_temp (F40); no rate
@@ -407,10 +407,10 @@ object_kinds:
         - { action: Flee,   utility: "(fear - 0.5) * 6" }                           # bolts EARLY (low flee threshold)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 2.5" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 3" } # P_sleep1: night torpor; twitchiest — a whiff of fear out-bids sleep (wakes early). Untuned
-        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.30 - fear * 4" }  # P_fa4c-2 courtship: prolific breeder (earliest maturity, shortest refractory) but twitchiest — any fear kills it (untuned)
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.30 - fear * 4 - kin_count * 0.10" }  # P_fa4c-2 courtship: prolific breeder (earliest maturity, shortest refractory) but twitchiest — any fear kills it (untuned)
         - { action: MoveTo, utility: "0.1" }
       drives:
-        - { id: hunger,  rate: 0.0012, vital_drain: 0.006, vital_drain_above: 0.98 } # small body → eats often. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
+        - { id: hunger,  rate: 0.0020, vital_drain: 0.006, vital_drain_above: 0.98 } # small body → eats often. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
         - { id: fatigue, rate: 0.0006 }
         - { id: fear,    decay: 0.04, wary_level: 0.6, flee_level: 1.0 }            # twitchier than deer
         - { id: thermal }
@@ -445,7 +445,7 @@ object_kinds:
         - { action: Flee,   utility: "(fear - 0.65) * 5" }                         # flees later than deer (mountain safety)
         - { action: Rest,   utility: "fatigue * 0.4 + thermal * 0.3 - hunger * 0.5 - fear * 1.8" }
         - { action: Sleep,  utility: "(1 - daylight) * 0.8 + fatigue * 0.3 - hunger * 0.5 - fear * 2" } # P_sleep1: night torpor; hardy mountain sleeper. Untuned
-        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.24 - fear * 3" }  # P_fa4c-2 courtship: mid-tempo breeder (untuned)
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.24 - fear * 3 - kin_count * 0.04" }  # P_fa4c-2 courtship: mid-tempo breeder (untuned)
         - { action: MoveTo, utility: "0.1" }
       drives:
         - { id: hunger,  rate: 0.0007, vital_drain: 0.006, vital_drain_above: 0.98 } # PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)

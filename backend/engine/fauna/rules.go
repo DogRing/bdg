@@ -94,6 +94,7 @@ const (
 // speciesData is the immutable per-species compiled record stored in Rules.
 type speciesData struct {
 	candidates      []actions.ActionID // sorted (D12)
+	readsKinCount   bool               // any utility reads `kin_count` (PD4-v): skip the crowding query when false
 	utilities       map[actions.ActionID]*expr.Program
 	drives          []DriveRule // in sorted DriveID order (D12)
 	appTemp         *expr.Program
@@ -174,8 +175,20 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			sc[k] = v
 		}
 
+		// Does any utility read `kin_count`? Computing local crowding costs a spatial query per
+		// scoring animal, so it is answered once at load and skipped entirely for species that
+		// never mention it (PD4-v) — the same off-lever discipline as scent_acuity.
+		readsKin := false
+		for _, id := range cands {
+			if prog := sr.Utilities[id]; prog != nil && containsAttr(prog.ReadsAttrs(), attrKinCount) {
+				readsKin = true
+				break
+			}
+		}
+
 		r.species[sp] = speciesData{
 			candidates:      cands,
+			readsKinCount:   readsKin,
 			utilities:       util,
 			drives:          drives,
 			appTemp:         sr.AppTemp,

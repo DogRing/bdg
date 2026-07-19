@@ -115,6 +115,12 @@ func fullPipeline(
 	// The animalContext for AppTemp uses pre-update drives + climate.
 	appTemp := computeAppTemp(a, env, rules)
 	maturity := rules.maturity(a.Species, a.Age)
+	// Local crowding (PD4-v) — one spatial query, taken ONLY when this species' §6 actually reads
+	// `kin_count`, so every other species is byte-identical and pays nothing.
+	kin := scalarZero
+	if rules.readsKinCount(a.Species) {
+		kin = kinCount(a, snap, sightRadius)
+	}
 
 	// Build context for DriveUpdate with PRE-update drives.
 	dCtx := &animalContext{
@@ -128,6 +134,7 @@ func fullPipeline(
 		env:          env,
 		appTemp:      appTemp,
 		maturity:     maturity,
+		kinCount:     kin,
 		targetThreat: target.threat,
 	}
 	newDrives := rules.DriveUpdate(a.Species, a.Drives, dCtx, snap.DT)
@@ -145,6 +152,7 @@ func fullPipeline(
 		env:          env,
 		appTemp:      appTemp,
 		maturity:     maturity,
+		kinCount:     kin,
 		targetThreat: target.threat,
 	}
 

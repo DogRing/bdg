@@ -244,6 +244,7 @@ func AttrOperands() []core.Tag {
 		attrDistPredator,
 		attrDistPrey,
 		attrIsCurrent,
+		attrKinCount,
 		attrMaturity,
 		attrMoisture,
 		attrScentCarrion,

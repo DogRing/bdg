@@ -84,7 +84,7 @@ cadence:
   hide_cover_factor: 1.0          # cover reach = this × scent_cell_size
   cover_radius_factor: 3.0        # M4-b: × plant Width → cover-drag radius
   conceal_factor: 1.0             # M5-b: × cover density => predator concealment (untuned placeholder)
-  graze_depletion_per_hunger: 0.5 # PD2/P_fa4b: flora Length cropped per 1.0 hunger recovered by grazing → 과방목→국소 기근→초식 아사·이동압(공유지 비극). scent mag=Length+Width라 고갈=희미한 냄새(P_fa4a와 결합). 0 ⇒ 무소모 (UNTUNED placeholder)
+  graze_depletion_per_hunger: 2.0 # PD2/P_fa4b: flora Length cropped per 1.0 hunger recovered by grazing → 과방목→국소 기근→초식 아사·이동압(공유지 비극). scent mag=Length+Width라 고갈=희미한 냄새(P_fa4a와 결합). 0 ⇒ 무소모 (UNTUNED placeholder)
   respawn_cadence: 200            # every N ticks, top each species up toward its respawn_target (F9)
 
 # ── Sizes (W6 + flora/resource) — representative defaults ──────────────────────────────
