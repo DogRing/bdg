@@ -122,6 +122,16 @@ func buildFloraRules(doc objectsDoc, itemIDs map[core.Tag]bool, terrainAttrs map
 			if containsTag(carryingCap.ReadsAttrs(), "neighbor_count") {
 				return nil, fmt.Errorf("config: flora %s propagation.carrying_capacity must not read neighbor_count (circular)", obj.ID)
 			}
+			// K is temperature-free by contract (1m): it is evaluated BOTH at runtime and by
+			// world-gen density placement, and placement runs before climate exists
+			// (docs/plans/scaling.md SC4) so it has no temperature to supply. A temperature term
+			// would silently mean two different things in the two contexts. Temperature belongs
+			// in suitability — name it, so the author is redirected rather than just blocked.
+			for _, attr := range []core.Tag{"temperature", "thermal_stress"} {
+				if containsTag(carryingCap.ReadsAttrs(), attr) {
+					return nil, fmt.Errorf("config: flora %s propagation.carrying_capacity must not read %s — density placement evaluates K before climate exists, so a temperature term would mean something different there; put the temperature response in suitability instead", obj.ID, attr)
+				}
+			}
 		}
 		if err := checkAscending("flora "+obj.ID+" stages", obj.Flora.Stages, false); err != nil {
 			return nil, err

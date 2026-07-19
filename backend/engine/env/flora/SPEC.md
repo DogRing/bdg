@@ -252,8 +252,15 @@ func (r *Rules) Suitability(sp SpeciesID, in SiteInput) float64
 
 // CarryingCapacity evaluates the species' §6 carrying-capacity K over the site → capacity ≥ 0
 // (0 on water/steep via (1−depth)/(1−slope)). NOT upper-clamped (K may exceed 1). Pure, no RNG.
-// For every shipped species K is temperature-free, so world-gen density placement can weight
-// establishment from terrain attrs + generated moisture before climate is built (scaling.md SC4).
+//
+// K is TEMPERATURE-FREE — enforced, not conventional (1m): platform/config REJECTS a
+// carrying_capacity formula that reads `temperature` or `thermal_stress`. K is evaluated in two
+// contexts — runtime propagation (full SiteInput) and world-gen density placement, which runs
+// BEFORE climate exists (scaling.md SC4) and therefore has no temperature to give — so a
+// temperature term would mean two different things in the two contexts, silently. The division of
+// labour: K answers "how many can this place structurally support" (terrain + moisture);
+// `Suitability` answers "how well does it do right now" (weather included), and that is where a
+// temperature response belongs. The load error says so explicitly.
 func (r *Rules) CarryingCapacity(sp SpeciesID, in SiteInput) float64
 
 // LengthRate / WidthRate evaluate the species' two §6 growth-rate formulas (scalars or §6
@@ -351,9 +358,15 @@ type YieldItem struct {
   that never references the operand, which expr never resolves). The clamp lives here — unlike fauna,
   where the drive update clamps — because flora suitability terms are weighted summands that must
   stay in `[0,1]`. **Fail-loud pairing:** `platform/config` refuses to load a species whose formulas
-  read `thermal_stress` while `ThermalBand ≤ 0`. `CarryingCapacity` remains temperature-free for
-  every shipped species, so world-gen density placement still runs before climate exists
-  (`docs/plans/scaling.md` SC4).
+  read `thermal_stress` while `ThermalBand ≤ 0`.
+- **`CarryingCapacity` is temperature-free — enforced (1m, RESOLVED 2026-07-19)** — `platform/config`
+  rejects a `carrying_capacity` formula reading `temperature` or `thermal_stress`, the same way it
+  rejects `neighbor_count` (circularity). Reason: K is evaluated both at runtime and by world-gen
+  density placement, and placement runs **before climate exists** (`docs/plans/scaling.md` SC4), so
+  it has no temperature — a temperature term would silently mean two different things. Temperature
+  belongs in `Suitability`; the load error names it. If a temperature-dependent K is ever wanted,
+  the documented escape hatch is to relax this check AND supply a placement temperature in the same
+  change (`docs/decisions/flora-thermal-comfort.md`).
 - **Propagation model is fixed (1a option a)** — new plants are **seed dispersal near the parent**:
   for each mature-enough parent (Stage ≥ the species propagate-stage, Stage derived from `Length`), a
   seeded RNG draws candidate child positions within the species' propagation radius of the parent
@@ -431,6 +444,10 @@ type YieldItem struct {
   would otherwise mask an unclamped operand; `thermal_band ≤ 0` makes the operand a constant 0 at
   every temperature. Two species with different bands at the SAME site get different stress.
   Table-driven over cold/optimum/hot/beyond-band.
+- [ ] **`carrying_capacity` rejects temperature operands (1m)** — a species whose
+  `propagation.carrying_capacity` reads `temperature` (or `thermal_stress`) fails to load with an
+  error naming the species and pointing at `suitability`; the same formula in `suitability` loads
+  fine. Guards the placement/runtime split that world-gen density placement depends on.
 - [ ] **Neutrality (1l)** — a species that never mentions `thermal_stress` is byte-identical whatever
   its band (expr resolves only referenced operands), which is what keeps `grass`/`tall_grass`/`oak`
   and every existing golden unchanged. Reading the operand with `thermal_band ≤ 0` is NOT a neutral

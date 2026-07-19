@@ -1146,6 +1146,20 @@ cadence:
 			wantErr: "flora grass reads thermal_stress but thermal_band is 0",
 		},
 		{
+			// flora 1m: K is evaluated by world-gen density placement too, which runs before
+			// climate exists — a temperature term there would silently mean something else.
+			name:    "flora carrying capacity reads temperature",
+			file:    "objects.yaml",
+			data:    strings.Replace(validObjectsWorldYAML, "carrying_capacity: 4", "carrying_capacity: \"4 * temperature\"", 1),
+			wantErr: "must not read temperature",
+		},
+		{
+			name:    "flora carrying capacity reads thermal_stress",
+			file:    "objects.yaml",
+			data:    strings.Replace(validObjectsWorldYAML, "carrying_capacity: 4", "carrying_capacity: \"4 * thermal_stress\"", 1),
+			wantErr: "must not read thermal_stress",
+		},
+		{
 			name:    "flora propagation radius neighbor count",
 			file:    "objects.yaml",
 			data:    strings.Replace(validObjectsWorldYAML, "radius: 3.0", "radius: \"neighbor_count + 1\"", 1),

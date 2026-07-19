@@ -84,6 +84,9 @@ func checkProgramAttrs(label string, prog *expr.Program, allowed map[core.Tag]bo
 // exact failure mode that killed berry_shrub live (docs/decisions/flora-thermal-comfort.md).
 // A species that never mentions the operand is unconstrained (band ≤ 0 stays the neutral lever).
 func checkFloraThermalBand(id string, rule flora.SpeciesRule) error {
+	// CarryingCapacity currently cannot reach this check — buildFloraRules rejects
+	// thermal_stress there outright (1m) — but it stays in the list so the pairing rule still
+	// holds if that prohibition is ever relaxed (the documented (C) escape hatch).
 	progs := []*expr.Program{
 		rule.Suitability, rule.LengthRate, rule.WidthRate,
 		rule.ShadeRadius, rule.ShadeOpacity,

@@ -96,6 +96,52 @@ Both are UNTUNED placeholders in the same sense as the fauna comfort values (bal
 `temperature/40` term for now — migrating it is a separate, non-urgent content change, since it is
 merely crude rather than broken.
 
+## Follow-up gate: `carrying_capacity`'s temperature contract (1m)
+
+> Raised by the review pass over this change; resolved 2026-07-19 (human RESOLVE via
+> AskUserQuestion). Pointer lives in `docs/plans/flora.md §1m`.
+
+**The asymmetry.** `carrying_capacity` (K) is evaluated in TWO contexts: runtime propagation
+(`flora.Step`, full `SiteInput` with real °C) and world-gen density placement
+(`tools/worldgen/density.go floraSiteAt` → `accept = clamp(K/KRef, 0, 1)` rejection sampling).
+Placement runs BEFORE climate exists (`scaling.md` SC4), so it leaves `Temperature` at the
+zero value while supplying a real generated moisture — temperature is the only missing input.
+
+Nothing was broken: no shipped species reads temperature in K. But adding `thermal_stress` made
+the trap more inviting, because K is exactly where an author reaches to say "fewer shrubs
+establish in the cold". The magnitude, worked out against the shipped bands rather than guessed —
+for `carrying_capacity: "5*moisture*(1 - thermal_stress)"`, placement at 0 °C gives
+`berry_shrub` (14 ± 16) 12.5 % of its intended K (a world that starts nearly empty and fills in
+later), and `wildflower` (18 ± 14) clamps to stress 1 ⇒ **K = 0 ⇒ not one plant placed**. Both
+silent, both diagnosable only by a per-species census — the same failure class as the original bug.
+
+**Options considered.**
+- **(A) Convention only** — zero work, maximum authoring latitude, but the silent failure stays
+  and the trap is now larger than before.
+- **(B) Reject temperature-derived operands in `carrying_capacity` at load** ← **CHOSEN**. Same
+  place and same precedent as the existing `neighbor_count` circularity rejection.
+- **(C) Supply the climate init temperature (12.5 °C, the annual midline) at placement** — fills
+  the gap instead of forbidding, removing the asymmetry with moisture and legitimising a
+  temperature-dependent K; today's placement output would be byte-identical. Rejected *for now*:
+  it makes K silently mean "K at the annual midline", and the two contexts still disagree by the
+  seasonal swing, so a species with a narrow band far from the midline is still placed oddly.
+- **(D) A separate `establishment_weight` formula per context** — fully expressive, but a new
+  content key and concept (D10 schema extension) plus double authoring for every species, to solve
+  a problem nobody has hit.
+
+**Why (B).** It respects a structural fact of the pipeline rather than papering over it: placement
+genuinely has no climate, and a proxy temperature is a fiction that reads as truth. It also draws
+the cleaner conceptual line — **K answers "how many can this place structurally support"** (terrain,
+moisture), **suitability answers "how well does it do right now"** (weather included) — which is
+already how every shipped formula is written. And it converts a silent wrong into a loud one, the
+same move as the fail-loud band pairing above. The cost is foreclosing a legitimate design
+("a cold region supports a lower equilibrium density"), which is a hypothesis, not a present need.
+
+**(C) is the documented escape hatch.** The two steps are continuous, not conflicting: if a
+temperature-dependent K is ever genuinely wanted, relax this check and supply the placement
+temperature in the same change. The rejection message names `suitability` as the place to put a
+temperature response, so authors are redirected rather than merely blocked.
+
 ## Consequences
 - Seasonality reaches flora for the first time: growth rate now varies over the year for the two
   banded species, which is the intended coupling from `world-roadmap.md` ("계절 → 전부").
