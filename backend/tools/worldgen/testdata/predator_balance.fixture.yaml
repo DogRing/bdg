@@ -84,6 +84,69 @@ flora:
   - { id: grove_b2, species: oak, pos: [208.0, 160.0], length: 8.5, width: 5.5 }
   - { id: grove_b3, species: oak, pos: [192.0, 166.0], length: 7.5, width: 5.0 }
   - { id: grove_b4, species: oak, pos: [204.0, 174.0], length: 8.0, width: 5.2 }
+  # Interspersed SCRUB (added 2026-07-19). The clustered thickets above were not enough: with
+  # cover in five clumps and grazing spread over the whole map, prey that got frightened were
+  # measured at a MEAN 64.7 units from the nearest bush, and the closest any evading animal
+  # ever came was 12.5 — never inside the 10-unit hide reach, across 238,000 prey-ticks. Cover
+  # that prey never reach is scenery, not habitat. Real prey graze near their refuge, so cover
+  # is now interleaved with the forage on a 30-unit lattice; the clumps remain as dense stands.
+  - { id: scrub_015_015, species: berry_shrub, pos: [15.0, 15.0], length: 1.0, width: 0.85 }
+  - { id: scrub_015_045, species: berry_shrub, pos: [15.0, 45.0], length: 1.0, width: 0.85 }
+  - { id: scrub_015_075, species: berry_shrub, pos: [15.0, 75.0], length: 1.0, width: 0.85 }
+  - { id: scrub_015_105, species: berry_shrub, pos: [15.0, 105.0], length: 1.0, width: 0.85 }
+  - { id: scrub_015_135, species: berry_shrub, pos: [15.0, 135.0], length: 1.0, width: 0.85 }
+  - { id: scrub_015_165, species: berry_shrub, pos: [15.0, 165.0], length: 1.0, width: 0.85 }
+  - { id: scrub_015_195, species: berry_shrub, pos: [15.0, 195.0], length: 1.0, width: 0.85 }
+  - { id: scrub_015_225, species: berry_shrub, pos: [15.0, 225.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_015, species: berry_shrub, pos: [45.0, 15.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_045, species: berry_shrub, pos: [45.0, 45.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_075, species: berry_shrub, pos: [45.0, 75.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_105, species: berry_shrub, pos: [45.0, 105.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_135, species: berry_shrub, pos: [45.0, 135.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_165, species: berry_shrub, pos: [45.0, 165.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_195, species: berry_shrub, pos: [45.0, 195.0], length: 1.0, width: 0.85 }
+  - { id: scrub_045_225, species: berry_shrub, pos: [45.0, 225.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_015, species: berry_shrub, pos: [75.0, 15.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_045, species: berry_shrub, pos: [75.0, 45.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_075, species: berry_shrub, pos: [75.0, 75.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_105, species: berry_shrub, pos: [75.0, 105.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_135, species: berry_shrub, pos: [75.0, 135.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_165, species: berry_shrub, pos: [75.0, 165.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_195, species: berry_shrub, pos: [75.0, 195.0], length: 1.0, width: 0.85 }
+  - { id: scrub_075_225, species: berry_shrub, pos: [75.0, 225.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_015, species: berry_shrub, pos: [105.0, 15.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_045, species: berry_shrub, pos: [105.0, 45.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_075, species: berry_shrub, pos: [105.0, 75.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_105, species: berry_shrub, pos: [105.0, 105.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_135, species: berry_shrub, pos: [105.0, 135.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_165, species: berry_shrub, pos: [105.0, 165.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_195, species: berry_shrub, pos: [105.0, 195.0], length: 1.0, width: 0.85 }
+  - { id: scrub_105_225, species: berry_shrub, pos: [105.0, 225.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_015, species: berry_shrub, pos: [165.0, 15.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_045, species: berry_shrub, pos: [165.0, 45.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_075, species: berry_shrub, pos: [165.0, 75.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_105, species: berry_shrub, pos: [165.0, 105.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_135, species: berry_shrub, pos: [165.0, 135.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_165, species: berry_shrub, pos: [165.0, 165.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_195, species: berry_shrub, pos: [165.0, 195.0], length: 1.0, width: 0.85 }
+  - { id: scrub_165_225, species: berry_shrub, pos: [165.0, 225.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_015, species: berry_shrub, pos: [195.0, 15.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_045, species: berry_shrub, pos: [195.0, 45.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_075, species: berry_shrub, pos: [195.0, 75.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_105, species: berry_shrub, pos: [195.0, 105.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_135, species: berry_shrub, pos: [195.0, 135.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_165, species: berry_shrub, pos: [195.0, 165.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_195, species: berry_shrub, pos: [195.0, 195.0], length: 1.0, width: 0.85 }
+  - { id: scrub_195_225, species: berry_shrub, pos: [195.0, 225.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_015, species: berry_shrub, pos: [225.0, 15.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_045, species: berry_shrub, pos: [225.0, 45.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_075, species: berry_shrub, pos: [225.0, 75.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_105, species: berry_shrub, pos: [225.0, 105.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_135, species: berry_shrub, pos: [225.0, 135.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_165, species: berry_shrub, pos: [225.0, 165.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_195, species: berry_shrub, pos: [225.0, 195.0], length: 1.0, width: 0.85 }
+  - { id: scrub_225_225, species: berry_shrub, pos: [225.0, 225.0], length: 1.0, width: 0.85 }
+
   # Grazing ground: a deterministic 20-unit grid, hand-placed rather than procedural.
   # Density placement was tried first and silently produced ZERO grass: it derives establishment
   # from the generated moisture field, which only exists for `terrain: random: true`. This fixture

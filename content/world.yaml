@@ -79,7 +79,7 @@ cadence:
   sleep_fatigue_recover_per_tick: 0.020 # P_sleep1/SS2: deeper fatigue recovery while SLEEPING (state:sleep) — ~2.5× rest (untuned)
   vital_regen_per_tick: 0.001    # slow vital recovery, clamped by VitalCap (FC7)
   vital_cap_damage_fraction: 0.05 # exchange damage fraction applied as scar cap damage (FC7)
-  hide_duration: 100              # M3 cover-hiding duration after a successful flee-near-cover roll
+  hide_duration: 35               # M3 cover-hiding duration after a successful flee-near-cover roll
   hidden_flush_factor: 1.0        # hidden prey is flushed if predator is within this × scent_cell_size
   hide_cover_factor: 1.0          # cover reach = this × scent_cell_size
   cover_radius_factor: 3.0        # M4-b: × plant Width → cover-drag radius
