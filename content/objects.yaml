@@ -298,6 +298,35 @@ object_kinds:
       death_threshold: 0.18
       death_hysteresis: 2           # flowers are short-lived / fragile
 
+  # WATERWEED — the first AQUATIC plant (PD5b, docs/plans/fauna.md §5). Every other flora species
+  # multiplies its carrying capacity by `(1 − depth)` and so opts itself out of water; this one is
+  # simply that sign flipped. Nothing in the engine ever excluded plants from water — the exclusion
+  # was authored, which is why "aquatic foraging needs aquatic flora" was a content gap rather than
+  # an engine one. Existing to feed `fish`, which until now had no diet, no hunger and no way to
+  # reproduce: a population with an outflow (it carries `game`) and no inflow at all.
+  # NOT tagged `cover` — underwater hiding is not modelled.
+  - id: waterweed
+    mobile: false
+    tags: [ scent:food, forage ]    # scent:food → world deposits the food channel; forage → matched by a fish's diet
+    flora:
+      suitability: "depth * 0.9 + moisture * 0.1"   # §6 → [0,1]. sea(depth 1.0)≈1.0, river(0.5)≈0.55, soil(0)≈0.05 —
+                                                    # below death_threshold on land, so a stray plant dies rather than
+                                                    # colonising the meadow. Reads no temperature (no comfort band needed).
+      length_rate: 0.10             # submerged fronds grow fast — density-placed weed starts at seedling size (0,0), so a slow rate leaves fish grazing plants with no biomass to give
+      width_rate:  0.02
+      stages: [0.2, 0.5]            # LENGTH thresholds (world units)
+      yield_stage: 99               # no harvest block — fish graze it, agents do not
+      propagate_stage: 1
+      shade:
+        radius:  "width * 0.2"      # underwater; contributes almost nothing to surface LoS
+        opacity: "width * 0.05"
+      propagation:
+        radius: 8.0
+        chance: 0.18
+        carrying_capacity: "10 * depth * moisture"  # 1k: dense in open water, thinner in shallow river, ZERO on land
+      death_threshold: 0.15
+      death_hysteresis: 3
+
   # ── FAUNA species (engine/fauna; docs/plans/fauna.md F1–F46) — DORMANT until fauna activation ──
   # An animal SPECIES = an object_kind carrying a `fauna:` block: the reduced-reactive controller's
   # per-species §6 table (candidate actions + per-action utility, drives, apparent_temp, speed, senses,
@@ -523,18 +552,26 @@ object_kinds:
     tags: [ scent:prey, game ]
     fauna:
       actions:
+        - { action: Graze,  utility: "hunger * (0.3 + scent.food) - fear * 1.5" }        # PD5b: grazes waterweed — the inflow fish never had
+        - { action: Mate,   utility: "maturity * (1 - hunger) * 0.28 - fear * 3" }      # PD5b: shoal spawning; hunger/fear out-bid it (untuned)
         - { action: Wary,   utility: "fear * 0.8" }
         - { action: Flee,   utility: "(fear - 0.6) * 5" }
         - { action: Rest,   utility: "fatigue * 0.5 + thermal * 0.3 - fear * 2" }
         - { action: MoveTo, utility: "0.2" }                                        # mostly drifts/wanders in water
       drives:
+        - { id: hunger,  rate: 0.0009, vital_drain: 0.006, vital_drain_above: 0.98 } # PD5b: fish can now starve like every other species — scarcity, not immortality, is what caps a population
         - { id: fatigue, rate: 0.0004 }
         - { id: fear,    decay: 0.06, wary_level: 0.5, flee_level: 1.0 }
-        - { id: thermal }                                                          # (no hunger drive — aquatic foraging deferred)
+        - { id: thermal }
       apparent_temp: "temperature - moisture * 1"                                   # in-water: negligible wind effect
       comfort_temp: 12                                                              # °C; aquatic, buffered by water (untuned)
       thermal_band: 18                                                              # water damps extremes (FA5 symmetric)
       hazard_avoidance: 0.0                                                         # e: aquatic — water is HOME, not a hazard; land already impassable (fish-inversion deferred, P_move later)
+      graze: "0.06 + hunger * 0.05"                                                # PD5b: hunger recovered per graze tick at waterweed (parallels deer/rabbit)
+      scent_acuity: "6 + Perception*0.1"                                           # PD1: food-homing keenness now that fish has a homing channel (UNTUNED)
+      maturity_age:  250                                                           # PD4-ii: fast-maturing r-strategist (UNTUNED)
+      mate_cooldown: 180                                                           # PD4-vi(b): frequent spawning (UNTUNED)
+      diet: [ forage ]                                                             # PD5b: grazes waterweed
       speed: "Agility * 0.0033 - fatigue * 0.08 - thermal * 0.0013"                 # cold-blooded → water temperature swings movement (F40)
       senses: { smell_radius: 7.0, sight_radius: 10.0, fov_arc: 1.2 }
       respawn_target: 20                                                           # shoal in the river (F9)

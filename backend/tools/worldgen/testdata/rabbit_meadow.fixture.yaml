@@ -39,6 +39,10 @@ flora_density:
   berry_shrub: 0.0008    # ~200 — forage shrubs
   dry_shrub:   0.0006    # ~150 — establishes only on DRY ground ((1−moisture) §6)
   oak:         0.0004    # ~100 — sparse forest canopy
+  waterweed:   0.010     # PD5b aquatic forage. High NOMINAL count because density placement
+                         # rejection-samples: its carrying capacity is 0 on land, so every slot
+                         # that lands outside water is skipped. Water is scarce on this map, so a
+                         # large nominal is what actually puts weed in the few ponds/rivers.
 
 # ── Fauna by type (6 species) — herbivores ≫ predators; fish confined to water ────────
 animal_density:
@@ -97,8 +101,8 @@ animal_templates:
     vital: 1.0
     current_action: Hunt
   fish:
-    stats: { Strength: 10, Agility: 60 }
-    drives: { fatigue: 0.04, fear: 0.0, thermal: 0.0 }
+    stats: { Strength: 10, Agility: 60, Perception: 40 }   # Perception added for the PD5b food-homing acuity
+    drives: { hunger: 0.35, fatigue: 0.04, fear: 0.0, thermal: 0.0 }  # PD5b: fish now carries hunger
     stamina: 1.0
     vital: 1.0
     current_action: MoveTo
