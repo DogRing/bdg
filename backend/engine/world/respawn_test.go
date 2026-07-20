@@ -9,7 +9,7 @@ import (
 	"github.com/dogring/bdg/engine/mind/actions"
 )
 
-func TestRespawnTopsUpToTarget(t *testing.T) {
+func TestRescueOnlyOnExtinction(t *testing.T) {
 	fx := newFixtureSeeded(t, 900)
 	installCombatActionRegistry(t, fx)
 	rules := fauna.NewRules(map[fauna.SpeciesID]fauna.SpeciesRule{
@@ -52,27 +52,36 @@ func TestRespawnTopsUpToTarget(t *testing.T) {
 	if count() != 2 {
 		t.Fatalf("start deer = %d, want 2", count())
 	}
-	// tick to the first respawn cadence
-	for range 10 {
+	// A surviving population is LEFT ALONE, however far below the number it once held. Under the old
+	// thermostat this topped straight back up to 6 every cadence, which made population size a
+	// property of the knob rather than of the ecosystem: births, starvation and predation were all
+	// cosmetic above the target (PD5 / P_fa4c-3).
+	for range 30 {
 		fx.world.Tick()
 	}
-	if got := count(); got != 6 {
-		t.Fatalf("after respawn cadence deer = %d, want 6 (topped up to target)", got)
+	if got := count(); got != 2 {
+		t.Fatalf("rescue fired on a LIVING population: deer = %d, want the 2 survivors left alone", got)
 	}
-	// remove one, tick again → tops back up
+
+	// Extinction — and only extinction — brings immigrants, and they arrive as a founder GROUP.
+	// Breeding is 2-parent (P_fa4c-2), so re-introducing a lone animal would just replay the
+	// extinction with extra steps.
 	for _, a := range fx.world.Animals() {
 		if a.Species == "deer" {
 			fx.world.removeAnimal(a.ID)
-			break
 		}
 	}
-	if count() != 5 {
-		t.Fatalf("after manual remove deer = %d, want 5", count())
+	if count() != 0 {
+		t.Fatalf("setup: deer are not extinct")
 	}
 	for range 10 {
 		fx.world.Tick()
 	}
-	if got := count(); got != 6 {
-		t.Fatalf("respawn did not top back up: deer = %d, want 6", got)
+	got := count()
+	if got != 6 {
+		t.Fatalf("extinct species was not re-introduced: deer = %d, want its 6 founders", got)
+	}
+	if got < 2 {
+		t.Fatalf("a founder group of %d cannot breed at all (2-parent mating)", got)
 	}
 }

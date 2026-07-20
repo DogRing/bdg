@@ -57,8 +57,22 @@ func (w *World) runRespawn() {
 		if !ok {
 			continue
 		}
-		deficit := w.respawnTargets[sp] - counts[sp]
-		for k := 0; k < deficit; k++ {
+		// PD5 / P_fa4c-3 — RESCUE FLOOR, not a thermostat. The old behaviour topped every species back
+		// up to its target every cadence, which meant population size was set by the knob rather than by
+		// the ecosystem: births, starvation and predation were all cosmetic above the floor.
+		//
+		// Threshold is ZERO (human decision): nothing is re-introduced while even one animal survives,
+		// so ordinary population dynamics are fully emergent (D2) and a species can genuinely crash. Only
+		// true extinction is reversed, as a metapopulation "immigrants arrive" event — the live world
+		// should not lose a species permanently to one bad run.
+		//
+		// The re-introduction is a FOUNDER GROUP, not a single animal: breeding is 2-parent (P_fa4c-2),
+		// so a lone immigrant cannot found anything and would just starve out again. respawnTargets is
+		// re-read as that founder count (it must therefore be ≥ 2 to be viable — content's job).
+		if counts[sp] > 0 {
+			continue
+		}
+		for k := 0; k < w.respawnTargets[sp]; k++ {
 			a := cloneAnimal(tpl)
 			a.ID = w.allocAnimalID()
 			a.Pos = w.respawnPos(sp, members[sp], fork)

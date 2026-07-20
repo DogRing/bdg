@@ -44,4 +44,4 @@ animal_templates:
     current_action: Graze
 
 respawn_targets:
-  rabbit: 10
+  rabbit: 4

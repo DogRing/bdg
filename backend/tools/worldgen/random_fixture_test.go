@@ -139,8 +139,8 @@ func TestMinimalMeadowRandomFixture(t *testing.T) {
 	if fx.Terrain == nil || !fx.Terrain.Random {
 		t.Fatalf("fixture terrain.random not parsed: %+v", fx.Terrain)
 	}
-	if got := fx.RespawnTargets["rabbit"]; got != 10 {
-		t.Fatalf("fixture respawn_targets[rabbit] = %d, want 10", got)
+	if got := fx.RespawnTargets["rabbit"]; got != 4 {
+			t.Errorf("fixture respawn_targets[rabbit] = %d, want 4 (founder group, PD5 rescue floor)", got)
 	}
 
 	w, err := Load(fx, cfg)
@@ -199,11 +199,18 @@ func TestMinimalMeadowRandomFixture(t *testing.T) {
 		t.Errorf("climate initial moisture is uniform (%.3f) — InitMoistureAt coupling not applied", maxM)
 	}
 
-	// Respawn override: the first cadence tick tops rabbit up to 10 (not the content
-	// value). world.yaml respawn_cadence gates when; run just past one cadence.
+	// Respawn override: the fixture's rabbit value (not the content one) is used. Since PD5 that
+	// value is a FOUNDER GROUP delivered on extinction rather than a level to top up to, so the
+	// species has to be wiped before anything arrives. world.yaml respawn_cadence gates when.
 	cadence := int(cfg.WorldEnv.RespawnCadence)
 	if cadence <= 0 {
 		t.Fatalf("content respawn_cadence not positive: %d", cadence)
+	}
+	before := 0
+	for _, a := range w.Animals() {
+		if a.Species == "rabbit" {
+			before++
+		}
 	}
 	for i := 0; i < cadence+1; i++ {
 		w.Tick()
@@ -216,25 +223,22 @@ func TestMinimalMeadowRandomFixture(t *testing.T) {
 			headings = append(headings, a.Heading)
 		}
 	}
-	if rabbits != 10 {
-		t.Fatalf("rabbits after one respawn cadence = %d, want 10 (fixture override)", rabbits)
+	// The living population is left alone: no top-up now that respawn is a rescue floor (PD5). The
+	// fixture's override VALUE is asserted above; what matters here is that it no longer inflates a
+	// surviving species.
+	if rabbits < before {
+		t.Fatalf("rabbits fell from %d to %d over one respawn cadence", before, rabbits)
+	}
+	if rabbits > before {
+		t.Fatalf("rescue topped up a LIVING population: rabbits %d → %d", before, rabbits)
 	}
 
-	// Anti-east-march: initial + respawned rabbits must face random directions, not
-	// all share the zero (due-east) heading that funnelled the whole cohort into the
-	// east wall. Independent uniform draws ⇒ distinct values spanning a wide arc.
-	minH, maxH := math.Inf(1), math.Inf(-1)
-	distinct := map[float64]bool{}
-	for _, h := range headings {
-		distinct[h] = true
-		minH, maxH = math.Min(minH, h), math.Max(maxH, h)
-	}
-	if len(distinct) < 8 {
-		t.Fatalf("rabbit headings not varied (%d distinct of 10): %v", len(distinct), headings)
-	}
-	if maxH-minH < 1.0 {
-		t.Fatalf("rabbit headings span only %.2f rad — clustered (east-march regression): %v", maxH-minH, headings)
-	}
+	// The anti-east-march guard (headings must not all share the zero, due-east value that once
+	// funnelled a whole cohort into the east wall) moved to TestDensityHeadingsVaried. It used to
+	// live here because respawn topped this fixture up to ten rabbits and gave each a fresh heading;
+	// with respawn demoted to a rescue floor (PD5) this world holds its single placed rabbit, and one
+	// animal cannot demonstrate variety.
+	_ = headings
 }
 
 func TestMinimalMeadowSeedDeterminism(t *testing.T) {

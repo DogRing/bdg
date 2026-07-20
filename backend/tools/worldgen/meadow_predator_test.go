@@ -47,7 +47,7 @@ func TestMeadowSustainsPredators(t *testing.T) {
 	predFloor := fx.RespawnTargets["wolf"] + fx.RespawnTargets["bear"]
 
 	const ticks = 6000
-	predSum, samples, within30, predObs := 0, 0, 0, 0
+	predSum, preySum, samples, within30, predObs := 0, 0, 0, 0, 0
 	for i := 1; i <= ticks; i++ {
 		w.Tick()
 		animals := w.Animals()
@@ -76,6 +76,7 @@ func TestMeadowSustainsPredators(t *testing.T) {
 			}
 		}
 		predSum += pred
+		preySum += len(preyPos)
 		samples++
 	}
 	kills, predStarv := 0, 0
@@ -97,9 +98,9 @@ func TestMeadowSustainsPredators(t *testing.T) {
 	}
 	meanPred := float64(predSum) / float64(max(samples, 1))
 	proximity := 100 * float64(within30) / float64(max(predObs, 1))
-	t.Logf("live meadow over %d ticks: mean predators=%.2f (respawn floor %d) | predation kills=%d "+
-		"predator starvations=%d | predator within 30u of prey %.1f%% of ticks",
-		ticks, meanPred, predFloor, kills, predStarv, proximity)
+	t.Logf("live meadow over %d ticks: mean predators=%.2f (respawn floor %d) mean prey=%.1f | "+
+		"predation kills=%d predator starvations=%d | predator within 30u of prey %.1f%% of ticks",
+		ticks, meanPred, predFloor, float64(preySum)/float64(max(samples, 1)), kills, predStarv, proximity)
 
 	// Not a rate target — the floor is "the mechanism happens at all on the real map".
 	if kills == 0 {

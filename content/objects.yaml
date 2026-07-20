@@ -382,7 +382,7 @@ object_kinds:
       senses: { smell_radius: 10.0, sight_radius: 16.0, fov_arc: 1.05 }             # M5-a early-detection nudge (untuned placeholder)
       maturity_age:  600                                                           # PD4-ii: ticks (fauna_dt=1) until `maturity` reaches 1 = sexual maturity (UNTUNED placeholder, P_fa4)
       mate_cooldown: 500                                                           # PD4-vi(b): post-conception refractory ticks — breeding tempo (UNTUNED placeholder, P_fa4)
-      respawn_target: 16                                                           # herd carrying capacity (F9 timer-respawn)
+      respawn_target: 4                                                            # herd carrying capacity (F9 timer-respawn)
       cover_cost: 0.7                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 1.5, mountain: 1.6 }                                  # FORDS water to escape (< wolf 3.0 → loses pursuers at the river, M4-a); climbs poorly (W10b)
       impassable: [ sea ]                                                          # cannot enter deep sea (per-species block; sea also globally impassable)
@@ -424,7 +424,7 @@ object_kinds:
       senses: { smell_radius: 20.0, sight_radius: 34.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
       maturity_age:  800                                                           # PD4-ii: slow-maturing predator (UNTUNED placeholder, P_fa4)
       mate_cooldown: 700                                                           # PD4-vi(b): long refractory — predators breed slowly (UNTUNED placeholder, P_fa4)
-      respawn_target: 3                                                            # apex predator — sparse (F9)
+      respawn_target: 4                                                            # apex predator — sparse (F9)
       cover_cost: 1.2                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 3.0, mountain: 1.5 }                                  # AVOIDS deep water (river = prey refuge, M4-a); modest on hills (W10b)
       impassable: [ sea ]
@@ -464,7 +464,7 @@ object_kinds:
       senses: { smell_radius: 8.0, sight_radius: 18.0, fov_arc: 1.4 }               # M5-a early-detection nudge (untuned placeholder)
       maturity_age:  300                                                           # PD4-ii: earliest maturity of the six — r-strategist (UNTUNED placeholder, P_fa4)
       mate_cooldown: 200                                                           # PD4-vi(b): shortest refractory — breeds back fastest after a predation crash (UNTUNED placeholder, P_fa4)
-      respawn_target: 20                                                           # prolific prey (F9)
+      respawn_target: 6                                                            # prolific prey (F9)
       cover_cost: 0.3                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 2.5, mountain: 2.0 }                                  # poor at water + climbing (plains animal)
       impassable: [ sea ]
@@ -492,7 +492,7 @@ object_kinds:
       comfort_temp: 6                                                               # °C; hardy mountain species, cold-adapted (untuned)
       thermal_band: 24                                                              # broad tolerance (FA5 symmetric)
       hazard_avoidance: 0.6                                                         # e: sure-footed on steep terrain — LOW avoidance (roams hills freely; untuned)
-      speed: "Agility * 0.0036 + hunger * 0.05 - fatigue * 0.08 - thermal * 0.0008 - terrain.slope * 0.60"  # hardy mountain coat · **PD10 서식지 선호**: 가파른 바위땅에서 느려져 머문다(area-restricted search — 새 조향 기계 없이 §6 스칼라 하나로 서식지 선택이 창발); hunger→roam (FM14b: idle Ag·0.0028≈0.174 holds under deadband, hungry roams); small thermal penalty (F40)
+      speed: "Agility * 0.0036 + hunger * 0.05 - fatigue * 0.08 - thermal * 0.0008"  # hardy mountain coat · PD10 `terrain.<attr>` 오퍼랜드는 배선돼 있으나 **아직 어느 종도 저작하지 않는다**: 선호를 speed로 표현하려면 계수가 커야 하는데(서식지는 먹이 분포가 지배) 크게 잡으면 move_deadband 아래로 떨어져 어디서나 멈춰버려 선택이 사라진다. rescue floor 착지로 개체수가 절반이 되며 신호가 잡음에 묻힌 것도 확인. 종별 서식지 저작 = 별도 튜닝 라운드
       move_deadband: 0.25                                                          # FM14b: just above sated idle speed (≈0.174) — sated goat rests, hunger>~0.24 roams (UNTUNED, P_fa4)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
       scent_acuity: "6 + Perception*0.1"                                           # PD1/P_fa4a food-homing keenness g (UNTUNED placeholder, P_fa4)
@@ -502,7 +502,7 @@ object_kinds:
       senses: { smell_radius: 9.0, sight_radius: 15.0, fov_arc: 1.0 }               # M5-a early-detection nudge (untuned placeholder)
       maturity_age:  500                                                           # PD4-ii: mid maturity (UNTUNED placeholder, P_fa4)
       mate_cooldown: 400                                                           # PD4-vi(b): mid refractory (UNTUNED placeholder, P_fa4)
-      respawn_target: 6                                                            # small mountain band (F9)
+      respawn_target: 4                                                            # small mountain band (F9)
       cover_cost: 0.6                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.6, river: 2.0, sand: 1.2 }                       # CLIMBER: cheap on mountains (FA8); poor at water
       impassable: [ sea ]
@@ -545,7 +545,7 @@ object_kinds:
       senses: { smell_radius: 22.0, sight_radius: 30.0, fov_arc: 0.9 }              # superb nose
       maturity_age:  1000                                                          # PD4-ii: latest maturity of the six (UNTUNED placeholder, P_fa4)
       mate_cooldown: 900                                                           # PD4-vi(b): longest refractory (UNTUNED placeholder, P_fa4)
-      respawn_target: 3                                                            # apex omnivore — sparse (F9)
+      respawn_target: 4                                                            # apex omnivore — sparse (F9)
       cover_cost: 2.0                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.7, river: 2.6 }                                  # CLIMBER predator (FA8); avoids deep water (river = prey refuge, M4-a)
       impassable: [ sea ]
@@ -581,7 +581,7 @@ object_kinds:
       diet: [ forage ]                                                             # PD5b: grazes waterweed
       speed: "Agility * 0.0033 - fatigue * 0.08 - thermal * 0.0013"                 # cold-blooded → water temperature swings movement (F40)
       senses: { smell_radius: 7.0, sight_radius: 10.0, fov_arc: 1.2 }
-      respawn_target: 20                                                           # shoal in the river (F9)
+      respawn_target: 6                                                            # shoal in the river (F9)
       terrain_cost: { river: 0.5, sea: 0.5 }                                       # SWIMMER: fast in water (FA8)
       impassable: [ soil, sand, mountain, bare_rock ]                              # confined to water (FA8 impassable-on-land)
 

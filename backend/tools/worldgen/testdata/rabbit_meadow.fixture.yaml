@@ -66,11 +66,11 @@ animal_density:
 # clustered when the pond is small) instead of stranding on land. Target kept modest to match the
 # scarce 500² water.
 respawn_targets:
-  rabbit: 60
-  deer: 32
-  goat: 20
-  fish: 6
-  wolf: 8
+  rabbit: 6
+  deer: 4
+  goat: 4
+  fish: 4
+  wolf: 4
   bear: 4
 
 # Per-species initial runtime vectors — buildAnimals REQUIRES a template per placed species so

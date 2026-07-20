@@ -1,6 +1,8 @@
 package worldgen
 
 import (
+	"math"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -127,5 +129,48 @@ func TestMaterializeDensityDeterministic(t *testing.T) {
 	}
 	if reflect.DeepEqual(a.Flora, c.Flora) {
 		t.Fatalf("different seeds produced identical flora placement (suspicious)")
+	}
+}
+
+// TestDensityHeadingsVaried is the anti-east-march guard: every placed animal must get its OWN
+// facing. Leaving Heading at its zero value points them all due-east, and the dormant ballistic
+// steer then marches the entire cohort into the east wall on a fresh world.
+//
+// It lives here because density placement is how the live world is populated. It used to ride along
+// in the minimal-meadow fixture test, which only saw variety because respawn topped that world up to
+// ten rabbits and gave each a fresh heading — once respawn became a rescue floor (PD5) that world
+// holds its single placed rabbit and can no longer demonstrate anything.
+func TestDensityHeadingsVaried(t *testing.T) {
+	contentDir := findExisting(t, "../../../content", "../content", "content")
+	cfg, err := config.Load(contentDir)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	fx, err := ParseFile(
+		findExisting(t, "testdata/rabbit_meadow.fixture.yaml"),
+		filepath.Join(contentDir, "schema", "fixture.schema.json"))
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	w, err := Load(fx, cfg)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	placed := w.Animals()
+	if len(placed) < 8 {
+		t.Fatalf("too few animals placed to judge heading variety: %d", len(placed))
+	}
+	distinct := map[float64]bool{}
+	minH, maxH := math.Inf(1), math.Inf(-1)
+	for _, a := range placed {
+		distinct[a.Heading] = true
+		minH, maxH = math.Min(minH, a.Heading), math.Max(maxH, a.Heading)
+	}
+	if len(distinct) < len(placed) {
+		t.Errorf("placed animals share headings (%d distinct of %d) — each needs its own draw",
+			len(distinct), len(placed))
+	}
+	if maxH-minH < 1.0 {
+		t.Errorf("headings span only %.2f rad — clustered (east-march regression)", maxH-minH)
 	}
 }

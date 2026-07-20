@@ -43,12 +43,12 @@ animal_density:
 
 # Sustain the placed populations (F9 respawn tops up toward target; ≈ nominal placed counts).
 respawn_targets:
-  rabbit: 540
-  deer: 270
-  goat: 180
-  fish: 360
-  wolf: 72
-  bear: 36
+  rabbit: 6
+  deer: 4
+  goat: 4
+  fish: 4
+  wolf: 4
+  bear: 4
 
 # Per-species initial runtime vectors — buildAnimals REQUIRES a template per placed species so
 # §6 speed/graze/combat formulas have real Stat + drive inputs at t=0. Herbivores start Graze,

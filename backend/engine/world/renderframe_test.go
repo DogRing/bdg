@@ -425,6 +425,11 @@ func TestAnimalBornEventPayloadShape(t *testing.T) {
 		1, // cadence: every tick
 	)
 
+	// Rescue only fires on EXTINCTION now (PD5 / P_fa4c-3), so wipe the species to provoke the event
+	// this test is about. Ticking with survivors present would produce no AnimalBorn at all.
+	for _, a := range fx.world.Animals() {
+		fx.world.removeAnimal(a.ID)
+	}
 	fx.world.Tick()
 
 	var born *core.Event
