@@ -312,7 +312,10 @@ object_kinds:
       suitability: "depth * 0.9 + moisture * 0.1"   # §6 → [0,1]. sea(depth 1.0)≈1.0, river(0.5)≈0.55, soil(0)≈0.05 —
                                                     # below death_threshold on land, so a stray plant dies rather than
                                                     # colonising the meadow. Reads no temperature (no comfort band needed).
-      length_rate: 0.10             # submerged fronds grow fast — density-placed weed starts at seedling size (0,0), so a slow rate leaves fish grazing plants with no biomass to give
+      length_rate: 0.30             # submerged fronds grow fast — density-placed weed starts at seedling size (0,0), so a slow rate leaves fish grazing plants with no biomass to give.
+                                    # 0.10→0.30 (2026-07-19): graze_depletion 2.0→5.0 재적합의 보정. 전역 k는 **가장 덜 움직이는 종을 먼저 무너뜨린다** — 물고기는 정주성이라 국소 수초가 바닥나면
+                                    # 헤엄쳐 벗어나지 못한다(사슴은 걸어 나간다). k=5에서 학교 규모가 11.8→5.9로 리스폰 하한까지 붕괴했다. 수초 재생을 3배로 올려 13.0 회복(k 상향 이전 수준).
+                                    # 실측 민감도: lr 0.10→5.9 · 0.30→13.0 · 0.60→19.8 · 1.00→33.0. 최소 보정치를 택함(학교를 부풀리지 않고 루프만 복구).
       width_rate:  0.02
       stages: [0.2, 0.5]            # LENGTH thresholds (world units)
       yield_stage: 99               # no harvest block — fish graze it, agents do not

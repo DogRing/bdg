@@ -1,6 +1,7 @@
 package worldgen
 
 import (
+	"math"
 	"path/filepath"
 	"testing"
 
@@ -63,15 +64,27 @@ func TestPredatorBalanceObservation(t *testing.T) {
 	hiddenTickSum, preyTickSum := 0, 0
 	predatorExtinctAt := -1
 	minPrey := 1 << 30
+	predTicks, engagedTicks, preyWithin30, preyWithin10 := 0, 0, 0, 0
+	preyDriveTicks := 0
+	preyHungerSum, predHungerSum := 0.0, 0.0
 
 	for i := 1; i <= ticks; i++ {
 		w.Tick()
 		now := w.CurrentTick()
 		preyNow, predNow, hiddenNow := 0, 0, 0
-		for _, a := range w.Animals() {
+		animals := w.Animals()
+		var preyPos []core.Vec2
+		for _, a := range animals {
+			if isPrey[a.Species] {
+				preyPos = append(preyPos, a.Pos)
+			}
+		}
+		for _, a := range animals {
 			switch {
 			case isPrey[a.Species]:
 				preyNow++
+				preyHungerSum += a.Drives["hunger"]
+				preyDriveTicks++
 				hidden := a.HiddenUntil > 0 && a.HiddenUntil >= now
 				if hidden {
 					hiddenNow++
@@ -82,10 +95,31 @@ func TestPredatorBalanceObservation(t *testing.T) {
 				prevHidden[a.ID] = hidden
 			case isPredator[a.Species]:
 				predNow++
-				if a.EngagedWith != "" && prevEngaged[a.ID] != a.EngagedWith {
-					attempts[a.Species]++
+				predTicks++
+				predHungerSum += a.Drives["hunger"]
+				if a.EngagedWith != "" {
+					engagedTicks++
+					if prevEngaged[a.ID] != a.EngagedWith {
+						attempts[a.Species]++
+					}
 				}
 				prevEngaged[a.ID] = a.EngagedWith
+				// Approach funnel: how close does a predator actually get? This is where the
+				// balance broke once before — predators were near prey constantly (85% within
+				// 30u) yet engaged 1.1% of ticks, because sated prey stop moving and clump on
+				// the surviving food, so the predator has to blunder into them.
+				near := math.Inf(1)
+				for _, pp := range preyPos {
+					if d := a.Pos.Distance(pp); d < near {
+						near = d
+					}
+				}
+				if near <= 30 {
+					preyWithin30++
+				}
+				if near <= 10 {
+					preyWithin10++
+				}
 			}
 		}
 		hiddenTickSum += hiddenNow
@@ -151,6 +185,16 @@ func TestPredatorBalanceObservation(t *testing.T) {
 	t.Logf("hunt success:    %.1f%%  (an outcome of THIS bed's stocking — cluster 10's ~15%% is a"+
 		" reference, not a target; more prey ⇒ more successful hunts)", successRate)
 	t.Logf("starvation:      %s", fmtCounts(starved))
+	// The approach funnel + who is hungrier. Read these together: when prey are BETTER fed than
+	// predators, the food supply is over-provisioned for the prey and the predators pay for it —
+	// sated prey stop moving (FM14b restlessness) and encounters dry up. Food scarcity, not
+	// predator senses, is the lever that moves this (a 2×2 on predator smell radius raised kills
+	// slightly but made predator starvation WORSE; docs/plans/fauna.md 클러스터 10).
+	predPct := func(n int) float64 { return 100 * float64(n) / float64(max(predTicks, 1)) }
+	t.Logf("approach funnel: prey within 30u %.1f%% → within 10u %.1f%% → engaged %.1f%% of predator-ticks",
+		predPct(preyWithin30), predPct(preyWithin10), predPct(engagedTicks))
+	t.Logf("mean hunger:     prey %.3f  vs  predator %.3f",
+		preyHungerSum/float64(max(preyDriveTicks, 1)), predHungerSum/float64(max(predTicks, 1)))
 	t.Logf("cover hiding:    episodes %s ; prey-life spent hidden %.2f%%",
 		fmtSpeciesCounts(hideEpisodes), 100*float64(hiddenTickSum)/float64(max(preyTickSum, 1)))
 	if predatorExtinctAt >= 0 {
@@ -169,5 +213,21 @@ func TestPredatorBalanceObservation(t *testing.T) {
 	}
 	if finalPred == 0 {
 		t.Errorf("predators died out — they cannot feed themselves at this balance (no respawn here)")
+	}
+
+	// Trophic ordering — a STRUCTURAL claim, not a rate target. A predator can legitimately be
+	// hungry (prey scarce, population near carrying capacity), but it should not be systematically
+	// hungrier than the animals it eats: that combination means the herbivores' food is
+	// over-provisioned, they sit still once sated (FM14b restlessness), and the predators starve
+	// beside them. That is precisely the state this bed was in before the 2026-07-19 recalibration
+	// — prey 0.355 vs predator 0.657, one kill and 21 predator starvations in 6000 ticks — and no
+	// count-based assertion here caught it, because both sides technically coexisted.
+	// The margin is deliberately wide: this trips on an inverted food chain, not on drift.
+	preyHunger := preyHungerSum / float64(max(preyDriveTicks, 1))
+	predHunger := predHungerSum / float64(max(predTicks, 1))
+	if predHunger > preyHunger+0.15 {
+		t.Errorf("food chain is inverted: predators (hunger %.3f) are far hungrier than the prey they "+
+			"eat (%.3f) — herbivore food is over-provisioned, so sated prey stop moving and predators "+
+			"cannot find them", predHunger, preyHunger)
 	}
 }
