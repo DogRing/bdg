@@ -277,6 +277,19 @@ func Step(snap *Snapshot, rules *Rules, rng *rng.RNG) []Intent
 // `target.threat` + `scent.carrion` to the fixed set — FC2/FC10, SPEC-combat.md. Reproduction adds
 // `maturity` — PD4-ii/P_fa4c: a controller-derived operand = clamp01(Age/SpeciesRule.MaturityAge), 1 when
 // mature or when MaturityAge ≤ 0 (unauthored ⇒ gate-neutral). The Mate §6 utility reads it.)
+// `terrain.<attr>` (PD10) is an OPEN family alongside this fixed set: it reads the §5 attribute
+// vector of the ground under the animal (grain_size/slope/depth/salinity/moisture/… — the same
+// content-defined set flora reads, via TerrainSampler.Attrs). It is NOT enumerable here because the
+// attr set is content, so platform/config adds `terrain.<name>` to the allowed set from terrain.yaml.
+// The prefix is required: bare `moisture`/`temperature` are the CLIMATE operands and terrain.yaml
+// defines attrs by the same names. Absent attr table ⇒ every terrain operand reads 0 (off-lever).
+//
+// This is how habitat preference is expressed — through ordinary §6, with NO new steering machinery.
+// An animal whose `speed` falls on ground it prefers lingers there and keeps moving where it does
+// not (area-restricted search), so "goats live on rocky ground" EMERGES from a scalar rather than
+// being hardcoded (D2/D10). Measured caveat: where animals actually end up is dominated by FORAGE
+// distribution, so a preference term must be large to register (goat slope 0.087 → 0.132 at −0.60);
+// a species' habitat is its own tuning round, not a free consequence of the operand existing.
 func AttrOperands() []core.Tag
 
 // ── Rules (the data-defined fauna table; flora.Rules parity, F26/F31) ────────────────

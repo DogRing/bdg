@@ -20,6 +20,7 @@ type turnTestTerrain struct{}
 func (turnTestTerrain) FootprintBlocked(core.Vec2) bool { return false }
 func (turnTestTerrain) TerrainAt(core.Vec2) core.Tag    { return "soil" }
 func (turnTestTerrain) BaseCost(core.Vec2) float64      { return 1 }
+func (turnTestTerrain) Attrs(core.Vec2) map[core.Tag]float64 { return nil }
 
 func turnNum(t *testing.T, src string) *expr.Program {
 	t.Helper()

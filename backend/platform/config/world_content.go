@@ -88,7 +88,7 @@ func buildWorldContent(raw map[string][]byte, statReg *stats.Registry, actReg *a
 		} else {
 			out.FloraRules = floraRules
 		}
-		if faunaRules, err := buildFaunaRules(objects, terrainIDs, statReg, actReg); err != nil {
+		if faunaRules, err := buildFaunaRules(objects, terrainIDs, attrs, statReg, actReg); err != nil {
 			return out, err
 		} else {
 			out.FaunaRules = faunaRules

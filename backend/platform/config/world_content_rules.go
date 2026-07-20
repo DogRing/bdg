@@ -203,8 +203,14 @@ func floraYields(obj objectKindDoc, itemIDs map[core.Tag]bool, statReg *stats.Re
 	return out, nil
 }
 
-func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, statReg *stats.Registry, actReg *actions.Registry) (*fauna.Rules, error) {
+func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, terrainAttrs map[core.Tag]bool, statReg *stats.Registry, actReg *actions.Registry) (*fauna.Rules, error) {
 	baseAllowed := tagSet(fauna.AttrOperands()...)
+	// PD10: `terrain.<attr>` for every §5 attribute terrain.yaml defines — the same open, content-owned
+	// set flora reads. Prefixed because the bare names collide with the climate operands (moisture,
+	// temperature); enumerated here rather than in fauna.AttrOperands because the set is content, not engine.
+	for name := range terrainAttrs {
+		baseAllowed[core.Tag("terrain."+string(name))] = true
+	}
 	species := make(map[fauna.SpeciesID]fauna.SpeciesRule)
 	for _, obj := range sortedObjectKinds(doc.ObjectKinds) {
 		if obj.Fauna == nil {

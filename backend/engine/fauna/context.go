@@ -3,6 +3,7 @@ package fauna
 import (
 	"hash/fnv"
 	"math"
+	"strings"
 
 	"github.com/dogring/bdg/engine/kernel/core"
 	"github.com/dogring/bdg/engine/space/scent"
@@ -30,6 +31,9 @@ const (
 	attrWindMag       core.Tag = "wind.mag"
 	attrDaylight      core.Tag = "daylight"
 	attrIsCurrent     core.Tag = "is_current"
+	// attrTerrainPrefix marks the open-ended `terrain.<attr>` operand family (PD10). Prefixed because
+	// the terrain attr set collides with the climate operands (moisture, temperature).
+	attrTerrainPrefix          = "terrain."
 	attrMaturity      core.Tag = "maturity"  // PD4-ii/P_fa4c: clamp01(age/maturity_age); 1 when mature (or maturity_age unauthored)
 	attrKinCount      core.Tag = "kin_count" // PD4-v/P_fa4c-3: same-species neighbours within sight — local crowding (raw count; content normalises)
 )
@@ -67,6 +71,7 @@ type animalContext struct {
 	maturity     float64             // pre-computed clamp01(age/maturity_age) ∈[0,1]; §6 `maturity` operand (PD4-ii/P_fa4c)
 	kinCount     float64             // pre-computed same-species neighbours in sight range; §6 `kin_count` operand (PD4-v)
 	targetThreat float64             // candidate target danger for combat utility (FC2)
+	terrainAttrs map[core.Tag]float64 // §5 attrs of the terrain under the animal; §6 `terrain.<attr>` (PD10)
 	isCurrent    bool                // set per-candidate in scoring loop (is_current operand)
 }
 
@@ -148,6 +153,22 @@ func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 			return scalarOne, true
 		}
 		return scalarZero, true
+	}
+
+	// Terrain attributes (PD10): `terrain.<attr>` reads the §5 attribute vector of the ground the
+	// animal is standing on — the SAME content-defined set flora reads (grain_size/slope/depth/
+	// salinity/moisture/…). Prefixed because `moisture` and `temperature` are already CLIMATE
+	// operands and the terrain-attr set contains names that would collide.
+	//
+	// Habitat preference is expressed through these in ordinary §6 — no new steering machinery. An
+	// animal whose `speed` falls (or whose Rest utility rises) on ground it likes lingers there and
+	// keeps moving where it does not, which is area-restricted search: real habitat selection
+	// emerging from wander + a scalar, rather than a hardcoded "goat belongs on mountains" (D2/D10).
+	if rest, ok := strings.CutPrefix(string(name), attrTerrainPrefix); ok {
+		if c.terrainAttrs == nil {
+			return scalarZero, true // terrain attrs unavailable ⇒ neutral, not an error
+		}
+		return c.terrainAttrs[core.Tag(rest)], true
 	}
 
 	// Drive ids (open content, F27 — a drive id IS its §6 Attr operand name).

@@ -244,6 +244,12 @@ entity `Animal` · `carcass` · `drive`(+ 개별: `hunger`/`fear`(→Flee)/`ther
 - **predator 채널은 일부러 껐다.** 공포는 `scent.predator > 0 → wary`로 **SET**되므로 포식자 잔향을 켜면 늑대가 한 번 지나간 곳마다 피식자가 영구 경계 상태가 된다(공포 포화). '공포의 지형'은 할 만한 설계지만 **별도 튜닝이 필요한 독립 항목**이지 곁다리로 켤 것이 아니다.
 - **부수 소득:** scent SPEC이 클러스터 8b(2층 분리) 이후 갱신되지 않아 정적 층이 **문서에 아예 없었다**. 3층 모델 전체를 SPEC에 명문화.
 
+#### PD10 — 지형 선호 — **RESOLVED: §6 지형 오퍼랜드 신설 (사람 승인 2026-07-19) · SHIPPED**
+**현황:** fauna §6에 **지형 오퍼랜드가 아예 없었다.** `terrain_cost`는 속도만 늦추고 `hazard_avoidance`는 험한 지형에서 밀어내는 **척력만** — 콘텐츠가 *회피*는 표현해도 *선호*는 표현할 수단이 없었고, "염소는 바위땅에 산다"는 Go에 하드코딩하지 않는 한 어디에도 쓸 곳이 없었다(D2/D10 위반).
+- **구현:** `terrain.<attr>` **개방형 오퍼랜드 계열**. flora가 읽는 것과 **동일한 §5 속성 집합**(grain_size/slope/depth/salinity/moisture/…)을 `TerrainSampler.Attrs`로 노출. 속성 집합이 콘텐츠라 `AttrOperands()`에 열거할 수 없어 **platform/config가 terrain.yaml에서 읽어 허용 집합에 추가**한다. **접두어는 필수** — 맨이름 `moisture`/`temperature`는 이미 기후 오퍼랜드이고 terrain.yaml이 같은 이름의 속성을 정의한다. 속성표 없으면 전부 0(off-lever).
+- **핵심 설계 — 새 조향 기계가 필요 없다.** 선호는 **평범한 §6**으로 표현된다: 좋아하는 땅에서 `speed`가 떨어지는 동물은 그곳에 머물고 아닌 곳은 계속 지나간다(area-restricted search). 서식지 선택이 **스칼라 하나에서 창발**한다.
+- **실측 + 솔직한 한계:** 염소 `- terrain.slope * 0.60` ⇒ 염소 아래 평균 slope **0.087 → 0.132**로 사슴(0.089)을 추월 — **작동한다.** 그러나 **계수가 커야 한다**: 0.10에서는 효과가 측정되지 않았다. 이 세계에서 동물이 실제로 어디 있는지는 **먹이 분포가 지배**하기 때문이다. 사슴 `terrain.moisture` 선호는 **시도했다가 폐기**했다 — 습지 선호가 나타나지 않았고, **작동하지 않는 예시를 콘텐츠에 남기면 거짓 주석이 된다.** ⇒ 종별 서식지 저작은 **별도 튜닝 라운드**이지 오퍼랜드가 생겼다고 따라오는 것이 아니다. 가드 `TestHabitatPartitioning`은 **입증된 것만**(염소가 사슴보다 가파른 땅에) 단언한다.
+
 #### 미채택으로 남긴 관찰 — 짐승길(navmap wear)이 만들어져 있으나 배선 안 됨
 `navmap`에 desire-path 메커니즘이 **완성**돼 있다: wear 침전/감쇠/`ActiveWear`/`wearMultiplier`, `StepCost = BaseCost × wearMultiplier` 결합, `/api/terrain` 렌더까지. 그런데 ①**월드에서 `Deposit`을 부르는 곳이 없고** ②fauna 이동은 wear를 무시하는 `BaseCost`를 읽는다 ⇒ **길이 영영 생기지 않는다.** PD9 옵션 (B)였고 이번엔 미채택. 살리려면 위 두 배선이 필요하며, 배부른 피식자는 잘 안 움직이므로(FM14b) 길이 얼마나 진하게 패일지는 미지수.
 

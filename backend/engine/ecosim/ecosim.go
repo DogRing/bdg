@@ -147,6 +147,10 @@ func (a NavAdapter) BaseCost(p core.Vec2) float64 {
 	return c
 }
 
+// Attrs: ecosim carries no §5 terrain attr table, so every `terrain.<attr>` §6 operand reads 0 here
+// (PD10 off-lever — the harness is a movement/cost bed, not a habitat one).
+func (a NavAdapter) Attrs(core.Vec2) map[core.Tag]float64 { return nil }
+
 // TerrainAtPos maps a continuous position to its terrain tag (exported for test assertions).
 func TerrainAtPos(p core.Vec2) core.Tag { return terrainAt(p) }
 

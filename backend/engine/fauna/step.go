@@ -100,6 +100,10 @@ func fullPipeline(
 	newActiveUntil core.Tick,
 ) Intent {
 	smellRadius, sightRadius, fovArc := rules.Senses(a.Species)
+	var terrainAttrs map[core.Tag]float64
+	if snap.Terrain != nil {
+		terrainAttrs = snap.Terrain.Attrs(a.Pos) // PD10: §6 `terrain.<attr>` for the ground under the animal
+	}
 
 	// ── Step 1: SENSE ─────────────────────────────────────────────────────────
 	// Scent: omni neighbor/upwind read (F34, scent-only, no FOV here).
@@ -136,6 +140,7 @@ func fullPipeline(
 		maturity:     maturity,
 		kinCount:     kin,
 		targetThreat: target.threat,
+		terrainAttrs: terrainAttrs,
 	}
 	newDrives := rules.DriveUpdate(a.Species, a.Drives, dCtx, snap.DT)
 
@@ -154,6 +159,7 @@ func fullPipeline(
 		maturity:     maturity,
 		kinCount:     kin,
 		targetThreat: target.threat,
+		terrainAttrs: terrainAttrs,
 	}
 
 	bestAction, _ := scoreAction(a, rules, sCtx)

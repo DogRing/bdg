@@ -674,6 +674,7 @@ type configMockTerrain struct{}
 func (configMockTerrain) FootprintBlocked(core.Vec2) bool { return false }
 func (configMockTerrain) TerrainAt(core.Vec2) core.Tag    { return "soil" }
 func (configMockTerrain) BaseCost(core.Vec2) float64      { return 1 }
+func (configMockTerrain) Attrs(core.Vec2) map[core.Tag]float64 { return nil }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

@@ -52,11 +52,13 @@ type mockTerrain struct {
 	blocked  func(core.Vec2) bool
 	terrainF func(core.Vec2) core.Tag
 	costF    func(core.Vec2) float64
+	attrs    map[core.Tag]float64 // PD10: §6 `terrain.<attr>` source; nil ⇒ all terrain operands read 0
 }
 
 func (m mockTerrain) FootprintBlocked(p core.Vec2) bool { return m.blocked(p) }
 func (m mockTerrain) TerrainAt(p core.Vec2) core.Tag    { return m.terrainF(p) }
 func (m mockTerrain) BaseCost(p core.Vec2) float64      { return m.costF(p) }
+func (m mockTerrain) Attrs(core.Vec2) map[core.Tag]float64 { return m.attrs }
 
 var openTerrain = mockTerrain{
 	blocked:  func(core.Vec2) bool { return false },

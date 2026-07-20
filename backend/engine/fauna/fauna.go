@@ -90,10 +90,14 @@ type EnvSample struct {
 //   - TerrainAt: the terrain type id at p (D11 index read).
 //   - BaseCost: the navmap base terrain cost at p (species-independent, ≥1).
 //     Effective traversal cost = BaseCost × Rules.TerrainCost(species,terrain).mult.
+//   - Attrs: the §5 attribute vector of the terrain at p (grain_size/slope/depth/salinity/…, the SAME
+//     content-defined set flora reads). Exposed to §6 as `terrain.<attr>` so habitat preference is
+//     content (D10), not engine logic. nil ⇒ every terrain operand reads 0 (off-lever).
 type TerrainSampler interface {
 	FootprintBlocked(p core.Vec2) bool
 	TerrainAt(p core.Vec2) core.Tag
 	BaseCost(p core.Vec2) float64
+	Attrs(p core.Vec2) map[core.Tag]float64
 }
 
 // HazardSampler is the read-only per-species STATIC hazard potential field fauna

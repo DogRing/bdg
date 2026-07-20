@@ -110,7 +110,7 @@ func (w *World) buildFaunaSnapshot() *fauna.Snapshot {
 		ByID:          byID,
 		Scent:         w.scent,
 		Spatial:       w.spatial,
-		Terrain:       worldTerrainSampler{nav: w.nav},
+		Terrain:       worldTerrainSampler{nav: w.nav, attrs: w.terrainAttrs},
 		Env:           w.buildFaunaEnvSamples(),
 		Tick:          w.tick,
 		Cadence:       w.envCfg.FaunaCadence,
@@ -161,7 +161,8 @@ func (w *World) buildFaunaEnvSamples() map[core.ObjectID]fauna.EnvSample {
 }
 
 type worldTerrainSampler struct {
-	nav *navmap.NavMap
+	nav   *navmap.NavMap
+	attrs map[navmap.TerrainID]map[core.Tag]float64
 }
 
 func (s worldTerrainSampler) FootprintBlocked(p core.Vec2) bool {
@@ -488,4 +489,14 @@ func animalDigest(animals map[core.ObjectID]*fauna.Animal, ids []core.ObjectID) 
 
 func rngNew(seed int64) *rng.RNG {
 	return rng.New(seed)
+}
+
+// Attrs returns the §5 attribute vector of the terrain at p — the SAME content-defined set flora
+// reads — which fauna §6 exposes as `terrain.<attr>` (PD10). Returns nil when navmap or the attr
+// table is absent, which the context reads as 0 for every terrain operand (off-lever).
+func (s worldTerrainSampler) Attrs(p core.Vec2) map[core.Tag]float64 {
+	if s.nav == nil || s.attrs == nil {
+		return nil
+	}
+	return s.attrs[s.nav.TerrainAt(s.nav.CellOf(p))]
 }
