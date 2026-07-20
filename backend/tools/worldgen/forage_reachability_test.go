@@ -108,7 +108,11 @@ func TestForageReachability(t *testing.T) {
 	}
 	t.Logf("animals whose nearest food plant is exhausted: %d ; of those, edible food WAS in reach: %d (%.0f%%)",
 		exhaustedNearest, foodLeftInReach, wasted)
-	t.Logf("mean live fish: %.1f (respawn floor %d)", meanFish, 6)
+	// Read the floor from the fixture rather than hardcoding it: the meadow's stocking is a tuning
+	// dial (it was raised 4× when predators turned out to be unable to find prey on the live map),
+	// and a hardcoded floor silently turns this assertion into a no-op the next time it moves.
+	fishFloor := fx.RespawnTargets["fish"]
+	t.Logf("mean live fish: %.1f (respawn floor %d)", meanFish, fishFloor)
 
 	// 82% was the broken loop; ~5% is a working one. 40% is a wide band that only trips on a real
 	// regression of the "an exhausted plant is not food" rule, not on ordinary balance drift.
@@ -116,9 +120,10 @@ func TestForageReachability(t *testing.T) {
 		t.Errorf("animals are ignoring food inside their own graze reach %.0f%% of the time — "+
 			"the forage lookup is picking exhausted plants again", wasted)
 	}
-	// The fixture tops fish up TO 6, so anything above that is births carrying the school (PD5b).
-	if meanFish <= 6 {
-		t.Errorf("fish are being held up by the respawn floor (mean %.1f ≤ 6) — the aquatic feeding/"+
-			"breeding loop has stopped producing offspring", meanFish)
+	// The fixture tops fish up TO its target, so anything above that is births carrying the
+	// school (PD5b) rather than the thermostat.
+	if fishFloor > 0 && meanFish <= float64(fishFloor) {
+		t.Errorf("fish are being held up by the respawn floor (mean %.1f ≤ %d) — the aquatic feeding/"+
+			"breeding loop has stopped producing offspring", meanFish, fishFloor)
 	}
 }

@@ -45,13 +45,20 @@ flora_density:
                          # large nominal is what actually puts weed in the few ponds/rivers.
 
 # ── Fauna by type (6 species) — herbivores ≫ predators; fish confined to water ────────
+# 육상 6종 밀도 4배 (2026-07-19, 사람 승인). 이전 밀도에서 이 월드는 **포식이 0이었다** — 6000틱 동안 사냥 0회,
+# 포식자는 아사→리스폰을 반복. 원인은 행동이 아니라 산수였다: 못 먹은 포식자는 약 1게임일(1440틱)에 죽고 틱당
+# ~0.2 units 움직이므로 평생 탐색 예산이 수백 units인데, 500×500 맵에서 피식자는 100~200u 떨어져 뭉쳐 있었고
+# 냄새는 ~20u까지만 간다. 실측: 포식자가 피식자 30u 이내에 있던 시간 **2.0%**. (후각 반경을 3.5배로 늘려도
+# 2.0→2.4%로 무의미 — 냄새장 자체가 그만큼 안 퍼진다.) 4배 후 **66.8%**, 사냥 0→6~9회/6000틱.
+# 기준값의 근거: 튜닝이 실제로 작동하는 predator_balance 베드의 피식자 밀도(4.2e-4/unit²)에 맞춤(이 월드는 1.1e-4였다).
+# **fish는 제외** — 물 면적은 그대로라 4배는 과밀이 될 뿐이고, 이번 결정의 근거(육상 포식자가 무리를 못 찾음)와 무관.
 animal_density:
-  rabbit: 0.00006        # ~15 — abundant small grazer
-  deer:   0.00003        # ~8 — mid grazer
-  goat:   0.00002        # ~5 — climber grazer (mountain)
+  rabbit: 0.00024        # ~15 — abundant small grazer
+  deer:   0.00012        # ~8 — mid grazer
+  goat:   0.00008        # ~5 — climber grazer (mountain)
   fish:   0.00004        # ~10 nominal — WATER only (rivers/lakes) after passability filter
-  wolf:   0.000008       # ~2 — pack predator
-  bear:   0.000004       # ~1 — apex omnivore
+  wolf:   0.000032       # ~2 — pack predator
+  bear:   0.000016       # ~1 — apex omnivore
 
 # Sustain the placed populations (F9 respawn tops up toward target; ≈ nominal placed counts).
 # fish is water-gated: respawnPos now rejection-samples for F18 passability (engine/world/respawn.go)
@@ -59,12 +66,12 @@ animal_density:
 # clustered when the pond is small) instead of stranding on land. Target kept modest to match the
 # scarce 500² water.
 respawn_targets:
-  rabbit: 15
-  deer: 8
-  goat: 5
+  rabbit: 60
+  deer: 32
+  goat: 20
   fish: 6
-  wolf: 2
-  bear: 1
+  wolf: 8
+  bear: 4
 
 # Per-species initial runtime vectors — buildAnimals REQUIRES a template per placed species so
 # §6 speed/graze/combat formulas have real Stat + drive inputs at t=0. Herbivores start Graze,

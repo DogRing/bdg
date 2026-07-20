@@ -405,7 +405,9 @@ object_kinds:
         - { action: Mate,   utility: "maturity * (1 - hunger) * 0.22" }             # P_fa4c-2 courtship (predator: no fear term). Hunting out-bids it whenever hungry (untuned)
         - { action: MoveTo, utility: "0.15" }                                       # range/wander baseline
       drives:
-        - { id: hunger,  rate: 0.0008, vital_drain: 0.006, vital_drain_above: 0.98 }  # Phase 10: hunt-attempt cadence ~9 real-min at 500ms ticks (was 12.5) — spectator drama density; respawn absorbs the extra predation pressure. PD3 아사(P_fa4b): 먹이(prey) 못 찾으면 포식자도 아사 → 항온기 없이 상한 조절 (UNTUNED)
+        - { id: hunger,  rate: 0.0004, vital_drain: 0.003, vital_drain_above: 0.98 }  # Phase 10: hunt-attempt cadence ~9 real-min at 500ms ticks (was 12.5) — spectator drama density; respawn absorbs the extra predation pressure. PD3 아사(P_fa4b): 먹이(prey) 못 찾으면 포식자도 아사 → 항온기 없이 상한 조절 (UNTUNED)
+                                  # ÷2 재적합 (2026-07-19, 사람 승인): 이전 값이면 못 먹은 포식자가 **약 1게임일**(1일=1440틱)에 아사한다 — 현실(1~2주)과도 어긋나고, 무엇보다 "속도×아사까지의 시간"으로 계산한 **평생 탐색 예산이 수백 units**뿐이라 500² 맵에서 무리를 찾아갈 여력이 없었다(실측: 라이브 월드 사냥 0회).
+                                  # ÷5까지 늦추는 것은 3시드에서 **역효과**: 사냥이 8.7→3.3으로 떨어진다 — `Hunt = hunger×(…)`이므로 시계를 너무 늦추면 사냥 동기 자체가 죽고 굶지 않는 방랑자가 된다. ÷2가 "탐색을 감당하되 사냥할 만큼은 배고픈" 지점.
         - { id: fatigue, rate: 0.0005 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 5 - moisture * 2"
@@ -523,7 +525,9 @@ object_kinds:
         - { action: Mate,   utility: "maturity * (1 - hunger) * 0.18" }             # P_fa4c-2 courtship (apex omnivore, no fear term): slowest breeder of the six (untuned)
         - { action: MoveTo, utility: "0.15" }
       drives:
-        - { id: hunger,  rate: 0.0005, vital_drain: 0.006, vital_drain_above: 0.98 } # large body → slow hunger. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
+        - { id: hunger,  rate: 0.00025, vital_drain: 0.003, vital_drain_above: 0.98 } # large body → slow hunger. PD3 아사(P_fa4b): hunger≥0.98 → vital 출혈 (UNTUNED)
+                                  # ÷2 재적합 (2026-07-19, 사람 승인): 이전 값이면 못 먹은 포식자가 **약 1게임일**(1일=1440틱)에 아사한다 — 현실(1~2주)과도 어긋나고, 무엇보다 "속도×아사까지의 시간"으로 계산한 **평생 탐색 예산이 수백 units**뿐이라 500² 맵에서 무리를 찾아갈 여력이 없었다(실측: 라이브 월드 사냥 0회).
+                                  # ÷5까지 늦추는 것은 3시드에서 **역효과**: 사냥이 8.7→3.3으로 떨어진다 — `Hunt = hunger×(…)`이므로 시계를 너무 늦추면 사냥 동기 자체가 죽고 굶지 않는 방랑자가 된다. ÷2가 "탐색을 감당하되 사냥할 만큼은 배고픈" 지점.
         - { id: fatigue, rate: 0.0004 }
         - { id: thermal }
       apparent_temp: "temperature - wind.mag * 3 - moisture * 1"                    # large, well-insulated
