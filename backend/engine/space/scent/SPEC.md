@@ -87,6 +87,46 @@ func (g *Grid) Deposit(ch Channel, pos core.Vec2, intensity float64)
 // byte-identical regardless of deposit order. world calls Spread on `tick % Ns` (Ns = balance, F24).
 func (g *Grid) Spread(wind Wind)
 
+// ── Static layer (클러스터 8b) ────────────────────────────────────────────────────────
+// DepositStatic/CommitStatic are Deposit/Commit for occupants that DO NOT MOVE (flora, objects,
+// carcasses). Deposits accumulate into a rebuild buffer that only becomes visible on CommitStatic —
+// which also diffuses it once, under `wind` — so a half-finished rebuild is never read. Between
+// rebuilds the previous static field STAYS IN PLACE: a plant that has not changed keeps smelling.
+// That persistence is the point. Before the split, static sources were re-laid on the bulk cadence
+// but cleared every tick, so food scent existed on 1 tick in 6 (measured 4.939 / 0.000 / 0.000 / …)
+// and herbivore food homing was blind 5/6 of the time.
+func (g *Grid) DepositStatic(ch Channel, pos core.Vec2, intensity float64)
+func (g *Grid) CommitStatic(wind Wind)
+
+// ── Trail / spoor layer (PD9) ────────────────────────────────────────────────────────
+// GROUND scent left behind by a passing source, as opposed to the airborne plume the other two
+// layers model. ConfigureTrail enables it; `strength` is the per-CHANNEL fraction of each Deposit
+// also laid on the ground, so which scents linger is content's call (D4/D10) — a channel left at 0
+// leaves no trail. decay ≤ 0 ⇒ layer off and the grid is byte-identical to one that never had it.
+//
+// Why it exists: the dynamic layer is rebuilt from scratch every Commit, so without this the world
+// keeps NO record that an animal was ever anywhere — a predator can only sense prey that are live
+// and within a cell or two, which is why the live 500² world produced zero kills in 6000 ticks (PD8).
+//
+// Two rules distinguish it from the airborne layers, both physical:
+//   1. NEVER DIFFUSED. Wind-spreading a persistent layer every tick is the heat equation: repeated
+//      diffusion smears a track into a uniform haze and destroys the gradient that makes it followable.
+//      Ground scent also stays put — it is the plume that drifts.
+//   2. FOLLOWED, NOT WINDED. Read resolves the trail's direction from its spatial gradient and the
+//      airborne layers' from wind, then blends by each part's share of the reading. Applying the
+//      upwind rule to a trail would send a tracker crosswise to the tracks under its feet.
+// DecayTrail fades the layer one multiplicative step and drops cells below an internal floor, which
+// is what bounds its memory to recently-visited ground. World calls it once per tick, BEFORE that
+// tick's deposits (so fresh sign is laid at full strength and only older sign ages).
+//
+// TUNING INVARIANT: an always-occupied cell saturates at strength/(1−decay). Keep that — and `cap` —
+// BELOW a live source's magnitude, or a long-used bedding site out-shouts a live animal and a
+// predator abandons the deer in front of it to sniff a path. Raising strength is also NOT monotonic:
+// once saturation greatly exceeds `cap` every visited cell pins to the clamp, the field goes flat,
+// and the gradient disappears (measured: kills 21 → 5 between strength 0.010 and 0.030).
+func (g *Grid) ConfigureTrail(strength [NumChannels]float64, decay, cap float64)
+func (g *Grid) DecayTrail()
+
 // ── Commit (per-tick; world-driven) ──────────────────────────────────────────────────
 // Commit swaps PENDING into COMMITTED (read) and clears the new pending buffer — realizing the 1-tick
 // latency (a deposit/spread at tick T is visible to reads at T+1). Because pending is rebuilt from current
@@ -135,9 +175,14 @@ type ChannelReading struct {
   imports no consumer (no cycle).
 
 ## Owned Data
-- Two sparse **cell buffers** (committed + pending), keyed by integer cell coords (`struct{cx,cy int}`,
-  alloc-free + deterministic, spatial parity), each value a `[NumChannels]float64` intensity vector. Callers
-  interact only through Deposit/Spread/Commit/Read/IntensityAt. `Reading` is a fresh value the caller keeps freely.
+- **Three layers**, all sparse cell buffers keyed by integer cell coords (`struct{cx,cy int}`, alloc-free +
+  deterministic, spatial parity), each value a `[NumChannels]float64` intensity vector. A read is the **sum**
+  of all three — a tile smells of everything in it, and of what has passed through:
+  - **dynamic** (committed + pending): moving occupants; rebuilt from scratch every `Commit`.
+  - **static** (static + staticPend): non-moving occupants; rebuilt on the bulk cadence, persists between.
+  - **trail** (spoor): ground scent; accumulates, fades by `DecayTrail`, never rebuilt and never diffused.
+  Callers interact only through Deposit\*/Spread/Commit\*/ConfigureTrail/DecayTrail/Read/IntensityAt.
+  `Reading` is a fresh value the caller keeps freely.
 - `cellSize` fixed at `New` (injected, `cellSize ∝ smell radius`, F32) — never mutated.
 - World-owned (one per run); DERIVED state — rebuilt from emitter positions on resume (like the spatial
   hash), so NOT separately serialized (`docs/core/data-contracts.md`; positions are the source of truth).

@@ -239,6 +239,12 @@ apply (so animals have moved to their new cells) and is **fully serial** (D12):
 - **Wind source** = `climateState.Wind()` (CA2; WI-P1 owns climate). Climate OFF ⇒ `Wind{0,0}`.
 - **Emitter classification** is the world's read of content `scent:<channel>` tags (D4/D10) — which
   kind carries which channel + how `mag` is derived is content, not engine logic.
+- **Spoor decay runs first (PD9).** `runScentEnv` calls `scent.DecayTrail()` at the top of the phase,
+  BEFORE this tick's deposits, so fresh sign is laid at full strength and only older sign ages. No-op
+  when no channel opted in (`content/world.yaml scent_trail`), so the layer is an off-lever. Which
+  channels leave trails is content: `prey` is on, `predator` deliberately is NOT — fear is SET from
+  `scent.predator`, so a lingering predator trail would make prey permanently wary anywhere a wolf had
+  ever walked. Mechanism + tuning invariants: `engine/space/scent/SPEC.md` §Trail.
 - **One emitter, one deposit.** A flora plant is registered in BOTH `floraState` and `w.objects`
   (`env.go` PlaceObject on spawn), so the per-object deposit **MUST skip anything present in
   `floraState`** — plants are already deposited by `depositFloraScent` at their **biomass** magnitude

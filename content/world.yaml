@@ -36,6 +36,27 @@ grids:
   scent_cell_size: 10.0          # W3 floor: MUST be ≥ motion.max_speed × cadence.scent_spread (= 1.4×6 = 8.4 ✓);
                                  #   also ≈ herbivore smell radius (Read scans own cell + neighbors within radius)
 
+# ── Spoor: 지면 잔향 (PD9, 사람 승인 2026-07-19) ──────────────────────────────────────
+# 동적 층은 매 틱 재구축되므로, 이 층이 생기기 전 세계에는 **동물이 어딘가에 있었다는 기록이 아예 없었다** —
+# 포식자는 살아있고 한두 셀 안에 있는 개체만 감지할 수 있었고, 그래서 라이브 월드에서 사냥이 0이었다(PD8).
+# 잔향은 공기 중 플룸이 아니라 **땅에 묻은 냄새**라 확산시키지 않는다(반복 확산=열방정식 → 자취가 뭉개져 따라갈
+# 기울기가 사라진다). 방향도 따로 푼다: 플룸은 바람을 거슬러 올라가지만 자취는 **기울기를 따라간다**.
+scent_trail:
+  decay: 0.994                   # 틱당 감쇠. 1일=1440틱(1틱≈1분)이므로 반감기 ln2/0.006 ≈ 116틱 ≈ 2게임시간.
+  cap: 0.6                       # 셀당 상한. **생체 냄새 크기(Vital≈1.0)보다 낮게 유지할 것** — 안 그러면 오래 머문
+                                 #   잠자리가 눈앞의 살아있는 개체를 이겨서 포식자가 사슴을 두고 길을 킁킁대게 된다.
+  strength:                      # 침전량 중 땅에 묻는 비율. 채널별 opt-in — 어떤 냄새가 남는지는 콘텐츠가 정한다(D4/D10).
+    prey: 0.010                  #   실측 튜닝(라이브 초원 5시드, 6000틱, 사냥 횟수 평균): OFF 7.4 → 0.006에서 10.4 →
+                                 #   **0.010에서 13.6** → 0.016에서 15.0(고원). 잔향이 포식을 거의 두 배로 만든다.
+                                 #   진짜 위력은 세기가 아니라 **면적**이다: Read가 후각 반경 내 셀을 합산하므로
+                                 #   무리가 훑고 간 넓은 자취는 셀 여러 개가 더해져 멀리서도 게이트를 넘는다.
+                                 #   ⚠ 더 세게 갈수록 좋지는 않다 — 포화값 strength/(1-decay)가 cap을 크게 넘으면
+                                 #   방문한 셀이 전부 상한에 붙어 **장이 평평해지고 따라갈 기울기가 사라진다**
+                                 #   (0.030에서 사냥 21→5로 붕괴). 고원의 아래쪽 끝을 택함.
+                                 # predator는 **일부러 뺐다**: 공포는 `scent.predator>0 → wary`로 SET되므로 포식자
+                                 #   잔향을 켜면 늑대가 한 번 지나간 곳마다 피식자가 영구 경계 상태가 된다(공포 포화).
+                                 #   '공포의 지형' 자체는 할 만한 설계지만 별도 튜닝이 필요하지 곁다리로 켤 것이 아니다.
+
 # ── Motion (W3) — base locomotion (world units per fauna DT; DT = 1 tick) ──────────────
 # Agents move via MoveTo (travel time ∝ distance, balance world.arrival_epsilon) — NOT governed here.
 # These are fauna base speeds; the §6 Speed program modulates them by fear/fatigue + terrain Cost.

@@ -21,6 +21,15 @@ func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitte
 	w.envCfg = cfg
 	w.faunaRules = faunaRules
 	w.scent = scent.New(cfg.ScentCellSize)
+	if cfg.ScentTrailDecay > 0 && len(cfg.ScentTrailStrength) > 0 {
+		var strength [scent.NumChannels]float64
+		for _, tag := range sortedTagKeys(cfg.ScentTrailStrength) { // sorted: no map-order logic (D12)
+			if ch, ok := scentChannelFromTag("scent:" + tag); ok {
+				strength[ch] = cfg.ScentTrailStrength[tag]
+			}
+		}
+		w.scent.ConfigureTrail(strength, cfg.ScentTrailDecay, cfg.ScentTrailCap)
+	}
 	w.scentEmitters = cloneScentEmitters(scentEmitters)
 	w.coverKinds = cloneCoverKinds(coverKinds)
 	w.coverIndexKey = nil // force a cover-index rebuild now that cover kinds are known
@@ -39,6 +48,17 @@ func (w *World) InstallFauna(cfg EnvConfig, faunaRules *fauna.Rules, scentEmitte
 		w.spatial.Insert(a.ID, a.Pos)
 	}
 	sortObjectIDs(w.animalIDs)
+}
+
+// sortedTagKeys returns a map's tag keys in sorted order, so a config map can be read without
+// driving logic by map-iteration order (D12).
+func sortedTagKeys(m map[core.Tag]float64) []core.Tag {
+	out := make([]core.Tag, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 func (w *World) faunaInstalled() bool {
@@ -173,6 +193,11 @@ func (w *World) runScentEnv() {
 	if w.scent == nil {
 		return
 	}
+	// Fade the spoor layer BEFORE this tick's deposits, so what an animal lays down now is at full
+	// strength and only what was already on the ground ages (PD9). Off-lever: no-op when no channel
+	// opted in.
+	w.scent.DecayTrail()
+
 	// Animals are MOVING occupants: their tile changes every tick, so every channel they emit is
 	// re-laid every tick (see depositAnimalScent). Cost is O(live animals) — the same walk the
 	// predator channel already paid for.

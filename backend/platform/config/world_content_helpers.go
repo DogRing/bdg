@@ -413,3 +413,22 @@ func decayStates(item itemKindDoc, itemIDs map[core.Tag]bool) ([]decay.StateRule
 	}
 	return states, nil
 }
+
+// scentTrailStrength converts the content `scent_trail.strength` map (channel name → deposit
+// fraction) into the tag-keyed form world consumes. Non-positive entries are dropped, so a channel
+// can be switched off by setting it to 0 without deleting the key. nil in ⇒ nil out (trail off).
+func scentTrailStrength(in map[string]float64) map[core.Tag]float64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[core.Tag]float64, len(in))
+	for name, v := range in {
+		if v > 0 {
+			out[core.Tag(name)] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

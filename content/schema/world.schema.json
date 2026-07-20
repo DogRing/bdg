@@ -33,6 +33,23 @@
       }
     },
 
+    "scent_trail": {
+      "type": "object",
+      "description": "Spoor: ground scent left behind by passing sources (PD9). Unlike the airborne layers it is never diffused (repeated diffusion smears a track into a haze) and is followed by its gradient rather than upwind. Absent, or decay <= 0, leaves the layer off and the scent grid byte-identical.",
+      "additionalProperties": false,
+      "required": ["decay", "strength"],
+      "properties": {
+        "decay":    { "type": "number", "minimum": 0, "maximum": 1, "description": "multiplicative fade per tick; half-life = ln2/(1-decay) ticks. 0 disables the layer" },
+        "cap":      { "type": "number", "minimum": 0, "description": "per-cell clamp. Keep BELOW a live source's magnitude (animal Vital ~ 1.0) or a long-occupied bedding site out-shouts a live animal" },
+        "strength": {
+          "type": "object",
+          "description": "scent CHANNEL name -> fraction of each deposit also laid on the ground. Opt-in: an absent/0 channel leaves no trail. Saturation for an always-occupied cell is strength/(1-decay).",
+          "additionalProperties": { "type": "number", "minimum": 0 },
+          "propertyNames": { "enum": ["food", "prey", "predator", "carrion"] }
+        }
+      }
+    },
+
     "motion": {
       "type": "object",
       "description": "Base locomotion (world units per fauna DT; DT = 1 tick). Fauna base speeds; the species §6 Speed program modulates them. Agents move via MoveTo (not here).",

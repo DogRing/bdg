@@ -131,8 +131,11 @@ func buildWorldEnv(wd worldDoc) (*world.EnvConfig, *navmap.Config, error) {
 		ClimateStep:       wd.Cadence.ClimateStep,
 		FloraStep:         wd.Cadence.FloraStep,
 		DecayStep:         wd.Cadence.DecayStep,
-		ScentCellSize:     wd.Grids.ScentCellSize,
-		ScentSpread:       wd.Cadence.ScentSpread,
+		ScentCellSize:      wd.Grids.ScentCellSize,
+		ScentSpread:        wd.Cadence.ScentSpread,
+		ScentTrailDecay:    wd.ScentTrail.Decay,
+		ScentTrailCap:      wd.ScentTrail.Cap,
+		ScentTrailStrength: scentTrailStrength(wd.ScentTrail.Strength),
 		FaunaDT:           wd.Motion.FaunaDT,
 		FaunaMoveDeadband: wd.Motion.MoveDeadband,
 		FaunaCadence: fauna.Cadence{

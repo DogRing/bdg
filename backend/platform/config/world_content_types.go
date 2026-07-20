@@ -40,6 +40,13 @@ type worldDoc struct {
 		ClimateGridRows int     `yaml:"climate_grid_rows"`
 		ScentCellSize   float64 `yaml:"scent_cell_size"`
 	} `yaml:"grids"`
+	// PD9 spoor: ground scent left behind by passing animals. `strength` is keyed by scent CHANNEL
+	// name (food/prey/predator/carrion); a channel that is absent leaves no trail (opt-in).
+	ScentTrail struct {
+		Decay    float64            `yaml:"decay"`
+		Cap      float64            `yaml:"cap"`
+		Strength map[string]float64 `yaml:"strength"`
+	} `yaml:"scent_trail"`
 	Motion struct {
 		FaunaDT      float64 `yaml:"fauna_dt"`
 		MaxSpeed     float64 `yaml:"max_speed"`

@@ -28,6 +28,11 @@ const spreadFalloff = 0.60
 // is added. Fixed at 1.0; the wind dot-product scales above/below this baseline.
 const windBiasBase = 1.0
 
+// trailFloor is the intensity below which a trail cell is dropped entirely. It is what keeps the
+// spoor layer bounded to recently-visited ground instead of growing to every cell ever stepped on;
+// well below any intensity that could tip a §6 threshold, so dropping is unobservable.
+const trailFloor = 1e-4
+
 // ── Channel ───────────────────────────────────────────────────────────────────
 
 // Channel selects one scent layer (F22 — multi-channel; one scalar intensity per
@@ -104,6 +109,21 @@ type Grid struct {
 	static     map[cellKey]cellVals
 	staticPend map[cellKey]cellVals
 
+	// Trail (spoor) layer: GROUND scent left behind by a passing animal, as opposed to the airborne
+	// plume the other two layers model. It accumulates where sources have been and fades by a
+	// multiplicative decay, so a predator crossing a place prey occupied an hour ago still gets a
+	// signal. This is what makes tracking possible at all: the dynamic layer is rebuilt from scratch
+	// every tick, so before this layer existed the world held no record that an animal had ever been
+	// anywhere — a predator could only sense prey that were live and within one or two cells.
+	//
+	// Deliberately NOT diffused. Wind-spreading a persistent layer every tick is the heat equation:
+	// repeated diffusion smears a track into a uniform haze and destroys the very gradient that makes
+	// it followable. Ground scent also physically stays put — it is the airborne plume that drifts.
+	trail         map[cellKey]cellVals
+	trailStrength [NumChannels]float64 // fraction of each Deposit that is also laid down as trail; 0 ⇒ that channel leaves none
+	trailDecay    float64              // multiplicative per DecayTrail call; 0 ⇒ trail disabled entirely
+	trailCap      float64              // per-cell clamp, so a source that never moves cannot accumulate without bound
+
 	// Spread scratch, reused across calls to avoid a per-tick map + slice
 	// allocation (GC pressure dominates at large scale, docs/plans/scaling.md P2).
 	// Single-writer (apply phase), so reuse is safe. Cleared/refilled each Spread.
@@ -150,6 +170,64 @@ func (g *Grid) Deposit(ch Channel, pos core.Vec2, intensity float64) {
 	v := g.pending[key]
 	v[ch] += intensity
 	g.pending[key] = v
+
+	// The same passage also rubs off onto the ground, for channels content marks as trail-leaving.
+	if s := g.trailStrength[ch]; s > 0 && g.trailDecay > 0 {
+		t := g.trail[key]
+		t[ch] += intensity * s
+		if g.trailCap > 0 && t[ch] > g.trailCap {
+			t[ch] = g.trailCap
+		}
+		g.trail[key] = t
+	}
+}
+
+// ConfigureTrail enables the ground-scent (spoor) layer. `strength` is the per-channel fraction of
+// each Deposit that is also laid down as trail — a channel left at 0 leaves no trail at all, which is
+// the opt-in: whether a kind of scent lingers is content's call (D4/D10), not the grid's.
+//
+// Leaving predator scent off matters. Fear is SET from context (scent.predator > 0 ⇒ wary), so a
+// lingering predator trail would make prey permanently wary anywhere a wolf had ever walked — the
+// whole map saturating with fear rather than a landscape of it. That is a separate design with its
+// own tuning, not a free side effect of switching this on.
+//
+// decay ≤ 0 disables the layer (grid behaves byte-identically to one that never had it).
+func (g *Grid) ConfigureTrail(strength [NumChannels]float64, decay, cap float64) {
+	g.trailStrength = strength
+	g.trailDecay = decay
+	g.trailCap = cap
+	if decay > 0 && g.trail == nil {
+		g.trail = make(map[cellKey]cellVals)
+	}
+}
+
+// DecayTrail fades the whole trail layer by one multiplicative step and drops cells that have faded
+// below trailFloor, which is what bounds the layer's memory to "places visited recently" rather than
+// every cell any animal has ever touched.
+//
+// Map iteration is safe here despite D12: the operation is element-wise (each cell's new value
+// depends only on its own old value), so the result is identical for every iteration order. Nothing
+// accumulates across cells, which is what the no-map-iteration rule exists to protect.
+func (g *Grid) DecayTrail() {
+	if g.trailDecay <= 0 || len(g.trail) == 0 {
+		return
+	}
+	for key, v := range g.trail {
+		alive := false
+		for ch := range v {
+			v[ch] *= g.trailDecay
+			if v[ch] < trailFloor {
+				v[ch] = 0
+			} else {
+				alive = true
+			}
+		}
+		if alive {
+			g.trail[key] = v
+		} else {
+			delete(g.trail, key)
+		}
+	}
 }
 
 // DepositStatic is Deposit for the STATIC layer (flora, objects, carcasses — occupants that do not
@@ -331,7 +409,7 @@ func (g *Grid) Commit() {
 // (no pending); 0 before the first Commit.
 func (g *Grid) IntensityAt(ch Channel, pos core.Vec2) float64 {
 	key := cellOf(pos, g.cellSize)
-	return g.static[key][ch] + g.committed[key][ch]
+	return g.static[key][ch] + g.committed[key][ch] + g.trail[key][ch]
 }
 
 // Read returns the multi-channel reading at pos over the COMMITTED buffer,
@@ -352,6 +430,7 @@ func (g *Grid) Read(pos core.Vec2, smellRadius float64, wind Wind) Reading {
 
 	var totals [NumChannels]float64
 	var gradX, gradY [NumChannels]float64
+	var trailTotals, trailGradX, trailGradY [NumChannels]float64
 
 	// Iterate fixed nested-loop range (not map iteration): deterministic (D12).
 	// The own cell (dcx==0, dcy==0) is ALWAYS included per the SPEC ("the cell containing
@@ -360,15 +439,17 @@ func (g *Grid) Read(pos core.Vec2, smellRadius float64, wind Wind) Reading {
 	for dcy := -rings; dcy <= rings; dcy++ {
 		for dcx := -rings; dcx <= rings; dcx++ {
 			nk := cellKey{center.cx + dcx, center.cy + dcy}
-			// Both layers: a tile smells of everything in it, static and moving alike (클러스터 8b).
+			// All three layers: a tile smells of everything in it — static occupants, moving ones,
+			// and what has passed through (클러스터 8b + spoor).
 			sv, sOK := g.static[nk]
 			dv, dOK := g.committed[nk]
-			if !sOK && !dOK {
+			tv, tOK := g.trail[nk]
+			if !sOK && !dOK && !tOK {
 				continue
 			}
 			var v cellVals
 			for ch := range v {
-				v[ch] = sv[ch] + dv[ch]
+				v[ch] = sv[ch] + dv[ch] + tv[ch]
 			}
 			// Cell center in world coordinates (used for gradient direction).
 			ccx := (float64(nk.cx) + 0.5) * g.cellSize
@@ -390,8 +471,23 @@ func (g *Grid) Read(pos core.Vec2, smellRadius float64, wind Wind) Reading {
 				// Points toward regions of higher intensity (= toward source).
 				gradX[ch] += intensity * (ccx - pos.X)
 				gradY[ch] += intensity * (ccy - pos.Y)
+				// The trail portion is tracked apart because it is followed differently: ground
+				// scent has no upwind to walk into (see chanReading).
+				if t := tv[ch]; t > 0 {
+					trailTotals[ch] += t
+					trailGradX[ch] += t * (ccx - pos.X)
+					trailGradY[ch] += t * (ccy - pos.Y)
+				}
 			}
 		}
+	}
+
+	// unitGrad normalizes an intensity-weighted gradient, or returns the zero vector.
+	unitGrad := func(gx, gy float64) core.Vec2 {
+		if mag := math.Sqrt(gx*gx + gy*gy); mag > 0 {
+			return core.Vec2{X: gx / mag, Y: gy / mag}
+		}
+		return core.Vec2{}
 	}
 
 	chanReading := func(ch Channel) ChannelReading {
@@ -399,17 +495,34 @@ func (g *Grid) Read(pos core.Vec2, smellRadius float64, wind Wind) Reading {
 		if intensity == 0 {
 			return ChannelReading{}
 		}
-		var dir core.Vec2
+		// Ground scent is FOLLOWED, airborne scent is WINDED. Walking upwind is how you locate the
+		// animal a plume came from, but a trail is not blowing anywhere — the only way to use it is
+		// to move along the rising gradient. Applying the upwind rule to it would send a tracker
+		// crosswise to the tracks it is standing on. So the two are resolved separately and blended
+		// by how much of the reading each contributes: mostly-live scent still behaves exactly as
+		// before, and a predator on a cold trail with no live animal near follows the trail.
+		airborne := intensity - trailTotals[ch]
+		if airborne < 0 {
+			airborne = 0
+		}
+		var airDir core.Vec2
 		if wind.Mag > 0 {
 			// Upwind = opposite of wind direction = toward scent source.
-			dir = core.Vec2{X: -math.Cos(wind.Dir), Y: -math.Sin(wind.Dir)}
+			airDir = core.Vec2{X: -math.Cos(wind.Dir), Y: -math.Sin(wind.Dir)}
 		} else {
-			gx, gy := gradX[ch], gradY[ch]
-			mag := math.Sqrt(gx*gx + gy*gy)
-			if mag > 0 {
-				dir = core.Vec2{X: gx / mag, Y: gy / mag}
-			}
+			airDir = unitGrad(gradX[ch]-trailGradX[ch], gradY[ch]-trailGradY[ch])
 		}
+		// No trail here ⇒ return the airborne direction unblended. The blend below would re-normalize
+		// an already-unit vector, and that extra rounding is enough to move every scent golden for a
+		// feature that is switched off.
+		if trailTotals[ch] <= 0 {
+			return ChannelReading{Intensity: intensity, Dir: airDir}
+		}
+		trailDir := unitGrad(trailGradX[ch], trailGradY[ch])
+		dir := unitGrad(
+			airborne*airDir.X+trailTotals[ch]*trailDir.X,
+			airborne*airDir.Y+trailTotals[ch]*trailDir.Y,
+		)
 		return ChannelReading{Intensity: intensity, Dir: dir}
 	}
 
