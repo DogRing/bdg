@@ -136,7 +136,8 @@
         "id":      { "$ref": "#/$defs/identifier" },
         "species": { "$ref": "#/$defs/identifier" },
         "pos":     { "$ref": "#/$defs/vec2", "description": "optional; absent ⇒ the loader places the animal on a random soil hex from the run seed (requires a terrain layout)." },
-        "heading": { "type": "number", "description": "optional initial heading (radians); default 0." }
+        "heading": { "type": "number", "description": "optional initial heading (radians); default 0." },
+        "age":     { "type": "number", "minimum": 0, "description": "PD11/§7 aging: optional initial Age in ticks; default 0 (newborn). An EXPLICIT placement means the author says exactly what this animal is, age included — only DENSITY-generated animals get a drawn age (uniform over the species' lifespan), because a generated founding population that is uniformly newborn is a single cohort that then dies all at once at its lifespan." }
       }
     },
     "animalTemplate": {

@@ -73,9 +73,15 @@ func New(cellSize float64) *Grid
 // Deposit ADDS `intensity` (≥ 0, ∝ source magnitude — a big carcass / dense food patch deposits more)
 // to ch at the cell containing pos in the PENDING buffer (accumulative — overlapping sources stack).
 // world calls it in the serial apply phase in fixed (sorted source ObjectID) order (D12), once per
-// `scent:<channel>`-tagged emitter, with `intensity` derived from the emitter's magnitude tag/§6. Per F33
-// the predator channel is deposited EVERY tick at each predator's cell (kept fresh for early-warning);
-// food/prey on the bulk cadence. pos is continuous (D11); cell = floor(pos/cellSize) per axis (negative-safe).
+// `scent:<channel>`-tagged emitter, with `intensity` derived from the emitter's magnitude tag/§6.
+// pos is continuous (D11); cell = floor(pos/cellSize) per axis (negative-safe).
+//
+// WHO calls this vs DepositStatic is decided by whether the emitter MOVES, not by channel (revised
+// 4cdc628 + 064c930; F33's original "predator every tick, food/prey on the bulk cadence" is superseded).
+// Animals change their tile every tick, so world re-lays EVERY channel they emit through Deposit every
+// tick; flora/objects/carcasses do not move and go through DepositStatic on the bulk cadence instead.
+// Under the old split the dynamic channels were empty on 5 ticks in 6 (measured: prey scent readable at
+// `tick%6==1`, 0.000 otherwise, standing on top of the animal), so predators saw no prey 83% of the time.
 func (g *Grid) Deposit(ch Channel, pos core.Vec2, intensity float64)
 
 // ── Spread (bulk pass; world-driven on tick % Ns) ────────────────────────────────────
@@ -95,6 +101,11 @@ func (g *Grid) Spread(wind Wind)
 // That persistence is the point. Before the split, static sources were re-laid on the bulk cadence
 // but cleared every tick, so food scent existed on 1 tick in 6 (measured 4.939 / 0.000 / 0.000 / …)
 // and herbivore food homing was blind 5/6 of the time.
+//
+// The diffusion is NOT optional and NOT a detail: the food channel is entirely static (every flora
+// species emits scent:food) and so is carrion, so this ONE call is the only thing that gives a
+// plant or a carcass any scent reach beyond the single cell it stands in. A static layer that
+// persists but does not diffuse is 클러스터 8b's REJECTED option (C), not (B).
 func (g *Grid) DepositStatic(ch Channel, pos core.Vec2, intensity float64)
 func (g *Grid) CommitStatic(wind Wind)
 
@@ -199,6 +210,18 @@ type ChannelReading struct {
   scans the neighbor ring in fixed nested order; `IntensityAt` is a pure single-cell lookup. Float
   accumulation order is fixed (sorted keys) ⇒ byte-identical buffers/`Reading`s/`IntensityAt` every run.
 - **D12 no map-iteration for logic** — every buffer traversal iterates cell keys in **sorted order**, never raw map-range.
+  *(Exception, and the ONLY one: `DecayTrail` is element-wise — each cell's new value depends on its own old
+  value alone and nothing accumulates across cells — so every iteration order yields an identical result.)*
+- **LAYER ISOLATION — the diffusion kernel writes back into the buffer it read.** The shared kernel is
+  parameterised by layer buffer so the two diffusing layers cannot drift apart arithmetically; that only
+  holds if reads AND writes target the same parameter. A kernel that snapshots the parameter but writes to a
+  fixed buffer silently (a) leaves the passed layer undiffused and (b) injects its halo into the other layer,
+  where it is neither cleared nor accounted for — and stays invisible to every golden, because it is wrong
+  identically every run. Layers mix ONLY in `Read`/`IntensityAt`, by summation. Shipped defect + measurements:
+  `docs/decisions/scent-static-layer-diffusion.md`.
+- **Mass accounting** — diffusion MOVES intensity: what a source cell loses, its neighbours receive
+  (attenuated by `spreadFalloff`, which is the only sanctioned loss). No layer gains intensity that was not
+  deposited into it. `Read` may sum the same position across layers; that is layering, not creation.
 - **Next-tick latency is fixed (F33)** — `Read`/`IntensityAt` see COMMITTED only; `Deposit`/`Spread` write
   PENDING; `Commit` swaps. Pending is rebuilt from current emitters each cadence ⇒ vanished sources fade
   (no stale accumulation). Predator responsiveness (incl. F45 wake) comes from being re-deposited EVERY tick.
@@ -223,6 +246,26 @@ type ChannelReading struct {
   intensity to downwind neighbors (more/farther with Mag) and the upwind side stays lower; with `Wind{0,0}`
   it diffuses isotropically short-range; intensity strictly attenuates with distance. Deterministic: two runs
   of the same deposit set + wind ⇒ byte-identical buffers; shuffling deposit order ⇒ identical result.
+- [ ] **Static layer DIFFUSES on rebuild (클러스터 8b (B), not (C))** — after `DepositStatic(ChanFood,p,m)` +
+  `CommitStatic(Wind{0,0})`, the cells NEIGHBOURING p's cell carry a non-zero food intensity, strictly less
+  than p's own cell (the halo attenuates ⇒ the gradient still points at the plant); with `Wind.Mag>0` the
+  downwind side is heavier than the upwind side. **Kills the mutant** where the kernel writes to a fixed
+  buffer: that leaves every neighbour at exactly 0.
+- [ ] **Static diffusion does not touch the dynamic layer (layer isolation)** — a grid that receives ONLY
+  `DepositStatic` + `CommitStatic` has an EMPTY pending buffer afterwards, so a following `Commit` leaves
+  every dynamic reading 0; conversely `Deposit`+`Spread`+`Commit` leave `static` untouched. Asserted through
+  the public API by reading before/after a bare `Commit`, so no internals are exposed.
+- [ ] **Static layer PERSISTS between rebuilds** — one `DepositStatic`+`CommitStatic`, then N bare `Commit`s
+  with no further static traffic ⇒ `Read`/`IntensityAt` return the SAME static contribution on every one of
+  the N ticks (this is the 1-tick-in-6 flicker guard; the whole point of the split).
+- [ ] **CommitStatic is atomic** — a rebuild that re-deposits a different set of sources replaces the
+  previous static field wholesale (a source dropped from the rebuild is gone after the swap, one still
+  present keeps its value); no read can observe a half-rebuilt field.
+- [ ] **Trail is never diffused, and is followed by gradient not wind (PD9)** — with a trail laid along a
+  track, `Read.Dir` for that channel points ALONG the rising trail gradient even when `Wind.Mag>0` would send
+  the airborne rule elsewhere; a trail cell's neighbours gain nothing from `CommitStatic`/`Spread`.
+  `DecayTrail` fades multiplicatively and drops cells below the internal floor. Trail off (`decay ≤ 0`) ⇒
+  byte-identical to a grid that never had the layer.
 - [ ] **Read gradient (F34)** — with `Wind.Mag>0`, `Read.Dir` points UPWIND (toward source); with `Wind{0,0}`
   and a stronger on-cell to the east, `Dir` points east (intensity gradient); absent channel ⇒ `Intensity==0`,
   zero `Dir`. Table-driven.
@@ -234,6 +277,9 @@ type ChannelReading struct {
   every `IntensityAt` 0, `Spread`/`Commit` no-ops ⇒ no scent-driven behaviour (fauna-OFF neutrality). Guard.
 - [ ] **Determinism golden (D12)** — a fixed `(deposit/spread/commit/read/IntensityAt, wind)` sequence over N
   ticks ⇒ byte-identical digest of committed intensities + `Reading`s; a second run reproduces it. No time/RNG.
+  The scenario MUST drive **all three layers** (`DepositStatic`/`CommitStatic` on a bulk cadence and a
+  configured trail alongside the dynamic traffic). A golden over the dynamic layer alone pins one third of
+  the field and reads as full coverage — that is how the static-diffusion defect survived every green run.
 - [ ] **`New` guard + injected cellSize (D10)** — `New(≤0)` panics; no cellSize/channel/radius/falloff literal
   in logic (grep guard) — cellSize injected, channels are the fixed `Channel` constants, falloff/wind weights are balance.
 - [ ] **No forbidden import (guard)** — imports only `engine/kernel/core` (+ stdlib); NO `rng`, `climate`,

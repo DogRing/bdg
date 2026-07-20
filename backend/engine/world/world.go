@@ -71,6 +71,7 @@ const (
 	driveThirst    = fauna.DriveID("thirst")
 	causePredation = "predation"
 	causeStarvation = "starvation" // PD3 (P_fa4b): non-combat Vital≤0 (hunger→vital bleed; thermal-freeze later reuses)
+	causeSenescence = "senescence" // PD11 (§7 aging): non-combat Vital≤0 from the old-age bleed — kept SEPARATE from starvation so introducing aging cannot read as a famine
 )
 
 // ── Config ─────────────────────────────────────────────────────────────────────

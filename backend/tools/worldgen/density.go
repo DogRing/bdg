@@ -130,6 +130,9 @@ func placeFloraDensity(fx Fixture, navCfg navmap.Config, cfg *config.LoadOutput,
 // avoid deep sea. Each gets a seeded random heading (mirrors the pos-less spawn, §materialize).
 func placeAnimalDensity(fx Fixture, navCfg navmap.Config, cfg *config.LoadOutput, terrainAt func(core.Vec2) core.Tag, r *rng.RNG) []AnimalPlacement {
 	var out []AnimalPlacement
+	// PD11-iv (§7 aging): initial ages come off their own stream so adding them leaves every existing
+	// position and heading byte-identical — see the draw below.
+	ageR := rng.New(fx.Seed + ageSeedSalt)
 	for _, sp := range sortedDensityKeys(fx.AnimalDensity) {
 		count := densityCount(fx.AnimalDensity[sp], navCfg)
 		species := fauna.SpeciesID(sp)
@@ -140,11 +143,28 @@ func placeAnimalDensity(fx Fixture, navCfg navmap.Config, cfg *config.LoadOutput
 					continue
 				}
 				pos := p
+				// PD11-iv (§7 aging): spread the founding population across the species' lifespan. A
+				// generated population is otherwise uniformly newborn — one cohort — and once lifespans
+				// existed it died all at once: measured on the live meadow, rabbits collapsed at t≈2400,
+				// goats at t≈5000, deer at t≈6000, each exactly at its authored lifespan, taking the
+				// predators with them. The draw is UNCONDITIONAL (multiplied by a lifespan of 0 for a
+				// species that does not age) so the draw count never depends on content (D12).
+				// Age comes from ageR, a SEPARATE stream: an extra draw on the shared materialization
+				// stream would shift every position and heading drawn after it, re-rolling the whole
+				// map for a change that is only about ages. Drawn unconditionally (× a lifespan of 0
+				// for a species that does not age) so the draw count never depends on content (D12).
+				age := ageR.Float64()
+				if cfg.FaunaRules != nil {
+					age *= cfg.FaunaRules.Lifespan(species)
+				} else {
+					age = 0
+				}
 				out = append(out, AnimalPlacement{
 					ID:      core.ObjectID(fmt.Sprintf("%s_g%05d", sp, i)),
 					Species: sp,
 					Pos:     &pos,
 					Heading: r.Float64() * 2 * math.Pi,
+					Age:     age,
 				})
 				break
 			}

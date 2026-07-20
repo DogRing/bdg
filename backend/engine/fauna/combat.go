@@ -203,14 +203,18 @@ func regenVital(a Animal, dt float64, params CombatParams) float64 {
 }
 
 // nextVital is the proposed self Vital each tick: the free regen (regenVital) MINUS the PD3 starvation
-// bleed (starveDrain) — sign-symmetric (docs/plans/fauna.md §5, P_fa4b). Net is negative only while a
+// bleed (starveDrain) and the PD11 old-age bleed (senescenceDrain) — sign-symmetric (docs/plans/fauna.md
+// §5, P_fa4b; §7 aging). Net is negative only while a
 // coupled drive (hunger) is saturated and its VitalDrain exceeds VitalRegenPerTick, so a fed animal never
 // loses Vital. Reads start-of-tick a.Drives (parallels regenVital reading a.Vital). Clamped ≥ 0; the world
 // removes the animal when Vital ≤ 0 (death is world-owned, F3). With no drive authoring VitalDrain,
 // starveDrain ≡ 0 ⇒ nextVital ≡ regenVital (byte-identical off-lever). Pure, no RNG.
 func nextVital(a Animal, rules *Rules, dt float64, params CombatParams) float64 {
 	v := regenVital(a, dt, params)
-	drain := rules.starveDrain(a.Species, a.Drives, dt)
+	// Two non-combat bleed channels share this path: acute drive saturation (PD3 starvation) and old age
+	// (PD11 senescence). They SUM rather than override — a starving elder dies faster than either alone,
+	// which is the honest composition and needs no interaction rule.
+	drain := rules.starveDrain(a.Species, a.Drives, dt) + rules.senescenceDrain(a.Species, a.Age, dt)
 	if drain > scalarZero {
 		v -= drain
 		if v < scalarZero {

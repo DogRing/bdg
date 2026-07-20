@@ -90,9 +90,12 @@ func TestMeadowSustainsPredators(t *testing.T) {
 		}
 		sp, _ := p["species"].(string)
 		switch {
+		// Match the cause EXACTLY. There are now three (predation, starvation, senescence — PD11 §7
+		// aging), so "not starvation" no longer means "eaten": an old rabbit dying in its sleep would
+		// otherwise be counted as a kill and this guard would pass on a world with no predation at all.
 		case p["cause"] == "starvation" && isPred[fauna.SpeciesID(sp)]:
 			predStarv++
-		case p["cause"] != "starvation" && isPrey[fauna.SpeciesID(sp)]:
+		case p["cause"] == "predation" && isPrey[fauna.SpeciesID(sp)]:
 			kills++
 		}
 	}

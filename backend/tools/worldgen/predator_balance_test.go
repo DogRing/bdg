@@ -143,9 +143,12 @@ func TestPredatorBalanceObservation(t *testing.T) {
 		}
 		sp, _ := payload["species"].(string)
 		cause, _ := payload["cause"].(string)
-		if cause == "starvation" {
+		// Exact match per cause — since PD11 (§7 aging) there is a third, `senescence`, and an else-branch
+		// would silently credit old-age deaths to predation.
+		switch cause {
+		case "starvation":
 			starved[sp]++
-		} else {
+		case "predation":
 			kills[sp]++
 		}
 	}

@@ -51,26 +51,34 @@ type SpeciesRule struct {
 	HazardAvoidance float64                            // per-species hazard-repulsion multiplier `e` (P_move1/FM5); ≤0 ⇒ no bend
 	MoveDeadband    float64                            // per-species §6-speed hold threshold (FM14a); >0 overrides Snapshot.MoveDeadband, ≤0 ⇒ fall back to the global
 	MaturityAge     float64                            // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1 (clamp01(age/MaturityAge)); ≤0 ⇒ maturity≡1 (always mature, gate-neutral)
-	MateCooldown    core.Tick                          // PD4-vi(b)/P_fa4c-2: post-conception refractory ticks (species trait — breeding tempo); ≤0 ⇒ no cooldown
-	Speed           *expr.Program                      // §6 locomotion speed (F35)
-	TurnRate        *expr.Program                      // §6 max turn rate radians/unit time (M6)
-	ScentAcuity     *expr.Program                      // §6 scent-tracking keenness gain g (PD1/P_fa4a); nil/≤0 ⇒ exact scent Dir (neutral)
-	AttackPower     *expr.Program                      // §6 damage magnitude composition (FC4)
-	Hit             *expr.Program                      // §6 hit multiplier/probability composition (FC4)
-	Feed            *expr.Program                      // §6 carcass feed value composition (FC8)
-	Graze           *expr.Program                      // §6 herbivore graze hunger-recovery factor (parallels Feed)
-	Drink           *expr.Program                      // §6 thirst-recovery factor at water (FM4; parallels Graze)
-	HideChance      *expr.Program                      // §6 cover-hide probability (M3)
-	CoverCost       float64                            // scalar cover-drag cost (M4-b)
-	Diet            []core.Tag                         // diet/target tags (F7)
-	Tags            []core.Tag                         // this kind's own content tags — what another animal's Diet matches against (D10)
-	IsPredator      bool                               // carries `threat:predator` (F8)
-	SmellRadius     float64                            // smell radius (F31/F44)
-	SightRadius     float64                            // sight radius (F44)
-	FovArc          float64                            // forward FOV half-angle (radians, F44)
-	TerrainCost     map[core.Tag]float64               // per-species terrain affinity mult (W10b)
-	Impassable      []core.Tag                         // terrain types this species cannot enter
-	SteerChannel    map[actions.ActionID]core.Tag      // action → steer-behavior tag (D4/D10)
+
+	// §7 aging (PD11, human-RESOLVED 2026-07-20) — the falling limb of the Age axis. `senescence` is a
+	// DERIVED operand, not stat decay: fauna offspring stats are the parent mix (PD4-iv), so decaying an
+	// aging parent's stored Stats would breed weaker children (Lamarckian). See SPEC.md §Senescence.
+	PrimeAge                  float64                       // Age below which `senescence` is 0 — youth + prime, no decline
+	Lifespan                  float64                       // Age at which `senescence` reaches 1; ≤0 ⇒ senescence≡0 (whole feature off, byte-identical)
+	SenescenceVitalDrain      float64                       // r: per-tick Vital bleed once senescent (the aging death channel); ≤0 ⇒ no coupling — same shape as DriveRule.VitalDrain
+	SenescenceVitalDrainAbove float64                       // θ: `senescence` level at which the bleed starts
+	MateCooldown              core.Tick                     // PD4-vi(b)/P_fa4c-2: post-conception refractory ticks (species trait — breeding tempo); ≤0 ⇒ no cooldown
+	Speed                     *expr.Program                 // §6 locomotion speed (F35)
+	TurnRate                  *expr.Program                 // §6 max turn rate radians/unit time (M6)
+	ScentAcuity               *expr.Program                 // §6 scent-tracking keenness gain g (PD1/P_fa4a); nil/≤0 ⇒ exact scent Dir (neutral)
+	AttackPower               *expr.Program                 // §6 damage magnitude composition (FC4)
+	Hit                       *expr.Program                 // §6 hit multiplier/probability composition (FC4)
+	Feed                      *expr.Program                 // §6 carcass feed value composition (FC8)
+	Graze                     *expr.Program                 // §6 herbivore graze hunger-recovery factor (parallels Feed)
+	Drink                     *expr.Program                 // §6 thirst-recovery factor at water (FM4; parallels Graze)
+	HideChance                *expr.Program                 // §6 cover-hide probability (M3)
+	CoverCost                 float64                       // scalar cover-drag cost (M4-b)
+	Diet                      []core.Tag                    // diet/target tags (F7)
+	Tags                      []core.Tag                    // this kind's own content tags — what another animal's Diet matches against (D10)
+	IsPredator                bool                          // carries `threat:predator` (F8)
+	SmellRadius               float64                       // smell radius (F31/F44)
+	SightRadius               float64                       // sight radius (F44)
+	FovArc                    float64                       // forward FOV half-angle (radians, F44)
+	TerrainCost               map[core.Tag]float64          // per-species terrain affinity mult (W10b)
+	Impassable                []core.Tag                    // terrain types this species cannot enter
+	SteerChannel              map[actions.ActionID]core.Tag // action → steer-behavior tag (D4/D10)
 }
 
 // Steer-behavior tag constants recognized by the steer step (D4 — derived from
@@ -105,25 +113,31 @@ type speciesData struct {
 	moveDeadband    float64
 	maturityAge     float64
 	mateCooldown    core.Tick
-	speed           *expr.Program
-	turnRate        *expr.Program
-	scentAcuity     *expr.Program
-	attackPower     *expr.Program
-	hit             *expr.Program
-	feed            *expr.Program
-	graze           *expr.Program
-	drink           *expr.Program
-	hideChance      *expr.Program
-	coverCost       float64
-	diet            []core.Tag
-	tags            []core.Tag
-	isPredator      bool
-	smellRadius     float64
-	sightRadius     float64
-	fovArc          float64
-	terrainCost     map[core.Tag]float64
-	impassable      map[core.Tag]bool // O(1) lookup
-	steerChannel    map[actions.ActionID]core.Tag
+
+	primeAge                  float64 // PD11 §7 aging — see SpeciesRule
+	lifespan                  float64
+	senescenceVitalDrain      float64
+	senescenceVitalDrainAbove float64
+
+	speed        *expr.Program
+	turnRate     *expr.Program
+	scentAcuity  *expr.Program
+	attackPower  *expr.Program
+	hit          *expr.Program
+	feed         *expr.Program
+	graze        *expr.Program
+	drink        *expr.Program
+	hideChance   *expr.Program
+	coverCost    float64
+	diet         []core.Tag
+	tags         []core.Tag
+	isPredator   bool
+	smellRadius  float64
+	sightRadius  float64
+	fovArc       float64
+	terrainCost  map[core.Tag]float64
+	impassable   map[core.Tag]bool // O(1) lookup
+	steerChannel map[actions.ActionID]core.Tag
 }
 
 // ── Rules ─────────────────────────────────────────────────────────────────────
@@ -199,25 +213,31 @@ func NewRules(species map[SpeciesID]SpeciesRule) *Rules {
 			moveDeadband:    sr.MoveDeadband,
 			maturityAge:     sr.MaturityAge,
 			mateCooldown:    sr.MateCooldown,
-			speed:           sr.Speed,
-			turnRate:        sr.TurnRate,
-			scentAcuity:     sr.ScentAcuity,
-			attackPower:     sr.AttackPower,
-			hit:             sr.Hit,
-			feed:            sr.Feed,
-			graze:           sr.Graze,
-			drink:           sr.Drink,
-			hideChance:      sr.HideChance,
-			coverCost:       sr.CoverCost,
-			diet:            cloneTags(sr.Diet),
-			tags:            cloneTags(sr.Tags),
-			isPredator:      sr.IsPredator,
-			smellRadius:     sr.SmellRadius,
-			sightRadius:     sr.SightRadius,
-			fovArc:          sr.FovArc,
-			terrainCost:     tc,
-			impassable:      imp,
-			steerChannel:    sc,
+
+			primeAge:                  sr.PrimeAge,
+			lifespan:                  sr.Lifespan,
+			senescenceVitalDrain:      sr.SenescenceVitalDrain,
+			senescenceVitalDrainAbove: sr.SenescenceVitalDrainAbove,
+
+			speed:        sr.Speed,
+			turnRate:     sr.TurnRate,
+			scentAcuity:  sr.ScentAcuity,
+			attackPower:  sr.AttackPower,
+			hit:          sr.Hit,
+			feed:         sr.Feed,
+			graze:        sr.Graze,
+			drink:        sr.Drink,
+			hideChance:   sr.HideChance,
+			coverCost:    sr.CoverCost,
+			diet:         cloneTags(sr.Diet),
+			tags:         cloneTags(sr.Tags),
+			isPredator:   sr.IsPredator,
+			smellRadius:  sr.SmellRadius,
+			sightRadius:  sr.SightRadius,
+			fovArc:       sr.FovArc,
+			terrainCost:  tc,
+			impassable:   imp,
+			steerChannel: sc,
 		}
 	}
 	return r
@@ -399,6 +419,77 @@ func (r *Rules) maturity(sp SpeciesID, age float64) float64 {
 		return scalarOne
 	}
 	return clamp01(age / sd.maturityAge)
+}
+
+// senescence returns the §6 `senescence` operand (PD11 / §7 aging): clamp01((age − PrimeAge) /
+// (Lifespan − PrimeAge)) — 0 through youth and prime, 1 at Lifespan. The exact mirror of maturity: one
+// is the rising limb of a life, the other the falling one. Lifespan ≤ 0 (unauthored) ⇒ 0, so a species
+// that never opted in is byte-identical to pre-PD11. Pure.
+//
+// It is DERIVED, never stored, and it is deliberately NOT stat decay: offspring stats are the parent mix
+// (PD4-iv), so decaying an aging parent's stored Stats would breed weaker children — inheritance of an
+// acquired condition. Age belongs to the phenotype, not the genotype (SPEC.md §Senescence).
+func (r *Rules) senescence(sp SpeciesID, age float64) float64 {
+	if r == nil {
+		return scalarZero
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.lifespan <= scalarZero {
+		return scalarZero
+	}
+	span := sd.lifespan - sd.primeAge
+	if span <= scalarZero {
+		// Degenerate authoring (prime ≥ lifespan): collapse to a step at lifespan rather than divide by
+		// zero. platform/config rejects this at load, so this branch only protects a hand-built Rules.
+		if age >= sd.lifespan {
+			return scalarOne
+		}
+		return scalarZero
+	}
+	return clamp01((age - sd.primeAge) / span)
+}
+
+// Lifespan is the Age at which this species' `senescence` operand reaches 1 (PD11 / §7 aging), or 0 when
+// the species does not age. Exported for the WORLD-BUILDING side: a founding population placed uniformly
+// at Age 0 is a single cohort that then dies all at once at its lifespan, so worldgen and the rescue
+// floor spread initial ages across this range (docs/plans/fauna.md PD11-iv). Pure.
+func (r *Rules) Lifespan(sp SpeciesID) float64 {
+	if r == nil {
+		return scalarZero
+	}
+	sd, ok := r.species[sp]
+	if !ok {
+		return scalarZero
+	}
+	return sd.lifespan
+}
+
+// senescenceDrain is the per-tick Vital bleed of old age (PD11-ii): SenescenceVitalDrain·dt once
+// `senescence` reaches SenescenceVitalDrainAbove. Deliberately the SAME (θ, r) shape as the PD3
+// starvation coupling — aging needed no new mortality machinery, only a different trigger. The trigger
+// is the derived operand rather than a stored drive because age is not a drive and must not become one
+// (a drive would accumulate independently of Age, duplicating the state). Returns 0 when unauthored. Pure.
+func (r *Rules) senescenceDrain(sp SpeciesID, age, dt float64) float64 {
+	if r == nil {
+		return scalarZero
+	}
+	sd, ok := r.species[sp]
+	if !ok || sd.senescenceVitalDrain <= scalarZero {
+		return scalarZero
+	}
+	if r.senescence(sp, age) < sd.senescenceVitalDrainAbove {
+		return scalarZero
+	}
+	return sd.senescenceVitalDrain * dt
+}
+
+// VitalDrains splits this tick's non-combat Vital bleed into its two channels — (acute drive saturation,
+// senescence) — so the WORLD can label a death without re-deriving either formula (death is world-owned,
+// F3). With two non-combat channels the cause is no longer a constant: the world labels by the larger
+// magnitude, which ATTRIBUTES the death rather than ranking the channels by precedence, so introducing
+// aging cannot show up in telemetry as a famine. Pure, no RNG.
+func (r *Rules) VitalDrains(a Animal, dt float64) (drive, senescence float64) {
+	return r.starveDrain(a.Species, a.Drives, dt), r.senescenceDrain(a.Species, a.Age, dt)
 }
 
 // hazardAvoidance returns the species' hazard-repulsion multiplier `e` (P_move1/FM5).

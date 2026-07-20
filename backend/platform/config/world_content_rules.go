@@ -268,13 +268,23 @@ func buildFaunaRules(doc objectsDoc, terrainIDs map[core.Tag]bool, terrainAttrs 
 		if err != nil {
 			return nil, err
 		}
+		// PD11 (§7 aging): the senescence ramp must have positive width. A lifespan at or below prime_age
+		// would collapse the operand into a step function, which is never what an author means — reject it
+		// at load rather than shipping a species whose curve silently isn't one.
+		if obj.Fauna.Lifespan > 0 && obj.Fauna.Lifespan <= obj.Fauna.PrimeAge {
+			return nil, fmt.Errorf("object %q fauna: lifespan (%g) must exceed prime_age (%g) — the senescence ramp needs positive width",
+				obj.ID, obj.Fauna.Lifespan, obj.Fauna.PrimeAge)
+		}
 		species[fauna.SpeciesID(obj.ID)] = fauna.SpeciesRule{
 			Utilities: utilities, Drives: drives, AppTemp: appTemp,
 			ComfortTemp: obj.Fauna.ComfortTemp, ThermalBand: obj.Fauna.ThermalBand,
 			HazardAvoidance: obj.Fauna.HazardAvoidance, MoveDeadband: obj.Fauna.MoveDeadband, MaturityAge: obj.Fauna.MaturityAge, MateCooldown: core.Tick(obj.Fauna.MateCooldown), Speed: speed,
 			TurnRate: turnRate, ScentAcuity: scentAcuity, AttackPower: attackPower, Hit: hit, Feed: feed, Graze: graze, Drink: drink, HideChance: hideChance,
 			CoverCost: obj.Fauna.CoverCost,
-			Diet:      faunaDiet(obj), Tags: faunaTags(obj), IsPredator: faunaIsPredator(obj), SmellRadius: obj.Fauna.Senses.SmellRadius,
+			PrimeAge:  obj.Fauna.PrimeAge, Lifespan: obj.Fauna.Lifespan,
+			SenescenceVitalDrain:      obj.Fauna.SenescenceVitalDrain,
+			SenescenceVitalDrainAbove: obj.Fauna.SenescenceVitalDrainAbove,
+			Diet:                      faunaDiet(obj), Tags: faunaTags(obj), IsPredator: faunaIsPredator(obj), SmellRadius: obj.Fauna.Senses.SmellRadius,
 			SightRadius: obj.Fauna.Senses.SightRadius, FovArc: obj.Fauna.Senses.FovArc,
 			TerrainCost: tc, Impassable: imp, SteerChannel: steer,
 		}

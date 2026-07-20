@@ -233,10 +233,28 @@ func (w *World) applyAnimalCombat(intent fauna.Intent) {
 	if a.Vital <= 0 {
 		// PD3 (P_fa4b): reaching the own-state Vital≤0 check means NON-combat vital depletion — a combat
 		// kill is already labelled (causePredation) and removed inside applyAnimalAttack, so the only way
-		// here is the nextVital starvation bleed (thermal-freeze later reuses the same path). Label it
-		// starvation so AnimalDied telemetry separates famine deaths from predation.
-		w.killAnimal(a.ID, causeStarvation)
+		// here is a nextVital bleed. There are now TWO such bleeds (PD3 hunger, PD11 old age), so the
+		// label can no longer be a constant: ask fauna for the two magnitudes and attribute the death to
+		// whichever channel actually took the Vital. Attribution, not precedence — an old animal that is
+		// also starving is recorded honestly, so adding aging never reads as a famine in the telemetry.
+		w.killAnimal(a.ID, w.nonCombatDeathCause(*a))
 	}
+}
+
+// nonCombatDeathCause labels a Vital≤0 death that did NOT come from combat (PD11 / §7 aging). fauna
+// reports this tick's two bleed magnitudes — acute drive saturation (PD3 starvation) and old age
+// (PD11 senescence) — and the larger one gets the death. Ties keep `starvation`, the pre-existing
+// label, so a world with no species authoring a lifespan is byte-identical to before aging existed.
+// Deterministic: a pure function of the animal's own state (D12).
+func (w *World) nonCombatDeathCause(a fauna.Animal) string {
+	if w.faunaRules == nil {
+		return causeStarvation
+	}
+	starve, senesce := w.faunaRules.VitalDrains(a, w.envCfg.FaunaDT)
+	if senesce > starve {
+		return causeSenescence
+	}
+	return causeStarvation
 }
 
 func (w *World) layerAnimalActionEffect(a *fauna.Animal, action actions.ActionID) {

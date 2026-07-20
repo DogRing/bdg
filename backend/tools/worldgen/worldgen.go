@@ -87,6 +87,10 @@ type AnimalPlacement struct {
 	Species core.Tag      `yaml:"species"`
 	Pos     *Vec2         `yaml:"pos,omitempty"`
 	Heading float64       `yaml:"heading,omitempty"`
+	// PD11/§7 aging: initial Age in ticks; 0 = newborn. Explicit placements default to 0 (an authored
+	// animal is exactly what the author says it is); DENSITY-generated ones get a drawn age — see
+	// placeAnimalDensity.
+	Age float64 `yaml:"age,omitempty"`
 }
 
 type AnimalTemplate struct {
@@ -281,7 +285,7 @@ func buildAnimals(fx Fixture, cfg *config.LoadOutput) ([]fauna.Animal, error) {
 		animals = append(animals, fauna.Animal{
 			ID: ap.ID, Species: fauna.SpeciesID(ap.Species), Pos: ap.Pos.Core(), Heading: ap.Heading,
 			Stats: cloneStats(tpl.Stats), Drives: cloneDrives(tpl.Drives), Stamina: stamina, Vital: vital,
-			CurrentAction: actionsID(tpl.CurrentAction), ActiveUntil: tpl.ActiveUntil,
+			CurrentAction: actionsID(tpl.CurrentAction), ActiveUntil: tpl.ActiveUntil, Age: ap.Age,
 		})
 	}
 	return animals, nil

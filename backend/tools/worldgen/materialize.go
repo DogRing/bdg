@@ -18,6 +18,12 @@ import (
 // animals sorted by id) keeps same (fixture, seed) ⇒ same world (D12).
 const genSeedSalt = 0x6d617431 // "mat1"
 
+// ageSeedSalt is the same idea for the PD11-iv initial-age stream (density-placed animals). It is a
+// SEPARATE stream on purpose: ages were added long after positions, and folding the draw into the
+// materialization stream would have shifted every placement drawn after it — re-rolling the shipping
+// map as a side effect of teaching animals to grow old.
+const ageSeedSalt = 0x61676531 // "age1"
+
 // maxPlaceTries bounds the rejection sampling for one pos-less placement; a layout with
 // ~no soil fails loudly instead of spinning.
 const maxPlaceTries = 10_000

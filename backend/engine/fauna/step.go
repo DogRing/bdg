@@ -119,6 +119,7 @@ func fullPipeline(
 	// The animalContext for AppTemp uses pre-update drives + climate.
 	appTemp := computeAppTemp(a, env, rules)
 	maturity := rules.maturity(a.Species, a.Age)
+	senescence := rules.senescence(a.Species, a.Age) // PD11/§7 — 0 unless the species authors a lifespan
 	// Local crowding (PD4-v) — one spatial query, taken ONLY when this species' §6 actually reads
 	// `kin_count`, so every other species is byte-identical and pays nothing.
 	kin := scalarZero
@@ -138,6 +139,7 @@ func fullPipeline(
 		env:          env,
 		appTemp:      appTemp,
 		maturity:     maturity,
+		senescence:   senescence,
 		kinCount:     kin,
 		targetThreat: target.threat,
 		terrainAttrs: terrainAttrs,
@@ -157,6 +159,7 @@ func fullPipeline(
 		env:          env,
 		appTemp:      appTemp,
 		maturity:     maturity,
+		senescence:   senescence,
 		kinCount:     kin,
 		targetThreat: target.threat,
 		terrainAttrs: terrainAttrs,

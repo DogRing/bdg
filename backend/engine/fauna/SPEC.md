@@ -276,7 +276,8 @@ func Step(snap *Snapshot, rules *Rules, rng *rng.RNG) []Intent
 // (agent.disposition is P_fa3, F46 — NOT in the P_fa1 set; see Out of Scope. Combat adds
 // `target.threat` + `scent.carrion` to the fixed set — FC2/FC10, SPEC-combat.md. Reproduction adds
 // `maturity` — PD4-ii/P_fa4c: a controller-derived operand = clamp01(Age/SpeciesRule.MaturityAge), 1 when
-// mature or when MaturityAge ≤ 0 (unauthored ⇒ gate-neutral). The Mate §6 utility reads it.)
+// mature or when MaturityAge ≤ 0 (unauthored ⇒ gate-neutral). The Mate §6 utility reads it. Aging adds
+// `senescence` — PD11/§7, the falling limb of the same Age axis; see §Senescence below.)
 // `terrain.<attr>` (PD10) is an OPEN family alongside this fixed set: it reads the §5 attribute
 // vector of the ground under the animal (grain_size/slope/depth/salinity/moisture/… — the same
 // content-defined set flora reads, via TerrainSampler.Attrs). It is NOT enumerable here because the
@@ -332,7 +333,38 @@ type SpeciesRule struct {
     //   + TurnRate (§6 max turn rate) — steering inertia (M6)                                     → SPEC-steering.md
     //   + ScentAcuity (§6 keenness gain) — scent-tracking confidence (PD1/P_fa4a)                 → SPEC-steering.md
     //   + MaturityAge (Age→`maturity` operand scale) — reproduction gate (PD4-ii/P_fa4c); ≤0 ⇒ maturity≡1
+    //   + PrimeAge, Lifespan (Age→`senescence` operand scale) + SenescenceVitalDrain,
+    //     SenescenceVitalDrainAbove (the aging mortality coupling) — §7 aging (PD11); see §Senescence
 }
+
+// ── Senescence — §7 aging (PD11, human-RESOLVED 2026-07-20) ──────────────────────────
+//
+// `senescence` is the second controller-derived operand on the Age axis and the exact MIRROR of
+// `maturity`: one is the rising limb of a life, the other the falling one.
+//
+//     senescence = clamp01( (Age − PrimeAge) / (Lifespan − PrimeAge) )
+//
+// 0 through youth and prime, rising to 1 at Lifespan. `Lifespan ≤ 0` (unauthored) ⇒ senescence ≡ 0 —
+// the whole feature's off-lever, and the pre-PD11 behaviour byte-for-byte. Degenerate authoring
+// (`Lifespan ≤ PrimeAge`) collapses to a step at Lifespan; platform/config rejects it at load, so the
+// engine branch exists only so a hand-built Rules cannot divide by zero.
+//
+// WHY AN OPERAND AND NOT STAT DECAY (the PD11-i decision — do not "simplify" this away):
+//   • D7's letter is that base attributes drift with age, but fauna offspring stats are the PARENT MIX
+//     (PD4-iv: mean ± inherit-weighted variation). Decaying the stored `Stats` of an aging parent would
+//     therefore make it produce WEAKER CHILDREN — Lamarckian inheritance of an acquired condition.
+//     Keeping age in the operand layer separates GENOTYPE (stored, inherited) from PHENOTYPE
+//     (stored ⊗ age), which is also what the later use-conditioning axis will need.
+//   • It adds ZERO serialized state: `Age` already existed, and nothing else is stored.
+//   • WHAT ages is content's call (D10): a species declares it by subtracting `senescence` in its own
+//     §6 `speed`/`hit`/`attack_power`/… formula. The engine never decides that a wolf's bite weakens.
+//
+// The curve is computed in Go rather than authored in §6 because the DSL cannot express one: it has no
+// min/max/clamp, no conditional, no bool→num coercion, and no unary minus. `maturity` is engine-side for
+// the same reason. A content-authored `age/lifespan` term would decay an animal from BIRTH, which is
+// exactly the shape we do not want.
+//
+// Mortality is `SPEC-combat.md` §Vital — the senescence bleed reuses the starvation (θ, r) coupling.
 
 // Steer-behavior tags recognized by the STEER step (the SpeciesRule.SteerChannel values; content
 // places them on actions in content/actions.yaml, D10 — the steer channel is derived from action

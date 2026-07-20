@@ -140,8 +140,9 @@ Every intent-building path (`step.go` full, `cheap.go` dormant ×2) proposes `In
 **`nextVital(a, rules, dt, params)`**, NOT bare `regenVital`:
 
 ```
-nextVital = clamp≥0( regenVital(a, dt, params) − starveDrain(a.Species, a.Drives, dt) )
-starveDrain = Σ over the species' DriveRules with VitalDrain>0 of  VitalDrain·dt  when  a.Drives[id] ≥ VitalDrainAbove
+nextVital = clamp≥0( regenVital(a, dt, params) − starveDrain(a.Species, a.Drives, dt) − senescenceDrain(a.Species, a.Age, dt) )
+starveDrain     = Σ over the species' DriveRules with VitalDrain>0 of  VitalDrain·dt  when  a.Drives[id] ≥ VitalDrainAbove
+senescenceDrain = SenescenceVitalDrain·dt  when  senescence(a.Species, a.Age) ≥ SenescenceVitalDrainAbove
 ```
 
 - `regenVital` is unchanged (free Vital regen `VitalRegenPerTick`, clamped by VitalCap). `starveDrain`
@@ -151,8 +152,18 @@ starveDrain = Σ over the species' DriveRules with VitalDrain>0 of  VitalDrain·
   the species' `drives` slice in sorted-DriveID order (D12), single-key map reads only.
 - **Applies on EVERY path** (active + dormant) — an off-screen starving animal must die too, so cheap.go
   drains as well (both callsites take `rules`).
-- **Off-lever byte-identical:** with no drive authoring `VitalDrain>0`, `starveDrain≡0` ⇒ `nextVital ≡
-  regenVital` ⇒ pre-P_fa4b goldens hold. hunger opts in via `DriveRule.VitalDrain`/`VitalDrainAbove`
-  (SPEC.md); thermal reuses the SAME path later (freeze die-off — only the drive differs).
+- **Senescence bleed (PD11-ii, §7 aging)** is the SECOND non-combat channel and deliberately reuses the
+  same (θ, r) shape — an old animal's Vital bleeds exactly the way a starving one's does, so aging needed
+  no new mortality machinery. It differs in ONE way: the trigger is the derived `senescence` operand
+  (SPEC.md §Senescence) rather than a stored drive, because age is not a drive and must not be one
+  (a drive would have to accumulate independently of `Age`, duplicating the state).
+- **Off-lever byte-identical:** with no drive authoring `VitalDrain>0`, `starveDrain≡0`; with no species
+  authoring `SenescenceVitalDrain>0` (or no `Lifespan`), `senescenceDrain≡0` ⇒ `nextVital ≡ regenVital`
+  ⇒ pre-P_fa4b goldens hold. hunger opts in via `DriveRule.VitalDrain`/`VitalDrainAbove` (SPEC.md);
+  thermal reuses the SAME path later (freeze die-off — only the drive differs).
 - **Death** is world-side (`SPEC-world-fauna.md`): fauna only lowers `Vital`; the world removes the
-  animal when `Vital ≤ 0` and labels the non-combat cause `starvation`.
+  animal when `Vital ≤ 0` and labels the non-combat cause. With TWO non-combat channels the label can no
+  longer be a constant, so the world asks `Rules.VitalDrains(a, dt)` for the two magnitudes and labels by
+  the LARGER (`starvation` on a tie — the pre-existing cause keeps precedence). It attributes rather than
+  ranks by precedence: an old animal that is also starving is recorded as whichever channel actually took
+  the Vital, so introducing aging cannot be misread as a famine in the telemetry.

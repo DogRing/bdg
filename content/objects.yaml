@@ -372,7 +372,7 @@ object_kinds:
       comfort_temp: 12                                                              # °C comfort midpoint; thermal = clamp01(|apparent_temp−comfort|/band), FA5 symmetric (untuned)
       thermal_band: 20                                                              # °C half-width: apparent_temp −8°C or +32°C → thermal 1 (cold AND heat stress)
       hazard_avoidance: 2.0                                                         # e: wary grazer avoids deep water / steep terrain (P_move1/FM5; untuned, overcome by flee/thirst)
-      speed: "Agility * 0.0038 + hunger * 0.06 + fear * 0.12 - fatigue * 0.1 - thermal * 0.0015"  # base Agility · **PD10 서식지 선호는 사슴엔 미저작**: 아래 goat 참조 — 이 세계의 서식지는 먹이 분포가 지배해서 speed 항 하나로는 습지 선호가 나타나지 않았다(실측)
+      speed: "Agility * 0.0038 + hunger * 0.06 + fear * 0.12 - fatigue * 0.1 - thermal * 0.0015 - senescence * 0.045"  # base Agility · **PD10 서식지 선호는 사슴엔 미저작**: 아래 goat 참조 — 이 세계의 서식지는 먹이 분포가 지배해서 speed 항 하나로는 습지 선호가 나타나지 않았다(실측)
       move_deadband: 0.29                                                          # FM14b: just above sated idle speed (≈0.21) — a sated deer rests; hunger>~0.3 breaks it → roam (UNTUNED, P_fa4)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
       scent_acuity: "6 + Perception*0.1"                                           # PD1/P_fa4a keenness gain g: food-homing confidence = g·I/(1+g·I). Moderate forager nose (UNTUNED placeholder, P_fa4)
@@ -382,6 +382,21 @@ object_kinds:
       senses: { smell_radius: 10.0, sight_radius: 16.0, fov_arc: 1.05 }             # M5-a early-detection nudge (untuned placeholder)
       maturity_age:  600                                                           # PD4-ii: ticks (fauna_dt=1) until `maturity` reaches 1 = sexual maturity (UNTUNED placeholder, P_fa4)
       mate_cooldown: 500                                                           # PD4-vi(b): post-conception refractory ticks — breeding tempo (UNTUNED placeholder, P_fa4)
+      # PD11/§7 노화 — `senescence`는 `maturity`의 거울(같은 Age 축의 하강지)이다. **시간 스케일은 압축된 기존 lifecycle 스케일 위에 얹는다**(사람 승인 2026-07-20):
+      # maturity_age가 이미 게임달력과 무관한 UNTUNED 압축값(사슴 600틱=10게임시간)이므로 수명도 그 배수로 둔다 — lifespan = maturity_age × k.
+      # 현실 달력(사슴 ~10년=1.73M틱)을 쓰면 6,000틱 관측 런에서 노화가 **한 번도 일어나지 않아** 작동을 실측할 수 없다(PD10에서 철회한 그 상태).
+      #
+      # ⚠️ k는 **실측으로 재적합했다: 처음 잡은 k≈10이 생태계를 무너뜨렸다.** k=10(사슴 6000)에서 라이브 초원은
+      # 6000틱 동안 개체수 58→17로 반토막 나고 **포식이 0회**가 됐다. 원인은 노화율이 아니라 **수명이 이 지도에서
+      # 짝을 만나는 데 걸리는 시간보다 짧았다**는 것 — 이동 ~0.2 units/tick × 6000틱 = 평생 1,200 units(500² 지도를
+      # 두 번 건너는 거리)뿐이라, 개체군이 한 번 낮아지면 번식으로 회복하지 못하는 Allee 구간에 갇힌다.
+      # 20,000틱 장기 관측에서는 **곰(가장 긴 수명 + 잡식)만 4→57로 폭증**하고 나머지는 전멸 직전이었다 — 수명 차이가
+      # 그대로 경쟁 우위가 된다. k≈40으로 올리자 개체수 평균 50.9(min 40)·노쇠사 20건으로 안정. **관측 가능성은
+      # 잃지 않는다**: 창시 개체군의 나이를 U(0,lifespan)으로 흩뿌리므로(PD11-iv) 수명이 길어도 노쇠사는 t=0부터 난다.
+      prime_age: 10800                                                             # 이 나이까지 senescence=0 (유년+전성기). ≈ lifespan의 45%
+      lifespan:  24000                                                             # maturity_age × 40. senescence는 10800→24000 구간에서 0→1
+      senescence_vital_drain:       0.004                                          # r: 노쇠 출혈(회복 0.001 대비 순 −0.003 ⇒ 약 330틱에 걸쳐 죽는다). 기아(PD3)와 **같은 (θ,r) 모양** — 노화에 새 사망 기계는 필요 없었다
+      senescence_vital_drain_above: 0.75                                           # θ: 노쇠도 0.75(≈age 20,700)부터 vital이 새기 시작 ⇒ 실효 수명 ≈21k틱 (UNTUNED)
       respawn_target: 4                                                            # herd carrying capacity (F9 timer-respawn)
       cover_cost: 0.7                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 1.5, mountain: 1.6 }                                  # FORDS water to escape (< wolf 3.0 → loses pursuers at the river, M4-a); climbs poorly (W10b)
@@ -414,7 +429,7 @@ object_kinds:
       comfort_temp: 8                                                               # °C; cold-tolerant apex predator (untuned)
       thermal_band: 22                                                              # wide tolerance (FA5 symmetric)
       hazard_avoidance: 1.2                                                         # e: ranges widely, avoids drowning but commits to a chase (untuned)
-      speed: "Agility * 0.0038 - fatigue * 0.3 - thermal * 0.0013"                  # faster than deer (pursuit); thermal stress → slower (F40)
+      speed: "Agility * 0.0038 - fatigue * 0.3 - thermal * 0.0013 - senescence * 0.05"  # faster than deer (pursuit); thermal stress → slower (F40); PD11: 늙은 늑대는 추격 속도를 잃는다
       turn_rate: "0.5 + Agility*0.0048"                                            # M6 turn-rate (untuned placeholder)
       scent_acuity: "8 + Perception*0.12"                                          # PD1/P_fa4a: keen scent-hunter — homes on fainter prey scent than herbivores (higher g). g·I/(1+g·I) (UNTUNED, P_fa4)
       attack_power: "Strength * 0.006"                                              # §6 damage magnitude from base stat composition (FC4)
@@ -424,6 +439,10 @@ object_kinds:
       senses: { smell_radius: 20.0, sight_radius: 34.0, fov_arc: 0.79 }             # narrow FOV ~90°, long range (F44)
       maturity_age:  800                                                           # PD4-ii: slow-maturing predator (UNTUNED placeholder, P_fa4)
       mate_cooldown: 700                                                           # PD4-vi(b): long refractory — predators breed slowly (UNTUNED placeholder, P_fa4)
+      prime_age: 12800                                                             # PD11/§7 — 사슴 블록의 스케일 주석 참조 (lifespan = maturity_age × k)
+      lifespan:  28800                                                             # maturity_age × 36 — 늦게 성숙하고 오래 사는 포식자
+      senescence_vital_drain:       0.004
+      senescence_vital_drain_above: 0.75
       respawn_target: 4                                                            # apex predator — sparse (F9)
       cover_cost: 1.2                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 3.0, mountain: 1.5 }                                  # AVOIDS deep water (river = prey refuge, M4-a); modest on hills (W10b)
@@ -454,7 +473,7 @@ object_kinds:
       comfort_temp: 14                                                              # °C; small body, warmth-preferring (untuned)
       thermal_band: 16                                                              # narrow tolerance → stresses sooner (FA5 symmetric)
       hazard_avoidance: 2.5                                                         # e: skittish prey, strongest hazard avoidance (untuned)
-      speed: "Agility * 0.0035 + hunger * 0.06 + fear * 0.12 - fatigue * 0.1 - thermal * 0.0018"  # very fast sprinter; hunger→roam (FM14b: idle Ag·0.004≈0.34 holds under deadband, hungry roams); small body → strong thermal penalty (F40)
+      speed: "Agility * 0.0035 + hunger * 0.06 + fear * 0.12 - fatigue * 0.1 - thermal * 0.0018 - senescence * 0.07"  # very fast sprinter; hunger→roam (FM14b: idle Ag·0.004≈0.34 holds under deadband, hungry roams); small body → strong thermal penalty (F40)
       move_deadband: 0.32                                                          # FM14b: just above sated idle speed (≈0.34) — sated rabbit rests, hunger>~0.3 roams (UNTUNED, P_fa4)
       turn_rate: "1.0 + Agility*0.0115"                                            # M6 turn-rate (untuned placeholder)
       scent_acuity: "6 + Perception*0.1"                                           # PD1/P_fa4a food-homing keenness g (UNTUNED placeholder, P_fa4)
@@ -464,6 +483,10 @@ object_kinds:
       senses: { smell_radius: 8.0, sight_radius: 18.0, fov_arc: 1.4 }               # M5-a early-detection nudge (untuned placeholder)
       maturity_age:  300                                                           # PD4-ii: earliest maturity of the six — r-strategist (UNTUNED placeholder, P_fa4)
       mate_cooldown: 200                                                           # PD4-vi(b): shortest refractory — breeds back fastest after a predation crash (UNTUNED placeholder, P_fa4)
+      prime_age: 4400                                                              # PD11/§7 — 사슴 블록의 스케일 주석 참조
+      lifespan:  9600                                                              # maturity_age × 32 — 여섯 종 중 가장 짧은 삶(r-전략가: 빨리 성숙, 빨리 늙는다)
+      senescence_vital_drain:       0.004
+      senescence_vital_drain_above: 0.75
       respawn_target: 6                                                            # prolific prey (F9)
       cover_cost: 0.3                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { river: 2.5, mountain: 2.0 }                                  # poor at water + climbing (plains animal)
@@ -492,7 +515,7 @@ object_kinds:
       comfort_temp: 6                                                               # °C; hardy mountain species, cold-adapted (untuned)
       thermal_band: 24                                                              # broad tolerance (FA5 symmetric)
       hazard_avoidance: 0.6                                                         # e: sure-footed on steep terrain — LOW avoidance (roams hills freely; untuned)
-      speed: "Agility * 0.0036 + hunger * 0.05 - fatigue * 0.08 - thermal * 0.0008"  # hardy mountain coat · PD10 `terrain.<attr>` 오퍼랜드는 배선돼 있으나 **아직 어느 종도 저작하지 않는다**: 선호를 speed로 표현하려면 계수가 커야 하는데(서식지는 먹이 분포가 지배) 크게 잡으면 move_deadband 아래로 떨어져 어디서나 멈춰버려 선택이 사라진다. rescue floor 착지로 개체수가 절반이 되며 신호가 잡음에 묻힌 것도 확인. 종별 서식지 저작 = 별도 튜닝 라운드
+      speed: "Agility * 0.0036 + hunger * 0.05 - fatigue * 0.08 - thermal * 0.0008 - senescence * 0.035"  # hardy mountain coat · PD10 `terrain.<attr>` 오퍼랜드는 배선돼 있으나 **아직 어느 종도 저작하지 않는다**: 선호를 speed로 표현하려면 계수가 커야 하는데(서식지는 먹이 분포가 지배) 크게 잡으면 move_deadband 아래로 떨어져 어디서나 멈춰버려 선택이 사라진다. rescue floor 착지로 개체수가 절반이 되며 신호가 잡음에 묻힌 것도 확인. 종별 서식지 저작 = 별도 튜닝 라운드
       move_deadband: 0.25                                                          # FM14b: just above sated idle speed (≈0.174) — sated goat rests, hunger>~0.24 roams (UNTUNED, P_fa4)
       turn_rate: "0.8 + Agility*0.010"                                             # M6 turn-rate (untuned placeholder)
       scent_acuity: "6 + Perception*0.1"                                           # PD1/P_fa4a food-homing keenness g (UNTUNED placeholder, P_fa4)
@@ -502,6 +525,10 @@ object_kinds:
       senses: { smell_radius: 9.0, sight_radius: 15.0, fov_arc: 1.0 }               # M5-a early-detection nudge (untuned placeholder)
       maturity_age:  500                                                           # PD4-ii: mid maturity (UNTUNED placeholder, P_fa4)
       mate_cooldown: 400                                                           # PD4-vi(b): mid refractory (UNTUNED placeholder, P_fa4)
+      prime_age: 9000                                                              # PD11/§7 — 사슴 블록의 스케일 주석 참조
+      lifespan:  20000                                                             # maturity_age × 40
+      senescence_vital_drain:       0.004
+      senescence_vital_drain_above: 0.75
       respawn_target: 4                                                            # small mountain band (F9)
       cover_cost: 0.6                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.6, river: 2.0, sand: 1.2 }                       # CLIMBER: cheap on mountains (FA8); poor at water
@@ -534,7 +561,7 @@ object_kinds:
       comfort_temp: 8                                                               # °C; large, well-insulated (untuned)
       thermal_band: 26                                                              # widest tolerance (FA5 symmetric)
       hazard_avoidance: 0.8                                                         # e: large & confident, wades/climbs readily — low avoidance (untuned)
-      speed: "Agility * 0.0030 - fatigue * 0.3 - thermal * 0.0006"                  # strong, not fast; well-insulated → smallest thermal penalty (F40)
+      speed: "Agility * 0.0030 - fatigue * 0.3 - thermal * 0.0006 - senescence * 0.03"  # strong, not fast; well-insulated → smallest thermal penalty (F40)
       turn_rate: "0.4 + Agility*0.004"                                             # M6 turn-rate (untuned placeholder)
       scent_acuity: "8 + Perception*0.12"                                          # PD1/P_fa4a: SUPERB nose (omnivore, comment above) — keenest tracker, homes on the faintest prey/food/carrion scent (UNTUNED, P_fa4)
       attack_power: "Strength * 0.008"                                              # heavier hit than wolf (FC4)
@@ -545,6 +572,10 @@ object_kinds:
       senses: { smell_radius: 22.0, sight_radius: 30.0, fov_arc: 0.9 }              # superb nose
       maturity_age:  1000                                                          # PD4-ii: latest maturity of the six (UNTUNED placeholder, P_fa4)
       mate_cooldown: 900                                                           # PD4-vi(b): longest refractory (UNTUNED placeholder, P_fa4)
+      prime_age: 21600                                                             # PD11/§7 — 사슴 블록의 스케일 주석 참조
+      lifespan:  48000                                                            # maturity_age × 48 — 여섯 종 중 가장 긴 삶(K-전략가). ⚠️ 20k틱 관측에서 곰만 4→57로 폭증한 적이 있다(수명 우위 + 잡식) — 이 값은 계속 지켜볼 것
+      senescence_vital_drain:       0.004
+      senescence_vital_drain_above: 0.75
       respawn_target: 4                                                            # apex omnivore — sparse (F9)
       cover_cost: 2.0                                                              # M4-b drag: small prey slip through, big predators bog down
       terrain_cost: { mountain: 0.7, river: 2.6 }                                  # CLIMBER predator (FA8); avoids deep water (river = prey refuge, M4-a)
@@ -578,8 +609,12 @@ object_kinds:
       scent_acuity: "6 + Perception*0.1"                                           # PD1: food-homing keenness now that fish has a homing channel (UNTUNED)
       maturity_age:  250                                                           # PD4-ii: fast-maturing r-strategist (UNTUNED)
       mate_cooldown: 180                                                           # PD4-vi(b): frequent spawning (UNTUNED)
+      prime_age: 3600                                                               # PD11/§7 — 사슴 블록의 스케일 주석 참조
+      lifespan:  8000                                                              # maturity_age × 32
+      senescence_vital_drain:       0.004
+      senescence_vital_drain_above: 0.75
       diet: [ forage ]                                                             # PD5b: grazes waterweed
-      speed: "Agility * 0.0033 - fatigue * 0.08 - thermal * 0.0013"                 # cold-blooded → water temperature swings movement (F40)
+      speed: "Agility * 0.0033 - fatigue * 0.08 - thermal * 0.0013 - senescence * 0.03"  # cold-blooded → water temperature swings movement (F40)
       senses: { smell_radius: 7.0, sight_radius: 10.0, fov_arc: 1.2 }
       respawn_target: 6                                                            # shoal in the river (F9)
       terrain_cost: { river: 0.5, sea: 0.5 }                                       # SWIMMER: fast in water (FA8)

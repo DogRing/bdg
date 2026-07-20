@@ -68,13 +68,16 @@ func TestPredatorBalanceAcrossSeeds(t *testing.T) {
 				continue
 			}
 			sp, _ := p["species"].(string)
+			// Three causes exist since PD11 (§7 aging): predation, starvation, senescence. Match each
+			// EXACTLY — "not starvation" would fold old-age deaths into the kill count and let this
+			// guard pass on a world where nothing hunts.
 			starved := p["cause"] == "starvation"
 			switch {
 			case starved && isPrey[fauna.SpeciesID(sp)]:
 				preyStarv++
 			case starved && isPred[fauna.SpeciesID(sp)]:
 				predStarv++
-			case !starved && isPrey[fauna.SpeciesID(sp)]:
+			case p["cause"] == "predation" && isPrey[fauna.SpeciesID(sp)]:
 				kills++
 			}
 		}

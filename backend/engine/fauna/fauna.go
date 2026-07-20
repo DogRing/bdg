@@ -277,6 +277,7 @@ func AttrOperands() []core.Tag {
 		attrScentFood,
 		attrScentPredator,
 		attrScentPrey,
+		attrSenescence,
 		attrSightPredator,
 		attrTargetThreat,
 		attrTemperature,

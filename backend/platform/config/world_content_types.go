@@ -181,26 +181,35 @@ type objectKindDoc struct {
 			VitalDrain      float64 `yaml:"vital_drain"`       // PD3 (P_fa4b): Vital bleed/tick while this drive ≥ vital_drain_above; ≤0 ⇒ no coupling
 			VitalDrainAbove float64 `yaml:"vital_drain_above"` // PD3: drive threshold θ at/above which vital_drain applies
 		} `yaml:"drives"`
-		ApparentTemp    any      `yaml:"apparent_temp"`
-		ComfortTemp     float64  `yaml:"comfort_temp"`
-		ThermalBand     float64  `yaml:"thermal_band"`
-		HazardAvoidance float64  `yaml:"hazard_avoidance"`
-		MoveDeadband    float64  `yaml:"move_deadband"` // FM14a per-species deadband (>0 overrides global motion.move_deadband)
-		MaturityAge     float64  `yaml:"maturity_age"`  // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1; ≤0/absent ⇒ maturity≡1 (gate-neutral)
-		MateCooldown    int64    `yaml:"mate_cooldown"` // PD4-vi(b)/P_fa4c-2: post-conception refractory ticks (species breeding tempo); ≤0 ⇒ none
-		Speed           any      `yaml:"speed"`
-		TurnRate        any      `yaml:"turn_rate"`
-		ScentAcuity     any      `yaml:"scent_acuity"` // §6 scent-tracking keenness gain (PD1/P_fa4a); absent ⇒ exact scent Dir (neutral)
-		AttackPower     any      `yaml:"attack_power"`
-		Hit             any      `yaml:"hit"`
-		Feed            any      `yaml:"feed"`
-		Graze           any      `yaml:"graze"`
-		Drink           any      `yaml:"drink"`
-		HideChance      any      `yaml:"hide_chance"`
-		CoverCost       float64  `yaml:"cover_cost"`
-		RespawnTarget   int      `yaml:"respawn_target"`
-		Diet            []string `yaml:"diet"`
-		Senses          struct {
+		ApparentTemp    any     `yaml:"apparent_temp"`
+		ComfortTemp     float64 `yaml:"comfort_temp"`
+		ThermalBand     float64 `yaml:"thermal_band"`
+		HazardAvoidance float64 `yaml:"hazard_avoidance"`
+		MoveDeadband    float64 `yaml:"move_deadband"` // FM14a per-species deadband (>0 overrides global motion.move_deadband)
+		MaturityAge     float64 `yaml:"maturity_age"`  // PD4-ii/P_fa4c: Age at which `maturity` operand reaches 1; ≤0/absent ⇒ maturity≡1 (gate-neutral)
+		MateCooldown    int64   `yaml:"mate_cooldown"` // PD4-vi(b)/P_fa4c-2: post-conception refractory ticks (species breeding tempo); ≤0 ⇒ none
+
+		// §7 aging (PD11): the falling limb of the Age axis. `senescence = clamp01((age−prime_age)/
+		// (lifespan−prime_age))` is a §6 operand a species opts into; lifespan absent ⇒ the whole
+		// feature is off for that species (senescence ≡ 0, byte-identical to pre-PD11).
+		PrimeAge                  float64 `yaml:"prime_age"`
+		Lifespan                  float64 `yaml:"lifespan"`
+		SenescenceVitalDrain      float64 `yaml:"senescence_vital_drain"`       // r: Vital bled per tick once senescent (the old-age death channel)
+		SenescenceVitalDrainAbove float64 `yaml:"senescence_vital_drain_above"` // θ: `senescence` level at which the bleed starts
+
+		Speed         any      `yaml:"speed"`
+		TurnRate      any      `yaml:"turn_rate"`
+		ScentAcuity   any      `yaml:"scent_acuity"` // §6 scent-tracking keenness gain (PD1/P_fa4a); absent ⇒ exact scent Dir (neutral)
+		AttackPower   any      `yaml:"attack_power"`
+		Hit           any      `yaml:"hit"`
+		Feed          any      `yaml:"feed"`
+		Graze         any      `yaml:"graze"`
+		Drink         any      `yaml:"drink"`
+		HideChance    any      `yaml:"hide_chance"`
+		CoverCost     float64  `yaml:"cover_cost"`
+		RespawnTarget int      `yaml:"respawn_target"`
+		Diet          []string `yaml:"diet"`
+		Senses        struct {
 			SmellRadius float64 `yaml:"smell_radius"`
 			SightRadius float64 `yaml:"sight_radius"`
 			FovArc      float64 `yaml:"fov_arc"`

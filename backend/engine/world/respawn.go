@@ -51,6 +51,7 @@ func (w *World) runRespawn() {
 	sort.Slice(species, func(i, j int) bool { return species[i] < species[j] })
 
 	fork := w.envFork(w.tick, "respawn")
+	ageFork := w.envFork(w.tick, "respawn_age") // PD11-iv: own channel, see the Age draw below
 	spawned := false
 	for _, sp := range species {
 		tpl, ok := w.respawnTemplates[sp]
@@ -82,6 +83,20 @@ func (w *World) runRespawn() {
 			// the pos-less spawn heading in worldgen.materialize.
 			a.Heading = fork.Float64() * 2 * math.Pi
 			a.Species = fauna.SpeciesID(sp)
+			// PD11-iv (§7 aging): immigrants arrive with an age structure too. The same argument as for
+			// the founding population applies — a group of identical newborns is a cohort that dies
+			// together, which would just re-run the extinction one lifespan later. Some arrivals are
+			// therefore already old, which is what a real group is.
+			//
+			// Drawn from its OWN fork, not `fork`: an extra draw on the shared stream would shift every
+			// respawn POSITION after it, silently re-rolling worlds that have nothing to do with aging
+			// (it did — the predation arena's prey went transiently extinct purely from the shifted
+			// stream). A separate channel keeps existing respawns byte-identical and isolates this
+			// change to the one thing it is about. Drawn unconditionally (× a lifespan of 0 for a
+			// species that does not age) so the draw count never depends on content (D12).
+			if w.faunaRules != nil {
+				a.Age = ageFork.Float64() * w.faunaRules.Lifespan(a.Species)
+			}
 			if a.Vital <= 0 {
 				a.Vital = defaultFreshAnimalVital
 			}

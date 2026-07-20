@@ -34,7 +34,8 @@ const (
 	// attrTerrainPrefix marks the open-ended `terrain.<attr>` operand family (PD10). Prefixed because
 	// the terrain attr set collides with the climate operands (moisture, temperature).
 	attrTerrainPrefix          = "terrain."
-	attrMaturity      core.Tag = "maturity"  // PD4-ii/P_fa4c: clamp01(age/maturity_age); 1 when mature (or maturity_age unauthored)
+	attrMaturity      core.Tag = "maturity"   // PD4-ii/P_fa4c: clamp01(age/maturity_age); 1 when mature (or maturity_age unauthored)
+	attrSenescence    core.Tag = "senescence" // PD11/§7: clamp01((age−prime_age)/(lifespan−prime_age)); the falling limb of the same Age axis, 0 unless authored
 	attrKinCount      core.Tag = "kin_count" // PD4-v/P_fa4c-3: same-species neighbours within sight — local crowding (raw count; content normalises)
 )
 
@@ -69,6 +70,7 @@ type animalContext struct {
 	env          EnvSample           // injected climate sample (world-provided)
 	appTemp      float64             // pre-computed apparent_temp (to avoid circular eval)
 	maturity     float64             // pre-computed clamp01(age/maturity_age) ∈[0,1]; §6 `maturity` operand (PD4-ii/P_fa4c)
+	senescence   float64             // pre-computed clamp01((age−prime_age)/(lifespan−prime_age)) ∈[0,1]; §6 `senescence` operand (PD11/§7)
 	kinCount     float64             // pre-computed same-species neighbours in sight range; §6 `kin_count` operand (PD4-v)
 	targetThreat float64             // candidate target danger for combat utility (FC2)
 	terrainAttrs map[core.Tag]float64 // §5 attrs of the terrain under the animal; §6 `terrain.<attr>` (PD10)
@@ -124,6 +126,12 @@ func (c *animalContext) Attr(name core.Tag) (float64, bool) {
 	// species authors no maturity_age). Gates the Mate §6 utility + partner eligibility.
 	case attrMaturity:
 		return c.maturity, true
+
+	// Senescence (PD11 / §7 aging): 0 through youth and prime, rising to 1 at the species' lifespan —
+	// the falling limb of the same Age axis `maturity` opens. WHAT declines is content's call: a species
+	// opts in by subtracting this from its own §6 speed/hit/attack_power (D10). 0 unless authored.
+	case attrSenescence:
+		return c.senescence, true
 
 	// Local crowding (PD4-v): how many same-species animals are within sight. A RAW COUNT, not a
 	// normalised density — content scales it (`- kin_count * 0.03`), so no normaliser is invented
