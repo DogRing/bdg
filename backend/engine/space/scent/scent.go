@@ -305,7 +305,7 @@ func (g *Grid) spreadInto(buf map[cellKey]cellVals, wind Wind) {
 	if len(buf) == 0 {
 		return
 	}
-	// Snapshot pending so reads and writes don't interfere within one Spread call.
+	// Snapshot the selected layer so reads and writes don't interfere within one Spread call.
 	// The snapshot map + sorted-key slice are reused across ticks (cleared/refilled)
 	// to avoid a per-Spread allocation — GC dominates at large scale (scaling.md P2).
 	snap := g.spreadSnap
@@ -350,7 +350,7 @@ func (g *Grid) spreadInto(buf map[cellKey]cellVals, wind Wind) {
 		}
 
 		// Source cell loses the donated amount (single map read+write, all channels).
-		cv := g.pending[key]
+		cv := buf[key]
 		for ch := 0; ch < NumChannels; ch++ {
 			if donated[ch] <= 0 {
 				continue
@@ -360,7 +360,7 @@ func (g *Grid) spreadInto(buf map[cellKey]cellVals, wind Wind) {
 				cv[ch] = 0
 			}
 		}
-		g.pending[key] = cv
+		buf[key] = cv
 
 		// Distribute attenuated intensity to neighbors in fixed order — one map
 		// read+write per neighbor (all channels folded in), not per channel.
@@ -370,14 +370,14 @@ func (g *Grid) spreadInto(buf map[cellKey]cellVals, wind Wind) {
 				continue
 			}
 			nk := cellKey{key.cx + off[0], key.cy + off[1]}
-			nv := g.pending[nk]
+			nv := buf[nk]
 			for ch := 0; ch < NumChannels; ch++ {
 				if donated[ch] <= 0 {
 					continue
 				}
 				nv[ch] += donated[ch] * spreadFalloff * w
 			}
-			g.pending[nk] = nv
+			buf[nk] = nv
 		}
 	}
 }

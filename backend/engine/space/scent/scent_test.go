@@ -478,6 +478,9 @@ func TestEmptyGridNeutrality(t *testing.T) {
 func runScenario() [32]byte {
 	g := New(2.0)
 	wind := Wind{Dir: math.Pi / 6, Mag: 0.7}
+	var trailStrength [NumChannels]float64
+	trailStrength[ChanPrey] = 0.02
+	g.ConfigureTrail(trailStrength, 0.85, 0.5)
 	probePositions := []core.Vec2{
 		v(1.0, 1.0), v(3.0, 1.0), v(5.0, 3.0), v(-1.0, -1.0), v(7.0, -1.0),
 	}
@@ -492,6 +495,12 @@ func runScenario() [32]byte {
 	}
 
 	for tick := 0; tick < 8; tick++ {
+		g.DecayTrail()
+		if tick%3 == 0 {
+			g.DepositStatic(ChanFood, v(6.0, 2.0), 4.0)
+			g.DepositStatic(ChanCarrion, v(-4.0, 0.0), 2.5+float64(tick)*0.1)
+			g.CommitStatic(wind)
+		}
 		// Deposits (fixed sources, fixed order — D12).
 		g.Deposit(ChanFood, v(2.0, 2.0), 3.0+float64(tick)*0.5)
 		g.Deposit(ChanPrey, v(4.0, 0.0), 2.0)
